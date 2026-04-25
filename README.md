@@ -29,16 +29,21 @@ This toolkit adds two patterns to the basic ADR tradition:
 
 ## Install
 
-See [INSTALL.md](INSTALL.md) for per-tool installation steps:
+### Claude Code (recommended): two slash commands
 
-- **Claude Code**: copy into `.claude/`
-- **Claude Cowork**: copy into `.claude/` (shares the convention) or paste into the workspace prompt
-- **Cursor**: copy into `.cursor/`
-- **GitHub Copilot**: copy into `.github/`
-- **OpenAI Codex CLI**: copy into `.codex/`
-- **Other AI coding tools**: a generic fallback section in INSTALL.md covers tools that read from a custom directory or accept a system prompt
+```
+/plugin marketplace add rvdbreemen/adr-kit
+/plugin install adr-kit@rvdbreemen-adr-kit
+/reload-plugins
+```
 
-The toolkit is portable: same content, different target locations. The included one-shot install script handles all five layouts in one command.
+That registers the repo as a plugin marketplace, installs `adr-kit` as a plugin, and reloads. The skill, the `adr-generator` subagent, and the path-specific instructions are all available immediately.
+
+Claude Cowork shares the `.claude/` convention; the same plugin commands work once your workspace is connected to a repo.
+
+### Other AI coding tools: copy the files
+
+For Cursor, GitHub Copilot, OpenAI Codex CLI, and any other agent that reads skills from its own directory layout, see [INSTALL.md](INSTALL.md). It documents the per-tool target paths and includes a one-shot install script that lays everything down in one command.
 
 ## File map
 
@@ -46,8 +51,12 @@ The toolkit is portable: same content, different target locations. The included 
 adr-kit/
 ├── README.md                       # this file
 ├── LICENSE                         # MIT
-├── INSTALL.md                      # per-tool install
-├── SKILL.md                        # the comprehensive ADR guide
+├── INSTALL.md                      # per-tool install (manual route)
+├── .claude-plugin/
+│   └── plugin.json                 # Claude Code plugin manifest
+├── skills/
+│   └── adr/
+│       └── SKILL.md                # the comprehensive ADR guide
 ├── agents/
 │   └── adr-generator.md            # subagent: create a new ADR
 ├── instructions/
