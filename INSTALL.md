@@ -12,7 +12,10 @@ The package is portable: drop the same content into the location your tool expec
 > /plugin marketplace add rvdbreemen/adr-kit
 > /plugin install adr-kit@rvdbreemen-adr-kit
 > /reload-plugins
+> /adr-kit:setup
 > ```
+>
+> The first three commands install the plugin (marketplace, install, reload). The fourth is a one-time per-project setup that appends an "ADR Kit Rules" section to your `CLAUDE.md` so future sessions know the skill is governing ADR work in this project. The setup command is idempotent: re-running it skips the append if the section is already present.
 >
 > The manual path below is the fallback if you prefer to vendor the files in your repo or work without the plugin marketplace.
 

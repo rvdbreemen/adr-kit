@@ -29,15 +29,16 @@ This toolkit adds two patterns to the basic ADR tradition:
 
 ## Install
 
-### Claude Code (recommended): two slash commands
+### Claude Code (recommended): four slash commands
 
 ```
 /plugin marketplace add rvdbreemen/adr-kit
 /plugin install adr-kit@rvdbreemen-adr-kit
 /reload-plugins
+/adr-kit:setup
 ```
 
-That registers the repo as a plugin marketplace, installs `adr-kit` as a plugin, and reloads. The skill, the `adr-generator` subagent, and the path-specific instructions are all available immediately.
+The first three install the plugin: marketplace registration, plugin install, plugin reload. The fourth is a one-time per-project setup: it appends a short "ADR Kit Rules" section to your project's `CLAUDE.md` (creating the file if needed) so future sessions know about the skill, the `adr-generator` subagent, and the path-specific instructions. The setup command is idempotent: re-running it skips the append if the section is already there.
 
 Claude Cowork shares the `.claude/` convention; the same plugin commands work once your workspace is connected to a repo.
 
@@ -55,8 +56,10 @@ adr-kit/
 ├── .claude-plugin/
 │   └── plugin.json                 # Claude Code plugin manifest
 ├── skills/
-│   └── adr/
-│       └── SKILL.md                # the comprehensive ADR guide
+│   ├── adr/
+│   │   └── SKILL.md                # the comprehensive ADR guide
+│   └── setup/
+│       └── SKILL.md                # /adr-kit:setup: appends ADR rules to CLAUDE.md
 ├── agents/
 │   └── adr-generator.md            # subagent: create a new ADR
 ├── instructions/
