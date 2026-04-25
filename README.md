@@ -5,7 +5,7 @@
 
 A complete Architecture Decision Record (ADR) toolkit for AI coding agents. Drop into any project to give Claude Code, Claude Cowork, Cursor, GitHub Copilot, OpenAI Codex CLI, or any agent that supports the [Agent Skills](https://agentskills.io/) format a shared, enforceable ADR workflow.
 
-> **v0.1.0**: initial public release. The toolkit is functional and in use, but the API and conventions may change before v1.0.0. Pin to a specific tag if you need stability.
+> **Pre-1.0**: the toolkit is functional and in use, but the API and conventions may change before v1.0.0. Pin to a specific tag if you need stability across upgrades. Latest release: see the badge above.
 
 ## What it does
 
