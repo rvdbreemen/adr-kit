@@ -1,6 +1,11 @@
 # adr-kit
 
-A complete Architecture Decision Record (ADR) toolkit for AI coding agents. Drop into any project to give Claude Code, Cursor, GitHub Copilot, or any agent that supports the [Agent Skills](https://agentskills.io/) format a shared, enforceable ADR workflow.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/tag/rvdbreemen/adr-kit?label=release&sort=semver)](https://github.com/rvdbreemen/adr-kit/releases)
+
+A complete Architecture Decision Record (ADR) toolkit for AI coding agents. Drop into any project to give Claude Code, Claude Cowork, Cursor, GitHub Copilot, OpenAI Codex CLI, or any agent that supports the [Agent Skills](https://agentskills.io/) format a shared, enforceable ADR workflow.
+
+> **v0.1.0**: initial public release. The toolkit is functional and in use, but the API and conventions may change before v1.0.0. Pin to a specific tag if you need stability.
 
 ## What it does
 
@@ -27,10 +32,13 @@ This toolkit adds two patterns to the basic ADR tradition:
 See [INSTALL.md](INSTALL.md) for per-tool installation steps:
 
 - **Claude Code**: copy into `.claude/`
+- **Claude Cowork**: copy into `.claude/` (shares the convention) or paste into the workspace prompt
 - **Cursor**: copy into `.cursor/`
 - **GitHub Copilot**: copy into `.github/`
+- **OpenAI Codex CLI**: copy into `.codex/`
+- **Other AI coding tools**: a generic fallback section in INSTALL.md covers tools that read from a custom directory or accept a system prompt
 
-The skill is portable: same content, three target locations. Pick what your team uses.
+The toolkit is portable: same content, different target locations. The included one-shot install script handles all five layouts in one command.
 
 ## File map
 
