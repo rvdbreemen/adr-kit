@@ -42,6 +42,19 @@ STATUS_LINE_RE = re.compile(r"^Status\s*:?\s*(\w+)", re.IGNORECASE | re.MULTILIN
 STATUS_HEADING_RE = re.compile(
     r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
 )
+# Legacy bold-inline Status format used by many pre-canonical ADR sets:
+#   **Status:** Accepted
+#   **Status**: Proposed
+#   **Status: Accepted**
+# adr-lint flags these on Completeness (no '## Status' heading), which is
+# correct — but adr-judge only needs the *value* to decide whether to enforce.
+# Recognising the bold-inline form here means a project mid-migration still
+# gets diff-vs-Enforcement coverage on its Accepted ADRs without first having
+# to run /adr-kit:migrate. See v0.12.1 changelog.
+STATUS_BOLD_INLINE_RE = re.compile(
+    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
+    re.IGNORECASE | re.MULTILINE,
+)
 ENFORCEMENT_BLOCK_RE = re.compile(
     r"^##\s+Enforcement\s*$\n+(?:.*?\n)*?```json\s*\n(.*?)\n```",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
@@ -57,20 +70,25 @@ def adr_status(text: str) -> Optional[str]:
     """Return the ADR's status (Accepted/Proposed/Deprecated/Superseded) or None.
 
     Handles all of these (case-insensitive):
-      Status: Accepted, 2026-04-25.       (single-line, anywhere)
+      Status: Accepted, 2026-04-25.       (single-line plain, anywhere)
       ## Status\n\nAccepted, 2026-04-25.  (heading + body, comma form)
       ## Status\n\nAccepted. Date: 2026-04-25.  (heading + body, period form)
       ## Status\n\nSuperseded by ADR-099, 2026-05-01.
+      **Status:** Accepted                (bold-inline, since v0.12.1)
+      **Status**: Proposed                (bold-inline, alt punctuation)
+      **Status: Accepted**                (bold-inline, fully bracketed)
 
-    Returns the first alphabetic word it finds in the status line, lowercased
-    by the caller. Trailing punctuation is stripped so 'Accepted.' becomes
-    'Accepted'.
+    Returns the first alphabetic word it finds in the status line. Trailing
+    punctuation is stripped so 'Accepted.' becomes 'Accepted'.
     """
     m = STATUS_HEADING_RE.search(text)
     if m:
         line = m.group(1).strip()
         wm = re.match(r"\s*([A-Za-z]+)", line)
         return wm.group(1) if wm else None
+    m = STATUS_BOLD_INLINE_RE.search(text)
+    if m:
+        return m.group(1) or m.group(2)
     m = STATUS_LINE_RE.search(text)
     if m:
         return m.group(1)
