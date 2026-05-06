@@ -88,8 +88,8 @@ If existing code does not comply with a *new* ADR:
 
 Every new `Accepted` ADR with a code surface SHOULD include an `## Enforcement` section so the pre-commit hook can guard the boundary. Three acceptable patterns:
 
-- **Declarative rules.** A fenced JSON block with `forbid_pattern` / `forbid_import` / `require_pattern` arrays. `bin/adr-judge` runs them deterministically on the staged diff at commit time. Preferred when the rule is mechanically expressible.
-- **`"llm_judge": true`.** Free-form ADRs whose rules cannot be expressed as regex but are still code-relevant. The pre-commit hook surfaces an advisory line; deeper review happens in-session via `/adr-kit:judge`.
+- **Declarative rules.** A fenced JSON block with `forbid_pattern` / `forbid_import` / `require_pattern` arrays. `bin/adr-judge` runs them deterministically on the staged diff at commit time. Preferred when the rule is mechanically expressible — fastest path, no LLM round-trip.
+- **`"llm_judge": true`.** Free-form ADRs whose rules cannot be expressed as regex but are still code-relevant. As of v0.13.0 the pre-commit hook batches all `llm_judge` ADRs into ONE Claude Sonnet call and blocks the commit on `VIOLATION`. Falls back to declarative-only when the `claude` CLI is missing — never blocks on tooling drift. Cost shape: ~$0.10–0.30 per commit on Sonnet 4.6 with prompt caching.
 - **Section omitted.** ADRs with no code surface (governance, process, organisational decisions). The judge skips them silently. The PR author should explain in the ADR body *why* the rule isn't mechanically expressible.
 
 **Action if missing on a code-touching ADR:**

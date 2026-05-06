@@ -60,6 +60,7 @@ jobs:
             "bin/adr-audit"
             "tests/test_adr_lint.py"
             "tests/test_adr_judge.py"
+            "tests/test_adr_judge_llm.py"
             "tests/test_adr_audit.py"
             "examples/ADR-template.md"
             "examples/.adr-kit.sample.json"

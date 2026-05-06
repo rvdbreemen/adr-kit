@@ -647,8 +647,8 @@ The four verification gates and the supersession workflow defined in this file r
 
 Every new `Accepted` ADR with a code surface SHOULD carry an `## Enforcement` section so `bin/adr-judge` (run by the pre-commit hook) can guard the boundary against future drift. The block is a fenced JSON object validated against `schemas/adr-enforcement.schema.json`. Three patterns:
 
-- Declarative regex / glob rules (`forbid_pattern`, `forbid_import`, `require_pattern`) — preferred when the rule is mechanically expressible.
-- `"llm_judge": true` — for nuanced rules that need a model's judgement; the hook surfaces an advisory line and deeper review runs in-session via `/adr-kit:judge`.
+- Declarative regex / glob rules (`forbid_pattern`, `forbid_import`, `require_pattern`) — preferred when the rule is mechanically expressible. Fastest at hook time, no LLM round-trip.
+- `"llm_judge": true` — for nuanced rules that need a model's judgement. As of v0.13.0 the pre-commit hook batches all `llm_judge` ADRs into ONE Claude Sonnet call (`claude -p --model claude-sonnet-4-6`) and blocks the commit on `VIOLATION`. Falls back to declarative-only when the `claude` CLI is missing — never blocks on tooling drift.
 - Section omitted with an in-body explanation — for governance / process ADRs with no code surface.
 
 Authoring is part of the agent's Step 3b (see `agents/adr-generator.md`). Code review applies Check 7 (see `instructions/adr.review.md`) to confirm the block is set appropriately.
