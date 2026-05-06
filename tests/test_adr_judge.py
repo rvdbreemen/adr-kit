@@ -193,3 +193,88 @@ def test_superseded_status_skipped(tmp_path):
     code, out = _run(SAMPLE_DIFF, proj)
     assert code == 0
     assert out["findings"] == []
+
+
+def test_bold_inline_status_recognised(tmp_path):
+    """Legacy `**Status:** Accepted` (bold-inline) ADRs are seen as Accepted by the judge.
+
+    adr-lint still flags these on Completeness (correct — they lack a `## Status`
+    heading). The judge only needs the value to decide whether to enforce.
+    Added in v0.12.1 to unblock projects mid-migration: diff-vs-Enforcement
+    coverage works without first running /adr-kit:migrate.
+    """
+    bold_inline = textwrap.dedent("""\
+        # ADR-001: No Foo
+
+        **Status:** Accepted
+        **Date:** 2024-01-01
+
+        ## Context
+
+        Foo fragments the heap.
+
+        ## Decision
+
+        Don't use Foo.
+
+        ## Enforcement
+
+        ```json
+        {
+          "forbid_pattern": [
+            {"pattern": "\\\\bFoo\\\\b", "path_glob": "src/**/*.py", "message": "No Foo."}
+          ]
+        }
+        ```
+    """)
+    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": bold_inline}, {})
+    code, out = _run(SAMPLE_DIFF, proj)
+    assert code == 1, "Bold-inline Accepted ADR should still enforce its Enforcement rules"
+    assert out["summary"]["violations"] == 1
+
+
+def test_bold_inline_proposed_does_not_enforce(tmp_path):
+    """Bold-inline Proposed status is also recognised — but Proposed never enforces."""
+    bold_inline_proposed = textwrap.dedent("""\
+        # ADR-001: No Foo
+
+        **Status:** Proposed
+        **Date:** 2024-01-01
+
+        ## Decision
+
+        Don't use Foo.
+
+        ## Enforcement
+
+        ```json
+        {"forbid_pattern": [{"pattern": "\\\\bFoo\\\\b"}]}
+        ```
+    """)
+    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": bold_inline_proposed}, {})
+    code, out = _run(SAMPLE_DIFF, proj)
+    assert code == 0
+    assert out["findings"] == []
+
+
+def test_bold_inline_fully_bracketed(tmp_path):
+    """`**Status: Accepted**` (everything bold) is also recognised."""
+    body = textwrap.dedent("""\
+        # ADR-001: No Foo
+
+        **Status: Accepted**
+
+        ## Decision
+
+        Don't use Foo.
+
+        ## Enforcement
+
+        ```json
+        {"forbid_pattern": [{"pattern": "\\\\bFoo\\\\b"}]}
+        ```
+    """)
+    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": body}, {})
+    code, out = _run(SAMPLE_DIFF, proj)
+    assert code == 1
+    assert out["summary"]["violations"] == 1
