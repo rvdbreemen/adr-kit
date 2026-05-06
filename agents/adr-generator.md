@@ -69,6 +69,16 @@ Before saving the file, the ADR must pass all four gates from the project's `SKI
 
 If a gate cannot pass, do not save the file. Tell the user which gate fails and why.
 
+### Step 3b: Propose an Enforcement block (v0.12+)
+
+If the ADR has a code surface — that is, if a future code change could violate the decision in a way that's recognisable from the diff — propose an `## Enforcement` section. Three patterns:
+
+- **Declarative.** The rule can be expressed as regex / glob / forbidden-import. Example: "no String class in hot paths" maps to `forbid_pattern: \\bString\\b ... in src/**`. Build a JSON block per `schemas/adr-enforcement.schema.json`. This is the preferred form because the pre-commit hook (`bin/adr-judge`) catches violations deterministically.
+- **LLM-judgeable.** The rule needs a model's judgement (semantic compliance, intent reading). Set `"llm_judge": true`. The hook surfaces an advisory line; deeper review happens in-session via `/adr-kit:judge`.
+- **Manual review only.** No code surface (governance, process, organisational decision). Omit the section AND add one line in the ADR body explaining *why* it has no code surface. The judge skips ADRs without an Enforcement block silently; the explanation tells reviewers (Check 7 in `instructions/adr.review.md`) it's intentional.
+
+Propose the block to the user with a clear rationale ("Declarative: the rule maps cleanly to a regex on added lines"). Let the user accept, edit, or downgrade to `llm_judge: true`. Do not invent rules the user did not endorse.
+
 ### Step 4: Write the file
 
 Use the template below. Save it to `docs/adr/ADR-XXX-kebab-case-title.md`. After writing, append the new entry to `docs/adr/README.md` under the matching category (or note that the README index has a gap and recommend the user update it).
@@ -145,6 +155,22 @@ If "do nothing" was rejected, document why. If it was the right choice, this ADR
 - Implementation tasks or issue IDs.
 - Source files affected (file:line).
 - External specs, RFCs, vendor docs, or measurements.
+
+## Enforcement
+
+(Optional. Include for ADRs with a code surface — see Step 3b. Omit for governance / process ADRs and explain in the body why.)
+
+```json
+{
+  "forbid_pattern": [
+    {"pattern": "\\bForbiddenSymbol\\b", "path_glob": "src/**/*.py",
+     "message": "Use AllowedSymbol instead."}
+  ],
+  "forbid_import": [],
+  "require_pattern": [],
+  "llm_judge": false
+}
+```
 ```
 
 ---
@@ -180,6 +206,9 @@ A bad ADR:
 
 - `SKILL.md`: the comprehensive ADR skill with template, anti-rationalization guards, verification gates, code review patterns, examples.
 - `instructions/adr.coding.md`: when an agent is implementing changes, the ADR rules to check first.
-- `instructions/adr.review.md`: when an agent is reviewing PRs, the ADR checks to apply.
-- `examples/ADR-template.md`: a clean template you can copy into a new ADR file.
+- `instructions/adr.review.md`: when an agent is reviewing PRs, the ADR checks to apply (seven checks since v0.12).
+- `templates/adr-template.md`: the v0.12 template including the optional Enforcement section.
+- `templates/adr-kit-guide.md`: project-side canonical guide. Copied to `.claude/adr-kit-guide.md` by `/adr-kit:init`.
+- `schemas/adr-enforcement.schema.json`: schema for the Enforcement block.
+- `bin/adr-judge`: the pre-commit runner that consumes Enforcement blocks. Pairs with `/adr-kit:judge` for in-session review.
 - The project's `docs/adr/README.md`: the project-specific ADR index and conventions.

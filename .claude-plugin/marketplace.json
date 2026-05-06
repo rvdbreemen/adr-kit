@@ -9,8 +9,8 @@
     {
       "name": "adr-kit",
       "source": "./",
-      "version": "0.11.0",
-      "description": "Drop-in ADR toolkit: skill, ADR-generator subagent, /adr-kit:setup, /adr-kit:lint, path-specific coding and review instructions.",
+      "version": "0.12.0",
+      "description": "Drop-in ADR toolkit with three modes: /adr-kit:init (one-shot bootstrap + audit + hook), pre-commit verification via bin/adr-judge against declarative Enforcement blocks, and on-demand /adr-kit:adr / /adr-kit:judge for authoring and in-session review.",
       "homepage": "https://github.com/rvdbreemen/adr-kit",
       "license": "MIT"
     }

@@ -9,15 +9,29 @@ A complete Architecture Decision Record (ADR) toolkit for AI coding agents. Drop
 
 ## What it does
 
-- **Skill** (`SKILL.md`): the comprehensive ADR guide. When to write one, what to write, how to verify it, how to supersede it. Includes anti-rationalization guards (the excuses agents use to skip documentation) and four named verification gates (Completeness, Evidence, Clarity, Consistency).
-- **Agent** (`agents/adr-generator.md`): a focused subagent for *creating* a new ADR. Hand it a decision and it produces a fully populated `docs/adr/ADR-XXX-title.md` file.
-- **Lint skill** (`/adr-kit:lint`, since v0.7.0): checks existing ADRs against the four gates with file:line citations. Supports scoped policy via `.adr-kit.json` since v0.9.0.
-- **Lint CLI** (`bin/adr-lint`, since v0.10.0): deterministic Python CLI for CI / pre-commit / batch validation. Same gate logic as the skill, exit-code-based.
-- **Migrate skill** (`/adr-kit:migrate`, since v0.11.0): guided rewrite of legacy-shaped ADRs into the canonical-seven-section template. Read-then-confirm workflow. No fabrication; uses TODO placeholders for genuine content gaps.
-- **Instructions** (`instructions/`): two path-specific instruction files, one for coding work (`adr.coding.md`) and one for code review (`adr.review.md`). They tell the agent which ADR rules apply and when.
-- **Template** (`examples/ADR-template.md`): a clean ADR file you can copy.
+Three coordinated operating modes, since v0.12.0:
 
-The pieces work together: the skill is the reference, the agent does the writing, the lint flags deviations, the migrate command brings legacy work into shape, the instructions tell the agent what to do at the right moment.
+- **Init** (`/adr-kit:init`, since v0.12.0): one-shot project bootstrap. Hooks the kit into `CLAUDE.md` (slim stub + canonical guide at `.claude/adr-kit-guide.md`), runs `bin/adr-audit` to enumerate decision-shaped artefacts in source + documentation, walks the user through batched approval to generate `Accepted` ADRs, and installs the pre-commit hook. Use once per project.
+- **Per-commit verification** (`bin/adr-judge` + pre-commit hook, since v0.12.0): every `git commit` runs declarative `Enforcement` rules from each Accepted ADR against the staged diff. Fast, deterministic, key-free. Default-on after init.
+- **On-demand** (`/adr-kit:adr`, `/adr-kit:judge`, since v0.12.0 for judge): author a new ADR mid-session, or interactively review a staged diff against existing ADRs (declarative + in-session LLM review for `llm_judge: true` ADRs).
+
+### Components
+
+- **Skill** (`skills/adr/SKILL.md`): the comprehensive ADR guide. Anti-rationalization guards, the four verification gates (Completeness, Evidence, Clarity, Consistency), supersession workflow.
+- **Agent** (`agents/adr-generator.md`): the subagent for *creating* a new ADR. Now also proposes an `## Enforcement` block when the ADR has a code surface.
+- **Init skill** (`/adr-kit:init`, v0.12.0+): umbrella project bootstrap (audit + ADR generation + hook install).
+- **Judge runner** (`bin/adr-judge`, v0.12.0+): declarative diff-vs-ADR engine. Parses fenced JSON `## Enforcement` blocks; applies `forbid_pattern` / `forbid_import` / `require_pattern` rules to the staged diff with file:line citations. Mirrors `bin/adr-lint`'s exit-code style (0 / 1 / 2).
+- **Judge skill** (`/adr-kit:judge`, v0.12.0+): on-demand interactive judge. Runs the deterministic pass + in-session LLM review for `llm_judge: true` ADRs (no shell-out to `claude -p`).
+- **Audit runner** (`bin/adr-audit`, v0.12.0+): deterministic candidate scanner used by init.
+- **Hook installer** (`/adr-kit:install-hooks`, v0.12.0+): installs/uninstalls the pre-commit hook. Default-on after init or upgrade.
+- **Upgrade skill** (`/adr-kit:upgrade`, v0.12.0+): guided v0.11 → v0.12 migration without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
+- **Lint skill + CLI** (`/adr-kit:lint`, `bin/adr-lint`, since v0.7.0 / v0.10.0): validates ADR file content against the four gates.
+- **Migrate skill** (`/adr-kit:migrate`, since v0.11.0): guided rewrite of legacy-shaped ADRs into the canonical seven-section template.
+- **Setup skill** (`/adr-kit:setup`, since v0.4.0; rewritten in v0.12.0): the lighter cousin of `init`. Drops the canonical guide and writes the slim CLAUDE.md stub, but does not run the codebase audit or install the hook. Detects v0.11-style inline `## ADR Kit Rules` and leaves them untouched (use `/adr-kit:upgrade` to migrate).
+- **Instructions** (`instructions/`): per-developer rules (`adr.coding.md`) and the seven-check code-review checklist (`adr.review.md`).
+- **Templates** (`templates/`, v0.12.0+): canonical project-side guide (`adr-kit-guide.md`), ADR template with optional Enforcement section (`adr-template.md`), and the pre-commit hook template (`githooks/pre-commit`).
+
+The pieces work together: `init` bootstraps the project, the hook + `bin/adr-judge` guard every commit deterministically, `/adr-kit:judge` handles in-session LLM review on demand, the agent + `/adr-kit:adr` author new ADRs, `lint` and `migrate` keep the existing record clean.
 
 ## Why ADRs
 
@@ -38,12 +52,19 @@ This toolkit adds two patterns to the basic ADR tradition:
 /plugin marketplace add rvdbreemen/adr-kit
 /plugin install adr-kit@rvdbreemen-adr-kit
 /reload-plugins
-/adr-kit:setup
+/adr-kit:init
 ```
 
-The first three install the plugin: marketplace registration, plugin install, plugin reload. The fourth is a one-time per-project setup: it appends a short "ADR Kit Rules" section to your project's `CLAUDE.md` (creating the file if needed) so future sessions know about the skill, the `adr-generator` subagent, and the path-specific instructions. The setup command is idempotent: re-running it skips the append if the section is already there.
+The first three install the plugin: marketplace registration, plugin install, plugin reload. The fourth is the one-shot per-project bootstrap (since v0.12.0): it hooks `CLAUDE.md` (slim stub + canonical guide at `.claude/adr-kit-guide.md`), runs `bin/adr-audit` to enumerate decision-shaped artefacts in your source and docs, walks you through batched approval to generate `Accepted` ADRs for decisions already in effect, and installs the pre-commit hook. Idempotent on re-run.
 
-Optional fifth command: `/adr-kit:lint` reads every `ADR-*.md` in your `docs/adr/` directory and reports per-file, per-gate pass/fail with line-level citations for failures. Useful right after install to see how your existing ADRs measure up against the four gates, and useful before merging a PR that touches an ADR. Read-only.
+If your project already had a v0.11 footprint (inline `## ADR Kit Rules` in `CLAUDE.md`, no Enforcement blocks, no hook), use `/adr-kit:upgrade` instead of `/adr-kit:init`. Upgrade skips the heavy audit and just migrates the layout + offers Enforcement-block backfill ADR-by-ADR.
+
+For a lighter touch (no audit, no hook): `/adr-kit:setup` writes only the CLAUDE.md stub + canonical guide, leaving everything else for you to wire up later.
+
+Optional follow-ups:
+- `/adr-kit:lint [path]` — validate existing ADRs against the four gates.
+- `/adr-kit:judge` — interactively review a staged diff against existing ADRs (handles both declarative `Enforcement` rules and `llm_judge: true` ADRs in-session).
+- `/adr-kit:migrate [path]` — rewrite legacy-shaped ADRs into the canonical template.
 
 Claude Cowork shares the `.claude/` convention; the same plugin commands work once your workspace is connected to a repo.
 
@@ -59,21 +80,36 @@ adr-kit/
 ├── LICENSE                         # MIT
 ├── INSTALL.md                      # per-tool install (manual route)
 ├── .claude-plugin/
-│   └── plugin.json                 # Claude Code plugin manifest
+│   ├── plugin.json                 # Claude Code plugin manifest (v0.12.0)
+│   └── marketplace.json            # marketplace listing
 ├── skills/
-│   ├── adr/
-│   │   └── SKILL.md                # the comprehensive ADR guide
-│   ├── setup/
-│   │   └── SKILL.md                # /adr-kit:setup: appends ADR rules to CLAUDE.md
-│   └── lint/
-│       └── SKILL.md                # /adr-kit:lint: validates ADRs against the four gates
+│   ├── adr/SKILL.md                # the comprehensive ADR guide
+│   ├── init/SKILL.md               # /adr-kit:init: one-shot project bootstrap (v0.12+)
+│   ├── judge/SKILL.md              # /adr-kit:judge: in-session diff review (v0.12+)
+│   ├── install-hooks/SKILL.md      # /adr-kit:install-hooks: pre-commit hook installer (v0.12+)
+│   ├── upgrade/SKILL.md            # /adr-kit:upgrade: v0.11 -> v0.12 migration (v0.12+)
+│   ├── setup/SKILL.md              # /adr-kit:setup: lighter CLAUDE.md+guide hookup
+│   ├── lint/SKILL.md               # /adr-kit:lint: validates ADRs against the four gates
+│   └── migrate/SKILL.md            # /adr-kit:migrate: rewrite legacy ADRs into canonical
 ├── agents/
-│   └── adr-generator.md            # subagent: create a new ADR
+│   └── adr-generator.md            # subagent: create a new ADR (proposes Enforcement blocks v0.12+)
+├── bin/
+│   ├── adr-lint                    # deterministic gate validator
+│   ├── adr-judge                   # diff vs Enforcement-block runner (v0.12+)
+│   └── adr-audit                   # candidate scanner used by init (v0.12+)
+├── templates/
+│   ├── adr-template.md             # ADR template with optional Enforcement section (v0.12+)
+│   ├── adr-kit-guide.md            # canonical project-side guide; copied to .claude/ (v0.12+)
+│   └── githooks/pre-commit         # pre-commit hook template (v0.12+)
+├── schemas/
+│   ├── adr-kit-config.schema.json  # .adr-kit.json schema (extended in v0.12 with judge.*)
+│   └── adr-enforcement.schema.json # ADR Enforcement block schema (v0.12+)
 ├── instructions/
 │   ├── adr.coding.md               # ADR rules during coding
-│   └── adr.review.md               # ADR checks during PR review
+│   └── adr.review.md               # ADR checks during PR review (seven checks since v0.12)
+├── tests/                          # pytest end-to-end tests for adr-lint, adr-judge, adr-audit
 └── examples/
-    └── ADR-template.md             # clean template to copy
+    └── ADR-template.md             # legacy template (kept for backwards compat; new template is in templates/)
 ```
 
 ## Slash commands reference

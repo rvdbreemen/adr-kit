@@ -23,6 +23,7 @@ If no ADR exists and the change is architecturally significant:
 2. **Review the generated ADR yourself** before linking from code: confirm it passes the four verification gates (Completeness, Evidence, Clarity, Consistency) defined in the skill.
 3. **Reference the ADR** in your commit message and (if relevant) the PR description: `ADR: docs/adr/ADR-XXX-title.md`.
 4. **Add code comments** that point to the ADR at non-obvious enforcement sites: `// See ADR-XXX for why we use this pattern.`
+5. **Add an Enforcement block (v0.12+) when the rule is mechanically expressible.** Accepted ADRs SHOULD carry an `## Enforcement` section with declarative `forbid_pattern` / `forbid_import` / `require_pattern` rules so `bin/adr-judge` (run by the pre-commit hook) catches future drift. If the rule is too nuanced for regex, set `"llm_judge": true` instead — this opts the ADR into in-session review via `/adr-kit:judge` and makes the hook treat it as advisory. Decisions with no code surface (governance, process) can omit the section entirely. See the schema at `schemas/adr-enforcement.schema.json` and the canonical guide that ships at `.claude/adr-kit-guide.md` after `/adr-kit:init`.
 
 ## Superseding an existing ADR
 

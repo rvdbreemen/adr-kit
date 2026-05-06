@@ -623,6 +623,38 @@ If you answered "No" to any of these, improve the ADR.
 
 ---
 
+## Companion skills and runners (v0.12+)
+
+The full adr-kit toolset wraps this skill with three operational modes:
+
+- **`/adr-kit:init`** — one-shot bootstrap of the kit in an existing project: hooks `CLAUDE.md`, drops `.claude/adr-kit-guide.md`, runs `bin/adr-audit` to enumerate decision-shaped artefacts, walks the user through batched approval to generate Accepted ADRs, installs the pre-commit hook. Use this once per project.
+- **`/adr-kit:judge`** — in-session review of a staged git diff against existing ADRs. Runs the deterministic `bin/adr-judge` for declarative `Enforcement` rules, then evaluates `llm_judge: true` ADRs in the active Claude Code session. On violation, walks three resolution paths (new ADR / supersede / fix code).
+- **`/adr-kit:install-hooks`** — install or uninstall the pre-commit hook. Default-on after `/adr-kit:init` (or `/adr-kit:upgrade`).
+- **`/adr-kit:upgrade`** — for users on v0.11: migrate to the v0.12 footprint without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
+- **`/adr-kit:lint`** — validate ADR file content against the four verification gates (Completeness / Evidence / Clarity / Consistency). The deterministic CLI is `bin/adr-lint`; the skill drives the heuristic gates.
+- **`/adr-kit:migrate`** — rewrite legacy-shaped ADRs into the canonical seven-section template.
+
+### When to invoke this skill (`/adr-kit:adr`) vs the others
+
+- **Authoring a single new ADR mid-session**: `/adr-kit:adr` (or invoke the `adr-generator` subagent).
+- **Diagnosing a staged diff against existing ADRs**: `/adr-kit:judge`. The model can self-call this before requesting a commit on the user's behalf.
+- **First-time setup**: `/adr-kit:init`.
+- **Migration from v0.11**: `/adr-kit:upgrade`.
+
+The four verification gates and the supersession workflow defined in this file remain the source of truth — every other skill delegates to them, never duplicates them.
+
+## Enforcement blocks (v0.12+)
+
+Every new `Accepted` ADR with a code surface SHOULD carry an `## Enforcement` section so `bin/adr-judge` (run by the pre-commit hook) can guard the boundary against future drift. The block is a fenced JSON object validated against `schemas/adr-enforcement.schema.json`. Three patterns:
+
+- Declarative regex / glob rules (`forbid_pattern`, `forbid_import`, `require_pattern`) — preferred when the rule is mechanically expressible.
+- `"llm_judge": true` — for nuanced rules that need a model's judgement; the hook surfaces an advisory line and deeper review runs in-session via `/adr-kit:judge`.
+- Section omitted with an in-body explanation — for governance / process ADRs with no code surface.
+
+Authoring is part of the agent's Step 3b (see `agents/adr-generator.md`). Code review applies Check 7 (see `instructions/adr.review.md`) to confirm the block is set appropriately.
+
+---
+
 ## Resources
 
 ### Official ADR resources
