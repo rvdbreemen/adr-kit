@@ -180,10 +180,16 @@ def glob_to_regex(glob: str) -> re.Pattern:
     """Translate a shell-style glob (with ** for recursive descent) to a regex.
 
     Examples:
-      *.py             → only top-level .py
-      **/*.py          → any .py at any depth (including top-level)
-      src/**/*.py      → any .py under src/ at any depth
-      src/**           → anything under src/
+      *.py                 → only top-level .py
+      **/*.py              → any .py at any depth (including top-level)
+      src/**/*.py          → any .py under src/ at any depth
+      src/**               → anything under src/
+      src/**/*.{ino,cpp,h} → .ino, .cpp, or .h files anywhere under src/  (v0.12.2+)
+      src/{a,b,c}.ino      → exactly src/a.ino, src/b.ino, or src/c.ino   (v0.12.2+)
+
+    Brace expansion ({a,b,c}) was added in v0.12.2 — without it, real-world
+    Enforcement-block path_globs that scope to a list of source files
+    silently match nothing (regressed from common shell-glob expectations).
     """
     out: List[str] = []
     i = 0
@@ -204,6 +210,26 @@ def glob_to_regex(glob: str) -> re.Pattern:
         elif c == "?":
             out.append("[^/]")
             i += 1
+        elif c == "{":
+            # Brace expansion: {a,b,c} -> (?:a|b|c). Find matching closing brace.
+            # Nested braces are not supported; if the user needs them they should
+            # restructure the glob. An unclosed brace is treated literally.
+            close = glob.find("}", i + 1)
+            if close == -1 or "{" in glob[i + 1:close]:
+                out.append(re.escape(c))
+                i += 1
+            else:
+                inner = glob[i + 1:close]
+                alts = inner.split(",")
+                # Each alternative is a sub-glob, recursively translated. Wrap in
+                # a non-capturing group with anchored sub-patterns stripped of the
+                # surrounding ^...$ that glob_to_regex would otherwise add.
+                alt_patterns = [
+                    glob_to_regex(a).pattern.lstrip("^").rstrip("$") if a else ""
+                    for a in alts
+                ]
+                out.append("(?:" + "|".join(alt_patterns) + ")")
+                i = close + 1
         else:
             out.append(re.escape(c))
             i += 1
