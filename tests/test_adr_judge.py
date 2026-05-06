@@ -278,3 +278,119 @@ def test_bold_inline_fully_bracketed(tmp_path):
     code, out = _run(SAMPLE_DIFF, proj)
     assert code == 1
     assert out["summary"]["violations"] == 1
+
+
+def test_path_glob_brace_expansion(tmp_path):
+    """`path_glob: src/{a,b,c}.py` matches each of src/a.py, src/b.py, src/c.py.
+
+    Added in v0.12.2 — without brace expansion, real-world Enforcement-block
+    path_globs (like ADR-049's `src/OTGW-firmware/{MQTTstuff,OTGW-Core,...}.ino`)
+    silently match nothing.
+    """
+    adr = textwrap.dedent("""\
+        # ADR-001: No Foo
+
+        ## Status
+
+        Accepted, 2026-04-25.
+
+        ## Decision
+
+        Don't use Foo.
+
+        ## Enforcement
+
+        ```json
+        {
+          "forbid_pattern": [
+            {"pattern": "\\\\bFoo\\\\b", "path_glob": "src/{alpha,beta,gamma}.py"}
+          ]
+        }
+        ```
+    """)
+    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": adr}, {})
+    # Diff against src/beta.py — should match. Note: `\b...\b` regex needs
+    # actual word boundaries; use `Foo()` not `_Foo()` (underscore is a word
+    # char and prevents the leading boundary from matching).
+    diff = textwrap.dedent("""\
+        diff --git a/src/beta.py b/src/beta.py
+        --- a/src/beta.py
+        +++ b/src/beta.py
+        @@ -1 +1,1 @@
+        +    return Foo()
+    """)
+    code, out = _run(diff, proj)
+    assert code == 1, "brace-expanded path_glob should match src/beta.py"
+    assert out["summary"]["violations"] == 1
+    assert out["findings"][0]["path"] == "src/beta.py"
+
+
+def test_path_glob_brace_expansion_misses_unlisted(tmp_path):
+    """A path NOT in the brace alternatives is correctly skipped."""
+    adr = textwrap.dedent("""\
+        # ADR-001: No Foo
+
+        ## Status
+
+        Accepted, 2026-04-25.
+
+        ## Decision
+
+        Don't use Foo.
+
+        ## Enforcement
+
+        ```json
+        {
+          "forbid_pattern": [
+            {"pattern": "\\\\bFoo\\\\b", "path_glob": "src/{alpha,beta}.py"}
+          ]
+        }
+        ```
+    """)
+    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": adr}, {})
+    diff = textwrap.dedent("""\
+        diff --git a/src/gamma.py b/src/gamma.py
+        --- a/src/gamma.py
+        +++ b/src/gamma.py
+        @@ -1 +1,1 @@
+        +    return Foo()
+    """)
+    code, out = _run(diff, proj)
+    assert code == 0, "src/gamma.py is not in the brace alternatives → no violation"
+
+
+def test_path_glob_brace_with_double_star(tmp_path):
+    """`src/**/*.{ino,cpp,h}` matches .ino, .cpp, .h at any depth under src/."""
+    adr = textwrap.dedent("""\
+        # ADR-001: No Foo
+
+        ## Status
+
+        Accepted, 2026-04-25.
+
+        ## Decision
+
+        Don't use Foo.
+
+        ## Enforcement
+
+        ```json
+        {
+          "forbid_pattern": [
+            {"pattern": "\\\\bFoo\\\\b", "path_glob": "src/**/*.{ino,cpp,h}"}
+          ]
+        }
+        ```
+    """)
+    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": adr}, {})
+    for ext in ("ino", "cpp", "h"):
+        diff = textwrap.dedent(f"""\
+            diff --git a/src/foo/bar.{ext} b/src/foo/bar.{ext}
+            --- a/src/foo/bar.{ext}
+            +++ b/src/foo/bar.{ext}
+            @@ -1 +1,1 @@
+            +    return Foo();
+        """)
+        code, out = _run(diff, proj)
+        assert code == 1, f"src/foo/bar.{ext} (extension in brace alts) should match"

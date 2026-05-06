@@ -106,6 +106,7 @@ DEFAULT_SKIP_GLOBS = [
 
 
 def glob_to_regex(glob: str) -> re.Pattern:
+    """Same translator as bin/adr-judge. Brace expansion {a,b,c} added in v0.12.2."""
     out: List[str] = []
     i = 0
     while i < len(glob):
@@ -124,6 +125,20 @@ def glob_to_regex(glob: str) -> re.Pattern:
         elif c == "?":
             out.append("[^/]")
             i += 1
+        elif c == "{":
+            close = glob.find("}", i + 1)
+            if close == -1 or "{" in glob[i + 1:close]:
+                out.append(re.escape(c))
+                i += 1
+            else:
+                inner = glob[i + 1:close]
+                alts = inner.split(",")
+                alt_patterns = [
+                    glob_to_regex(a).pattern.lstrip("^").rstrip("$") if a else ""
+                    for a in alts
+                ]
+                out.append("(?:" + "|".join(alt_patterns) + ")")
+                i = close + 1
         else:
             out.append(re.escape(c))
             i += 1
