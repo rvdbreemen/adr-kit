@@ -60,7 +60,7 @@
     },
     "judge": {
       "type": "object",
-      "description": "Per-project policy for bin/adr-judge (introduced in adr-kit v0.12.0). Controls how Enforcement blocks are evaluated against a staged git diff at commit time.",
+      "description": "Per-project policy for bin/adr-judge (introduced in adr-kit v0.12.0). Controls how Enforcement blocks are evaluated against a staged git diff at commit time. v0.13.0 added the llm_* knobs for the Sonnet-by-default LLM pass.",
       "additionalProperties": false,
       "properties": {
         "skip_files": {
@@ -78,6 +78,29 @@
           "description": "Diffs larger than this size (in bytes) are skipped with a warning. Protects against pathological commits (e.g. generated-file dumps). Default 1048576 (1 MiB). Set 0 to disable the cap.",
           "minimum": 0,
           "default": 1048576
+        },
+        "llm_default": {
+          "type": "boolean",
+          "description": "When true, bin/adr-judge runs the LLM pass even without --llm on the command line. Useful when invoking the runner outside the pre-commit hook (e.g. CI). The hook template already passes --llm so this is independent of hook behaviour. Default false.",
+          "default": false
+        },
+        "llm_model": {
+          "type": "string",
+          "description": "Model identifier passed to `claude -p --model`. Default 'claude-sonnet-4-6'. Switch to 'claude-haiku-4-5' for higher commit throughput at lower cost, or to a current Sonnet/Opus tag if a newer release is preferred. Ignored when llm_cmd is set.",
+          "default": "claude-sonnet-4-6"
+        },
+        "llm_cmd": {
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "string" }
+          ],
+          "description": "Override the entire LLM invocation. Accepts either a tokenised array (e.g. ['claude','-p','--model','...']) or a single shell-quoted string that the runner shlex-splits. Useful for non-Claude-Code installs (e.g. an Anthropic SDK wrapper script) or for tests."
+        },
+        "llm_timeout_seconds": {
+          "type": "integer",
+          "description": "Per-call timeout for the LLM pass in seconds. Default 120. Increase if your ADR set is large enough that one batch call routinely exceeds this.",
+          "minimum": 1,
+          "default": 120
         }
       }
     }

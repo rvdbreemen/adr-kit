@@ -1,7 +1,7 @@
 {
   "name": "adr-kit",
-  "description": "Drop-in Architecture Decision Record toolkit for AI coding agents. Three operating modes: /adr-kit:init for one-shot project bootstrap (audit + ADR generation + pre-commit hook); pre-commit verification via bin/adr-judge against declarative Enforcement blocks; on-demand /adr-kit:adr authoring and /adr-kit:judge in-session review. Skill, adr-generator subagent, lint and migrate commands, path-specific coding and review instructions.",
-  "version": "0.12.2",
+  "description": "Drop-in Architecture Decision Record toolkit for AI coding agents. Three operating modes: /adr-kit:init for one-shot project bootstrap (audit + ADR generation + pre-commit hook); pre-commit verification via bin/adr-judge against declarative Enforcement blocks AND Claude Sonnet LLM judge for llm_judge:true ADRs (default-on since v0.13.0); on-demand /adr-kit:adr authoring and /adr-kit:judge resolution loop. Skill, adr-generator subagent, lint and migrate commands, path-specific coding and review instructions.",
+  "version": "0.13.0",
   "author": {
     "name": "Robert van den Breemen",
     "url": "https://github.com/rvdbreemen"

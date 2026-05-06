@@ -1,25 +1,34 @@
 #!/usr/bin/env python3
-"""adr-judge: declarative diff-vs-ADR engine for adr-kit (v0.12.0+).
+"""adr-judge: diff-vs-ADR engine for adr-kit (v0.12.0+).
 
-Pairs with the /adr-kit:judge Claude Code skill (which adds in-session LLM
-review on top of the deterministic checks here). This CLI is what the
-pre-commit hook runs — fast, regex-only, no LLM round-trip, no API key.
+Pairs with the /adr-kit:judge Claude Code skill. Two evaluation paths run
+on every commit when invoked from the pre-commit hook:
 
-For every ADR with Status: Accepted that carries an ## Enforcement block,
-parse the fenced JSON inside, validate it against schemas/adr-enforcement.schema.json
-(when jsonschema is installed), and apply the declarative rules to a staged
-git diff. ADRs without an Enforcement block are skipped silently. ADRs with
-only `llm_judge: true` produce an advisory line — they don't fail the commit.
+  1. Declarative pass — fast, regex-only, no LLM round-trip. Reads the
+     fenced JSON Enforcement block of each Accepted ADR and applies
+     forbid_pattern / forbid_import / require_pattern rules to the staged
+     git diff.
+
+  2. LLM pass (v0.13.0+, opt-out via ADR_KIT_NO_LLM=1) — for ADRs with
+     `llm_judge: true`, batches all of them into ONE Claude Sonnet call
+     (default: claude-sonnet-4-6 via `claude -p`). Sonnet returns a JSON
+     verdict object {ADR-NNN: {verdict: OK | VIOLATION, reason: ...}}.
+     The LLM pass requires the `claude` CLI on PATH; if missing or auth
+     fails, adr-judge prints a warning and falls back to declarative-only
+     so a missing CLI never blocks legitimate commits.
+
+ADRs without an Enforcement block are skipped silently regardless of mode.
 
 Exit codes (mirror bin/adr-lint):
-  0  no declarative violations (advisory entries may exist)
-  1  at least one declarative violation
+  0  no violations (advisory entries may exist)
+  1  at least one violation (declarative or LLM)
   2  config or input error
 
 Usage:
   adr-judge                                # diff from stdin, ADRs from docs/adr/
   adr-judge --diff <file>                  # read diff from a file (use - for stdin)
-  adr-judge --diff - --adr-dir docs/adr/   # explicit
+  adr-judge --llm                          # also run the LLM pass for llm_judge:true ADRs
+  adr-judge --llm-cmd "claude -p ..."      # override the LLM invocation (tests, custom models)
   adr-judge --json                         # machine-readable output
   adr-judge --config <path>                # override .adr-kit.json location
 """
@@ -31,9 +40,17 @@ import fnmatch
 import json
 import os
 import re
+import shlex
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Default LLM invocation. Overridable via --llm-cmd, ADR_KIT_LLM_CMD env, or
+# .adr-kit.json's judge.llm_cmd. Tests inject a fake binary here.
+DEFAULT_LLM_CMD = ["claude", "-p", "--model", "claude-sonnet-4-6"]
+DEFAULT_LLM_TIMEOUT_S = 120
 
 # ---------- ADR / diff parsing ----------
 
@@ -253,8 +270,16 @@ def apply_rules_to_diff(
     diff_files: Dict[str, List[Tuple[int, str]]],
     repo_root: Path,
     skip_files: List[str],
+    llm_mode_active: bool = False,
 ) -> List[Dict]:
-    """Apply one ADR's Enforcement block to the parsed diff. Returns findings."""
+    """Apply one ADR's Enforcement block to the parsed diff. Returns findings.
+
+    When ``llm_mode_active`` is True (added in v0.13.0), pure-llm_judge ADRs
+    (those with no declarative rules) are NOT emitted as advisories here —
+    they are batched into the LLM pass instead. When False, the v0.12.x
+    advisory behaviour is preserved so existing hooks that don't pass
+    --llm continue working unchanged.
+    """
     findings: List[Dict] = []
     for kind in ("forbid_pattern", "forbid_import"):
         for rule in enforcement.get(kind, []):
@@ -328,7 +353,216 @@ def apply_rules_to_diff(
         or enforcement.get("forbid_import")
         or enforcement.get("require_pattern")
     ):
-        # Free-form ADR: hook stays advisory. Tell the user to run /adr-kit:judge.
+        if not llm_mode_active:
+            # v0.12.x behaviour: hook stays advisory; user runs /adr-kit:judge.
+            findings.append(
+                {
+                    "adr": adr_id,
+                    "rule": "llm_judge",
+                    "pattern": None,
+                    "path": None,
+                    "line": None,
+                    "snippet": None,
+                    "message": (
+                        "ADR has llm_judge:true and no declarative rules; "
+                        "run /adr-kit:judge in your Claude Code session for full coverage."
+                    ),
+                    "severity": "advisory",
+                }
+            )
+        # else: handled by run_llm_batch — produces "violation" or nothing per ADR.
+
+    return findings
+
+
+# ---------- LLM judge pass (v0.13.0+) ----------
+
+DECISION_SECTION_RE = re.compile(
+    r"^##\s+Decision\s*$\n+(.*?)(?=^##\s|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+
+
+def extract_title(body: str) -> str:
+    """Return the ADR's `# ADR-NNN Title` line text, or '' if absent."""
+    m = TITLE_RE.search(body)
+    return m.group(1).strip() if m else ""
+
+
+def extract_decision(body: str) -> str:
+    """Return the body of the ## Decision section, or '' if absent.
+
+    The Decision section is the rule the LLM judge needs to evaluate against
+    the diff. Sending it (rather than the full ADR body) keeps the prompt
+    compact and the judge focused.
+    """
+    m = DECISION_SECTION_RE.search(body)
+    return m.group(1).strip() if m else ""
+
+
+def collect_llm_targets(adrs: List[Tuple[str, Path, str]]) -> List[Dict]:
+    """Return [{adr_id, title, decision}] for Accepted ADRs with llm_judge:true."""
+    out: List[Dict] = []
+    for adr_id, adr_path, body in adrs:
+        status = adr_status(body)
+        if status is None or status.lower() != "accepted":
+            continue
+        enforcement = parse_enforcement(body, adr_path)
+        if enforcement is None:
+            continue
+        if not enforcement.get("llm_judge"):
+            continue
+        title = extract_title(body)
+        decision = extract_decision(body)
+        if not decision:
+            # Skip ADRs without a Decision section — the LLM can't reason
+            # about them. The Completeness gate would already have flagged
+            # this; the judge silently skips.
+            continue
+        out.append({"adr_id": adr_id, "title": title, "decision": decision})
+    return out
+
+
+def build_llm_prompt(targets: List[Dict], diff_text: str) -> str:
+    """Build the single-call batch prompt for `claude -p`.
+
+    ADR set goes BEFORE the diff so prompt-cache hits across commits when
+    the ADR set is stable. Diff is the only varying input per commit.
+    """
+    parts = [
+        "You are evaluating whether a staged git diff violates documented "
+        "Architecture Decision Records (ADRs).",
+        "",
+        "For each ADR below, decide whether the diff introduces something "
+        "that conflicts with the ADR's stated decision. Be conservative: "
+        "only flag CLEAR violations. If the diff is unrelated to the ADR's "
+        "subject area, the verdict is OK. Do not flag stylistic issues, "
+        "minor refactors, or anything ambiguous.",
+        "",
+        "Return ONLY a single JSON object — no preamble, no commentary, no "
+        "code fences. The object maps each ADR id to a verdict:",
+        "",
+        '  {"ADR-NNN": {"verdict": "OK"}}',
+        '  {"ADR-NNN": {"verdict": "VIOLATION", "reason": "<one sentence '
+        'citing the file and what conflicts>"}}',
+        "",
+        "=== ADRS TO EVALUATE ===",
+        "",
+    ]
+    for t in targets:
+        parts.append(f"{t['adr_id']} — {t['title']}")
+        parts.append("Decision:")
+        parts.append(t["decision"])
+        parts.append("")
+    parts.append("=== STAGED DIFF ===")
+    parts.append("")
+    parts.append(diff_text if diff_text.strip() else "(empty diff)")
+    parts.append("")
+    return "\n".join(parts)
+
+
+def parse_llm_response(raw: str) -> Dict[str, Dict]:
+    """Extract the JSON verdict object from Claude's response.
+
+    Robust to: direct JSON, fenced code block, leading/trailing prose.
+    Raises JudgeError when no JSON is recoverable.
+    """
+    raw = raw.strip()
+    if not raw:
+        raise JudgeError("empty LLM response")
+    # Try direct
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+    # Try fenced code block
+    m = re.search(r"```(?:json)?\s*\n(.*?)\n```", raw, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(1))
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+    # Try greedy first {...} block
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(0))
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+    raise JudgeError(
+        f"could not extract JSON from LLM response (first 200 chars): {raw[:200]!r}"
+    )
+
+
+def run_llm_batch(
+    targets: List[Dict],
+    diff_text: str,
+    llm_cmd: List[str],
+    timeout_s: int,
+) -> Optional[List[Dict]]:
+    """Run the LLM judge over all `llm_judge: true` targets in one call.
+
+    Returns a list of findings (only VIOLATION entries; OK is the silent
+    default). Returns None when the LLM CLI is missing, errors, or returns
+    unparseable output — caller should fall back to declarative-only without
+    blocking the commit.
+    """
+    if not targets:
+        return []
+    binary = llm_cmd[0]
+    if shutil.which(binary) is None:
+        print(
+            f"[adr-judge] WARN: LLM judge requested but {binary!r} not on PATH; "
+            f"skipping LLM pass (declarative checks unaffected). "
+            f"To enable, install Claude Code or set --llm-cmd.",
+            file=sys.stderr,
+        )
+        return None
+    prompt = build_llm_prompt(targets, diff_text)
+    try:
+        result = subprocess.run(
+            llm_cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"[adr-judge] WARN: LLM judge timed out after {timeout_s}s; "
+            f"skipping LLM pass. Increase judge.llm_timeout_seconds in "
+            f".adr-kit.json if commits routinely exceed this.",
+            file=sys.stderr,
+        )
+        return None
+    if result.returncode != 0:
+        print(
+            f"[adr-judge] WARN: LLM judge command exited {result.returncode}: "
+            f"{result.stderr.strip()[:200]!r}; skipping LLM pass.",
+            file=sys.stderr,
+        )
+        return None
+    try:
+        verdicts = parse_llm_response(result.stdout)
+    except JudgeError as e:
+        print(f"[adr-judge] WARN: {e}; skipping LLM pass.", file=sys.stderr)
+        return None
+    findings: List[Dict] = []
+    for t in targets:
+        adr_id = t["adr_id"]
+        v = verdicts.get(adr_id)
+        if not isinstance(v, dict):
+            continue
+        if str(v.get("verdict", "")).upper() != "VIOLATION":
+            continue
+        reason = str(v.get("reason") or "LLM judge flagged a violation.")
         findings.append(
             {
                 "adr": adr_id,
@@ -337,14 +571,10 @@ def apply_rules_to_diff(
                 "path": None,
                 "line": None,
                 "snippet": None,
-                "message": (
-                    "ADR has llm_judge:true and no declarative rules; "
-                    "run /adr-kit:judge in your Claude Code session for full coverage."
-                ),
-                "severity": "advisory",
+                "message": reason[:500],
+                "severity": "violation",
             }
         )
-
     return findings
 
 
@@ -462,6 +692,28 @@ def main() -> int:
         help="Repo root for resolving file paths in require_pattern rules. "
         "Default: current working directory.",
     )
+    p.add_argument(
+        "--llm",
+        action="store_true",
+        help="Also run the LLM pass: batch all llm_judge:true ADRs into one "
+        "Claude Sonnet call. Requires the `claude` CLI on PATH (or override "
+        "via --llm-cmd). Falls back to declarative-only when the CLI is "
+        "unavailable. Default off; the pre-commit hook template enables it.",
+    )
+    p.add_argument(
+        "--llm-cmd",
+        default=None,
+        help="Override the LLM invocation. Default: 'claude -p --model "
+        "claude-sonnet-4-6'. Tests inject a fake binary here; users may "
+        "switch model via this flag or via .adr-kit.json's judge.llm_model.",
+    )
+    p.add_argument(
+        "--llm-timeout",
+        type=int,
+        default=None,
+        help="Per-call timeout for the LLM pass in seconds. Default 120 "
+        "(or judge.llm_timeout_seconds in .adr-kit.json).",
+    )
     args = p.parse_args()
 
     try:
@@ -472,6 +724,32 @@ def main() -> int:
         skip_files = judge_cfg.get("skip_files") or []
         advisory_only = bool(judge_cfg.get("advisory_only", False))
         max_diff_bytes = int(judge_cfg.get("max_diff_bytes", 1048576))
+
+        # LLM mode resolution. Precedence: ADR_KIT_NO_LLM env (highest),
+        # --llm flag, judge.llm_default in config (lowest).
+        env_no_llm = os.environ.get("ADR_KIT_NO_LLM", "0") == "1"
+        llm_mode_active = (
+            args.llm or bool(judge_cfg.get("llm_default", False))
+        ) and not env_no_llm
+
+        # LLM command resolution.
+        if args.llm_cmd:
+            llm_cmd = shlex.split(args.llm_cmd)
+        elif os.environ.get("ADR_KIT_LLM_CMD"):
+            llm_cmd = shlex.split(os.environ["ADR_KIT_LLM_CMD"])
+        elif judge_cfg.get("llm_cmd"):
+            llm_cmd = list(judge_cfg["llm_cmd"]) if isinstance(judge_cfg["llm_cmd"], list) else shlex.split(judge_cfg["llm_cmd"])
+        elif judge_cfg.get("llm_model"):
+            # User specified just the model — keep the default `claude -p` shape.
+            llm_cmd = ["claude", "-p", "--model", str(judge_cfg["llm_model"])]
+        else:
+            llm_cmd = list(DEFAULT_LLM_CMD)
+
+        llm_timeout_s = int(
+            args.llm_timeout
+            if args.llm_timeout is not None
+            else judge_cfg.get("llm_timeout_seconds", DEFAULT_LLM_TIMEOUT_S)
+        )
 
         repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd()
 
@@ -496,8 +774,29 @@ def main() -> int:
                 continue
             adrs_with_enforcement += 1
             all_findings.extend(
-                apply_rules_to_diff(adr_id, enforcement, diff_files, repo_root, skip_files)
+                apply_rules_to_diff(
+                    adr_id, enforcement, diff_files, repo_root, skip_files,
+                    llm_mode_active=llm_mode_active,
+                )
             )
+
+        # LLM pass — only when the user opted in via --llm (or judge.llm_default).
+        # Failures here log a warning and fall through; they NEVER block the
+        # commit, because a missing CLI or transient API hiccup must not break
+        # legitimate work.
+        llm_findings_emitted = 0
+        if llm_mode_active:
+            targets = collect_llm_targets(adrs)
+            if targets:
+                print(
+                    f"[adr-judge] running LLM pass over {len(targets)} "
+                    f"llm_judge ADR(s) with {llm_cmd[0]}...",
+                    file=sys.stderr,
+                )
+                llm_findings = run_llm_batch(targets, diff_text, llm_cmd, llm_timeout_s)
+                if llm_findings is not None:
+                    all_findings.extend(llm_findings)
+                    llm_findings_emitted = len(llm_findings)
 
         if args.json:
             emit_json(all_findings, adrs_with_enforcement)
