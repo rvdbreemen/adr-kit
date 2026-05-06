@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+"""adr-judge: declarative diff-vs-ADR engine for adr-kit (v0.12.0+).
+
+Pairs with the /adr-kit:judge Claude Code skill (which adds in-session LLM
+review on top of the deterministic checks here). This CLI is what the
+pre-commit hook runs — fast, regex-only, no LLM round-trip, no API key.
+
+For every ADR with Status: Accepted that carries an ## Enforcement block,
+parse the fenced JSON inside, validate it against schemas/adr-enforcement.schema.json
+(when jsonschema is installed), and apply the declarative rules to a staged
+git diff. ADRs without an Enforcement block are skipped silently. ADRs with
+only `llm_judge: true` produce an advisory line — they don't fail the commit.
+
+Exit codes (mirror bin/adr-lint):
+  0  no declarative violations (advisory entries may exist)
+  1  at least one declarative violation
+  2  config or input error
+
+Usage:
+  adr-judge                                # diff from stdin, ADRs from docs/adr/
+  adr-judge --diff <file>                  # read diff from a file (use - for stdin)
+  adr-judge --diff - --adr-dir docs/adr/   # explicit
+  adr-judge --json                         # machine-readable output
+  adr-judge --config <path>                # override .adr-kit.json location
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import json
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+# ---------- ADR / diff parsing ----------
+
+ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
+STATUS_LINE_RE = re.compile(r"^Status\s*:?\s*(\w+)", re.IGNORECASE | re.MULTILINE)
+STATUS_HEADING_RE = re.compile(
+    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
+)
+ENFORCEMENT_BLOCK_RE = re.compile(
+    r"^##\s+Enforcement\s*$\n+(?:.*?\n)*?```json\s*\n(.*?)\n```",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+class JudgeError(Exception):
+    """Raised on configuration / input errors (exit code 2)."""
+
+
+def adr_status(text: str) -> Optional[str]:
+    """Return the ADR's status (Accepted/Proposed/Deprecated/Superseded) or None.
+
+    Handles all of these (case-insensitive):
+      Status: Accepted, 2026-04-25.       (single-line, anywhere)
+      ## Status\n\nAccepted, 2026-04-25.  (heading + body, comma form)
+      ## Status\n\nAccepted. Date: 2026-04-25.  (heading + body, period form)
+      ## Status\n\nSuperseded by ADR-099, 2026-05-01.
+
+    Returns the first alphabetic word it finds in the status line, lowercased
+    by the caller. Trailing punctuation is stripped so 'Accepted.' becomes
+    'Accepted'.
+    """
+    m = STATUS_HEADING_RE.search(text)
+    if m:
+        line = m.group(1).strip()
+        wm = re.match(r"\s*([A-Za-z]+)", line)
+        return wm.group(1) if wm else None
+    m = STATUS_LINE_RE.search(text)
+    if m:
+        return m.group(1)
+    return None
+
+
+def parse_enforcement(adr_text: str, adr_path: Path) -> Optional[Dict]:
+    """Extract and parse the JSON inside an ADR's ## Enforcement section.
+
+    Returns None when there is no Enforcement section. Raises JudgeError when
+    the section exists but the JSON is malformed.
+    """
+    m = ENFORCEMENT_BLOCK_RE.search(adr_text)
+    if not m:
+        return None
+    raw = m.group(1)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise JudgeError(
+            f"{adr_path}: malformed JSON in ## Enforcement block "
+            f"({e.msg} at line {e.lineno})"
+        )
+    if not isinstance(data, dict):
+        raise JudgeError(
+            f"{adr_path}: ## Enforcement JSON must be an object, got {type(data).__name__}"
+        )
+
+    # Basic shape validation. Optional jsonschema deeper check below.
+    for key in ("forbid_pattern", "require_pattern", "forbid_import"):
+        if key in data and not isinstance(data[key], list):
+            raise JudgeError(f"{adr_path}: Enforcement.{key} must be an array")
+    if "llm_judge" in data and not isinstance(data["llm_judge"], bool):
+        raise JudgeError(f"{adr_path}: Enforcement.llm_judge must be a boolean")
+
+    try:
+        import jsonschema  # type: ignore
+        schema_path = (
+            Path(__file__).resolve().parent.parent
+            / "schemas"
+            / "adr-enforcement.schema.json"
+        )
+        if schema_path.exists():
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            jsonschema.validate(data, schema)
+    except ImportError:
+        pass
+    except Exception as e:
+        raise JudgeError(f"{adr_path}: Enforcement block fails schema validation: {e}")
+
+    return data
+
+
+def parse_diff(text: str) -> Dict[str, List[Tuple[int, str]]]:
+    """Extract (lineno, content) tuples per added line, keyed by post-diff path.
+
+    Skips deleted files (+++ /dev/null) and binary diffs. Tracks the new-file
+    line counter via the @@ hunk header so reporting can cite file:line.
+    """
+    files: Dict[str, List[Tuple[int, str]]] = {}
+    current: Optional[str] = None
+    lineno = 0
+    for line in text.splitlines():
+        if line.startswith("+++ "):
+            target = line[4:].strip()
+            if target == "/dev/null" or target.startswith("/dev/null"):
+                current = None
+            else:
+                # Strip leading "b/" if present (git default)
+                current = target[2:] if target.startswith("b/") else target
+                files.setdefault(current, [])
+        elif line.startswith("@@ "):
+            m = HUNK_HEADER_RE.match(line)
+            if m:
+                lineno = int(m.group(1))
+        elif current and line.startswith("+") and not line.startswith("+++"):
+            files[current].append((lineno, line[1:]))
+            lineno += 1
+        elif line.startswith(" "):
+            lineno += 1
+        # diff --git, index, ---, --- /dev/null, removed lines: ignored
+    return files
+
+
+# ---------- glob & rule application ----------
+
+
+def glob_to_regex(glob: str) -> re.Pattern:
+    """Translate a shell-style glob (with ** for recursive descent) to a regex.
+
+    Examples:
+      *.py             → only top-level .py
+      **/*.py          → any .py at any depth (including top-level)
+      src/**/*.py      → any .py under src/ at any depth
+      src/**           → anything under src/
+    """
+    out: List[str] = []
+    i = 0
+    while i < len(glob):
+        c = glob[i]
+        if c == "*":
+            if i + 1 < len(glob) and glob[i + 1] == "*":
+                # consume **, then optional trailing slash
+                if i + 2 < len(glob) and glob[i + 2] == "/":
+                    out.append("(?:.*/)?")
+                    i += 3
+                else:
+                    out.append(".*")
+                    i += 2
+            else:
+                out.append("[^/]*")
+                i += 1
+        elif c == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
+def path_matches(path: str, glob: Optional[str]) -> bool:
+    """True when path matches the glob, or no glob is set."""
+    if not glob:
+        return True
+    return bool(glob_to_regex(glob).match(path))
+
+
+def any_skip_match(path: str, skip_globs: List[str]) -> bool:
+    return any(path_matches(path, g) for g in skip_globs)
+
+
+def apply_rules_to_diff(
+    adr_id: str,
+    enforcement: Dict,
+    diff_files: Dict[str, List[Tuple[int, str]]],
+    repo_root: Path,
+    skip_files: List[str],
+) -> List[Dict]:
+    """Apply one ADR's Enforcement block to the parsed diff. Returns findings."""
+    findings: List[Dict] = []
+    for kind in ("forbid_pattern", "forbid_import"):
+        for rule in enforcement.get(kind, []):
+            pattern = rule.get("pattern")
+            path_glob = rule.get("path_glob")
+            message = rule.get("message") or f"{kind}: {pattern}"
+            try:
+                regex = re.compile(pattern)
+            except re.error as e:
+                raise JudgeError(
+                    f"{adr_id}: invalid regex in {kind} rule ({pattern!r}): {e}"
+                )
+            for path, added in diff_files.items():
+                if any_skip_match(path, skip_files):
+                    continue
+                if not path_matches(path, path_glob):
+                    continue
+                for lineno, content in added:
+                    if regex.search(content):
+                        findings.append(
+                            {
+                                "adr": adr_id,
+                                "rule": kind,
+                                "pattern": pattern,
+                                "path": path,
+                                "line": lineno,
+                                "snippet": content.rstrip("\n")[:200],
+                                "message": message,
+                                "severity": "violation",
+                            }
+                        )
+
+    for rule in enforcement.get("require_pattern", []):
+        pattern = rule.get("pattern")
+        path_glob = rule.get("path_glob")
+        message = rule.get("message") or f"require_pattern: {pattern}"
+        try:
+            regex = re.compile(pattern, re.MULTILINE)
+        except re.error as e:
+            raise JudgeError(
+                f"{adr_id}: invalid regex in require_pattern rule ({pattern!r}): {e}"
+            )
+        for path in diff_files:
+            if any_skip_match(path, skip_files):
+                continue
+            if not path_matches(path, path_glob):
+                continue
+            file_path = repo_root / path
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if not regex.search(content):
+                findings.append(
+                    {
+                        "adr": adr_id,
+                        "rule": "require_pattern",
+                        "pattern": pattern,
+                        "path": path,
+                        "line": None,
+                        "snippet": None,
+                        "message": message,
+                        "severity": "violation",
+                    }
+                )
+
+    if enforcement.get("llm_judge") and not (
+        enforcement.get("forbid_pattern")
+        or enforcement.get("forbid_import")
+        or enforcement.get("require_pattern")
+    ):
+        # Free-form ADR: hook stays advisory. Tell the user to run /adr-kit:judge.
+        findings.append(
+            {
+                "adr": adr_id,
+                "rule": "llm_judge",
+                "pattern": None,
+                "path": None,
+                "line": None,
+                "snippet": None,
+                "message": (
+                    "ADR has llm_judge:true and no declarative rules; "
+                    "run /adr-kit:judge in your Claude Code session for full coverage."
+                ),
+                "severity": "advisory",
+            }
+        )
+
+    return findings
+
+
+# ---------- config & top-level orchestration ----------
+
+
+def load_config(path: Optional[Path]) -> Dict:
+    """Read .adr-kit.json (if present). Returns {} when missing."""
+    if path is None or not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise JudgeError(f"{path}: invalid JSON ({e.msg} at line {e.lineno})")
+
+
+def adr_id_from_filename(name: str) -> Optional[str]:
+    m = ADR_FILENAME_RE.match(name)
+    if not m:
+        return None
+    return f"ADR-{int(m.group(1)):03d}"
+
+
+def collect_adrs(adr_dir: Path) -> List[Tuple[str, Path, str]]:
+    """Return [(adr_id, path, body)] for every ADR-*.md file in adr_dir."""
+    out: List[Tuple[str, Path, str]] = []
+    if not adr_dir.is_dir():
+        return out
+    for p in sorted(adr_dir.glob("ADR-*.md")):
+        adr_id = adr_id_from_filename(p.name)
+        if not adr_id:
+            continue
+        try:
+            body = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        out.append((adr_id, p, body))
+    return out
+
+
+def read_diff(diff_arg: str) -> str:
+    if diff_arg == "-" or diff_arg == "":
+        return sys.stdin.read()
+    return Path(diff_arg).read_text(encoding="utf-8")
+
+
+def emit_text(findings: List[Dict], adr_count: int, advisory_only: bool) -> None:
+    violations = [f for f in findings if f["severity"] == "violation"]
+    advisories = [f for f in findings if f["severity"] == "advisory"]
+    print(f"[adr-judge] checked {adr_count} ADR(s) with Enforcement blocks", file=sys.stderr)
+    for f in violations:
+        loc = f["path"] if f["line"] is None else f"{f['path']}:{f['line']}"
+        print(f"  VIOLATION  {f['adr']}  {f['rule']}  {loc}", file=sys.stderr)
+        print(f"             {f['message']}", file=sys.stderr)
+        if f["snippet"]:
+            print(f"             > {f['snippet']}", file=sys.stderr)
+    for f in advisories:
+        print(f"  ADVISORY   {f['adr']}  {f['rule']}", file=sys.stderr)
+        print(f"             {f['message']}", file=sys.stderr)
+    if violations and advisory_only:
+        print(
+            f"[adr-judge] {len(violations)} violation(s), {len(advisories)} advisory; "
+            f"advisory_only=true → exiting 0",
+            file=sys.stderr,
+        )
+    elif violations:
+        print(
+            f"[adr-judge] {len(violations)} violation(s), {len(advisories)} advisory",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"[adr-judge] OK — 0 violations, {len(advisories)} advisory",
+            file=sys.stderr,
+        )
+
+
+def emit_json(findings: List[Dict], adr_count: int) -> None:
+    payload = {
+        "summary": {
+            "adrs_checked": adr_count,
+            "violations": sum(1 for f in findings if f["severity"] == "violation"),
+            "advisories": sum(1 for f in findings if f["severity"] == "advisory"),
+        },
+        "findings": findings,
+    }
+    json.dump(payload, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        prog="adr-judge",
+        description="Apply ADR Enforcement blocks to a staged git diff.",
+    )
+    p.add_argument(
+        "--diff",
+        default="-",
+        help="Path to a unified diff file (use '-' for stdin). Default: stdin.",
+    )
+    p.add_argument(
+        "--adr-dir",
+        default="docs/adr",
+        help="Directory containing ADR-*.md files. Default: docs/adr.",
+    )
+    p.add_argument(
+        "--config",
+        default=None,
+        help="Path to .adr-kit.json. Default: <adr-dir>/.adr-kit.json.",
+    )
+    p.add_argument("--json", action="store_true", help="Emit JSON to stdout.")
+    p.add_argument(
+        "--repo-root",
+        default=None,
+        help="Repo root for resolving file paths in require_pattern rules. "
+        "Default: current working directory.",
+    )
+    args = p.parse_args()
+
+    try:
+        adr_dir = Path(args.adr_dir).resolve()
+        config_path = Path(args.config) if args.config else (adr_dir / ".adr-kit.json")
+        cfg = load_config(config_path)
+        judge_cfg = cfg.get("judge") or {}
+        skip_files = judge_cfg.get("skip_files") or []
+        advisory_only = bool(judge_cfg.get("advisory_only", False))
+        max_diff_bytes = int(judge_cfg.get("max_diff_bytes", 1048576))
+
+        repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd()
+
+        diff_text = read_diff(args.diff)
+        if max_diff_bytes and len(diff_text.encode("utf-8")) > max_diff_bytes:
+            print(
+                f"[adr-judge] diff exceeds max_diff_bytes={max_diff_bytes}; skipping",
+                file=sys.stderr,
+            )
+            return 0
+        diff_files = parse_diff(diff_text)
+
+        adrs = collect_adrs(adr_dir)
+        all_findings: List[Dict] = []
+        adrs_with_enforcement = 0
+        for adr_id, adr_path, body in adrs:
+            status = adr_status(body)
+            if status is None or status.lower() != "accepted":
+                continue
+            enforcement = parse_enforcement(body, adr_path)
+            if enforcement is None:
+                continue
+            adrs_with_enforcement += 1
+            all_findings.extend(
+                apply_rules_to_diff(adr_id, enforcement, diff_files, repo_root, skip_files)
+            )
+
+        if args.json:
+            emit_json(all_findings, adrs_with_enforcement)
+        else:
+            emit_text(all_findings, adrs_with_enforcement, advisory_only)
+
+        violations = [f for f in all_findings if f["severity"] == "violation"]
+        if violations and not advisory_only:
+            return 1
+        return 0
+
+    except JudgeError as e:
+        print(f"[adr-judge] ERROR: {e}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

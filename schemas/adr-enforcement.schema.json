@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/rvdbreemen/adr-kit/schemas/adr-enforcement.schema.json",
+  "title": "adr-kit ADR Enforcement block",
+  "description": "Schema for the optional ## Enforcement section in an ADR (introduced in adr-kit v0.12.0). The block is a fenced JSON code block parsed by bin/adr-judge to apply declarative rules to a staged git diff at commit time. ADRs without an Enforcement block are skipped silently by the judge. Free-form ADRs that cannot be expressed as regex can opt into in-session LLM review by setting llm_judge:true.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "forbid_pattern": {
+      "type": "array",
+      "description": "Regex patterns that must NOT match any ADDED line in the diff (lines starting with '+' that are not '+++ '). Treated as a violation when matched.",
+      "items": { "$ref": "#/definitions/PatternRule" }
+    },
+    "require_pattern": {
+      "type": "array",
+      "description": "Regex patterns that MUST match at least once in the post-diff content of any file matching path_glob. Treated as a violation when absent.",
+      "items": { "$ref": "#/definitions/PatternRule" }
+    },
+    "forbid_import": {
+      "type": "array",
+      "description": "Forbidden import / include / require lines. Semantically the same engine as forbid_pattern; the separate name documents intent ('we forbid this dependency') and lets reviewers spot dependency-removal rules at a glance.",
+      "items": { "$ref": "#/definitions/PatternRule" }
+    },
+    "llm_judge": {
+      "type": "boolean",
+      "description": "If true, this ADR is reviewed by Claude in the active Claude Code session via /adr-kit:judge. The pre-commit hook treats llm_judge:true as advisory: it surfaces a one-liner reminding the user to run /adr-kit:judge but does NOT fail the commit. Use for free-form ADRs whose rules cannot be expressed as regex.",
+      "default": false
+    }
+  },
+  "definitions": {
+    "PatternRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern"],
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Python re.search regex (escape backslashes correctly when embedding in JSON: '\\\\b', '\\\\.'). Applied per added line (forbid_pattern, forbid_import) or per post-diff file content (require_pattern). Multiline is not enabled by default."
+        },
+        "path_glob": {
+          "type": "string",
+          "description": "Optional glob filter (supports ** for recursive descent). When set, the rule only applies to files in the diff whose path matches the glob. Default: all files in the diff."
+        },
+        "message": {
+          "type": "string",
+          "description": "Optional human-friendly message printed when the rule fires. Defaults to a generic '<rule_kind>: <pattern>' line."
+        }
+      }
+    }
+  }
+}

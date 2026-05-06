@@ -23,7 +23,14 @@ These are likely additions in upcoming versions. Priority is shaped by user requ
 
 - **Tier-2 chore**: branch protection on `main`, dependabot for the GitHub Actions workflow, release-drafter for auto-generated release notes, codespell in CI. Repo-automation polish that benefits maintainers more than users. Likely v0.8.0.
 - **ADR query skill** (`/adr-kit:related ADR-XXX`): walks the `## Related Decisions` section across the ADR set and returns the dependency graph for a chosen ADR. Useful when an ADR is being superseded and you need to see who else points at it. Will land only if a real user asks for it; not auto-prioritised.
-- **ADR migration helper** (`/adr-kit:migrate`): converts an existing ADR set from another format (lowercase 4-digit, MADR, custom) into adr-kit conventions. Limited to mechanical transformations (filename, heading); content is not rewritten.
+- **CI integration for `bin/adr-judge`**: a GitHub Actions snippet (mirroring the v0.10 `bin/adr-lint` snippet in README) that runs the judge against the diff produced by a PR. Local pre-commit only in v0.12; CI variant is v0.13+ if there is demand.
+- **`pre-commit` framework support**: ship a `.pre-commit-hooks.yaml` so projects already using the `pre-commit` framework can register `adr-judge` without writing a native git hook. Native `.githooks/` is the only supported delivery in v0.12.
+
+## Recently landed
+
+- ✅ **Three-mode workflow** (v0.12.0, 2026-05-06): `/adr-kit:init` for one-shot project bootstrap (audit + ADR generation + pre-commit hook), pre-commit verification via `bin/adr-judge` against declarative `Enforcement` blocks, and on-demand `/adr-kit:judge` for in-session review. LLM judging stays in-session (no `claude -p` shell-out, no API key in the hook environment). Hook is default-on after init/upgrade. Backwards compatible: v0.11 users opt into the new layout via `/adr-kit:upgrade`.
+- ✅ **Audit existing codebase** (v0.12.0, 2026-05-06): `bin/adr-audit` scans top-level config files and documentation for decision-shaped artefacts and emits a candidate list. The `/adr-kit:init` skill drives Claude through batched user-approval to convert candidates into Accepted ADRs.
+- ✅ **ADR migration helper** (`/adr-kit:migrate`, v0.11.0, 2026-04-25): rewrites legacy-shaped ADRs into the canonical seven-section template. Read-then-confirm; never silent.
 
 ## Out of scope (deliberate non-goals)
 

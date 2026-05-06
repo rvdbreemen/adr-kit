@@ -57,6 +57,29 @@
           "minItems": 1
         }
       }
+    },
+    "judge": {
+      "type": "object",
+      "description": "Per-project policy for bin/adr-judge (introduced in adr-kit v0.12.0). Controls how Enforcement blocks are evaluated against a staged git diff at commit time.",
+      "additionalProperties": false,
+      "properties": {
+        "skip_files": {
+          "type": "array",
+          "description": "Glob patterns for files to exclude from judging. Matches relative to the repo root. Common entries: 'tests/**', 'docs/**', 'vendor/**'. ADR-level path_globs still take precedence; this is a project-wide pre-filter.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "advisory_only": {
+          "type": "boolean",
+          "description": "When true, all violations from declarative rules are downgraded to advisory (the hook prints them but exits 0). Intended for early adoption phases where teams want visibility without blocking commits. Default false.",
+          "default": false
+        },
+        "max_diff_bytes": {
+          "type": "integer",
+          "description": "Diffs larger than this size (in bytes) are skipped with a warning. Protects against pathological commits (e.g. generated-file dumps). Default 1048576 (1 MiB). Set 0 to disable the cap.",
+          "minimum": 0,
+          "default": 1048576
+        }
+      }
     }
   }
 }
