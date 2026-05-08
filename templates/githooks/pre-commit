@@ -48,4 +48,10 @@ fi
 #   0  no violations (advisory entries are non-blocking)
 #   1  at least one violation (declarative or LLM)
 #   2  config or runtime error
-echo "$DIFF" | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --llm
+ADR_OUT=$(echo "$DIFF" | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --llm 2>&1)
+ADR_EXIT=$?
+# Suppress per-ADR llm_judge advisory lines: they repeat once per ADR with llm_judge:true
+# and become very noisy on projects with many ADRs. Violations and the summary line
+# (e.g. "[adr-judge] OK 0 violations, 57 advisory") are preserved.
+printf '%s\n' "$ADR_OUT" | grep -avE "^  ADVISORY |^[[:space:]]+ADR has llm_judge:true" >&2
+[ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"

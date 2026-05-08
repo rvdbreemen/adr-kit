@@ -4,6 +4,10 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`templates/githooks/pre-commit`**: suppress per-ADR `llm_judge` advisory lines that repeat once for every ADR with `llm_judge: true` and produce very noisy output on projects with many ADRs (e.g. 57 identical lines on OTGW-firmware). The hook now captures `adr-judge` output and filters lines matching `^  ADVISORY ` and `ADR has llm_judge:true` before printing. Violations and the summary line (`[adr-judge] OK N violations, M advisory`) are preserved. Uses `grep -a` to handle multi-byte emoji in the summary line.
+
 ## [0.13.0] - 2026-05-07
 
 ### Added — Claude Sonnet LLM judge, default-on at hook time
