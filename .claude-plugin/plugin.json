@@ -1,7 +1,7 @@
 {
   "name": "adr-kit",
   "description": "Architecture Decision Record toolkit for AI coding agents. Three modes: /adr-kit:init for one-shot project bootstrap; pre-commit verification via bin/adr-judge (declarative Enforcement blocks plus Claude Sonnet LLM judge, default-on since v0.13); on-demand /adr-kit:adr authoring and /adr-kit:judge resolution.",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "author": {
     "name": "Robert van den Breemen",
     "url": "https://github.com/rvdbreemen"
