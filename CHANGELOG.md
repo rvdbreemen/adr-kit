@@ -4,6 +4,16 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-05-25
+
+### Fixed
+
+- **`bin/adr-judge` Windows encoding (#LLM-pass)**: two Windows-specific bugs prevented the LLM judge pass from running on Windows machines.
+  - **`subprocess.run` cp1252 encoding error**: when the diff or ADR content contained non-ASCII characters (e.g. `≤`), `subprocess.run` with `text=True` but no explicit `encoding` used the Windows console code page (cp1252), causing `UnicodeEncodeError` when writing the prompt to `claude`'s stdin. Fixed by passing `encoding="utf-8"` to `subprocess.run`.
+  - **`sys.stdin.buffer` on Windows**: `sys.stdin.read()` uses the console code page; switching to `sys.stdin.buffer.read().decode("utf-8", errors="replace")` ensures the diff is always read as UTF-8 regardless of the active console code page.
+  - **`shlex.split` path mangling**: `shlex.split` in POSIX mode (the Python default) treats backslashes as escape characters, mangling Windows paths passed via `--llm-cmd` (e.g. `C:\Users\...` → `C:Users...`). The `shutil.which` check then failed to find the binary and the LLM pass was silently skipped. Fixed by a new `_split_cmd` helper that uses `posix=False` on Windows and strips surrounding quote pairs.
+  - **Test fixtures**: fake `claude` binaries in `tests/test_adr_judge_llm.py` were bash scripts, which are not directly executable on Windows. Rewrote all fixtures as Python scripts (always available) and added a `_fake_cmd(path)` helper to produce correctly-quoted `--llm-cmd` strings.
+
 ## [0.13.2] - 2026-05-25
 
 ### Fixed

@@ -52,6 +52,25 @@ from typing import Dict, List, Optional, Tuple
 DEFAULT_LLM_CMD = ["claude", "-p", "--model", "claude-sonnet-4-6"]
 DEFAULT_LLM_TIMEOUT_S = 120
 
+
+def _split_cmd(cmd_str: str) -> List[str]:
+    """Split a shell command string into a token list, Windows-path-safe.
+
+    shlex.split uses POSIX mode by default, which treats backslashes as escape
+    characters. On Windows this mangles paths like C:\\Users\\... → C:Users...
+    before shutil.which ever sees them. Using posix=False preserves backslashes;
+    we strip surrounding quote pairs that posix=False would otherwise keep.
+    """
+    tokens = shlex.split(cmd_str, posix=(sys.platform != "win32"))
+    if sys.platform == "win32":
+        stripped = []
+        for t in tokens:
+            if len(t) >= 2 and ((t[0] == '"' and t[-1] == '"') or (t[0] == "'" and t[-1] == "'")):
+                t = t[1:-1]
+            stripped.append(t)
+        return stripped
+    return tokens
+
 # ---------- ADR / diff parsing ----------
 
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
@@ -532,6 +551,7 @@ def run_llm_batch(
             input=prompt,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout_s,
         )
     except subprocess.TimeoutExpired:
@@ -617,7 +637,7 @@ def collect_adrs(adr_dir: Path) -> List[Tuple[str, Path, str]]:
 
 def read_diff(diff_arg: str) -> str:
     if diff_arg == "-" or diff_arg == "":
-        return sys.stdin.read()
+        return sys.stdin.buffer.read().decode("utf-8", errors="replace")
     return Path(diff_arg).read_text(encoding="utf-8")
 
 
@@ -734,11 +754,11 @@ def main() -> int:
 
         # LLM command resolution.
         if args.llm_cmd:
-            llm_cmd = shlex.split(args.llm_cmd)
+            llm_cmd = _split_cmd(args.llm_cmd)
         elif os.environ.get("ADR_KIT_LLM_CMD"):
-            llm_cmd = shlex.split(os.environ["ADR_KIT_LLM_CMD"])
+            llm_cmd = _split_cmd(os.environ["ADR_KIT_LLM_CMD"])
         elif judge_cfg.get("llm_cmd"):
-            llm_cmd = list(judge_cfg["llm_cmd"]) if isinstance(judge_cfg["llm_cmd"], list) else shlex.split(judge_cfg["llm_cmd"])
+            llm_cmd = list(judge_cfg["llm_cmd"]) if isinstance(judge_cfg["llm_cmd"], list) else _split_cmd(judge_cfg["llm_cmd"])
         elif judge_cfg.get("llm_model"):
             # User specified just the model — keep the default `claude -p` shape.
             llm_cmd = ["claude", "-p", "--model", str(judge_cfg["llm_model"])]

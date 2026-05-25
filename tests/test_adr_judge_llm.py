@@ -26,24 +26,37 @@ def _make_project(tmp_path: Path, adrs: dict) -> Path:
 
 
 def _make_fake_claude(tmp_path: Path, response: str) -> Path:
-    """Write a shell script that swallows its argv + stdin and emits `response`.
+    """Write a Python script that swallows stdin and emits `response`.
 
-    Returns the path. Caller passes it via --llm-cmd. The canned response is
-    written to a side-file so newlines, fences, and backslashes survive
-    intact (printf '%s' doesn't interpret escapes; printf '%b' interprets
-    too many; cat preserves bytes exactly).
+    Returns the Path to the script. Pass to --llm-cmd via _fake_cmd().
+
+    Using Python instead of bash means the fake works on Windows where shell
+    scripts are not directly executable.
     """
-    fake = tmp_path / "fake-claude"
+    fake = tmp_path / "fake-claude.py"
     response_file = tmp_path / "fake-response.txt"
     response_file.write_text(response, encoding="utf-8")
-    body = (
-        "#!/usr/bin/env bash\n"
-        "cat >/dev/null\n"
-        f"cat {response_file}\n"
+    fake.write_text(
+        "import sys\n"
+        "sys.stdin.buffer.read()\n"
+        f"sys.stdout.buffer.write(open({str(response_file)!r}, 'rb').read())\n",
+        encoding="utf-8",
     )
-    fake.write_text(body, encoding="utf-8")
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return fake
+
+
+def _fake_cmd(fake: Path) -> str:
+    """Return a properly-quoted --llm-cmd string for the given fake-claude script.
+
+    On Windows, shlex.split() in POSIX mode eats backslashes in paths. Use
+    subprocess.list2cmdline() to build a correctly-quoted string that survives
+    the _split_cmd() parsing in adr-judge.
+    """
+    if sys.platform == "win32":
+        import subprocess as _sp
+        return _sp.list2cmdline([sys.executable, str(fake)])
+    import shlex as _shlex
+    return f"{_shlex.quote(sys.executable)} {_shlex.quote(str(fake))}"
 
 
 def _run_judge(tmp_path: Path, diff_text: str, *extra_args):
@@ -135,7 +148,7 @@ def test_llm_pass_violation_blocks_commit(tmp_path):
     fake = _make_fake_claude(tmp_path, json.dumps({
         "ADR-001": {"verdict": "VIOLATION", "reason": "introduces synchronous read of audit_replica in src/audit.py"}
     }))
-    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", str(fake))
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake))
     assert code == 1
     assert out["summary"]["violations"] == 1
     assert out["summary"]["advisories"] == 0, "advisory replaced by real verdict"
@@ -149,7 +162,7 @@ def test_llm_pass_ok_lets_commit_through(tmp_path):
     """When the LLM verdict is OK, no finding is emitted and exit is 0."""
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
     fake = _make_fake_claude(tmp_path, json.dumps({"ADR-001": {"verdict": "OK"}}))
-    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", str(fake))
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake))
     assert code == 0
     assert out["summary"]["violations"] == 0
 
@@ -161,7 +174,7 @@ def test_llm_response_with_fenced_json(tmp_path):
         "ADR-001": {"verdict": "VIOLATION", "reason": "x"}
     }) + "\n```\n"
     fake = _make_fake_claude(tmp_path, raw)
-    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", str(fake))
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake))
     assert code == 1
     assert out["summary"]["violations"] == 1
 
@@ -175,7 +188,7 @@ def test_llm_response_with_prose_around_json(tmp_path):
         + "\nLet me know if you need anything else."
     )
     fake = _make_fake_claude(tmp_path, raw)
-    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", str(fake))
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake))
     assert code == 0
 
 
@@ -183,7 +196,7 @@ def test_llm_unparseable_response_falls_back(tmp_path):
     """Garbage from the LLM produces a WARN and exit 0 — never blocks commit."""
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
     fake = _make_fake_claude(tmp_path, "I cannot help with that.")
-    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", str(fake))
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake))
     assert code == 0, "unparseable LLM output must NOT block commits"
 
 
@@ -242,8 +255,8 @@ def test_llm_no_targets_skips_call(tmp_path):
     proj = _make_project(tmp_path, {"ADR-002-nostring.md": declarative_only})
     # Fake binary that would crash if invoked — to prove it isn't.
     crashing = _make_fake_claude(tmp_path, "")
-    crashing.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
-    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", str(crashing))
+    crashing.write_text("import sys; sys.exit(99)\n", encoding="utf-8")
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(crashing))
     # No llm_judge:true ADRs → LLM batch not invoked → exit 0 with no violations.
     assert code == 0
 
@@ -262,10 +275,10 @@ def test_llm_pass_via_env_no_llm_disables(tmp_path):
             "--adr-dir", str(proj / "docs" / "adr"),
             "--repo-root", str(proj),
             "--llm",
-            "--llm-cmd", str(fake),
+            "--llm-cmd", _fake_cmd(fake),
             "--json",
         ],
-        input=SAMPLE_DIFF, capture_output=True, text=True, env=env,
+        input=SAMPLE_DIFF, capture_output=True, text=True, encoding="utf-8", env=env,
     )
     assert result.returncode == 0
     out = json.loads(result.stdout)
@@ -287,21 +300,21 @@ def test_llm_batches_multiple_adrs_in_one_call(tmp_path):
         "ADR-002-other.md": second_adr,
     })
     # Fake claude that increments a counter file each invocation.
-    fake = tmp_path / "counting-fake"
+    fake = tmp_path / "counting-fake.py"
     response_file = tmp_path / "counting-response.txt"
     response_file.write_text(json.dumps({
         "ADR-001": {"verdict": "OK"},
         "ADR-002": {"verdict": "OK"},
     }), encoding="utf-8")
-    fake.write_text(textwrap.dedent(f"""\
-        #!/usr/bin/env bash
-        cat >/dev/null
-        n=$(cat {counter_path})
-        echo $((n+1)) > {counter_path}
-        cat {response_file}
-    """), encoding="utf-8")
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", str(fake))
+    fake.write_text(
+        "import sys\n"
+        "sys.stdin.buffer.read()\n"
+        f"n = int(open({str(counter_path)!r}).read().strip() or 0)\n"
+        f"open({str(counter_path)!r}, 'w').write(str(n + 1))\n"
+        f"sys.stdout.buffer.write(open({str(response_file)!r}, 'rb').read())\n",
+        encoding="utf-8",
+    )
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake))
     assert code == 0
     invocations = int(counter_path.read_text().strip())
     assert invocations == 1, f"LLM should be called exactly once, was called {invocations} times"
