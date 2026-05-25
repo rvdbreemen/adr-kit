@@ -4,6 +4,14 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-05-25
+
+### Fixed
+
+- **`templates/githooks/pre-commit`**: two shell bugs caused the hook to exit 1 on clean commits (no ADR violations), effectively blocking every commit and forcing users to set `ADR_KIT_HOOK_DISABLE=1` as a workaround.
+  - **`grep -avE` false-positive exit 1**: when `adr-judge` output consists entirely of advisory lines, `grep -avE` finds nothing to print and exits 1. Under `set -e` this killed the script before the actual violation check. Fixed by appending `|| true`.
+  - **Missing `exit 0`**: `[ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"` — when `ADR_EXIT=0` the test returns 1 (false), `&&` short-circuits, and that 1 became the script's exit code because no `exit 0` followed. Fixed by adding an explicit `exit 0` at the end of the script.
+
 ## [0.13.1] - 2026-05-08
 
 ### Fixed

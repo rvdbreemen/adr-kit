@@ -53,5 +53,7 @@ ADR_EXIT=$?
 # Suppress per-ADR llm_judge advisory lines: they repeat once per ADR with llm_judge:true
 # and become very noisy on projects with many ADRs. Violations and the summary line
 # (e.g. "[adr-judge] OK 0 violations, 57 advisory") are preserved.
-printf '%s\n' "$ADR_OUT" | grep -avE "^  ADVISORY |^[[:space:]]+ADR has llm_judge:true" >&2
+printf '%s\n' "$ADR_OUT" | grep -avE "^  ADVISORY |^[[:space:]]+ADR has llm_judge:true" >&2 || true
 [ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"
+
+exit 0
