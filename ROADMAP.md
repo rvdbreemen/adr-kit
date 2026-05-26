@@ -17,6 +17,8 @@ If a breaking change becomes necessary before v1.0.0 (for example, renaming a de
 - The four verification gates have been used to block at least one PR in real-world review (signal: the toolkit is being used as intended, not just installed).
 - A migration guide for the v0.x to v1.0 transition is published in CHANGELOG, with the upgrade path tested on a non-trivial existing ADR set.
 
+**Field check (2026-05-26, 31 days post-v0.9.0):** GREEN for core framework. CI green across all recent runs (v0.13.3). One pre-commit hook exit-code bug (issue #6, v0.13.1) reported by an external user and fixed within 24h (v0.13.2). Dev-worktree lint: 79/79 PASS. External adoption: Lenivvenil/claude-mini opened an adr-kit MCP integration issue.
+
 ## Planned features (signals, not commitments)
 
 These are likely additions in upcoming versions. Priority is shaped by user requests; a feature without a real-world ask may slip indefinitely.
