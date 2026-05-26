@@ -26,6 +26,8 @@ These are likely additions in upcoming versions. Priority is shaped by user requ
 - **Tier-2 chore**: branch protection on `main`, dependabot for the GitHub Actions workflow, release-drafter for auto-generated release notes, codespell in CI. Repo-automation polish that benefits maintainers more than users. Likely v0.8.0.
 - **ADR query skill** (`/adr-kit:related ADR-XXX`): walks the `## Related Decisions` section across the ADR set and returns the dependency graph for a chosen ADR. Useful when an ADR is being superseded and you need to see who else points at it. Will land only if a real user asks for it; not auto-prioritised.
 - **CI integration for `bin/adr-judge`**: a GitHub Actions snippet (mirroring the v0.10 `bin/adr-lint` snippet in README) that runs the judge against the diff produced by a PR. Local pre-commit only in v0.12; CI variant is v0.13+ if there is demand.
+- **`/adr-kit:context` skill** (issue #7): given a topic string, returns the 3-5 most relevant accepted ADRs with relevance explanation. Solves the context-window problem in projects with 30+ ADRs. Read-only; safe from parallel subagents.
+- **`/adr-kit:retirement-audit` skill** (issue #8): scans the ADR set for three signals -- stale status with no supersession link, 90+ days without a git touch, Enforcement pattern matching zero lines in `src/`. Presents candidates for human review; includes GitHub Actions weekly-cron template.
 - **`pre-commit` framework support**: ship a `.pre-commit-hooks.yaml` so projects already using the `pre-commit` framework can register `adr-judge` without writing a native git hook. Native `.githooks/` is the only supported delivery in v0.12.
 
 ## Recently landed
