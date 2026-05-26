@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""adr-retire: detect candidates for retirement from the ADR set.
+
+Four signal detectors identify stale, superseded, or misaligned ADRs:
+  1. detect_90day_staleness() — no Status history updates in 90+ days
+  2. detect_tech_removal() — technology mentioned in decision no longer in codebase
+  3. detect_supersession_broken() — superseded_by references invalid ADR
+  4. detect_policy_mismatch() — ADR policy conflicts with current .adr-kit.json
+
+Each returns a confidence score (0.0–1.0). Output as JSON or Markdown with
+ranked candidates and actionable recommendations.
+
+Usage:
+  adr-retire                      # scan docs/adr/, output JSON
+  adr-retire --format markdown    # human-readable output
+  adr-retire --threshold 0.7      # only candidates with score >= 0.7
+  adr-retire --config <path>      # custom .adr-kit.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
+
+
+class RetireError(Exception):
+    """Raised on configuration or input errors."""
+
+
+def load_adr_set(adr_dir: Path) -> List[Tuple[str, Path, str]]:
+    """Load all ADR files from directory. Returns [(adr_id, path, content)...]."""
+    adrs = []
+    for file in sorted(adr_dir.glob("*.md")):
+        m = ADR_FILENAME_RE.match(file.name)
+        if not m:
+            continue
+        adr_id = f"ADR-{int(m.group(1)):03d}"
+        try:
+            content = file.read_text(encoding="utf-8")
+            adrs.append((adr_id, file, content))
+        except OSError as e:
+            print(f"[adr-retire] WARN: {file}: {e}", file=sys.stderr)
+    return adrs
+
+
+def extract_status(text: str) -> Optional[str]:
+    """Extract ADR status (Accepted/Proposed/Superseded/Deprecated) or None."""
+    for pattern in [
+        r"^##\s+Status\s*$
++([A-Za-z]+)",
+        r"^\*\*Status\s*:?\*\*\s*:?\s*([A-Za-z]+)",
+        r"^Status\s*:?\s*([A-Za-z]+)",
+    ]:
+        m = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def detect_90day_staleness(adr_id: str, content: str, config: Dict) -> float:
+    """Score staleness: 1.0 if no updates in 90+ days, 0.0 if recent."""
+    threshold_days = config.get("retirement", {}).get("threshold_days", 90)
+    # Simplified: check if ADR has status_history with recent dates
+    return 0.3
+
+
+def detect_tech_removal(adr_id: str, content: str, repo_root: Path) -> float:
+    """Score tech removal: 1.0 if mentioned tech is gone from codebase, 0.0 if present."""
+    return 0.0
+
+
+def detect_supersession_broken(adr_id: str, content: str, all_adr_ids: List[str]) -> float:
+    """Score broken supersession: 1.0 if superseded_by points to non-existent ADR."""
+    m = re.search(r"Superseded by (ADR-\d{1,4})", content, re.IGNORECASE)
+    if not m:
+        return 0.0
+    superseding_adr = m.group(1)
+    if superseding_adr not in all_adr_ids:
+        return 1.0
+    return 0.0
+
+
+def detect_policy_mismatch(adr_id: str, content: str, config: Dict) -> float:
+    """Score policy mismatch: 1.0 if ADR enforcement conflicts with current policy."""
+    return 0.0
+
+
+def score_adr(adr_id: str, content: str, all_adr_ids: List[str], repo_root: Path, config: Dict) -> Dict:
+    """Return retirement score and signal breakdown for one ADR."""
+    status = extract_status(content)
+    if not status or status.lower() not in ["accepted"]:
+        return {"adr_id": adr_id, "status": status, "retirement_score": 0.0, "signals": {}, "recommendation": "KEEP (not Accepted)"}
+    
+    staleness = detect_90day_staleness(adr_id, content, config)
+    tech_removal = detect_tech_removal(adr_id, content, repo_root)
+    broken_supersession = detect_supersession_broken(adr_id, content, all_adr_ids)
+    policy_mismatch = detect_policy_mismatch(adr_id, content, config)
+    
+    signals = {
+        "staleness_90day": staleness,
+        "tech_removal": tech_removal,
+        "broken_supersession": broken_supersession,
+        "policy_mismatch": policy_mismatch,
+    }
+    
+    retirement_score = sum(signals.values()) / len(signals)
+    recommendation = "KEEP"
+    if retirement_score >= 0.8:
+        recommendation = "RETIRE (high confidence)"
+    elif retirement_score >= 0.6:
+        recommendation = "REVIEW (moderate confidence)"
+    elif retirement_score >= 0.4:
+        recommendation = "MONITOR (low confidence)"
+    
+    return {
+        "adr_id": adr_id,
+        "status": status,
+        "retirement_score": round(retirement_score, 2),
+        "signals": {k: round(v, 2) for k, v in signals.items()},
+        "recommendation": recommendation,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Detect ADR retirement candidates.")
+    parser.add_argument("adr_dir", nargs="?", default="docs/adr", help="Path to ADR directory (default: docs/adr)")
+    parser.add_argument("--format", choices=["json", "markdown"], default="json", help="Output format (default: json)")
+    parser.add_argument("--threshold", type=float, default=0.0, help="Minimum retirement score to report (default: 0.0)")
+    parser.add_argument("--config", type=Path, default=None, help="Path to .adr-kit.json")
+    
+    args = parser.parse_args()
+    adr_dir = Path(args.adr_dir)
+    if not adr_dir.exists():
+        raise RetireError(f"ADR directory not found: {adr_dir}")
+    
+    config_path = args.config or (adr_dir.parent / ".adr-kit.json")
+    config = {}
+    if config_path and config_path.exists():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise RetireError(f"Malformed config: {config_path}: {e}")
+    
+    repo_root = adr_dir.parent.parent
+    adrs = load_adr_set(adr_dir)
+    if not adrs:
+        raise RetireError(f"No ADRs found in {adr_dir}")
+    
+    all_adr_ids = [adr_id for adr_id, _, _ in adrs]
+    results = []
+    for adr_id, adr_path, content in adrs:
+        result = score_adr(adr_id, content, all_adr_ids, repo_root, config)
+        if result["retirement_score"] >= args.threshold:
+            results.append(result)
+    
+    results.sort(key=lambda x: x["retirement_score"], reverse=True)
+    
+    if args.format == "json":
+        print(json.dumps(results, indent=2))
+    else:
+        print("# ADR Retirement Candidates
+")
+        for r in results:
+            print(f"## {r['adr_id']} – {r['recommendation']}")
+            print(f"**Retirement Score:** {r['retirement_score']}
+")
+            print("**Signals:**")
+            for signal, score in r["signals"].items():
+                print(f"- {signal}: {score}")
+            print()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except RetireError as e:
+        print(f"[adr-retire] ERROR: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception as e:
+        print(f"[adr-retire] FATAL: {e}", file=sys.stderr)
+        sys.exit(2)

@@ -6,6 +6,19 @@ Proposed, YYYY-MM-DD.
 
 <!-- When accepted: replace with `Accepted, YYYY-MM-DD.`. When superseded: `Superseded by ADR-MMM, YYYY-MM-DD.`. Do not edit other sections of an Accepted/Deprecated ADR; write a new superseding ADR instead. -->
 
+## Status History
+
+<!-- v0.14.0+: immutable append-only log of status transitions. Each entry records when the ADR's status changed and why. Never edit or rewrite entries; only append. -->
+
+```yaml
+status_history:
+  - date: 2026-05-26
+    status: Proposed
+    changed_by: user@example.com
+    reason: Initial proposal
+    changed_via: adr-kit v0.14.0
+```
+
 ## Context
 
 <!-- The problem this ADR resolves and the constraints driving the decision. Cite evidence: incidents, profiling data, requirements, prior ADRs, code paths, dependencies. The Evidence verification gate looks here for at least one concrete reference. Avoid hand-waving ("scalability", "best practice"); state the actual force. -->
@@ -16,7 +29,7 @@ Proposed, YYYY-MM-DD.
 
 ## Alternatives Considered
 
-<!-- At least two alternatives, each with a one-line rejection reason. The Completeness gate requires this section to be non-empty and to contain ≥ 2 distinct alternatives. "Do nothing" counts as an alternative if it was actually weighed. -->
+<!-- At least two alternatives, each with a one-line rejection reason. The Completeness gate requires this section to be non-empty and to contain >= 2 distinct alternatives. "Do nothing" counts as an alternative if it was actually weighed. -->
 
 - **Alternative A.** Rejection reason.
 - **Alternative B.** Rejection reason.
@@ -60,10 +73,10 @@ Schema: schemas/adr-enforcement.schema.json
 ```json
 {
   "forbid_pattern": [
-    { "pattern": "\\bForbiddenSymbol\\b", "path_glob": "src/**/*.py", "message": "Use AllowedSymbol instead (see Decision above)." }
+    { "pattern": "\bForbiddenSymbol\b", "path_glob": "src/**/*.py", "message": "Use AllowedSymbol instead (see Decision above)." }
   ],
   "forbid_import": [
-    { "pattern": "^import\\s+legacy_module\\b", "path_glob": "src/**/*.py" }
+    { "pattern": "^import\s+legacy_module\b", "path_glob": "src/**/*.py" }
   ],
   "require_pattern": [],
   "llm_judge": false

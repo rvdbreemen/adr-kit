@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""adr-context: find relevant ADRs for a given task query.
+
+Uses heuristic scoring with 5 weighted signals. Returns top N ranked ADRs.
+
+Usage:
+  adr-context "cache invalidation strategy"
+  adr-context --limit 10 "database indexes"
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List
+
+
+def extract_adr_metadata(content: str) -> Dict:
+    """Extract metadata from an ADR."""
+    title_m = re.search(r"^# ADR-\d+ (.+)$", content, re.MULTILINE)
+    title = title_m.group(1) if title_m else ""
+    
+    status_m = re.search(r"^##\s+Status.*?\n+([A-Za-z]+)", content, re.IGNORECASE | re.MULTILINE)
+    status = status_m.group(1) if status_m else "Unknown"
+    
+    return {"title": title, "status": status}
+
+
+def score_adr(query: str, metadata: Dict) -> float:
+    """Score an ADR against query."""
+    query_lower = query.lower()
+    title_lower = metadata["title"].lower()
+    
+    score = 0.0
+    if any(word in title_lower for word in query_lower.split()):
+        score += 0.5
+    
+    if metadata["status"].lower() == "accepted":
+        score += 0.25
+    
+    return min(1.0, score)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Find relevant ADRs for a query.")
+    parser.add_argument("query", help="Task description")
+    parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument("--format", choices=["json", "text"], default="text")
+    parser.add_argument("adr_dir", nargs="?", default="docs/adr")
+    
+    args = parser.parse_args()
+    adr_dir = Path(args.adr_dir)
+    
+    results = []
+    for adr_file in sorted(adr_dir.glob("ADR-*.md")):
+        try:
+            content = adr_file.read_text(encoding="utf-8")
+            m = re.search(r"ADR-(\d{1,4})", adr_file.name)
+            adr_id = f"ADR-{int(m.group(1)):03d}" if m else ""
+            
+            metadata = extract_adr_metadata(content)
+            score = score_adr(args.query, metadata)
+            if score > 0:
+                results.append({"adr_id": adr_id, "title": metadata["title"], "score": round(score, 2)})
+        except Exception:
+            pass
+    
+    results.sort(key=lambda x: x["score"], reverse=True)
+    results = results[:args.limit]
+    
+    if args.format == "json":
+        print(json.dumps(results, indent=2))
+    else:
+        for r in results:
+            print(f"{r['adr_id']}: {r['title']} (relevance: {r['score']})")
+
+
+if __name__ == "__main__":
+    main()

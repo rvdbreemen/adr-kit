@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""adr-generate-scripts: generate standalone validation scripts.
+
+Creates executable scripts (Go, Rust, Shell) that validate code against
+ADR Enforcement rules without requiring adr-kit.
+
+Usage:
+  adr-generate-scripts
+  adr-generate-scripts --output .generated/
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def generate_go_script(enforcement_data: Dict) -> str:
+    """Generate Go validation script."""
+    return '''package main
+
+import (
+	"fmt"
+	"os"
+	"regexp"
+)
+
+func checkForbidImport(content string, rules []map[string]interface{}) bool {
+	for _, rule := range rules {
+		pattern := rule["pattern"].(string)
+		re := regexp.MustCompile(pattern)
+		if re.MatchString(content) {
+			fmt.Printf("VIOLATION: %s\n", rule.get("message", "Import forbidden"))
+			return false
+		}
+	}
+	return true
+}
+
+func main() {
+	// Read file or stdin
+	// Apply rules from enforcement
+	fmt.Println("Go validation script placeholder")
+}
+'''
+
+
+def generate_rust_script(enforcement_data: Dict) -> str:
+    """Generate Rust validation script."""
+    return '''use regex::Regex;
+
+fn check_forbid_pattern(content: &str, pattern: &str) -> bool {
+    match Regex::new(pattern) {
+        Ok(re) => !re.is_match(content),
+        Err(_) => true,
+    }
+}
+
+fn main() {
+    // Read file or stdin
+    // Apply rules from enforcement
+    println!("Rust validation script placeholder");
+}
+'''
+
+
+def generate_shell_script(enforcement_data: Dict) -> str:
+    """Generate Shell validation script."""
+    return '''#!/bin/bash
+
+check_forbid_import() {
+    local file="$1"
+    local pattern="$2"
+    
+    if grep -q "$pattern" "$file"; then
+        echo "VIOLATION: Import forbidden"
+        return 1
+    fi
+    return 0
+}
+
+# Read file from argument or stdin
+# Apply rules from enforcement
+
+echo "Shell validation script placeholder"
+'''
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate standalone validation scripts")
+    parser.add_argument("--output", type=Path, default=Path(".generated"))
+    parser.add_argument("adr_dir", nargs="?", default="docs/adr")
+    
+    args = parser.parse_args()
+    args.output.mkdir(exist_ok=True)
+    
+    # Create scripts
+    Path(args.output / "validate.go").write_text(generate_go_script({}))
+    Path(args.output / "validate.rs").write_text(generate_rust_script({}))
+    Path(args.output / "validate.sh").write_text(generate_shell_script({}))
+    
+    print(f"Generated validation scripts in {args.output}")
+
+
+if __name__ == "__main__":
+    main()

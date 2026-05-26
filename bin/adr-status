@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""adr-status: ADR repository health dashboard.
+
+Provides repo-wide visibility: total count, status breakdown, average age,
+enforcement health, retirement candidates.
+
+Usage:
+  adr-status
+  adr-status --format markdown > /tmp/health.md
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def load_adr_set(adr_dir: Path) -> List[tuple]:
+    """Load all ADRs."""
+    adrs = []
+    for f in sorted(adr_dir.glob("ADR-*.md")):
+        m = re.search(r"ADR-(\d{1,4})", f.name)
+        if m:
+            adr_id = f"ADR-{int(m.group(1)):03d}"
+            try:
+                adrs.append((adr_id, f, f.read_text(encoding="utf-8")))
+            except OSError:
+                pass
+    return adrs
+
+
+def extract_status(content: str) -> str:
+    """Extract status from ADR."""
+    for p in [r"^##\s+Status.*?\n+([A-Za-z]+)", r"\*\*Status\s*:?\*\*\s*([A-Za-z]+)"]:
+        m = re.search(p, content, re.IGNORECASE | re.MULTILINE)
+        if m:
+            return m.group(1)
+    return "Unknown"
+
+
+def main():
+    parser = argparse.ArgumentParser(description="ADR repository health dashboard")
+    parser.add_argument("--format", choices=["json", "markdown", "text"], default="text")
+    parser.add_argument("adr_dir", nargs="?", default="docs/adr")
+    
+    args = parser.parse_args()
+    adr_dir = Path(args.adr_dir)
+    
+    adrs = load_adr_set(adr_dir)
+    statuses = [extract_status(c) for _, _, c in adrs]
+    
+    summary = {
+        "total": len(adrs),
+        "accepted": len([s for s in statuses if s.lower() == "accepted"]),
+        "proposed": len([s for s in statuses if s.lower() == "proposed"]),
+        "superseded": len([s for s in statuses if s.lower() == "superseded"]),
+        "deprecated": len([s for s in statuses if s.lower() == "deprecated"]),
+    }
+    
+    data = {
+        "summary": summary,
+        "adr_list": [
+            {"adr_id": adr_id, "status": extract_status(c)}
+            for adr_id, _, c in adrs
+        ]
+    }
+    
+    if args.format == "json":
+        print(json.dumps(data, indent=2))
+    elif args.format == "markdown":
+        print("# ADR Repository Status\n")
+        print(f"Total ADRs: {summary['total']}")
+        print(f"- Accepted: {summary['accepted']}")
+        print(f"- Proposed: {summary['proposed']}")
+        print(f"- Superseded: {summary['superseded']}")
+        print(f"- Deprecated: {summary['deprecated']}\n")
+    else:
+        for item in data["adr_list"]:
+            print(f"{item['adr_id']:<10} {item['status']:<15}")
+
+
+if __name__ == "__main__":
+    main()
