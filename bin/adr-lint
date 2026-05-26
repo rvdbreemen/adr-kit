@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -47,13 +48,24 @@ CANONICAL_REQUIRED_SECTIONS = [
 ]
 
 LEGAL_SEVERITIES = {"always_strict", "always_advisory", "advisory_before_strict_from"}
-ALL_GATES = ["completeness", "evidence", "clarity", "consistency"]
-DEFAULT_GATES = ["completeness", "consistency"]
+ALL_GATES = ["completeness", "audit", "evidence", "clarity", "consistency"]
+DEFAULT_GATES = ["completeness", "audit", "consistency"]
 
 MARKER_RE = re.compile(r"<!--\s*adr-kit-lint:\s*([^>]+?)\s*-->", re.IGNORECASE)
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
 CANONICAL_FILENAME_RE = re.compile(r"^ADR-\d{3}-[a-z0-9-]+\.md$")
 HEADING_NUMBER_RE = re.compile(r"^#\s+(?i:ADR)-(\d{1,4})\b")
+STATUS_HEADING_RE = re.compile(r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE)
+STATUS_LINE_RE = re.compile(r"^Status\s*:?\s*(\w+)", re.IGNORECASE | re.MULTILINE)
+STATUS_BOLD_INLINE_RE = re.compile(
+    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)"
+    r"|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
+    re.IGNORECASE | re.MULTILINE,
+)
+STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
+STATUS_HISTORY_ITEM_RE = re.compile(r"^\s*-\s*([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
+STATUS_HISTORY_FIELD_RE = re.compile(r"^\s+([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
+STATUS_HISTORY_REQUIRED_FIELDS = ("date", "status", "changed_by", "reason", "changed_via")
 
 
 class PolicyError(Exception):
@@ -182,6 +194,97 @@ def gate_completeness(text: str, required: List[str]) -> Optional[List[str]]:
     return missing or None
 
 
+def _yaml_scalar(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        try:
+            return str(json.loads(value))
+        except json.JSONDecodeError:
+            return value[1:-1]
+    if len(value) >= 2 and value[0] == value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    return value
+
+
+def _status_history(text: str) -> Tuple[bool, List[Dict[str, str]]]:
+    entries: List[Dict[str, str]] = []
+    current: Optional[Dict[str, str]] = None
+    found = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not found:
+            if STATUS_HISTORY_START_RE.match(line):
+                found = True
+            continue
+        if stripped.startswith("```") or stripped.startswith("## "):
+            break
+        if not stripped or stripped.startswith("#"):
+            continue
+        item = STATUS_HISTORY_ITEM_RE.match(line)
+        if item:
+            if current is not None:
+                entries.append(current)
+            current = {item.group(1).lower(): _yaml_scalar(item.group(2))}
+            continue
+        field = STATUS_HISTORY_FIELD_RE.match(line)
+        if field and current is not None:
+            current[field.group(1).lower()] = _yaml_scalar(field.group(2))
+            continue
+        if current is not None:
+            break
+    if current is not None:
+        entries.append(current)
+    return found, entries
+
+
+def _current_status(text: str) -> Optional[str]:
+    match = STATUS_HEADING_RE.search(text)
+    if match:
+        current = re.match(r"\s*([A-Za-z]+)", match.group(1))
+        return current.group(1) if current else None
+    match = STATUS_BOLD_INLINE_RE.search(text)
+    if match:
+        return match.group(1) or match.group(2)
+    match = STATUS_LINE_RE.search(text)
+    return match.group(1) if match else None
+
+
+def gate_audit(text: str) -> Optional[List[str]]:
+    """Validate a present status_history chain; legacy ADRs remain valid."""
+    found, entries = _status_history(text)
+    if not found:
+        return None
+    if not entries:
+        return ["status_history is present but contains no transition entries"]
+    issues: List[str] = []
+    previous: Optional[date] = None
+    today = date.today()
+    for number, entry in enumerate(entries, start=1):
+        missing = [key for key in STATUS_HISTORY_REQUIRED_FIELDS if not entry.get(key)]
+        if missing:
+            issues.append(f"entry {number} missing fields: {', '.join(missing)}")
+            continue
+        try:
+            entry_date = date.fromisoformat(entry["date"])
+        except ValueError:
+            issues.append(f"entry {number} has invalid date: {entry['date']!r}")
+            continue
+        if entry_date > today:
+            issues.append(f"entry {number} has future date: {entry['date']}")
+        if previous is not None and entry_date < previous:
+            issues.append(f"entry {number} is earlier than its preceding entry")
+        previous = entry_date
+    current = _current_status(text)
+    if current:
+        last = re.match(r"\s*([A-Za-z]+)", entries[-1].get("status", ""))
+        if not last or current.lower() != last.group(1).lower():
+            issues.append(
+                "latest history status does not match the ADR Status section "
+                f"({entries[-1].get('status', '')!r} != {current!r})"
+            )
+    return issues or None
+
+
 def gate_evidence(text: str) -> Optional[List[Tuple[int, str]]]:
     """Heuristic: bare adjectives without nearby measurement / citation.
 
@@ -291,6 +394,17 @@ def lint_file(
                 "gate": "completeness", "level": level,
                 "details": [s.replace("## ", "") for s in miss],
                 "summary": f"missing sections: {[s.replace('## ', '') for s in miss]}",
+            })
+
+    if "audit" in enabled_gates and "audit" not in skip_gates:
+        issues = gate_audit(text)
+        if issues:
+            level = "ADVISORY" if file_advisory else severity_of(
+                "audit", adr_num, cfg, strict_from_override
+            )
+            findings.append({
+                "gate": "audit", "level": level,
+                "details": issues, "summary": "; ".join(issues),
             })
 
     if "evidence" in enabled_gates and "evidence" not in skip_gates:

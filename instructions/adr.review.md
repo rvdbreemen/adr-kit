@@ -51,9 +51,9 @@ Check whether the diff violates an `Accepted` ADR:
 If the PR supersedes an existing ADR:
 
 - Verify the new ADR includes a `## Related Decisions` entry "Supersedes ADR-XXX"
-- Verify the old ADR's Status line is updated to `Superseded by ADR-YYY`
+- Verify the old ADR's Status line is updated to `Superseded by ADR-YYY` and its `## Status History` has a matching appended transition
 - Verify the supersession rationale appears in the new ADR (not the old one)
-- Verify the old ADR's content (context, decision, alternatives, consequences) is **not modified** beyond the Status line. ADR immutability is the rule.
+- Verify the old ADR's content (context, decision, alternatives, consequences) and earlier history entries are **not modified**. Only the Status line and one appended transition may change.
 
 **Action if supersession is incorrect:**
 

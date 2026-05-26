@@ -21,10 +21,14 @@
     },
     "severity": {
       "type": "object",
-      "description": "Per-gate severity. Default for completeness, evidence, clarity is 'advisory_before_strict_from' when strict_from is set, 'always_strict' otherwise. Default for consistency is 'always_strict' regardless: filename / heading mismatches and duplicate numbers are real bugs at any age.",
+      "description": "Per-gate severity. Default for completeness, evidence, clarity is 'advisory_before_strict_from' when strict_from is set, 'always_strict' otherwise. Defaults for audit and consistency are 'always_strict' regardless: invalid status chains, filename / heading mismatches, and duplicate numbers are real bugs at any age.",
       "additionalProperties": false,
       "properties": {
         "completeness": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "audit": {
           "type": "string",
           "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
         },

@@ -223,6 +223,15 @@ Accepted. Date: YYYY-MM-DD.
 
 (Or: Proposed; Deprecated; Superseded by ADR-YYY; Amended by ADR-YYY.)
 
+## Status History
+
+status_history:
+  - date: YYYY-MM-DD
+    status: Accepted
+    changed_by: Agent or User
+    reason: Initial decision record
+    changed_via: adr-kit
+
 ## Context
 
 One paragraph stating the problem clearly enough for a reader who has never seen this codebase. Include the constraints that drove the decision and the existing state that triggered the choice.
@@ -348,6 +357,7 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 
 - Update Status: `Proposed` -> `Accepted`.
 - Add the implementation date in the Status line: `Accepted. Date: YYYY-MM-DD.`
+- Append the matching `Accepted` transition to `## Status History`; never rewrite an earlier entry.
 - Add a `## Related Decisions` entry to any other ADR that newly relates.
 - Update `docs/adr/README.md` with the new ADR in the right category.
 
@@ -355,7 +365,7 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 
 - Write the new ADR explaining the change.
 - Reference the original in `## Related Decisions`: "Supersedes ADR-XXX (Title)".
-- Update the old ADR's Status line only: `Superseded by ADR-YYY`.
+- Update the old ADR's Status line to `Superseded by ADR-YYY` and append that transition to `## Status History`.
 - Do NOT modify the old ADR's decision text or reasoning. Immutability is the rule.
 - Update `docs/adr/README.md` to mark both ADRs.
 

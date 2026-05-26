@@ -4,7 +4,7 @@
 
 Proposed, YYYY-MM-DD.
 
-<!-- When accepted: replace with `Accepted, YYYY-MM-DD.`. When superseded: `Superseded by ADR-MMM, YYYY-MM-DD.`. Do not edit other sections of an Accepted/Deprecated ADR; write a new superseding ADR instead. -->
+<!-- When accepted or superseded: update this line and append the same transition below in Status History. Do not edit earlier history entries or other sections of an Accepted/Deprecated ADR; write a new superseding ADR instead. -->
 
 ## Status History
 

@@ -44,6 +44,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -91,6 +92,16 @@ STATUS_BOLD_INLINE_RE = re.compile(
     r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
     re.IGNORECASE | re.MULTILINE,
 )
+STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
+STATUS_HISTORY_ITEM_RE = re.compile(r"^\s*-\s*([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
+STATUS_HISTORY_FIELD_RE = re.compile(r"^\s+([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
+STATUS_HISTORY_REQUIRED_FIELDS = (
+    "date",
+    "status",
+    "changed_by",
+    "reason",
+    "changed_via",
+)
 ENFORCEMENT_BLOCK_RE = re.compile(
     r"^##\s+Enforcement\s*$\n+(?:.*?\n)*?```json\s*\n(.*?)\n```",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
@@ -129,6 +140,169 @@ def adr_status(text: str) -> Optional[str]:
     if m:
         return m.group(1)
     return None
+
+
+def _yaml_scalar(value: str) -> str:
+    """Parse the simple scalar values used in status_history entries."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        try:
+            parsed = json.loads(value)
+            return str(parsed)
+        except json.JSONDecodeError:
+            return value[1:-1]
+    if len(value) >= 2 and value[0] == value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    return value
+
+
+def parse_status_history(text: str) -> List[Dict[str, str]]:
+    """Return status-history entries from the embedded YAML list.
+
+    v0.14 stores the list in the ``## Status History`` YAML block. The parser
+    also accepts a top-level/frontmatter ``status_history`` list so migrated
+    projects do not need a second rewrite.
+    """
+    entries: List[Dict[str, str]] = []
+    current: Optional[Dict[str, str]] = None
+    in_history = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not in_history:
+            if STATUS_HISTORY_START_RE.match(line):
+                in_history = True
+            continue
+        if stripped.startswith("```") or stripped.startswith("## "):
+            break
+        if not stripped or stripped.startswith("#"):
+            continue
+        item = STATUS_HISTORY_ITEM_RE.match(line)
+        if item:
+            if current is not None:
+                entries.append(current)
+            current = {item.group(1).lower(): _yaml_scalar(item.group(2))}
+            continue
+        field = STATUS_HISTORY_FIELD_RE.match(line)
+        if field and current is not None:
+            current[field.group(1).lower()] = _yaml_scalar(field.group(2))
+            continue
+        if current is not None:
+            break
+    if current is not None:
+        entries.append(current)
+    return entries
+
+
+def validate_status_history(
+    entries: List[Dict[str, str]],
+    current_status: Optional[str] = None,
+    today: Optional[date] = None,
+) -> List[str]:
+    """Return structural and chronology issues for a status-history chain."""
+    issues: List[str] = []
+    previous: Optional[date] = None
+    check_date = today or date.today()
+    for number, entry in enumerate(entries, start=1):
+        missing = [key for key in STATUS_HISTORY_REQUIRED_FIELDS if not entry.get(key)]
+        if missing:
+            issues.append(f"entry {number} missing fields: {', '.join(missing)}")
+            continue
+        try:
+            entry_date = date.fromisoformat(entry["date"])
+        except ValueError:
+            issues.append(f"entry {number} has invalid date: {entry['date']!r}")
+            continue
+        if entry_date > check_date:
+            issues.append(f"entry {number} has future date: {entry['date']}")
+        if previous is not None and entry_date < previous:
+            issues.append(f"entry {number} is earlier than the preceding entry")
+        previous = entry_date
+    if entries and current_status:
+        last_status = re.match(r"[A-Za-z]+", entries[-1].get("status", ""))
+        if not last_status or last_status.group(0).lower() != current_status.lower():
+            issues.append(
+                "latest history status does not match the ADR Status section "
+                f"({entries[-1].get('status', '')!r} != {current_status!r})"
+            )
+    return issues
+
+
+def _format_history_entry(entry: Dict[str, str]) -> str:
+    lines = []
+    for key in STATUS_HISTORY_REQUIRED_FIELDS:
+        prefix = "  - " if key == "date" else "    "
+        lines.append(f"{prefix}{key}: {json.dumps(str(entry[key]), ensure_ascii=True)}")
+    return "\n".join(lines) + "\n"
+
+
+def append_to_status_history(adr_path: Path, new_entry: Dict[str, str]) -> bool:
+    """Append one validated status transition without changing earlier entries."""
+    if validate_status_history([new_entry]):
+        return False
+    try:
+        text = adr_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    existing = parse_status_history(text)
+    if existing and validate_status_history(existing):
+        return False
+    if existing:
+        previous = date.fromisoformat(existing[-1]["date"])
+        if date.fromisoformat(new_entry["date"]) < previous:
+            return False
+
+    new_lines = _format_history_entry(new_entry)
+    start = re.search(r"(?im)^\s*status_history\s*:\s*$", text)
+    if start:
+        end = re.search(r"(?m)^```|^##\s+", text[start.end():])
+        insertion = start.end() + (end.start() if end else len(text[start.end():]))
+        prefix = text[:insertion].rstrip() + "\n"
+        suffix = text[insertion:]
+        updated = prefix + new_lines + suffix
+    else:
+        block = "## Status History\n\n```yaml\nstatus_history:\n" + new_lines + "```\n"
+        status_heading = re.search(r"(?im)^##\s+Status\s*$", text)
+        next_heading = (
+            re.search(r"(?im)^##\s+", text[status_heading.end():])
+            if status_heading
+            else None
+        )
+        if status_heading and next_heading:
+            insertion = status_heading.end() + next_heading.start()
+            updated = (
+                text[:insertion].rstrip() + "\n\n" + block + "\n"
+                + text[insertion:].lstrip()
+            )
+        else:
+            updated = text.rstrip() + "\n\n" + block
+    try:
+        adr_path.write_text(updated, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def migrate_status_history(adr_path: Path) -> bool:
+    """Create an initial v0.14 status entry for an older ADR when requested."""
+    try:
+        text = adr_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if parse_status_history(text):
+        return False
+    status = adr_status(text)
+    if not status:
+        return False
+    return append_to_status_history(
+        adr_path,
+        {
+            "date": date.today().isoformat(),
+            "status": status,
+            "changed_by": "adr-kit migration",
+            "reason": "v0.13 to v0.14 upgrade",
+            "changed_via": "adr-judge --migrate-status-history",
+        },
+    )
 
 
 def parse_enforcement(adr_text: str, adr_path: Path) -> Optional[Dict]:
@@ -705,6 +879,12 @@ def main() -> int:
         default=None,
         help="Path to .adr-kit.json. Default: <adr-dir>/.adr-kit.json.",
     )
+    p.add_argument(
+        "--migrate-status-history",
+        action="store_true",
+        help="Explicitly add initial status_history entries to legacy ADRs, "
+        "then exit. Normal judging is always read-only.",
+    )
     p.add_argument("--json", action="store_true", help="Emit JSON to stdout.")
     p.add_argument(
         "--repo-root",
@@ -772,6 +952,18 @@ def main() -> int:
         )
 
         repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd()
+
+        if args.migrate_status_history:
+            migrated = []
+            for adr_id, adr_path, _ in collect_adrs(adr_dir):
+                if migrate_status_history(adr_path):
+                    migrated.append(adr_id)
+            if args.json:
+                json.dump({"migrated": migrated, "count": len(migrated)}, sys.stdout, indent=2)
+                sys.stdout.write("\n")
+            else:
+                print(f"[adr-judge] migrated status history for {len(migrated)} ADR(s)")
+            return 0
 
         diff_text = read_diff(args.diff)
         if max_diff_bytes and len(diff_text.encode("utf-8")) > max_diff_bytes:

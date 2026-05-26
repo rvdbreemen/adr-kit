@@ -4,6 +4,20 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Phase 1 status history**: `bin/adr-judge` parses and appends immutable
+  `status_history` entries and provides explicit
+  `--migrate-status-history` migration for legacy ADRs. `bin/adr-lint` now
+  validates present histories with a deterministic `audit` gate while keeping
+  unmigrated v0.13 ADRs compatible.
+- **Phase 1 retirement audit**: `bin/adr-retire`, `/adr-kit:retire`, and the
+  optional weekly `adr-retire-audit.yml` workflow provide deterministic
+  candidate scoring based on staleness, explicit technology disappearance,
+  broken supersession references, and risky policy patterns.
+- Replaced placeholder Phase 1 tests with executable status-history and
+  retirement suites, including CLI output and performance-budget checks.
+
 ## [0.13.3] - 2026-05-25
 
 ### Fixed

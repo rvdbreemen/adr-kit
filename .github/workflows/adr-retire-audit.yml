@@ -1,0 +1,46 @@
+name: ADR retirement audit
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Find retirement candidates
+        id: retirement
+        shell: bash
+        run: |
+          if [ ! -d docs/adr ]; then
+            echo "No docs/adr directory; nothing to audit."
+            echo "candidates=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python bin/adr-retire docs/adr --repo-root . --threshold 0.4 --format markdown > "$RUNNER_TEMP/adr-retire.md"
+          cat "$RUNNER_TEMP/adr-retire.md"
+          if grep -q '^## ADR-' "$RUNNER_TEMP/adr-retire.md"; then
+            echo "candidates=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "candidates=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open review issue
+        if: steps.retirement.outputs.candidates == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "ADR retirement audit: review current candidates" \
+            --body-file "$RUNNER_TEMP/adr-retire.md"

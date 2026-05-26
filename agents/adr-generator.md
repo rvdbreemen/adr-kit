@@ -21,7 +21,7 @@ Default conventions (override per project if the team uses something different; 
   - Correct: `ADR-001-postgresql-for-sensor-data.md`, `ADR-042-grpc-internal-rpc.md`
   - Wrong: `adr-0001-postgresql.md`, `ADR-1-postgresql.md`, `ADR-001_PostgreSQL.md`
 - **Heading**: `# ADR-XXX Title` as the first line.
-- **Sections** in this order: `## Status`, `## Context`, `## Decision`, `## Alternatives Considered`, `## Consequences`, `## Related Decisions`, `## References`.
+- **Sections** in this order: `## Status`, `## Status History`, `## Context`, `## Decision`, `## Alternatives Considered`, `## Consequences`, `## Related Decisions`, `## References`.
 - **Status values**: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-YYY`, `Amended by ADR-YYY`. Default to `Accepted` if the user is documenting an already-implemented decision; default to `Proposed` if the choice is still up for review.
 - **Date format**: `YYYY-MM-DD`.
 - **No em dashes** anywhere. Use colons, periods, commas, or parentheses.
@@ -109,6 +109,15 @@ Copy this verbatim into the new ADR file, then fill in. Do not invent sections, 
 Accepted. Date: YYYY-MM-DD.
 
 (Or: Proposed; or: Superseded by ADR-YYY; or: Amended by ADR-YYY.)
+
+## Status History
+
+status_history:
+  - date: YYYY-MM-DD
+    status: Accepted
+    changed_by: Agent or User
+    reason: Initial decision record
+    changed_via: adr-kit
 
 ## Context
 
