@@ -119,6 +119,21 @@ $ADR_KIT/bin/adr-lint docs/adr/
 
 Report the result: `<N PASS, M ADVISORY, K FAIL>`. If any FAIL: list them with the gate name and ask the user whether to fix now (re-invoke `adr-generator` for the offending ADR) or defer to a follow-up.
 
+## Step 6 — Generate standalone validation scripts (optional)
+
+Ask the user: "Generate standalone validation scripts for CI/CD pipelines? (Y/n)"
+
+If yes:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-generate-scripts" --lang shell --output .generated/
+```
+
+This generates shell scripts in `.generated/<ADR-NNN>/validate.sh` that validate code against ADR Enforcement rules without requiring adr-kit. Useful for CI/CD pipelines that run outside Claude Code.
+
+If the user says no (or presses Enter on the default), skip silently. If `.generated/` already contains scripts from a previous run, the generator overwrites them — this is idempotent.
+
 ## Wrap-up
 
 Print a final summary in this exact shape:
@@ -131,6 +146,7 @@ adr-kit init complete:
 - ADRs:     <N> created, <M> already present
 - hook:     installed (or already present + reason)
 - lint:     <P> PASS, <A> ADVISORY, <F> FAIL
+- scripts:  generated | skipped (user declined)
 ```
 
 Suggest a first commit: `git add docs/adr/ .claude/adr-kit-guide.md CLAUDE.md .githooks/pre-commit && git commit -m "chore(adr-kit): bootstrap v0.12"`. Do not run the commit yourself; let the user inspect first.

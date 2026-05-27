@@ -9,6 +9,17 @@ allowed-tools: [Read, Bash, Edit, Write, Task]
 
 You are running an interactive judge of the user's staged git diff against the project's Accepted ADRs. As of adr-kit v0.13.0, the LLM evaluation is done by `bin/adr-judge --llm` (Claude Sonnet by default) — same engine and same prompt as the pre-commit hook, so a verdict here matches the verdict the hook would emit. Your job is to drive the resolution loop the hook can't drive: walk the user through fixing each violation interactively.
 
+## Optional: Load relevant ADR context
+
+If you want to understand which ADRs are most relevant before judging, run:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-context" --format text --limit 5 "$(git log -1 --pretty=%s)"
+```
+
+This ranks ADRs by relevance to the last commit message. Useful when reviewing an unfamiliar area of the codebase.
+
 ## Step 1 — Capture context
 
 Run these (assume `pwd` is the repo root the user's session is in; if not, use `git rev-parse --show-toplevel`):

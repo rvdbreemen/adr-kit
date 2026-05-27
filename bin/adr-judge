@@ -44,6 +44,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -157,12 +158,7 @@ def _yaml_scalar(value: str) -> str:
 
 
 def parse_status_history(text: str) -> List[Dict[str, str]]:
-    """Return status-history entries from the embedded YAML list.
-
-    v0.14 stores the list in the ``## Status History`` YAML block. The parser
-    also accepts a top-level/frontmatter ``status_history`` list so migrated
-    projects do not need a second rewrite.
-    """
+    """Return status-history entries from the embedded YAML list."""
     entries: List[Dict[str, str]] = []
     current: Optional[Dict[str, str]] = None
     in_history = False
@@ -298,9 +294,9 @@ def migrate_status_history(adr_path: Path) -> bool:
         {
             "date": date.today().isoformat(),
             "status": status,
-            "changed_by": "adr-kit migration",
-            "reason": "v0.13 to v0.14 upgrade",
-            "changed_via": "adr-judge --migrate-status-history",
+            "changed_by": "adr-kit/migrate",
+            "reason": "initial status history entry created by migration",
+            "changed_via": "adr-kit:migrate skill",
         },
     )
 
@@ -772,6 +768,104 @@ def run_llm_batch(
     return findings
 
 
+# ---------- profiling ----------
+
+
+class ProfileCollector:
+    """Lightweight timing accumulator for --profile output.
+
+    Tracks two buckets:
+      - "declarative": wall time spent in apply_rules_to_diff calls (sum over all ADRs)
+      - "llm":         wall time spent in run_llm_batch (one call)
+
+    Rule-type counts are derived from the findings list after the fact so we
+    don't have to instrument inside apply_rules_to_diff (which would change
+    existing behaviour).
+    """
+
+    def __init__(self) -> None:
+        self.declarative_ms: float = 0.0
+        self.llm_ms: float = 0.0
+        self._t0: Optional[float] = None
+
+    # Context-manager helpers make the call-sites one-liners.
+    def start(self) -> None:
+        self._t0 = time.monotonic()
+
+    def stop_declarative(self) -> None:
+        if self._t0 is not None:
+            self.declarative_ms += (time.monotonic() - self._t0) * 1000.0
+            self._t0 = None
+
+    def stop_llm(self) -> None:
+        if self._t0 is not None:
+            self.llm_ms += (time.monotonic() - self._t0) * 1000.0
+            self._t0 = None
+
+    def print_report(self, all_findings: List[Dict], budget_ms: int) -> None:
+        """Print a formatted timing table to stderr."""
+        # Count findings per rule type.
+        counts: Dict[str, int] = {}
+        for f in all_findings:
+            rule = f.get("rule") or "unknown"
+            counts[rule] = counts.get(rule, 0) + 1
+
+        # Split declarative time proportionally across declarative rule types
+        # (forbid_pattern, forbid_import, require_pattern).  When there are no
+        # declarative findings we still show the total under "declarative".
+        decl_rules = ["forbid_pattern", "forbid_import", "require_pattern"]
+        decl_count_total = sum(counts.get(r, 0) for r in decl_rules)
+
+        rows: List[Tuple[str, float, int]] = []  # (rule, time_ms, count)
+        if decl_count_total > 0:
+            for r in decl_rules:
+                c = counts.get(r, 0)
+                if c == 0:
+                    continue
+                share = self.declarative_ms * (c / decl_count_total)
+                rows.append((r, share, c))
+        else:
+            # No declarative findings — show the bucket as a whole anyway.
+            rows.append(("declarative", self.declarative_ms, 0))
+
+        llm_count = counts.get("llm_judge", 0)
+        rows.append(("llm_judge", self.llm_ms, llm_count))
+
+        total_ms = self.declarative_ms + self.llm_ms
+        total_count = sum(c for _, _, c in rows)
+
+        header = f"{'Rule':<20} {'Time(ms)':>10} {'Count':>6} {'Avg(ms)':>10} {'Budget%':>8}"
+        sep = "-" * len(header)
+        print("[adr-judge] Profile:", file=sys.stderr)
+        print(f"  {header}", file=sys.stderr)
+        print(f"  {sep}", file=sys.stderr)
+        for rule, ms, count in rows:
+            avg = ms / max(count, 1)
+            pct = (ms / budget_ms * 100) if budget_ms else 0.0
+            print(
+                f"  {rule:<20} {ms:>10.1f} {count:>6} {avg:>10.1f} {pct:>7.1f}%",
+                file=sys.stderr,
+            )
+        # TOTAL row
+        avg_total = total_ms / max(total_count, 1)
+        pct_total = (total_ms / budget_ms * 100) if budget_ms else 0.0
+        print(f"  {sep}", file=sys.stderr)
+        print(
+            f"  {'TOTAL':<20} {total_ms:>10.1f} {total_count:>6} {avg_total:>10.1f} {pct_total:>7.1f}%",
+            file=sys.stderr,
+        )
+        print(
+            f"  Budget: pre_commit_timeout_ms={budget_ms}ms, elapsed={total_ms:.1f}ms",
+            file=sys.stderr,
+        )
+        if budget_ms and total_ms > budget_ms:
+            print(
+                f"[adr-judge] WARN: elapsed {total_ms:.1f}ms exceeds "
+                f"pre_commit_timeout_ms={budget_ms}ms",
+                file=sys.stderr,
+            )
+
+
 # ---------- config & top-level orchestration ----------
 
 
@@ -914,6 +1008,22 @@ def main() -> int:
         help="Per-call timeout for the LLM pass in seconds. Default 120 "
         "(or judge.llm_timeout_seconds in .adr-kit.json).",
     )
+    p.add_argument(
+        "--profile",
+        action="store_true",
+        help="Print per-rule-type timing breakdown after judging. Output goes "
+        "to stderr. Columns: Rule, Time(ms), Count, Avg(ms), Budget%%. "
+        "Budget%% is relative to judge.pre_commit_timeout_ms in .adr-kit.json.",
+    )
+    p.add_argument(
+        "--dry-run-enforcement",
+        metavar="ADR-NNN",
+        default=None,
+        help="Test enforcement of a single ADR (e.g. ADR-001) without "
+        "modifying any state. Loads ADRs normally, processes only the "
+        "specified ADR, prints findings and timing to stderr, then exits. "
+        "Exit 0 = no violations, 1 = violations found, 2 = ADR not found.",
+    )
     args = p.parse_args()
 
     try:
@@ -965,6 +1075,22 @@ def main() -> int:
                 print(f"[adr-judge] migrated status history for {len(migrated)} ADR(s)")
             return 0
 
+        # --dry-run-enforcement: normalise the requested ADR id once up front so
+        # we can do a clean string comparison in the loop below.
+        dry_run_target: Optional[str] = None
+        if args.dry_run_enforcement:
+            raw_target = args.dry_run_enforcement.strip()
+            # Accept "ADR-001", "ADR-1", "001", "1" — normalise to "ADR-NNN".
+            m_target = re.match(r"(?i)(?:ADR-)?(\d{1,4})$", raw_target)
+            if not m_target:
+                print(
+                    f"[adr-judge] ERROR: --dry-run-enforcement requires a value like "
+                    f"'ADR-001' or '42', got {raw_target!r}",
+                    file=sys.stderr,
+                )
+                return 2
+            dry_run_target = f"ADR-{int(m_target.group(1)):03d}"
+
         diff_text = read_diff(args.diff)
         if max_diff_bytes and len(diff_text.encode("utf-8")) > max_diff_bytes:
             print(
@@ -975,9 +1101,30 @@ def main() -> int:
         diff_files = parse_diff(diff_text)
 
         adrs = collect_adrs(adr_dir)
+
+        # --dry-run-enforcement: verify the ADR exists before doing any work.
+        if dry_run_target is not None:
+            known_ids = {
+                adr_id_from_filename(p.name)
+                for _, p, _ in adrs
+            }
+            if dry_run_target not in known_ids:
+                print(
+                    f"[adr-judge] WARN: --dry-run-enforcement: {dry_run_target} not found "
+                    f"in {adr_dir}",
+                    file=sys.stderr,
+                )
+                return 2
+
+        profiler = ProfileCollector()
+        pre_commit_budget_ms: int = int(judge_cfg.get("pre_commit_timeout_ms", 5000))
+
         all_findings: List[Dict] = []
         adrs_with_enforcement = 0
         for adr_id, adr_path, body in adrs:
+            # --dry-run-enforcement: skip every ADR that isn't the target.
+            if dry_run_target is not None and adr_id != dry_run_target:
+                continue
             status = adr_status(body)
             if status is None or status.lower() != "accepted":
                 continue
@@ -985,12 +1132,14 @@ def main() -> int:
             if enforcement is None:
                 continue
             adrs_with_enforcement += 1
+            profiler.start()
             all_findings.extend(
                 apply_rules_to_diff(
                     adr_id, enforcement, diff_files, repo_root, skip_files,
                     llm_mode_active=llm_mode_active,
                 )
             )
+            profiler.stop_declarative()
 
         # LLM pass — only when the user opted in via --llm (or judge.llm_default).
         # Failures here log a warning and fall through; they NEVER block the
@@ -998,22 +1147,53 @@ def main() -> int:
         # legitimate work.
         llm_findings_emitted = 0
         if llm_mode_active:
-            targets = collect_llm_targets(adrs)
+            # When dry-run-enforcement is active, limit LLM targets to the one ADR.
+            llm_adrs = (
+                [(adr_id, p, b) for adr_id, p, b in adrs if adr_id == dry_run_target]
+                if dry_run_target is not None
+                else adrs
+            )
+            targets = collect_llm_targets(llm_adrs)
             if targets:
                 print(
                     f"[adr-judge] running LLM pass over {len(targets)} "
                     f"llm_judge ADR(s) with {llm_cmd[0]}...",
                     file=sys.stderr,
                 )
+                profiler.start()
                 llm_findings = run_llm_batch(targets, diff_text, llm_cmd, llm_timeout_s)
+                profiler.stop_llm()
                 if llm_findings is not None:
                     all_findings.extend(llm_findings)
                     llm_findings_emitted = len(llm_findings)
+
+        # --dry-run-enforcement: announce we're in dry-run mode before results.
+        if dry_run_target is not None:
+            print(
+                f"[adr-judge] dry-run-enforcement: {dry_run_target} "
+                f"(no state changes written)",
+                file=sys.stderr,
+            )
 
         if args.json:
             emit_json(all_findings, adrs_with_enforcement)
         else:
             emit_text(all_findings, adrs_with_enforcement, advisory_only)
+
+        # --profile: always print the timing report after results, even in
+        # dry-run mode, so the two flags can be combined.
+        if args.profile:
+            profiler.print_report(all_findings, pre_commit_budget_ms)
+        elif warn_on_exceed := judge_cfg.get("warn_on_exceed", True):
+            # Passive budget check: warn even without --profile when config asks.
+            total_ms = profiler.declarative_ms + profiler.llm_ms
+            if pre_commit_budget_ms and total_ms > pre_commit_budget_ms:
+                print(
+                    f"[adr-judge] WARN: elapsed {total_ms:.1f}ms exceeds "
+                    f"pre_commit_timeout_ms={pre_commit_budget_ms}ms "
+                    f"(use --profile for a breakdown)",
+                    file=sys.stderr,
+                )
 
         violations = [f for f in all_findings if f["severity"] == "violation"]
         if violations and not advisory_only:

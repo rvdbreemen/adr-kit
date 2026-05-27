@@ -14,7 +14,7 @@
       "recency": 0.10
     },
     "default_limit": 5,
-    "min_relevance_threshold": 0.1
+    "min_score": 0.1
   },
   "retirement": {
     "threshold_days": 90,

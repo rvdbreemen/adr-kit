@@ -43,6 +43,36 @@
         "consistency": {
           "type": "string",
           "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "policy": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "quality": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "description": "Configuration for the policy gate (Enforcement block validation), introduced in adr-kit v0.14.0.",
+      "additionalProperties": false,
+      "properties": {
+        "strict_mode": {
+          "type": "boolean",
+          "description": "When true, schema validation failures are treated as FAIL regardless of severity config. Default true.",
+          "default": true
+        },
+        "regex_compile_checks": {
+          "type": "boolean",
+          "description": "When true, all pattern fields in Enforcement blocks are compiled and syntax errors are reported as FAIL. Default true.",
+          "default": true
+        },
+        "pattern_warnings": {
+          "type": "boolean",
+          "description": "When true, anti-pattern advisories (excessive wildcards, broad path_globs) are emitted. Default true.",
+          "default": true
         }
       }
     },

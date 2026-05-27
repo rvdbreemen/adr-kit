@@ -31,6 +31,17 @@ If the project uses a different convention (e.g. `adr-NNNN-` lowercase 4-digit, 
 
 ---
 
+## Context Loading (v0.14.1+)
+
+Before writing the ADR, load relevant existing ADRs to avoid duplication and ensure consistency:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-context" --format json --limit 5 "$TASK_DESCRIPTION"
+```
+
+Review the returned ADRs. If an existing ADR already covers the decision, suggest amending or superseding it instead of creating a new one. Include relevant ADR IDs in the "## Related Decisions" section of the new ADR.
+
 ## Workflow
 
 ### Step 1: Confirm what you have

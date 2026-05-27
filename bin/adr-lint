@@ -48,8 +48,16 @@ CANONICAL_REQUIRED_SECTIONS = [
 ]
 
 LEGAL_SEVERITIES = {"always_strict", "always_advisory", "advisory_before_strict_from"}
-ALL_GATES = ["completeness", "audit", "evidence", "clarity", "consistency"]
+ALL_GATES = ["completeness", "audit", "evidence", "clarity", "consistency", "policy", "quality"]
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
+
+ENFORCEMENT_BLOCK_RE = re.compile(
+    r"^##\s+Enforcement\s*$\n+(?:.*?\n)*?```json\s*\n(.*?)\n```",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+
+ENFORCEMENT_KNOWN_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern", "llm_judge"})
+ENFORCEMENT_ARRAY_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern"})
 
 MARKER_RE = re.compile(r"<!--\s*adr-kit-lint:\s*([^>]+?)\s*-->", re.IGNORECASE)
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
@@ -358,6 +366,194 @@ def gate_consistency(
     return issues or None
 
 
+def _section_text(text: str, heading: str) -> str:
+    """Extract text of a markdown section (up to the next ## heading or EOF)."""
+    m = re.search(
+        rf"^{re.escape(heading)}\s*$\n(.*?)(?=\n##\s+|\Z)",
+        text, re.MULTILINE | re.DOTALL,
+    )
+    return m.group(1) if m else ""
+
+
+def _extract_enforcement_block(content: str) -> Tuple[Optional[Dict], Optional[str]]:
+    """Parse the ## Enforcement JSON block.
+
+    Returns:
+      (dict, None)   — parsed successfully
+      (None, None)   — section absent (skip silently)
+      (None, msg)    — section present but JSON is malformed or invalid
+    """
+    m = ENFORCEMENT_BLOCK_RE.search(content)
+    if not m:
+        return None, None
+    raw = m.group(1)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return None, f"malformed JSON in ## Enforcement block ({e.msg} at line {e.lineno})"
+    if not isinstance(data, dict):
+        return None, f"## Enforcement JSON must be an object, got {type(data).__name__}"
+    # Manual additionalProperties check (works without jsonschema installed).
+    unknown_keys = set(data.keys()) - ENFORCEMENT_KNOWN_KEYS
+    if unknown_keys:
+        return None, f"## Enforcement block has unknown key(s): {sorted(unknown_keys)}"
+    for key in ENFORCEMENT_ARRAY_KEYS:
+        if key in data and not isinstance(data[key], list):
+            return None, f"Enforcement.{key} must be an array"
+    if "llm_judge" in data and not isinstance(data["llm_judge"], bool):
+        return None, "Enforcement.llm_judge must be a boolean"
+    return data, None
+
+
+def check_policy_gate(content: str, adr_id: str) -> List[Dict]:
+    """Validate the ## Enforcement JSON block in an ADR.
+
+    Returns list of finding dicts:
+    {
+      "gate": "policy",
+      "severity": "FAIL" | "ADVISORY",
+      "code": "POLICY_xxx",
+      "message": str,
+    }
+    """
+    data, err = _extract_enforcement_block(content)
+    if err is not None:
+        # Schema / JSON error — FAIL.
+        try:
+            import jsonschema  # noqa: F401
+            code = "POLICY_SCHEMA_INVALID"
+        except ImportError:
+            code = "POLICY_SCHEMA_INVALID"
+        return [{"gate": "policy", "severity": "FAIL", "code": code, "message": err}]
+    if data is None:
+        # No enforcement block — skip silently.
+        return []
+
+    findings: List[Dict] = []
+
+    # Optional: deeper schema validation when jsonschema is available.
+    try:
+        import jsonschema  # type: ignore
+        schema_path = (
+            Path(__file__).resolve().parent.parent
+            / "schemas"
+            / "adr-enforcement.schema.json"
+        )
+        if schema_path.exists():
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            try:
+                jsonschema.validate(data, schema)
+            except jsonschema.ValidationError as ve:
+                findings.append({
+                    "gate": "policy",
+                    "severity": "FAIL",
+                    "code": "POLICY_SCHEMA_INVALID",
+                    "message": f"schema validation failed: {ve.message}",
+                })
+                return findings
+    except ImportError:
+        pass
+
+    # Regex compilation checks across all pattern-bearing keys.
+    for key in ("forbid_pattern", "forbid_import", "require_pattern"):
+        for i, rule in enumerate(data.get(key, [])):
+            pat = rule.get("pattern", "")
+            try:
+                re.compile(pat)
+            except re.error as exc:
+                findings.append({
+                    "gate": "policy",
+                    "severity": "FAIL",
+                    "code": "POLICY_BAD_REGEX",
+                    "message": (
+                        f"{key}[{i}].pattern {pat!r} is not a valid regex: {exc}"
+                    ),
+                })
+
+    # Anti-pattern advisories.
+    for key in ("forbid_pattern", "forbid_import", "require_pattern"):
+        for i, rule in enumerate(data.get(key, [])):
+            pat = rule.get("pattern", "")
+            # Excessive wildcard: three or more consecutive .* occurrences.
+            if ".*.*.*" in pat:
+                findings.append({
+                    "gate": "policy",
+                    "severity": "ADVISORY",
+                    "code": "POLICY_EXCESSIVE_WILDCARD",
+                    "message": (
+                        f"{key}[{i}].pattern {pat!r} contains excessive wildcards "
+                        f"(three or more consecutive .*); this matches almost everything"
+                    ),
+                })
+            # Broad glob: path_glob absent or is pure ** / **/* without further scoping.
+            path_glob = rule.get("path_glob", "")
+            if not path_glob or path_glob in ("**", "**/*"):
+                findings.append({
+                    "gate": "policy",
+                    "severity": "ADVISORY",
+                    "code": "POLICY_BROAD_GLOB",
+                    "message": (
+                        f"{key}[{i}] has no path_glob or a very broad glob {path_glob!r}; "
+                        f"consider scoping to a specific directory or extension"
+                    ),
+                })
+
+    return findings
+
+
+def check_quality_gate(content: str, adr_id: str) -> List[Dict]:
+    """Advisory quality checks. Returns list of findings."""
+    findings: List[Dict] = []
+
+    vague_words = re.compile(
+        r"\b(appropriate|somehow|maybe|possibly|might\s+consider)\b",
+        re.IGNORECASE,
+    )
+    decision_text = _section_text(content, "## Decision")
+    if vague_words.search(decision_text):
+        findings.append({
+            "gate": "quality",
+            "severity": "ADVISORY",
+            "code": "QUALITY_VAGUE_LANGUAGE",
+            "message": (
+                "## Decision section contains vague language "
+                "(appropriate / somehow / maybe / possibly / might consider); "
+                "prefer concrete, measurable statements"
+            ),
+        })
+
+    consequences_text = _section_text(content, "## Consequences")
+    if consequences_text and not re.search(r"\d|%", consequences_text):
+        findings.append({
+            "gate": "quality",
+            "severity": "ADVISORY",
+            "code": "QUALITY_NO_METRICS",
+            "message": (
+                "## Consequences section contains no numbers or percentages; "
+                "consider quantifying the impact"
+            ),
+        })
+
+    alternatives_text = _section_text(content, "## Alternatives Considered")
+    if alternatives_text:
+        # Count list items (- or *) or standalone paragraphs separated by blank lines.
+        list_items = re.findall(r"^[-*]\s+\S", alternatives_text, re.MULTILINE)
+        heading_items = re.findall(r"^###\s+\S", alternatives_text, re.MULTILINE)
+        total_items = len(list_items) + len(heading_items)
+        if total_items < 2:
+            findings.append({
+                "gate": "quality",
+                "severity": "ADVISORY",
+                "code": "QUALITY_FEW_ALTERNATIVES",
+                "message": (
+                    f"## Alternatives Considered has {total_items} item(s); "
+                    f"consider listing at least 2 alternatives (including 'do nothing')"
+                ),
+            })
+
+    return findings
+
+
 def lint_file(
     fp: Path,
     cfg: Dict,
@@ -440,6 +636,33 @@ def lint_file(
             findings.append({
                 "gate": "consistency", "level": level,
                 "details": issues, "summary": "; ".join(issues),
+            })
+
+    if "policy" in enabled_gates and "policy" not in skip_gates:
+        policy_findings = check_policy_gate(text, adr_id)
+        for pf in policy_findings:
+            # Intrinsic severity: FAIL for schema/regex errors, ADVISORY for anti-patterns.
+            # Demote to ADVISORY if the whole file is marked advisory.
+            level = "ADVISORY" if file_advisory else pf["severity"]
+            findings.append({
+                "gate": "policy",
+                "level": level,
+                "code": pf["code"],
+                "details": [pf["message"]],
+                "summary": pf["message"],
+            })
+
+    if "quality" in enabled_gates and "quality" not in skip_gates:
+        quality_findings = check_quality_gate(text, adr_id)
+        for qf in quality_findings:
+            # Quality is always ADVISORY — demoting doesn't change anything, but
+            # honour file_advisory marker for uniformity.
+            findings.append({
+                "gate": "quality",
+                "level": "ADVISORY",
+                "code": qf["code"],
+                "details": [qf["message"]],
+                "summary": qf["message"],
             })
 
     levels = {f["level"] for f in findings}
@@ -527,6 +750,8 @@ def render_json(result: Dict) -> str:
 def parse_gates(arg: Optional[str]) -> Set[str]:
     if not arg:
         return set(DEFAULT_GATES)
+    if arg.strip().lower() == "all":
+        return set(ALL_GATES)
     parts = {p.strip() for p in arg.split(",") if p.strip()}
     unknown = parts - set(ALL_GATES)
     if unknown:
