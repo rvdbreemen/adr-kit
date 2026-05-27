@@ -17,6 +17,118 @@ You are running the one-shot project bootstrap for adr-kit. Your job is to take 
 
 This is a deep, one-shot operation. Do not skip steps. Do interact with the user — batched approval beats silent autopilot every time.
 
+## Step 0 — Verify Python 3
+
+adr-kit requires Python 3.9 or later. Before doing anything else, verify it is available.
+
+### Detection
+
+Run these checks in order:
+
+```bash
+python3 --version 2>/dev/null || python --version 2>/dev/null || py --version 2>/dev/null
+```
+
+Parse the output. Acceptable: any Python 3.9+ version string. Not acceptable: Python 2.x, command not found, or no output.
+
+**If Python 3 is found:** print `[adr-kit] Python OK: <version>` and continue to Step 1.
+
+**If Python 3 is NOT found:** offer installation. Detect the platform:
+
+```bash
+uname -s 2>/dev/null || echo "windows"
+```
+
+Then present platform-specific installation guidance:
+
+---
+
+### macOS — Python not found
+
+```bash
+# Option A (recommended): Install via Homebrew
+brew install python3
+
+# Option B: Install Xcode Command Line Tools (includes python3)
+xcode-select --install
+
+# Option C: Download from python.org
+# https://www.python.org/downloads/macos/
+```
+
+Ask the user: `Run 'brew install python3' now? (Y/n)`
+- If yes: run `brew install python3` via Bash. After it completes, verify again with `python3 --version`. If successful: confirm and continue.
+- If no: print the install instructions and tell the user to re-run `/adr-kit:init` after installing.
+
+---
+
+### Linux (Debian/Ubuntu)
+
+```bash
+sudo apt-get update && sudo apt-get install -y python3 python3-pip
+```
+
+Ask: `Run this command now? (Y/n)`
+- If yes: run it. Verify after. Continue if successful.
+
+### Linux (Red Hat/Fedora/CentOS)
+
+```bash
+sudo dnf install python3   # Fedora/RHEL 8+
+# or: sudo yum install python3
+```
+
+### Linux (Arch)
+
+```bash
+sudo pacman -S python
+```
+
+For generic Linux, detect the distro from `/etc/os-release` and present the matching command. If uncertain, present all three and ask the user to choose.
+
+---
+
+### Windows — Python not found
+
+Present these options in order:
+
+**Option A (recommended): Windows Package Manager (winget)**
+```powershell
+winget install Python.Python.3.12
+```
+Ask: `Run this in a terminal now? (Y/n)` — if yes, run it via PowerShell.
+
+**Option B: Microsoft Store**
+Open: `ms-windows-store://pdp/?ProductId=9NCVDN91XZQP`
+(or search "Python 3" in the Microsoft Store)
+
+**Option C: python.org installer**
+Download from: https://www.python.org/downloads/windows/
+Instruct: Check "Add Python to PATH" during installation.
+
+After any Windows installation, verify:
+```powershell
+python --version
+```
+
+**IMPORTANT for Windows users:** After installation, a new terminal session may be needed to pick up the updated PATH. Tell the user to close and reopen the terminal, then re-run `/adr-kit:init`.
+
+---
+
+### All platforms — After successful installation
+
+1. Verify the installed version: `python3 --version` (or `python --version` on Windows).
+2. Confirm the version is 3.9+. If it is 3.8 or earlier, warn: `[adr-kit] WARN: Python 3.8 detected. adr-kit recommends 3.9+. Some features may not work.`
+3. Print: `[adr-kit] Python 3.x.y installed. Continuing setup...`
+4. Continue to Step 1.
+
+If the user declines installation and Python is unavailable: print the error below and stop.
+
+```
+[adr-kit] ERROR: Python 3 is required but not installed.
+Install Python 3.9+ from https://www.python.org/downloads/ and re-run /adr-kit:init.
+```
+
 ## Step 1 — Project hookup
 
 ### 1a. Drop the canonical guide
