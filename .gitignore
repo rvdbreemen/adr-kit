@@ -19,9 +19,7 @@ desktop.ini
 *.sublime-workspace
 
 # Claude Code local state (per-machine, never committed)
-.claude/cache/
-.claude/local/
-.claude/settings.local.json
+.claude/
 
 # Python helpers (if added later)
 __pycache__/
