@@ -50,7 +50,7 @@ An ADR cannot move from `Proposed` to `Accepted` until all four pass.
 2. Invoke `/adr-kit:adr` (or the `adr-generator` subagent). Provide: title, context with concrete forces, ≥ 2 alternatives with rejection reasons, consequences (both directions), related ADRs.
 3. The agent applies the four gates and writes `docs/adr/ADR-NNN-…md` with `Status: Proposed`.
 4. Human review. Iterate until all gates pass.
-5. Flip Status to `Accepted, YYYY-MM-DD` after explicit human approval. **Never self-approve.**
+5. Flip Status to `Accepted, YYYY-MM-DD` after explicit human approval and append the matching transition to `## Status History`. **Never self-approve.**
 6. If the decision touches code in a mechanically expressible way, add an `Enforcement` block (see below) so the pre-commit hook can guard the boundary.
 
 ## Enforcement block (v0.12+)
@@ -101,9 +101,9 @@ Accepted ADRs are immutable. To change a decision:
 
 1. Author a new ADR with the next number. Status `Proposed`. The Decision should explain what changes and why now.
 2. In its Related Decisions: `Supersedes ADR-OLD`.
-3. After the new ADR is `Accepted`: edit ONLY the old ADR's Status line to `Superseded by ADR-NEW, YYYY-MM-DD.` Leave every other section untouched — the old decision's content is the historical record.
+3. After the new ADR is `Accepted`: edit the old ADR's Status line to `Superseded by ADR-NEW, YYYY-MM-DD.` and append that transition to its `## Status History`. Leave every other section and all earlier history entries untouched: the old decision's content is the historical record.
 
-Never edit Decision, Context, Consequences, or Alternatives of an Accepted/Deprecated ADR. The Status line is the only permitted change.
+Never edit Decision, Context, Consequences, or Alternatives of an Accepted/Deprecated ADR. Only the Status line and an appended Status History transition may change.
 
 ## Code review checks
 

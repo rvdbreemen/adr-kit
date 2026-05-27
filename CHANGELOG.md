@@ -4,6 +4,117 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-27
+
+### Fixed / Improved (37 review findings from multi-agent code review)
+
+#### Security
+
+- **llm_cmd allowlist** (`bin/adr-judge`): `judge.llm_cmd` from `.adr-kit.json` is now validated against an explicit allowlist of known Claude CLI binaries. Unknown binaries trigger a warning and fall back to the default; `ADR_KIT_LLM_CMD` env and `--llm-cmd` CLI flag remain unrestricted (operator-controlled).
+- **ReDoS guard** (`bin/adr-judge`): ADR-controlled regex patterns are now executed inside a `threading.Timer`-based 1-second timeout per pattern. A timed-out pattern produces an ADVISORY finding instead of hanging the pre-commit hook indefinitely.
+- **Path traversal in require_pattern** (`bin/adr-judge`): diff-derived file paths are validated to resolve under `repo_root` before reading. Absolute paths and `..` sequences are rejected.
+- **LLM stderr info disclosure** (`bin/adr-judge`): verbose LLM error output is now gated behind `ADR_KIT_DEBUG=1`; default messages are generic.
+- **Generated shell script — ERE validation** (`bin/adr-generate-scripts`): generated `validate.sh` now tests each pattern with a `printf | grep` preflight at startup and warns loudly if any pattern is not valid POSIX ERE.
+- **Generated shell script — echo/printf** (`bin/adr-generate-scripts`): replaced `echo "$line"` with `printf '%s\n' "$line"` to avoid xpg_echo backslash interpretation.
+- **Pre-commit hook glob expansion** (`templates/githooks/pre-commit`): replaced `ls -d | sort -V | tail -1` path resolution with a bash nullglob array, eliminating the ls-parsing vulnerability.
+- **adr-retire symlink traversal** (`bin/adr-retire`): replaced unbounded `rglob('*')` with `os.walk(followlinks=False)` and a 50,000-file cap.
+
+#### Performance
+
+- **glob_to_regex caching** (`bin/adr-judge`): module-level `_GLOB_PATTERN_CACHE` eliminates O(ADRs × rules × files × globs) redundant `re.compile()` calls.
+- **JSON schema singleton** (`bin/adr-judge`, `bin/adr-lint`): `schemas/adr-enforcement.schema.json` is now loaded and compiled into a `Draft7Validator` once per process instead of once per ADR.
+- **Section regex precompilation** (`bin/adr-lint`, `bin/adr-quality`): `REQUIRED_SECTIONS` heading patterns precompiled at module load.
+- **adr-status single-pass parsing** (`bin/adr-status`): introduced `AdrRecord` dataclass and `parse_adr()` — each ADR is read and all fields extracted exactly once. All formatters consume the cached record, eliminating 500-700 redundant regex scans on 100-ADR sets.
+- **Pre-commit hook streaming** (`templates/githooks/pre-commit`): replaced `DIFF=$(git diff ...)` buffering with direct pipe streaming to `adr-judge`.
+- **Generated validate.sh** (`bin/adr-generate-scripts`): rewritten from O(lines × rules × subprocess_spawn) to O(rules) subprocess spawns via single-pass `grep -nE` per rule.
+- **adr-context domain inference** (`bin/adr-context`): replaced ~125 `in text_lower` substring checks per ADR with per-domain compiled word-boundary regexes.
+- **adr-context metadata extraction** (`bin/adr-context`): 6 inline `re.search()` calls per ADR replaced with module-level compiled constants.
+- **adr-quality gate regexes** (`bin/adr-quality`): section presence/body patterns and acronym regex precompiled at module level.
+- **Diff size check** (`bin/adr-judge`): `len(diff_text)` replaces `len(diff_text.encode("utf-8"))`.
+- **Dry-run shortcut** (`bin/adr-judge`): `--dry-run-enforcement ADR-NNN` now globs only the target ADR directly.
+
+#### Architecture
+
+- **Structured quality issues** (`bin/adr-quality`): `gate_*()` functions now return `QualityIssue` dataclasses with stable `code`, `detail`, `severity` fields instead of raw strings. JSON output includes `code`, `detail`, `severity`, `message` per issue.
+- **Unified vague-language list** (`bin/adr-lint`, `bin/adr-quality`): both tools now share a canonical 8-word set (`appropriate`, `somehow`, `maybe`, `possibly`, `might`, `could`, `should consider`, `might consider`).
+- **Quality gate boundary documented** (`bin/adr-lint`, `agents/adr-generator.md`): `check_quality_gate()` docstring and Step 3 in `agents/adr-generator.md` now explicitly state that `adr-lint` and `bin/adr-quality` run different gate sets with different thresholds.
+- **Schema extended** (`schemas/adr-kit-config.schema.json`): `context` and `retirement` top-level config blocks now documented with full property schemas.
+- **Legacy config key removed** (`bin/adr-context`): `min_relevance_threshold` fallback removed; canonical key is `min_score`.
+- **adr-status — amended status** (`bin/adr-status`): `by_status` histogram now buckets "amended" correctly; `CANONICAL_STATUSES` constant defined.
+- **adr-status — no-op flags removed** (`bin/adr-status`): `--show-enforcement` and `--show-retirement` flags (shipped as no-ops in v0.14.0) removed.
+- **adr-context — bare except fixed** (`bin/adr-context`): silent `except Exception: pass` replaced with stderr warning.
+- **adr-context — infer_task_domain returns Optional** (`bin/adr-context`): returns `None` instead of "backend" when no domain matches; scoring skips domain_tag credit for unknown domains.
+- **CLI format consistency** (`bin/adr-retire`, `bin/adr-lint`): adr-retire default changed from `json` to `text`; adr-lint accepts `text` as alias for `human`.
+- **adr-generate-scripts cleanup** (`bin/adr-generate-scripts`): extracted `_make_executable()` helper, removed duplicated chmod blocks and unused `import os`.
+
+#### Testing
+
+- **Wall-clock performance tests** (`tests/test_adr_performance.py`): 3 new `@pytest.mark.slow` tests assert timing budgets on 50-ADR synthetic suites for adr-judge (<3s), adr-status (<500ms), adr-context (<600ms).
+- **pytest.ini**: registered `slow` marker to eliminate PytestUnknownMarkWarning.
+- **225 tests passing**, 2 skipped (Windows shell-script execution).
+
+## [0.14.0] - 2026-05-27
+
+### Added
+
+#### Phase 1 — Governance backbone (TASK-710, TASK-711)
+
+- **Append-only status history**: `bin/adr-judge` parses and appends immutable
+  `status_history` YAML entries; `--migrate-status-history` migrates legacy ADRs.
+  `bin/adr-lint` validates histories via a new `audit` gate (default-on) while
+  keeping unmigrated v0.13 ADRs compatible.
+- **Automated retirement detection**: new `bin/adr-retire` tool and
+  `/adr-kit:retire` skill score candidates by staleness, technology disappearance,
+  broken supersession references, and risky policy patterns. Optional
+  `adr-retire-audit.yml` GitHub Actions workflow runs weekly.
+
+#### Phase 2 — Intelligence layer (TASK-712, TASK-713)
+
+- **Profiling and dry-run**: `bin/adr-judge --profile` emits per-ADR timing
+  breakdowns; `--dry-run-enforcement ADR-NNN` tests a single ADR against staged
+  diffs without blocking the commit.
+- **Semantic relevance ranking**: new `bin/adr-context` tool ranks ADRs for a
+  task query using five weighted heuristic signals (keyword match, domain tag,
+  related decisions, acceptance status, recency). Configurable weights in
+  `.adr-kit.json`. Injected into `agents/adr-generator.md` context-loading step.
+
+#### Phase 3 — Enforcement quality (TASK-714, TASK-715)
+
+- **Policy block validation**: `bin/adr-lint` gains `--gates policy` and
+  `--gates quality` (both opt-in). The policy gate validates Enforcement JSON
+  against `schemas/adr-enforcement.schema.json`, compiles all regex patterns, and
+  warns on anti-patterns (unescaped dots, excessive wildcards, broad globs). The
+  quality gate flags vague language, missing metrics, and too few alternatives.
+- **Standalone validation script generation**: new `bin/adr-generate-scripts` tool
+  produces self-contained `validate.py` (Python stdlib only) and `validate.sh`
+  scripts in `.generated/`. Scripts enforce the same rules as `adr-judge` without
+  requiring adr-kit as a dependency, suitable for embedding in foreign CI
+  pipelines.
+
+#### Phase 4 — Observability and agent guidance (TASK-716, TASK-717)
+
+- **ADR health dashboard**: new `bin/adr-status` tool reports total count, status
+  breakdown, average age, enforcement health per ADR, and top retirement
+  candidates. Output in `--format json|markdown|table`.
+- **Quality scoring**: new `bin/adr-quality` tool grades each ADR A–D via four
+  weighted gates (completeness 40%, evidence 20%, clarity 20%, consistency 20%).
+  Returns structured JSON or human-readable text; exits 1 when grade is below B.
+- **Agent decision tree**: `agents/adr-generator.md` gains a "When to Create an
+  ADR" decision tree and post-decision quality check section.
+
+#### Cross-cutting improvements
+
+- **Python 3 availability check**: `skills/init/SKILL.md` now checks for Python
+  3.9+ before any installation step, with guided installation instructions for
+  macOS (Homebrew), Linux (apt/dnf/pacman) and Windows (winget). The pre-commit
+  hook template (`templates/githooks/pre-commit`) also checks for Python 3 at
+  hook runtime and exits gracefully with installation hints if absent.
+- **`.adr-kit.json`**: new `context.weights`, `context.default_limit`,
+  `context.min_score`, `retirement.*`, and timeout fields
+  (`pre_commit_timeout_ms`, `pre_push_timeout_ms`, `llm_timeout_ms`,
+  `warn_on_exceed`).
+- **222 tests passing**, 2 skipped (Windows shell-script execution).
+
 ## [0.13.3] - 2026-05-25
 
 ### Fixed

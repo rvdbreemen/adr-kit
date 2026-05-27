@@ -10,9 +10,10 @@
     "ADR-007"
   ],
 
-  "_comment_severity": "Per-gate severity. Legal values: 'always_strict' (failures are FAIL), 'always_advisory' (failures are ADVISORY), 'advisory_before_strict_from' (default for completeness/evidence/clarity when strict_from is set: ADVISORY before strict_from, FAIL after). Consistency stays always_strict by default because filename / heading mismatches and duplicate numbers are real bugs regardless of when the ADR was written.",
+  "_comment_severity": "Per-gate severity. Legal values: 'always_strict' (failures are FAIL), 'always_advisory' (failures are ADVISORY), 'advisory_before_strict_from' (default for completeness/evidence/clarity when strict_from is set: ADVISORY before strict_from, FAIL after). Audit and consistency stay always_strict by default because invalid status chains, filename / heading mismatches, and duplicate numbers are real bugs regardless of when the ADR was written.",
   "severity": {
     "completeness": "advisory_before_strict_from",
+    "audit": "always_strict",
     "evidence": "advisory_before_strict_from",
     "clarity": "always_advisory",
     "consistency": "always_strict"

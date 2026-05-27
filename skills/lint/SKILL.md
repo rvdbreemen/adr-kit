@@ -1,6 +1,6 @@
 ---
 name: lint
-description: Lints existing Architecture Decision Records against the four verification gates (Completeness, Evidence, Clarity, Consistency). Run on a single ADR file or on the whole docs/adr/ tree. Reports pass/fail per gate per file with file:line citations for failures. Read-only.
+description: Lints existing Architecture Decision Records against four verification gates plus the deterministic status-history audit. Run on a single ADR file or on the whole docs/adr/ tree. Reports pass/fail per gate per file with file:line citations for failures. Read-only.
 argument-hint: "[file or directory; defaults to docs/adr/]"
 disable-model-invocation: true
 allowed-tools: [Read, Glob, Grep]
@@ -8,7 +8,7 @@ allowed-tools: [Read, Glob, Grep]
 
 # adr-kit lint
 
-You are running `/adr-kit:lint`. The user wants to know whether existing ADRs in their project pass the four verification gates that the main `adr` skill enforces. You read files; you do not modify them. You report.
+You are running `/adr-kit:lint`. The user wants to know whether existing ADRs in their project pass the four verification gates that the main `adr` skill enforces and, for v0.14 ADRs, whether their status histories are intact. You read files; you do not modify them. You report.
 
 ## Inputs
 
@@ -30,11 +30,11 @@ Recognised fields:
 
 - `strict_from` (string, optional): first ADR identifier (inclusive) on which all gates are enforced strictly. ADRs with a numerically lower number are linted in *advisory* mode for the gates that opt in (see `severity`). Format: `ADR-XXX` matching the filename pattern. Example: `"ADR-082"`.
 - `ignore` (array of strings, optional): list of ADR identifiers (`ADR-XXX`) or full filenames to skip entirely. Useful for archived or superseded ADRs whose status is final. Skipped ADRs appear in the aggregate as SKIPPED but produce no gate output.
-- `severity` (object, optional): per-gate severity. Keys are the four gate names lower-cased (`completeness`, `evidence`, `clarity`, `consistency`). Values are one of:
+- `severity` (object, optional): per-gate severity. Keys are `completeness`, `audit`, `evidence`, `clarity`, and `consistency`. Values are one of:
   - `always_strict`: failures are FAIL regardless of `strict_from`.
   - `always_advisory`: failures are ADVISORY regardless of `strict_from`.
   - `advisory_before_strict_from`: failures are ADVISORY for ADRs that predate `strict_from`, FAIL otherwise. This is the default for `completeness`, `evidence`, `clarity` when `strict_from` is set.
-  - For `consistency` the implicit default stays `always_strict` even when `strict_from` is set, because the things it catches (filename / heading mismatch, duplicate numbers, broken cross-references) are real bugs regardless of when the ADR was written. Projects can override this in their config but the default is loud-on-purpose.
+  - For `audit` and `consistency` the implicit default stays `always_strict` even when `strict_from` is set, because an invalid status chain, filename / heading mismatch, duplicate number, or broken cross-reference is a real bug regardless of when the ADR was written. Projects can override this in their config but the default is loud-on-purpose.
 - `template.required_sections` (array of strings, optional): override the canonical seven required sections with a project-specific list. Each entry is the exact heading text including the `## ` prefix. When set, the Completeness gate uses *this* list instead of the canonical one. Useful for projects whose template legitimately differs from the toolkit's default.
 
 Example `.adr-kit.json`:
@@ -45,6 +45,7 @@ Example `.adr-kit.json`:
   "ignore": ["ADR-001", "ADR-007"],
   "severity": {
     "completeness": "advisory_before_strict_from",
+    "audit": "always_strict",
     "evidence": "advisory_before_strict_from",
     "clarity": "always_advisory",
     "consistency": "always_strict"
@@ -149,6 +150,16 @@ Sub-checks within sections:
 - **Risks** are named with at least one mitigation each (typically inside Consequences as `Risks and mitigations` or similar).
 
 Failure example: `Completeness: missing ## Risks and mitigations subsection (line 47); only positive consequences listed.`
+
+### Audit: Status History (v0.14.0+)
+
+When an ADR contains a `status_history` YAML list, validate that each entry has
+`date`, `status`, `changed_by`, `reason`, and `changed_via`; dates are in
+chronological order and are not in the future; and the latest history status
+matches the `## Status` section. ADRs without a history block predate v0.14 and
+pass this supplemental gate until deliberately migrated.
+
+Failure example: `Audit: latest status_history entry is Proposed but ## Status is Accepted. Append the missing Accepted transition; do not rewrite older entries.`
 
 ### Gate 2: Evidence
 

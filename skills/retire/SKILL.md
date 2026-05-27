@@ -1,0 +1,35 @@
+---
+name: retire
+description: Audits Accepted Architecture Decision Records for possible retirement using deterministic staleness, technology-removal, supersession, and enforcement-policy signals. Produces ranked candidates for human review; never edits ADRs.
+argument-hint: "[ADR directory; defaults to docs/adr/]"
+disable-model-invocation: true
+allowed-tools: [Read, Bash]
+---
+
+# adr-kit retire
+
+You are running `/adr-kit:retire`. This is a read-only audit of Accepted ADRs
+that may no longer describe the project accurately.
+
+## Procedure
+
+1. Resolve the ADR target from the optional argument; default to `docs/adr/`.
+2. Run the bundled deterministic scanner from the project root:
+
+   ```bash
+   python <adr-kit-plugin-path>/bin/adr-retire <target> \
+     --repo-root . --threshold 0.4 --format markdown
+   ```
+
+3. Present every returned candidate with its four signal scores:
+   `staleness_90day`, `tech_removal`, `broken_supersession`, and
+   `policy_mismatch`.
+4. For any `REVIEW` or `RETIRE` result, ask the user whether the decision is
+   actually obsolete before proposing a superseding ADR.
+
+## Boundaries
+
+- Do not modify ADR statuses or status histories during this audit.
+- Treat `MONITOR` as an observation, not as proof that an ADR is obsolete.
+- A retirement recommendation is evidence for review, not permission to
+  remove an Accepted decision silently.

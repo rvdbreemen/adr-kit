@@ -34,9 +34,9 @@ If no ADR exists and the change is architecturally significant:
 
 If your change reverses or replaces an `Accepted` ADR:
 
-1. **Do not modify the accepted ADR's decision text or reasoning.** ADRs are immutable once `Accepted`, except for the Status line.
+1. **Do not modify the accepted ADR's decision text or reasoning.** ADRs are immutable once `Accepted`, except for the Status line and an appended `## Status History` transition.
 2. **Write a new superseding ADR** that explains: (a) what is changing, (b) why the original choice no longer fits, (c) what the new choice is, (d) the migration path if consumers are affected.
-3. **Update the old ADR's Status line only**: `Superseded by ADR-YYY`. Rationale lives in the new ADR.
+3. **Update status without rewriting history**: set the old ADR's Status line to `Superseded by ADR-YYY` and append the matching `status_history` entry. Rationale lives in the new ADR.
 4. **Cross-link** in both ADRs' `## Related Decisions` sections.
 
 ## Amending (vs superseding)
@@ -58,7 +58,7 @@ For every commit that lands an architecturally significant change:
 - [ ] Consequences include both positive and negative impacts; risks have mitigations
 - [ ] The four verification gates from the skill all pass
 - [ ] Commit message and PR description link to the ADR
-- [ ] If superseding, the old ADR's Status line is updated and cross-references are in place
+- [ ] If superseding, the old ADR's Status line and appended Status History entry are updated and cross-references are in place
 - [ ] Code comments point at the ADR at non-obvious enforcement sites
 
 ## Definition of Done

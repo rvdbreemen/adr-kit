@@ -9,6 +9,9 @@
 # `"llm_judge": true` are evaluated against the staged diff via `claude -p`.
 # A missing `claude` CLI logs a warning and falls back to declarative-only.
 #
+# As of v0.14.1 the hook measures adr-judge wall-clock time and warns (non-blocking)
+# when execution exceeds 5000ms. Uses `date +%s%3N`; falls back to perl on macOS.
+#
 # Disable LLM pass per commit:  ADR_KIT_NO_LLM=1 git commit ...
 # Disable hook entirely:        ADR_KIT_HOOK_DISABLE=1 git commit ...
 # Remove permanently:           /adr-kit:install-hooks --uninstall  (in a Claude Code session)
@@ -20,11 +23,40 @@ if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   exit 0
 fi
 
+# Verify Python 3 is available — adr-judge is a Python 3 script.
+_PYTHON3=""
+for _cmd in python3 python py; do
+  if command -v "$_cmd" >/dev/null 2>&1; then
+    _ver=$("$_cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    _major=$(echo "$_ver" | cut -d. -f1)
+    if [ "${_major:-0}" -ge 3 ] 2>/dev/null; then
+      _PYTHON3="$_cmd"
+      break
+    fi
+  fi
+done
+
+if [ -z "$_PYTHON3" ]; then
+  echo "[adr-kit] ERROR: Python 3 not found. adr-judge requires Python 3.9+." >&2
+  echo "[adr-kit] Install Python: https://www.python.org/downloads/" >&2
+  echo "[adr-kit] On macOS: brew install python3" >&2
+  echo "[adr-kit] On Windows: winget install Python.Python.3.12" >&2
+  echo "[adr-kit] Skipping ADR check for this commit." >&2
+  exit 0
+fi
+
 ADR_KIT_BASE="${HOME}/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit"
 ADR_JUDGE=""
 if [ -d "$ADR_KIT_BASE" ]; then
-  # Pick the highest installed version (lexicographic sort works for SemVer-shaped dirs).
-  ADR_JUDGE=$(ls -d "$ADR_KIT_BASE"/*/bin/adr-judge 2>/dev/null | sort -V | tail -1)
+  # Pick the highest installed version (SemVer sort over directory names).
+  # Use a bash array + nullglob so filenames with spaces/odd chars don't break us
+  # and so an empty glob doesn't expand to the literal pattern.
+  shopt -s nullglob
+  _candidates=("$ADR_KIT_BASE"/*/bin/adr-judge)
+  shopt -u nullglob
+  if [ ${#_candidates[@]} -gt 0 ]; then
+    ADR_JUDGE=$(printf '%s\n' "${_candidates[@]}" | sort -V | tail -1)
+  fi
 fi
 
 if [ -z "$ADR_JUDGE" ] || [ ! -x "$ADR_JUDGE" ]; then
@@ -34,10 +66,22 @@ if [ -z "$ADR_JUDGE" ] || [ ! -x "$ADR_JUDGE" ]; then
 fi
 
 ROOT=$(git rev-parse --show-toplevel)
-DIFF=$(git diff --cached --unified=0)
-if [ -z "$DIFF" ]; then
+# Skip when there are no staged changes — cheaper than buffering the full diff just to test emptiness.
+if [ -z "$(git diff --cached --name-only)" ]; then
   exit 0
 fi
+
+# Portable millisecond timestamp: `date +%s%3N` works on Linux/Git-Bash/WSL.
+# On macOS the GNU %3N extension is absent, so we fall back to perl.
+_ms_now() {
+  local t
+  t=$(date +%s%3N 2>/dev/null)
+  # Reject empty or non-numeric results (macOS BSD date returns literal "%3N").
+  case "$t" in
+    ''|*[!0-9]*) t=$(perl -e 'print int(time()*1000)') ;;
+  esac
+  printf '%s' "$t"
+}
 
 # Run the judge. Default mode (v0.13.0+):
 #   - declarative pass:  fast, regex-only, exits non-zero on violation
@@ -48,12 +92,19 @@ fi
 #   0  no violations (advisory entries are non-blocking)
 #   1  at least one violation (declarative or LLM)
 #   2  config or runtime error
-ADR_OUT=$(echo "$DIFF" | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --llm 2>&1)
+_T0=$(_ms_now)
+ADR_OUT=$(git diff --cached --unified=0 | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --llm 2>&1)
 ADR_EXIT=$?
+_T1=$(_ms_now)
 # Suppress per-ADR llm_judge advisory lines: they repeat once per ADR with llm_judge:true
 # and become very noisy on projects with many ADRs. Violations and the summary line
 # (e.g. "[adr-judge] OK 0 violations, 57 advisory") are preserved.
 printf '%s\n' "$ADR_OUT" | grep -avE "^  ADVISORY |^[[:space:]]+ADR has llm_judge:true" >&2 || true
+# Performance warning (non-blocking): alert when adr-judge takes longer than 5 seconds.
+_ELAPSED=$(( _T1 - _T0 ))
+if [ "$_ELAPSED" -gt 5000 ] 2>/dev/null; then
+  echo "[adr-kit] WARN: pre-commit hook took ${_ELAPSED}ms (threshold: 5000ms). Consider ADR_KIT_NO_LLM=1 for faster commits." >&2
+fi
 [ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"
 
 exit 0

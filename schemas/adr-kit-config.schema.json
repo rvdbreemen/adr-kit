@@ -21,10 +21,14 @@
     },
     "severity": {
       "type": "object",
-      "description": "Per-gate severity. Default for completeness, evidence, clarity is 'advisory_before_strict_from' when strict_from is set, 'always_strict' otherwise. Default for consistency is 'always_strict' regardless: filename / heading mismatches and duplicate numbers are real bugs at any age.",
+      "description": "Per-gate severity. Default for completeness, evidence, clarity is 'advisory_before_strict_from' when strict_from is set, 'always_strict' otherwise. Defaults for audit and consistency are 'always_strict' regardless: invalid status chains, filename / heading mismatches, and duplicate numbers are real bugs at any age.",
       "additionalProperties": false,
       "properties": {
         "completeness": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "audit": {
           "type": "string",
           "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
         },
@@ -39,6 +43,36 @@
         "consistency": {
           "type": "string",
           "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "policy": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "quality": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "description": "Configuration for the policy gate (Enforcement block validation), introduced in adr-kit v0.14.0.",
+      "additionalProperties": false,
+      "properties": {
+        "strict_mode": {
+          "type": "boolean",
+          "description": "When true, schema validation failures are treated as FAIL regardless of severity config. Default true.",
+          "default": true
+        },
+        "regex_compile_checks": {
+          "type": "boolean",
+          "description": "When true, all pattern fields in Enforcement blocks are compiled and syntax errors are reported as FAIL. Default true.",
+          "default": true
+        },
+        "pattern_warnings": {
+          "type": "boolean",
+          "description": "When true, anti-pattern advisories (excessive wildcards, broad path_globs) are emitted. Default true.",
+          "default": true
         }
       }
     },
@@ -103,6 +137,38 @@
           "default": 120
         }
       }
+    },
+    "context": {
+      "type": "object",
+      "description": "Configuration for bin/adr-context semantic ranking",
+      "properties": {
+        "weights": {
+          "type": "object",
+          "description": "Scoring signal weights (must sum to 1.0)",
+          "properties": {
+            "exact_keyword": {"type": "number", "minimum": 0, "maximum": 1},
+            "domain_tag": {"type": "number", "minimum": 0, "maximum": 1},
+            "related_decisions": {"type": "number", "minimum": 0, "maximum": 1},
+            "acceptance_status": {"type": "number", "minimum": 0, "maximum": 1},
+            "recency": {"type": "number", "minimum": 0, "maximum": 1}
+          },
+          "additionalProperties": false
+        },
+        "default_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
+        "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.1}
+      },
+      "additionalProperties": false
+    },
+    "retirement": {
+      "type": "object",
+      "description": "Configuration for bin/adr-retire retirement detection",
+      "properties": {
+        "threshold_days": {"type": "integer", "minimum": 1, "default": 90},
+        "check_tech_removal": {"type": "boolean", "default": true},
+        "check_supersession": {"type": "boolean", "default": true},
+        "check_policy_mismatch": {"type": "boolean", "default": true}
+      },
+      "additionalProperties": false
     }
   }
 }

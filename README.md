@@ -21,11 +21,12 @@ Three coordinated operating modes, since v0.12.0:
 - **Agent** (`agents/adr-generator.md`): the subagent for *creating* a new ADR. Now also proposes an `## Enforcement` block when the ADR has a code surface.
 - **Init skill** (`/adr-kit:init`, v0.12.0+): umbrella project bootstrap (audit + ADR generation + hook install).
 - **Judge runner** (`bin/adr-judge`, v0.12.0+): declarative diff-vs-ADR engine. Parses fenced JSON `## Enforcement` blocks; applies `forbid_pattern` / `forbid_import` / `require_pattern` rules to the staged diff with file:line citations. Mirrors `bin/adr-lint`'s exit-code style (0 / 1 / 2).
-- **Judge skill** (`/adr-kit:judge`, v0.12.0+): on-demand interactive judge. Runs the deterministic pass + in-session LLM review for `llm_judge: true` ADRs (no shell-out to `claude -p`).
+- **Judge skill** (`/adr-kit:judge`, v0.12.0+): on-demand interactive judge. Runs the same `bin/adr-judge --llm` engine as the hook for `llm_judge: true` ADRs.
 - **Audit runner** (`bin/adr-audit`, v0.12.0+): deterministic candidate scanner used by init.
 - **Hook installer** (`/adr-kit:install-hooks`, v0.12.0+): installs/uninstalls the pre-commit hook. Default-on after init or upgrade.
 - **Upgrade skill** (`/adr-kit:upgrade`, v0.12.0+): guided v0.11 → v0.12 migration without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
 - **Lint skill + CLI** (`/adr-kit:lint`, `bin/adr-lint`, since v0.7.0 / v0.10.0): validates ADR file content against the four gates.
+- **Retirement audit** (`/adr-kit:retire`, `bin/adr-retire`, v0.14.0+): ranks review candidates using four deterministic signals without changing ADRs.
 - **Migrate skill** (`/adr-kit:migrate`, since v0.11.0): guided rewrite of legacy-shaped ADRs into the canonical seven-section template.
 - **Setup skill** (`/adr-kit:setup`, since v0.4.0; rewritten in v0.12.0): the lighter cousin of `init`. Drops the canonical guide and writes the slim CLAUDE.md stub, but does not run the codebase audit or install the hook. Detects v0.11-style inline `## ADR Kit Rules` and leaves them untouched (use `/adr-kit:upgrade` to migrate).
 - **Instructions** (`instructions/`): per-developer rules (`adr.coding.md`) and the seven-check code-review checklist (`adr.review.md`).
@@ -90,13 +91,15 @@ adr-kit/
 │   ├── upgrade/SKILL.md            # /adr-kit:upgrade: v0.11 -> v0.12 migration (v0.12+)
 │   ├── setup/SKILL.md              # /adr-kit:setup: lighter CLAUDE.md+guide hookup
 │   ├── lint/SKILL.md               # /adr-kit:lint: validates ADRs against the four gates
-│   └── migrate/SKILL.md            # /adr-kit:migrate: rewrite legacy ADRs into canonical
+│   ├── migrate/SKILL.md            # /adr-kit:migrate: rewrite legacy ADRs into canonical
+│   └── retire/SKILL.md             # /adr-kit:retire: rank retirement candidates (v0.14+)
 ├── agents/
 │   └── adr-generator.md            # subagent: create a new ADR (proposes Enforcement blocks v0.12+)
 ├── bin/
 │   ├── adr-lint                    # deterministic gate validator
 │   ├── adr-judge                   # diff vs Enforcement-block runner (v0.12+)
-│   └── adr-audit                   # candidate scanner used by init (v0.12+)
+│   ├── adr-audit                   # candidate scanner used by init (v0.12+)
+│   └── adr-retire                  # retirement-candidate audit (v0.14+)
 ├── templates/
 │   ├── adr-template.md             # ADR template with optional Enforcement section (v0.12+)
 │   ├── adr-kit-guide.md            # canonical project-side guide; copied to .claude/ (v0.12+)
@@ -114,7 +117,7 @@ adr-kit/
 
 ## Slash commands reference
 
-After `/plugin install adr-kit@rvdbreemen-adr-kit` + `/reload-plugins`, your Claude Code session has four slash commands. Two of the five names below (`/adr` and `/adr-kit:adr`) invoke the same skill; the other three are independent.
+After `/plugin install adr-kit@rvdbreemen-adr-kit` + `/reload-plugins`, your Claude Code session exposes the commands below. `/adr` and `/adr-kit:adr` invoke the same skill; the others are independent.
 
 | Command | Type | Auto-invocable | When to use |
 |---|---|---|---|
@@ -123,11 +126,12 @@ After `/plugin install adr-kit@rvdbreemen-adr-kit` + `/reload-plugins`, your Cla
 | `/adr-kit:setup` | one-time write | no | Run once per project after install. Appends an "ADR Kit Rules" section to your project's `CLAUDE.md` so future sessions know about the skill, the agent, and the path-specific instructions. Idempotent: re-running reports "Already set up" rather than duplicating. |
 | `/adr-kit:lint [path]` | deliberate check | no | Validate existing ADRs against the four gates with file:line citations. Reads `docs/adr/.adr-kit.json` if present. Default target is `docs/adr/`; pass a directory or file as argument to scope. Read-only. Three result tiers: PASS, ADVISORY (informational), FAIL (action required). |
 | `/adr-kit:migrate [path]` | guided rewrite | no | Bring a legacy-shaped ADR into the canonical-seven-section template. Read-then-confirm: prints a per-file plan first, applies after explicit yes. Six named patterns (Status promotion, Alternatives lift, Related-to-Related-Decisions split, TODO placeholders for genuine content gaps). Default target is `docs/adr/`. |
+| `/adr-kit:retire [path]` | deliberate check | no | Rank Accepted ADRs for possible retirement using deterministic status-age, technology-removal, supersession, and policy signals. Read-only. |
 
 ### Auto-invocable vs user-only
 
 - **Auto-invocable** (`/adr`, `/adr-kit:adr`): Claude can also load this skill in the background when context calls for it (e.g. you ask "should I document this decision?"). The skill body activates without you typing the slash command. Knowledge / reference skills sit here.
-- **User-only** (`/adr-kit:setup`, `/adr-kit:lint`, `/adr-kit:migrate`): only fires when you explicitly type the slash command. Set via `disable-model-invocation: true` in the skill frontmatter. Write actions and deliberate checks sit here so Claude does not surprise you by triggering them.
+- **User-only** (`/adr-kit:setup`, `/adr-kit:lint`, `/adr-kit:migrate`, `/adr-kit:retire`): only fires when you explicitly type the slash command. Set via `disable-model-invocation: true` in the skill frontmatter. Write actions and deliberate checks sit here so Claude does not surprise you by triggering them.
 
 This is a deliberate design pattern. Knowledge skills should be cheap to auto-trigger; write-and-check skills should be costly enough that you have to ask.
 
@@ -158,6 +162,32 @@ The toolkit defaults to:
 - **Status values**: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-YYY`.
 - **Date format**: `YYYY-MM-DD`.
 
+### Status history (v0.14.0+)
+
+New ADRs include an append-only `## Status History` YAML block. Each transition
+records `date`, `status`, `changed_by`, `reason`, and `changed_via`.
+`bin/adr-lint` checks a present history with its deterministic `audit` gate,
+including chronological dates and agreement with `## Status`.
+
+```yaml
+status_history:
+  - date: 2026-05-26
+    status: Proposed
+    changed_by: author@example.com
+    reason: Initial proposal
+    changed_via: adr-kit v0.14.0
+```
+
+Existing v0.13 ADRs remain readable without modification. To deliberately add
+an initial history entry to legacy ADRs, run:
+
+```bash
+python bin/adr-judge --adr-dir docs/adr --migrate-status-history
+```
+
+Migration is explicit because ordinary pre-commit judging must remain
+read-only and must not introduce unstaged edits while evaluating a staged diff.
+
 You can change the convention if your project already has a different one (some teams use `adr-NNNN-` lowercase 4-digit, or `0001-` with no prefix). Edit the `## Project Conventions` section in the skill and the agent definition; the rest of the toolkit follows from there.
 
 ## Configuration (since v0.9.0)
@@ -174,6 +204,7 @@ Drop this file at `docs/adr/.adr-kit.json` to set the project's lint policy. Ski
   "ignore": ["ADR-001", "ADR-007"],
   "severity": {
     "completeness": "advisory_before_strict_from",
+    "audit": "always_strict",
     "evidence": "advisory_before_strict_from",
     "clarity": "always_advisory",
     "consistency": "always_strict"
@@ -186,7 +217,7 @@ Drop this file at `docs/adr/.adr-kit.json` to set the project's lint policy. Ski
 
 - `strict_from` is the first ADR id (inclusive) on which the gates are enforced strictly. ADRs with a lower number are linted in advisory mode.
 - `ignore` lists ADR ids (or filenames) to skip entirely.
-- `severity` overrides the per-gate behaviour. Legal values: `always_strict`, `always_advisory`, `advisory_before_strict_from`. Consistency stays strict by default because filename / heading mismatches and duplicate numbers are real bugs regardless of when the ADR was written.
+- `severity` overrides the per-gate behaviour. Legal values: `always_strict`, `always_advisory`, `advisory_before_strict_from`. Audit and consistency stay strict by default because invalid status chains, filename / heading mismatches, and duplicate numbers are real bugs regardless of when the ADR was written.
 - `template.required_sections` overrides the canonical seven sections with your project's actual template.
 
 A fully annotated copy lives at [`examples/.adr-kit.sample.json`](examples/.adr-kit.sample.json).
@@ -209,12 +240,12 @@ For one-off grandfathering without a project-wide config, drop one of these HTML
 
 ## CI integration: `bin/adr-lint` (since v0.10.0)
 
-The `/adr-kit:lint` skill is for human-in-the-loop review (judgement-based gates rely on Claude). For CI / pre-commit / batch validation, v0.10.0 ships a deterministic Python CLI at `bin/adr-lint`. It mirrors the deterministic gates of the skill (Completeness and Consistency by default; Evidence and Clarity available behind `--gates`), reads the same `.adr-kit.json` policy, and exits with a status code that makes blocking a PR trivial.
+The `/adr-kit:lint` skill is for human-in-the-loop review (judgement-based gates rely on Claude). For CI / pre-commit / batch validation, v0.10.0 ships a deterministic Python CLI at `bin/adr-lint`. It runs Completeness, Audit, and Consistency by default; Evidence and Clarity remain available behind `--gates`. It reads the same `.adr-kit.json` policy and exits with a status code that makes blocking a PR trivial.
 
 ### Quick start
 
 ```bash
-# Lint your project's ADRs (default: docs/adr/, gates: completeness,consistency)
+# Lint your project's ADRs (default: docs/adr/, gates: completeness,audit,consistency)
 python bin/adr-lint
 
 # Limit to one gate, JSON output for tooling
@@ -252,6 +283,21 @@ adr-lint:
 
 The script is stdlib-only, so no `pip install` is needed in CI. `jsonschema` is auto-detected if installed and used for deeper config validation; absence is non-fatal.
 
+### Periodic retirement audit (v0.14.0+)
+
+`bin/adr-retire` is a read-only ranked audit. It averages four signals and
+reports `RETIRE` (score >= 0.8), `REVIEW` (>= 0.6), `MONITOR` (>= 0.4), or
+`KEEP`. A recommendation still requires human review before an ADR is
+superseded.
+
+```bash
+python bin/adr-retire docs/adr --repo-root . --threshold 0.4 --format markdown
+```
+
+The shipped `.github/workflows/adr-retire-audit.yml` demonstrates a weekly
+Monday audit that opens an issue only when candidates meet the monitor
+threshold.
+
 ### Help text
 
 ```
@@ -269,8 +315,8 @@ options:
   --strict-from ADR-NNN
                         First ADR id (inclusive) on which gates are strict; overrides config.
   --gates GATES         Comma-separated gates to run. Default:
-                        completeness,consistency. All:
-                        completeness,evidence,clarity,consistency
+                        completeness,audit,consistency. All:
+                        completeness,audit,evidence,clarity,consistency
   --format {human,json}
                         Output format (default: human)
   --config PATH         Override .adr-kit.json location.
@@ -280,9 +326,9 @@ options:
 ### When to use which
 
 - `/adr-kit:lint` (skill, in Claude Code): nuanced review, all four gates, judgement on Evidence and Clarity.
-- `bin/adr-lint` (CLI, in CI): deterministic gates only by default, exit-code based, runs unattended. Use as a PR merge gate.
+- `bin/adr-lint` (CLI, in CI): deterministic completeness, status-history audit, and consistency checks by default; exit-code based and suitable as a PR merge gate.
 
-The two are designed to agree on Completeness and Consistency. They can disagree on Evidence and Clarity by design: Claude's judgement is structurally better at those.
+The two are designed to agree on Completeness, Audit, and Consistency. They can disagree on Evidence and Clarity by design: Claude's judgement is structurally better at those.
 
 ## FAQ
 

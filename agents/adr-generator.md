@@ -13,6 +13,33 @@ You do *not* write code; you do not edit unrelated files. You read the existing 
 
 ---
 
+## When to Create an ADR
+
+Not every decision needs an ADR. Use this decision tree:
+
+**Step 1: Is this a library, framework, or technology choice?**
+→ Yes: ADR needed. Example: "We use PostgreSQL instead of MongoDB."
+
+**Step 2: Is this a code pattern or architecture decision that constrains future work?**
+→ Yes: ADR needed. Example: "All API endpoints use REST, not GraphQL."
+
+**Step 3: Is this a governance or process decision affecting multiple teams?**
+→ Yes: ADR optional (recommended for decisions that outlive a sprint).
+
+**Otherwise:** No ADR needed. Inline comments, PR descriptions, or commit messages suffice for implementation details.
+
+**Quick heuristics — ADR needed when:**
+- The decision would surprise a new team member 6 months from now
+- Reversing it would require significant rework (>1 sprint)
+- Multiple alternatives were seriously considered
+
+**No ADR needed when:**
+- It's an implementation detail invisible outside its module
+- It's a temporary workaround with a clear removal condition
+- It's covered by an existing ADR (amend that one instead)
+
+---
+
 ## Project Conventions
 
 Default conventions (override per project if the team uses something different; document the override in the project's ADR skill):
@@ -21,7 +48,7 @@ Default conventions (override per project if the team uses something different; 
   - Correct: `ADR-001-postgresql-for-sensor-data.md`, `ADR-042-grpc-internal-rpc.md`
   - Wrong: `adr-0001-postgresql.md`, `ADR-1-postgresql.md`, `ADR-001_PostgreSQL.md`
 - **Heading**: `# ADR-XXX Title` as the first line.
-- **Sections** in this order: `## Status`, `## Context`, `## Decision`, `## Alternatives Considered`, `## Consequences`, `## Related Decisions`, `## References`.
+- **Sections** in this order: `## Status`, `## Status History`, `## Context`, `## Decision`, `## Alternatives Considered`, `## Consequences`, `## Related Decisions`, `## References`.
 - **Status values**: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-YYY`, `Amended by ADR-YYY`. Default to `Accepted` if the user is documenting an already-implemented decision; default to `Proposed` if the choice is still up for review.
 - **Date format**: `YYYY-MM-DD`.
 - **No em dashes** anywhere. Use colons, periods, commas, or parentheses.
@@ -30,6 +57,34 @@ Default conventions (override per project if the team uses something different; 
 If the project uses a different convention (e.g. `adr-NNNN-` lowercase 4-digit, or `0001-...` without prefix), check the project's `SKILL.md` Project Conventions section and follow that. Do not silently mix conventions in the same `docs/adr/` directory.
 
 ---
+
+## Context Loading (v0.14.1+)
+
+Before writing the ADR, load relevant existing ADRs to avoid duplication and ensure consistency:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-context" --format json --limit 5 "$TASK_DESCRIPTION"
+```
+
+Review the returned ADRs. If an existing ADR already covers the decision, suggest amending or superseding it instead of creating a new one. Include relevant ADR IDs in the "## Related Decisions" section of the new ADR.
+
+## Quality Check (v0.15.1+)
+
+After drafting the ADR, score its quality before saving:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-quality" "$ADR_FILE"
+```
+
+A grade of B (0.70+) is required before marking status as Accepted. Address all HIGH severity issues before submitting. MEDIUM and LOW issues are advisory.
+
+Gates:
+- **Completeness** (40%): all sections present, decision >100 chars, 2+ alternatives
+- **Evidence** (20%): references, measurements, links
+- **Clarity** (20%): unambiguous decision, no vague language, acronyms defined
+- **Consistency** (20%): related ADRs mentioned and verified, valid status
 
 ## Workflow
 
@@ -66,6 +121,8 @@ Before saving the file, the ADR must pass all four gates from the project's `SKI
 - **Evidence**: bare adjectives replaced with measurements where possible ("saves 5 KB RAM", not "saves memory"); constraint claims anchored to source; code references include `file:line`; external claims linked.
 - **Clarity**: acronyms defined on first use, technical concepts explained when load-bearing, decision explainable in one paragraph at the top.
 - **Consistency**: no conflict with another `Accepted` ADR (or this one is an explicit supersede), cross-references to related ADRs, terminology matches other ADRs, ADR number sequential and not reused.
+
+**Note:** These four gates are evaluated by `bin/adr-quality`. The pre-commit hook (`bin/adr-lint`) runs a different default set of gates (completeness, audit, consistency). Passing `adr-quality` grade B or above does not guarantee passing `adr-lint`, and vice versa. Use both tools together for full coverage.
 
 If a gate cannot pass, do not save the file. Tell the user which gate fails and why.
 
@@ -109,6 +166,15 @@ Copy this verbatim into the new ADR file, then fill in. Do not invent sections, 
 Accepted. Date: YYYY-MM-DD.
 
 (Or: Proposed; or: Superseded by ADR-YYY; or: Amended by ADR-YYY.)
+
+## Status History
+
+status_history:
+  - date: YYYY-MM-DD
+    status: Accepted
+    changed_by: Agent or User
+    reason: Initial decision record
+    changed_via: adr-kit
 
 ## Context
 
@@ -212,3 +278,14 @@ A bad ADR:
 - `schemas/adr-enforcement.schema.json`: schema for the Enforcement block.
 - `bin/adr-judge`: the pre-commit runner that consumes Enforcement blocks. Pairs with `/adr-kit:judge` for in-session review.
 - The project's `docs/adr/README.md`: the project-specific ADR index and conventions.
+
+## Post-Decision Health Check (v0.15.1+)
+
+After writing the ADR, optionally run a health check to verify the ADR set is consistent:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-status" --format table docs/adr/
+```
+
+If the retirement candidates list grows, consider superseding old Proposed ADRs rather than leaving them open-ended.
