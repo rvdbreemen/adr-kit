@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# bump-version — adr-kit release helper
+#
+# Usage: bin/bump-version <new-version>
+#   e.g. bin/bump-version 0.16.0
+#
+# What it does:
+#   1. Validates semver format of the argument
+#   2. Updates .claude-plugin/plugin.json "version" field
+#   3. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>"
+#      and inserts a fresh "## [Unreleased]" block above it
+#   4. Prints what changed; does NOT commit or tag (do that yourself)
+#
+# After running:
+#   git add .claude-plugin/plugin.json CHANGELOG.md
+#   git commit -m "chore(release): v<version>"
+#   git tag v<version>
+#   git push origin main --tags
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && git rev-parse --show-toplevel)"
+PLUGIN_JSON="$REPO_ROOT/.claude-plugin/plugin.json"
+CHANGELOG="$REPO_ROOT/CHANGELOG.md"
+
+usage() {
+  echo "Usage: $(basename "$0") <new-version>" >&2
+  echo "  e.g. $(basename "$0") 0.16.0" >&2
+  exit 1
+}
+
+[[ $# -eq 1 ]] || usage
+
+NEW_VERSION="$1"
+
+# Validate semver (major.minor.patch)
+if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "ERROR: version must be semver (e.g. 0.16.0), got: $NEW_VERSION" >&2
+  exit 1
+fi
+
+# Check plugin.json exists
+[[ -f "$PLUGIN_JSON" ]] || { echo "ERROR: $PLUGIN_JSON not found" >&2; exit 1; }
+[[ -f "$CHANGELOG" ]]   || { echo "ERROR: $CHANGELOG not found" >&2; exit 1; }
+
+CURRENT_VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$PLUGIN_JSON")
+TODAY=$(date +%Y-%m-%d)
+
+echo "Bumping adr-kit: $CURRENT_VERSION -> $NEW_VERSION (date: $TODAY)"
+
+# 1. Update plugin.json version
+python3 - "$PLUGIN_JSON" "$NEW_VERSION" <<'PYEOF'
+import json, sys
+path, version = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    data = json.load(f)
+data['version'] = version
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+PYEOF
+echo "  ✓ .claude-plugin/plugin.json -> $NEW_VERSION"
+
+# 2. Update CHANGELOG.md:
+#    Replace first occurrence of "## [Unreleased]" with
+#    "## [Unreleased]\n\n## [<version>] - <today>"
+if ! grep -q "^## \[Unreleased\]" "$CHANGELOG"; then
+  echo "WARNING: no '## [Unreleased]' section found in CHANGELOG.md; skipping CHANGELOG update" >&2
+else
+  # Use python for reliable multiline replacement
+  python3 - "$CHANGELOG" "$NEW_VERSION" "$TODAY" <<'PYEOF'
+import sys, re
+path, version, today = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    content = f.read()
+replacement = f"## [Unreleased]\n\n## [{version}] - {today}"
+new_content = content.replace("## [Unreleased]", replacement, 1)
+with open(path, 'w') as f:
+    f.write(new_content)
+PYEOF
+  echo "  ✓ CHANGELOG.md: [Unreleased] -> [$NEW_VERSION] - $TODAY"
+fi
+
+echo ""
+echo "Done. Verify the changes, then:"
+echo "  git add .claude-plugin/plugin.json CHANGELOG.md"
+echo "  git commit -m \"chore(release): v$NEW_VERSION\""
+echo "  git tag v$NEW_VERSION"
+echo "  git push origin main --tags"
