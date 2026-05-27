@@ -13,6 +13,33 @@ You do *not* write code; you do not edit unrelated files. You read the existing 
 
 ---
 
+## When to Create an ADR
+
+Not every decision needs an ADR. Use this decision tree:
+
+**Step 1: Is this a library, framework, or technology choice?**
+→ Yes: ADR needed. Example: "We use PostgreSQL instead of MongoDB."
+
+**Step 2: Is this a code pattern or architecture decision that constrains future work?**
+→ Yes: ADR needed. Example: "All API endpoints use REST, not GraphQL."
+
+**Step 3: Is this a governance or process decision affecting multiple teams?**
+→ Yes: ADR optional (recommended for decisions that outlive a sprint).
+
+**Otherwise:** No ADR needed. Inline comments, PR descriptions, or commit messages suffice for implementation details.
+
+**Quick heuristics — ADR needed when:**
+- The decision would surprise a new team member 6 months from now
+- Reversing it would require significant rework (>1 sprint)
+- Multiple alternatives were seriously considered
+
+**No ADR needed when:**
+- It's an implementation detail invisible outside its module
+- It's a temporary workaround with a clear removal condition
+- It's covered by an existing ADR (amend that one instead)
+
+---
+
 ## Project Conventions
 
 Default conventions (override per project if the team uses something different; document the override in the project's ADR skill):
@@ -41,6 +68,23 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
 ```
 
 Review the returned ADRs. If an existing ADR already covers the decision, suggest amending or superseding it instead of creating a new one. Include relevant ADR IDs in the "## Related Decisions" section of the new ADR.
+
+## Quality Check (v0.15.1+)
+
+After drafting the ADR, score its quality before saving:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-quality" "$ADR_FILE"
+```
+
+A grade of B (0.70+) is required before marking status as Accepted. Address all HIGH severity issues before submitting. MEDIUM and LOW issues are advisory.
+
+Gates:
+- **Completeness** (40%): all sections present, decision >100 chars, 2+ alternatives
+- **Evidence** (20%): references, measurements, links
+- **Clarity** (20%): unambiguous decision, no vague language, acronyms defined
+- **Consistency** (20%): related ADRs mentioned and verified, valid status
 
 ## Workflow
 
@@ -232,3 +276,14 @@ A bad ADR:
 - `schemas/adr-enforcement.schema.json`: schema for the Enforcement block.
 - `bin/adr-judge`: the pre-commit runner that consumes Enforcement blocks. Pairs with `/adr-kit:judge` for in-session review.
 - The project's `docs/adr/README.md`: the project-specific ADR index and conventions.
+
+## Post-Decision Health Check (v0.15.1+)
+
+After writing the ADR, optionally run a health check to verify the ADR set is consistent:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-status" --format table docs/adr/
+```
+
+If the retirement candidates list grows, consider superseding old Proposed ADRs rather than leaving them open-ended.
