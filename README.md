@@ -9,30 +9,35 @@ A complete Architecture Decision Record (ADR) toolkit for AI coding agents. Drop
 
 ## What it does
 
-Three coordinated operating modes, since v0.12.0:
+Four coordinated operating modes, since v0.14.0:
 
 - **Init** (`/adr-kit:init`, since v0.12.0): one-shot project bootstrap. Hooks the kit into `CLAUDE.md` (slim stub + canonical guide at `.claude/adr-kit-guide.md`), runs `bin/adr-audit` to enumerate decision-shaped artefacts in source + documentation, walks the user through batched approval to generate `Accepted` ADRs, and installs the pre-commit hook. Use once per project.
 - **Per-commit verification** (`bin/adr-judge` + pre-commit hook, since v0.12.0): every `git commit` runs declarative `Enforcement` rules from each Accepted ADR against the staged diff. Fast, deterministic, key-free. Default-on after init.
 - **On-demand** (`/adr-kit:adr`, `/adr-kit:judge`, since v0.12.0 for judge): author a new ADR mid-session, or interactively review a staged diff against existing ADRs (declarative + in-session LLM review for `llm_judge: true` ADRs).
+- **Observability** (`bin/adr-status`, `bin/adr-quality`, `bin/adr-context`, since v0.14.0): repository-wide health dashboard, per-ADR quality scoring (A–D grade), and semantic ADR ranking for task context.
 
 ### Components
 
 - **Skill** (`skills/adr/SKILL.md`): the comprehensive ADR guide. Anti-rationalization guards, the four verification gates (Completeness, Evidence, Clarity, Consistency), supersession workflow.
-- **Agent** (`agents/adr-generator.md`): the subagent for *creating* a new ADR. Now also proposes an `## Enforcement` block when the ADR has a code surface.
-- **Init skill** (`/adr-kit:init`, v0.12.0+): umbrella project bootstrap (audit + ADR generation + hook install).
-- **Judge runner** (`bin/adr-judge`, v0.12.0+): declarative diff-vs-ADR engine. Parses fenced JSON `## Enforcement` blocks; applies `forbid_pattern` / `forbid_import` / `require_pattern` rules to the staged diff with file:line citations. Mirrors `bin/adr-lint`'s exit-code style (0 / 1 / 2).
+- **Agent** (`agents/adr-generator.md`): the subagent for *creating* a new ADR. Includes a decision tree ("when do I need an ADR?"), proposes an `## Enforcement` block when the ADR has a code surface, and runs a post-decision quality check.
+- **Init skill** (`/adr-kit:init`, v0.12.0+): umbrella project bootstrap (audit + ADR generation + hook install). Checks for Python 3.9+ and guides installation if absent.
+- **Judge runner** (`bin/adr-judge`, v0.12.0+): declarative diff-vs-ADR engine. Parses fenced JSON `## Enforcement` blocks; applies `forbid_pattern` / `forbid_import` / `require_pattern` rules to the staged diff with file:line citations. `--profile` for timing, `--dry-run-enforcement ADR-NNN` for single-ADR testing.
 - **Judge skill** (`/adr-kit:judge`, v0.12.0+): on-demand interactive judge. Runs the same `bin/adr-judge --llm` engine as the hook for `llm_judge: true` ADRs.
 - **Audit runner** (`bin/adr-audit`, v0.12.0+): deterministic candidate scanner used by init.
 - **Hook installer** (`/adr-kit:install-hooks`, v0.12.0+): installs/uninstalls the pre-commit hook. Default-on after init or upgrade.
-- **Upgrade skill** (`/adr-kit:upgrade`, v0.12.0+): guided v0.11 → v0.12 migration without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
-- **Lint skill + CLI** (`/adr-kit:lint`, `bin/adr-lint`, since v0.7.0 / v0.10.0): validates ADR file content against the four gates.
+- **Upgrade skill** (`/adr-kit:upgrade`, v0.12.0+): guided v0.11 → v0.12 migration without re-running the heavy audit.
+- **Lint skill + CLI** (`/adr-kit:lint`, `bin/adr-lint`, since v0.7.0 / v0.10.0): validates ADR file content against the four gates. Policy gate (`--gates policy`) validates Enforcement JSON schema and regex safety. Quality gate (`--gates quality`) detects vague language and missing evidence.
 - **Retirement audit** (`/adr-kit:retire`, `bin/adr-retire`, v0.14.0+): ranks review candidates using four deterministic signals without changing ADRs.
+- **Health dashboard** (`bin/adr-status`, v0.14.0+): repository-wide ADR statistics — total count, status breakdown, average age, enforcement health, retirement candidates. Outputs JSON, Markdown, or table.
+- **Quality scorer** (`bin/adr-quality`, v0.14.0+): grades each ADR A–D via four weighted gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%). Returns structured JSON with per-gate issue codes. Exits 1 when grade < B.
+- **Context ranker** (`bin/adr-context`, v0.14.0+): ranks ADRs by relevance to a task query using five weighted heuristic signals (keyword match, domain tag, related decisions, acceptance status, recency). Used by the agent to inject relevant context before authoring.
+- **Script generator** (`bin/adr-generate-scripts`, v0.14.0+): produces standalone `validate.py` and `validate.sh` scripts from ADR Enforcement blocks. Scripts run without adr-kit as a dependency — embed in any CI pipeline.
 - **Migrate skill** (`/adr-kit:migrate`, since v0.11.0): guided rewrite of legacy-shaped ADRs into the canonical seven-section template.
-- **Setup skill** (`/adr-kit:setup`, since v0.4.0; rewritten in v0.12.0): the lighter cousin of `init`. Drops the canonical guide and writes the slim CLAUDE.md stub, but does not run the codebase audit or install the hook. Detects v0.11-style inline `## ADR Kit Rules` and leaves them untouched (use `/adr-kit:upgrade` to migrate).
+- **Setup skill** (`/adr-kit:setup`, since v0.4.0; rewritten in v0.12.0): lighter cousin of `init`. Drops the canonical guide and writes the slim CLAUDE.md stub.
 - **Instructions** (`instructions/`): per-developer rules (`adr.coding.md`) and the seven-check code-review checklist (`adr.review.md`).
-- **Templates** (`templates/`, v0.12.0+): canonical project-side guide (`adr-kit-guide.md`), ADR template with optional Enforcement section (`adr-template.md`), and the pre-commit hook template (`githooks/pre-commit`).
+- **Templates** (`templates/`, v0.12.0+): canonical project-side guide (`adr-kit-guide.md`), ADR template with optional Enforcement section (`adr-template.md`), pre-commit hook template (`githooks/pre-commit`), and standalone validation script templates.
 
-The pieces work together: `init` bootstraps the project, the hook + `bin/adr-judge` guard every commit deterministically, `/adr-kit:judge` handles in-session LLM review on demand, the agent + `/adr-kit:adr` author new ADRs, `lint` and `migrate` keep the existing record clean.
+The pieces work together: `init` bootstraps the project, the hook + `bin/adr-judge` guard every commit deterministically, `/adr-kit:judge` handles in-session LLM review on demand, the agent + `/adr-kit:adr` author new ADRs, `bin/adr-quality` grades them, `bin/adr-status` shows the health of the whole repository, and `lint` and `migrate` keep the existing record clean.
 
 ## Why ADRs
 
@@ -96,14 +101,20 @@ adr-kit/
 ├── agents/
 │   └── adr-generator.md            # subagent: create a new ADR (proposes Enforcement blocks v0.12+)
 ├── bin/
-│   ├── adr-lint                    # deterministic gate validator
+│   ├── adr-lint                    # deterministic gate validator (policy + quality gates v0.14+)
 │   ├── adr-judge                   # diff vs Enforcement-block runner (v0.12+)
 │   ├── adr-audit                   # candidate scanner used by init (v0.12+)
-│   └── adr-retire                  # retirement-candidate audit (v0.14+)
+│   ├── adr-retire                  # retirement-candidate audit (v0.14+)
+│   ├── adr-status                  # repository health dashboard (v0.14+)
+│   ├── adr-quality                 # per-ADR quality scorer, grade A-D (v0.14+)
+│   ├── adr-context                 # semantic ADR relevance ranker (v0.14+)
+│   └── adr-generate-scripts        # standalone validate.py / validate.sh generator (v0.14+)
 ├── templates/
 │   ├── adr-template.md             # ADR template with optional Enforcement section (v0.12+)
 │   ├── adr-kit-guide.md            # canonical project-side guide; copied to .claude/ (v0.12+)
-│   └── githooks/pre-commit         # pre-commit hook template (v0.12+)
+│   ├── githooks/pre-commit         # pre-commit hook template (v0.12+)
+│   ├── validate_adr_template.py    # reference template for generated Python validator (v0.14+)
+│   └── validate_adr_template.sh    # reference template for generated shell validator (v0.14+)
 ├── schemas/
 │   ├── adr-kit-config.schema.json  # .adr-kit.json schema (extended in v0.12 with judge.*)
 │   └── adr-enforcement.schema.json # ADR Enforcement block schema (v0.12+)
@@ -159,7 +170,7 @@ The toolkit defaults to:
 - **Filename**: `ADR-XXX-kebab-case-title.md` with uppercase prefix and 3-digit zero-padded number, stored in `docs/adr/`.
 - **Heading**: `# ADR-XXX Title`.
 - **Sections** in order: Status, Context, Decision, Alternatives Considered, Consequences, Related Decisions, References.
-- **Status values**: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-YYY`.
+- **Status values**: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-YYY`, `Amended by ADR-YYY`.
 - **Date format**: `YYYY-MM-DD`.
 
 ### Status history (v0.14.0+)
