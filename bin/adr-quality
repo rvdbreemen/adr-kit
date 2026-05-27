@@ -545,7 +545,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Output format (default: text)",
     )
     parser.add_argument(
-        "--version", action="version", version="adr-quality 0.15.1",
+        "--version", action="version", version="adr-quality 0.14.0",
     )
     args = parser.parse_args(argv)
 

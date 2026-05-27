@@ -792,7 +792,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Show ADVISORY and SKIPPED details too",
     )
     parser.add_argument(
-        "--version", action="version", version="adr-lint 0.10.0",
+        "--version", action="version", version="adr-lint 0.14.0",
     )
     args = parser.parse_args(argv)
 

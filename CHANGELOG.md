@@ -4,19 +4,67 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-05-27
+
 ### Added
 
-- **Phase 1 status history**: `bin/adr-judge` parses and appends immutable
-  `status_history` entries and provides explicit
-  `--migrate-status-history` migration for legacy ADRs. `bin/adr-lint` now
-  validates present histories with a deterministic `audit` gate while keeping
-  unmigrated v0.13 ADRs compatible.
-- **Phase 1 retirement audit**: `bin/adr-retire`, `/adr-kit:retire`, and the
-  optional weekly `adr-retire-audit.yml` workflow provide deterministic
-  candidate scoring based on staleness, explicit technology disappearance,
-  broken supersession references, and risky policy patterns.
-- Replaced placeholder Phase 1 tests with executable status-history and
-  retirement suites, including CLI output and performance-budget checks.
+#### Phase 1 — Governance backbone (TASK-710, TASK-711)
+
+- **Append-only status history**: `bin/adr-judge` parses and appends immutable
+  `status_history` YAML entries; `--migrate-status-history` migrates legacy ADRs.
+  `bin/adr-lint` validates histories via a new `audit` gate (default-on) while
+  keeping unmigrated v0.13 ADRs compatible.
+- **Automated retirement detection**: new `bin/adr-retire` tool and
+  `/adr-kit:retire` skill score candidates by staleness, technology disappearance,
+  broken supersession references, and risky policy patterns. Optional
+  `adr-retire-audit.yml` GitHub Actions workflow runs weekly.
+
+#### Phase 2 — Intelligence layer (TASK-712, TASK-713)
+
+- **Profiling and dry-run**: `bin/adr-judge --profile` emits per-ADR timing
+  breakdowns; `--dry-run-enforcement ADR-NNN` tests a single ADR against staged
+  diffs without blocking the commit.
+- **Semantic relevance ranking**: new `bin/adr-context` tool ranks ADRs for a
+  task query using five weighted heuristic signals (keyword match, domain tag,
+  related decisions, acceptance status, recency). Configurable weights in
+  `.adr-kit.json`. Injected into `agents/adr-generator.md` context-loading step.
+
+#### Phase 3 — Enforcement quality (TASK-714, TASK-715)
+
+- **Policy block validation**: `bin/adr-lint` gains `--gates policy` and
+  `--gates quality` (both opt-in). The policy gate validates Enforcement JSON
+  against `schemas/adr-enforcement.schema.json`, compiles all regex patterns, and
+  warns on anti-patterns (unescaped dots, excessive wildcards, broad globs). The
+  quality gate flags vague language, missing metrics, and too few alternatives.
+- **Standalone validation script generation**: new `bin/adr-generate-scripts` tool
+  produces self-contained `validate.py` (Python stdlib only) and `validate.sh`
+  scripts in `.generated/`. Scripts enforce the same rules as `adr-judge` without
+  requiring adr-kit as a dependency, suitable for embedding in foreign CI
+  pipelines.
+
+#### Phase 4 — Observability and agent guidance (TASK-716, TASK-717)
+
+- **ADR health dashboard**: new `bin/adr-status` tool reports total count, status
+  breakdown, average age, enforcement health per ADR, and top retirement
+  candidates. Output in `--format json|markdown|table`.
+- **Quality scoring**: new `bin/adr-quality` tool grades each ADR A–D via four
+  weighted gates (completeness 40%, evidence 20%, clarity 20%, consistency 20%).
+  Returns structured JSON or human-readable text; exits 1 when grade is below B.
+- **Agent decision tree**: `agents/adr-generator.md` gains a "When to Create an
+  ADR" decision tree and post-decision quality check section.
+
+#### Cross-cutting improvements
+
+- **Python 3 availability check**: `skills/init/SKILL.md` now checks for Python
+  3.9+ before any installation step, with guided installation instructions for
+  macOS (Homebrew), Linux (apt/dnf/pacman) and Windows (winget). The pre-commit
+  hook template (`templates/githooks/pre-commit`) also checks for Python 3 at
+  hook runtime and exits gracefully with installation hints if absent.
+- **`.adr-kit.json`**: new `context.weights`, `context.default_limit`,
+  `context.min_score`, `retirement.*`, and timeout fields
+  (`pre_commit_timeout_ms`, `pre_push_timeout_ms`, `llm_timeout_ms`,
+  `warn_on_exceed`).
+- **222 tests passing**, 2 skipped (Windows shell-script execution).
 
 ## [0.13.3] - 2026-05-25
 
