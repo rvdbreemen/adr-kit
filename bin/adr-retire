@@ -16,11 +16,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+
+# Safety cap for repo-wide file scans (tech-removal signal).
+MAX_FILES = 50_000
 
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
 STATUS_HEADING_RE = re.compile(r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE)
@@ -149,14 +153,34 @@ def _technology_terms(content: str) -> List[str]:
     return sorted(terms, key=str.lower)
 
 
+def _walk_repo_files(repo_root: Path, extensions: set) -> List[Path]:
+    """Walk repo without following symlinks, with a file-count safety cap.
+
+    Replaces rglob('*') which would follow symlinks and could fall into
+    infinite cycles or escape the repo root (SEC-LOW).
+    """
+    result: List[Path] = []
+    count = 0
+    skip_dirs = set(IGNORED_DIRS) | {"node_modules", ".tox"}
+    for dirpath, dirnames, filenames in os.walk(repo_root, followlinks=False):
+        # Prune ignored directories in-place so os.walk skips them.
+        dirnames[:] = [d for d in dirnames if d.lower() not in skip_dirs]
+        for fname in filenames:
+            if Path(fname).suffix.lower() in extensions:
+                result.append(Path(dirpath) / fname)
+                count += 1
+                if count >= MAX_FILES:
+                    import warnings
+                    warnings.warn(
+                        f"[adr-retire] File scan capped at {MAX_FILES} files. "
+                        f"Some files may be missed."
+                    )
+                    return result
+    return result
+
+
 def _source_files(repo_root: Path) -> Iterable[Path]:
-    for path in repo_root.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in SOURCE_SUFFIXES:
-            continue
-        relative = path.relative_to(repo_root)
-        if any(part.lower() in IGNORED_DIRS for part in relative.parts):
-            continue
-        yield path
+    return _walk_repo_files(repo_root, SOURCE_SUFFIXES)
 
 
 def detect_tech_removal(adr_id: str, content: str, repo_root: Path) -> float:
@@ -307,8 +331,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Detect ADR retirement candidates.")
     parser.add_argument("adr_dir", nargs="?", default="docs/adr", help="ADR directory")
     parser.add_argument(
-        "--format", choices=["json", "markdown", "text"], default="json",
-        help="Output format (default: json)",
+        "--format", choices=["json", "markdown", "text"], default="text",
+        help="Output format (default: text)",
     )
     parser.add_argument(
         "--threshold", type=float, default=0.0,

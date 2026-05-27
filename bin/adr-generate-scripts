@@ -128,14 +128,22 @@ def _shell_escape_message(msg: str) -> str:
 
 
 def generate_shell_script(adr_id: str, rules: List[Dict]) -> str:
-    """Generate a standalone POSIX shell validation script with ADR rules injected."""
+    """Generate a standalone POSIX shell validation script with ADR rules injected.
+
+    Performance: uses ONE grep pass per rule against the full input
+    (O(rules) subprocess spawns), not one per (line × rule) which would be
+    O(lines × rules) — that pegs CPU on large files for no benefit.
+    """
     check_calls = []
+    pattern_list = []
     for rule in rules:
         pattern = _shell_escape_pattern(rule["pattern"])
         message = _shell_escape_message(rule["message"])
-        check_calls.append(f"check_pattern '{pattern}' '{message}'")
+        check_calls.append(f"check_rule '{pattern}' '{message}'")
+        pattern_list.append(f"  '{pattern}'")
 
     checks_block = "\n".join(check_calls) if check_calls else "# no forbid rules configured"
+    patterns_block = "\n".join(pattern_list) if pattern_list else "  # no patterns"
 
     return f"""\
 #!/bin/bash
@@ -143,25 +151,51 @@ def generate_shell_script(adr_id: str, rules: List[Dict]) -> str:
 # Validates stdin against {adr_id} enforcement rules.
 # Usage: cat file.py | bash validate.sh
 # Exit 0 = clean, exit 1 = violations found.
+#
+# Note: regex flavour is POSIX ERE (grep -E). For authoritative validation
+# (Python regex flavour, llm_judge, etc.) use adr-judge.
 
 set -euo pipefail
 
+# --- Pattern validation at startup --------------------------------------
+# Test each pattern against an empty input. If grep -E rejects it, the
+# pattern is not valid POSIX ERE and results below may be incomplete.
+_INVALID=0
+for _pat in \\
+{patterns_block}
+do
+  if ! printf '' | grep -qE -- "$_pat" 2>/dev/null; then
+    printf '[adr-validate] WARN: invalid ERE pattern: %s\\n' "$_pat" >&2
+    _INVALID=1
+  fi
+done
+if [ "$_INVALID" -eq 1 ]; then
+  printf '%s\\n' '[adr-validate] WARN: some patterns invalid for ERE (grep). Results may be incomplete. Use adr-judge for authoritative validation.' >&2
+fi
+
+# --- Main validation ---------------------------------------------------
 VIOLATIONS=0
 INPUT=$(cat)
 
-check_pattern() {{
+# check_rule runs ONE grep -nE pass over the full input for a single
+# pattern. grep prints "lineno:matchedline" for each hit; we reformat to
+# the standard VIOLATION shape. This is O(1) subprocess spawn per rule.
+check_rule() {{
     local pattern="$1"
     local message="$2"
-    local line_num=0
-
-    while IFS= read -r line; do
-        line_num=$((line_num + 1))
-        if echo "$line" | grep -qE "$pattern" 2>/dev/null; then
-            echo "VIOLATION line $line_num: $message" >&2
-            echo "  $line" >&2
+    local matches
+    # grep -n: line numbers; -E: ERE; || true: don't trigger set -e on no-match
+    matches=$(printf '%s\\n' "$INPUT" | grep -nE -- "$pattern" || true)
+    if [ -n "$matches" ]; then
+        while IFS= read -r hit; do
+            [ -z "$hit" ] && continue
+            local lineno="${{hit%%:*}}"
+            local content="${{hit#*:}}"
+            printf 'VIOLATION line %s: %s\\n' "$lineno" "$message" >&2
+            printf '  %s\\n' "$content" >&2
             VIOLATIONS=$((VIOLATIONS + 1))
-        fi
-    done <<< "$INPUT"
+        done <<< "$matches"
+    fi
 }}
 
 {checks_block}
@@ -169,6 +203,20 @@ check_pattern() {{
 [ "$VIOLATIONS" -gt 0 ] && exit 1
 exit 0
 """
+
+
+def _make_executable(path: Path) -> None:
+    """Add user-execute bit to path. No-op on Windows.
+
+    Deliberately user-only (S_IXUSR) — generated scripts may live in shared
+    work-trees; world/group +x is unnecessary and a mild SEC concern.
+    """
+    try:
+        import stat
+        current = path.stat().st_mode
+        path.chmod(current | stat.S_IXUSR)
+    except (AttributeError, NotImplementedError):
+        pass  # Windows — chmod is a no-op
 
 
 def generate_scripts_for_adr(
@@ -189,25 +237,13 @@ def generate_scripts_for_adr(
     if "python" in langs:
         p = adr_output / "validate.py"
         p.write_text(generate_python_script(adr_id, rules), encoding="utf-8")
-        try:
-            import os
-            import stat
-            current = p.stat().st_mode
-            p.chmod(current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        except (AttributeError, NotImplementedError):
-            pass  # Windows — chmod is a no-op
+        _make_executable(p)
         written.append(p)
 
     if "shell" in langs:
         p = adr_output / "validate.sh"
         p.write_text(generate_shell_script(adr_id, rules), encoding="utf-8", newline="\n")
-        try:
-            import os
-            import stat
-            current = p.stat().st_mode
-            p.chmod(current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        except (AttributeError, NotImplementedError):
-            pass  # Windows — chmod is a no-op
+        _make_executable(p)
         written.append(p)
 
     return written

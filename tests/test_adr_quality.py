@@ -26,6 +26,9 @@ ADR_QUALITY = REPO_ROOT / "bin" / "adr-quality"
 loader = importlib.machinery.SourceFileLoader("adr_quality", str(ADR_QUALITY))
 spec = importlib.util.spec_from_loader("adr_quality", loader)
 adr_quality_mod = importlib.util.module_from_spec(spec)
+# Register in sys.modules before exec so @dataclass (Python 3.13+) can
+# resolve cls.__module__ during class processing.
+sys.modules["adr_quality"] = adr_quality_mod
 loader.exec_module(adr_quality_mod)
 
 gate_completeness = adr_quality_mod.gate_completeness
@@ -197,7 +200,11 @@ def test_completeness_missing_sections():
     )
     result = gate_completeness(truncated)
     assert result["score"] < 1.0
-    assert any("Status" in issue or "References" in issue for issue in result["issues"])
+    assert any(
+        issue.code == "MISSING_SECTION"
+        and ("Status" in issue.detail or "References" in issue.detail)
+        for issue in result["issues"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +220,7 @@ def test_completeness_short_decision():
     )
     result = gate_completeness(short_decision_adr)
     assert result["checks"]["decision_length_ok"] is False
-    assert any("100 chars" in issue or "too short" in issue for issue in result["issues"])
+    assert any(issue.code == "DECISION_TOO_SHORT" for issue in result["issues"])
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +264,7 @@ MySQL was considered but rejected due to weaker JSONB support.
 """
     result = gate_completeness(one_alt_adr)
     assert result["checks"]["alternatives_count_ok"] is False
-    assert any("Alternatives" in issue or "alternative" in issue.lower() for issue in result["issues"])
+    assert any(issue.code == "TOO_FEW_ALTERNATIVES" for issue in result["issues"])
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +341,7 @@ def test_clarity_vague_language():
     )
     result = gate_clarity(vague_adr)
     assert result["checks"]["no_vague_language"] is False
-    assert any("vague" in issue.lower() for issue in result["issues"])
+    assert any(issue.code == "VAGUE_LANGUAGE" for issue in result["issues"])
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +351,7 @@ def test_clarity_vague_language():
 def test_clarity_good_decision():
     result = gate_clarity(ALL_SECTIONS_ADR)
     assert result["checks"]["no_vague_language"] is True
-    assert not any("vague" in issue.lower() for issue in result["issues"])
+    assert not any(issue.code == "VAGUE_LANGUAGE" for issue in result["issues"])
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +432,17 @@ def test_json_output_format():
         assert set(data["gates"].keys()) == {"completeness", "evidence", "clarity", "consistency"}
         assert isinstance(data["overall"], float)
         assert data["grade"] in ("A", "B", "C", "D")
+        # Structured-issue contract: each issue is a dict with code/detail/
+        # severity/message fields. Issues may be empty when the ADR is clean.
+        assert isinstance(data["issues"], list)
+        for issue in data["issues"]:
+            assert set(issue.keys()) >= {"code", "detail", "severity", "message"}
+            assert issue["severity"] in ("high", "medium", "low")
+        # Per-gate issues are also structured.
+        for gate in data["gates"].values():
+            assert isinstance(gate["issues"], list)
+            for issue in gate["issues"]:
+                assert set(issue.keys()) >= {"code", "detail", "severity", "message"}
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 

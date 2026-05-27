@@ -63,6 +63,37 @@ _DOMAIN_KEYWORDS: Dict[str, List[str]] = {
 }
 
 
+# Precompiled per-domain regex: one alternation per domain.
+# Word-boundaries prevent false hits like "cidr" matching "ci".
+_DOMAIN_RE: Dict[str, re.Pattern] = {
+    domain: re.compile(
+        r"\b(?:" + "|".join(map(re.escape, keywords)) + r")\b",
+        re.IGNORECASE,
+    )
+    for domain, keywords in _DOMAIN_KEYWORDS.items()
+}
+
+
+# Precompiled metadata extraction patterns (used by extract_adr_metadata).
+_TITLE_RE = re.compile(r"^#\s+ADR-\d+\s+(.+)$", re.MULTILINE)
+_STATUS_WORD_RE = re.compile(
+    r"^##\s+Status.*?\n+([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
+)
+_STATUS_SECTION_RE = re.compile(
+    r"^##\s+Status(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
+)
+_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+_DECISION_SECTION_RE = re.compile(
+    r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
+)
+_RELATED_SECTION_RE = re.compile(
+    r"^##\s+Related Decisions(.*?)(?=^##|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+_ADR_REF_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
+_ADR_FILENAME_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
+
+
 # ---------------------------------------------------------------------------
 # Keyword extraction
 # ---------------------------------------------------------------------------
@@ -82,28 +113,22 @@ def extract_keywords(query: str) -> List[str]:
 # Domain inference
 # ---------------------------------------------------------------------------
 
-def infer_task_domain(text: str) -> str:
+def infer_task_domain(text: str) -> Optional[str]:
     """Detect domain from text.
 
-    Checks text against per-domain keyword sets. Returns the domain with the
-    most keyword hits, requiring at least one hit. Falls back to "backend" when
-    no domain keywords are found (true ambiguity) or when "backend" ties for
-    first (since it is the most common default).
-
-    The caller should only credit a domain_tag signal when the returned domain
-    is backed by at least one keyword hit (checked internally). If no domain
-    keywords match, the function still returns "backend" but callers should
-    treat this as an ambiguous match and not award full signal credit.
+    Checks text against per-domain keyword sets using precompiled word-bounded
+    regexes. Returns the domain with the most keyword hits. Returns ``None``
+    when no domain keyword matches (true ambiguity). Callers should treat a
+    ``None`` result as "domain unknown" and award no domain_tag signal credit.
     """
-    text_lower = text.lower()
     scores: Dict[str, int] = {}
-    for domain, kws in _DOMAIN_KEYWORDS.items():
-        count = sum(1 for kw in kws if kw in text_lower)
+    for domain, pattern in _DOMAIN_RE.items():
+        count = len(pattern.findall(text))
         if count > 0:
             scores[domain] = count
 
     if not scores:
-        return "backend"  # unambiguous default
+        return None
 
     # Return the domain with the highest hit count; ties broken alphabetically
     return max(scores, key=lambda d: (scores[d], d))
@@ -112,14 +137,12 @@ def infer_task_domain(text: str) -> str:
 def _domain_has_signal(text: str) -> bool:
     """Return True if at least one domain keyword appears in text.
 
-    Used to avoid awarding domain_tag credit when both query and ADR default
-    to "backend" purely because nothing matched anything.
+    Used to avoid awarding domain_tag credit when neither query nor ADR has
+    any concrete domain evidence.
     """
-    text_lower = text.lower()
-    for kws in _DOMAIN_KEYWORDS.values():
-        for kw in kws:
-            if kw in text_lower:
-                return True
+    for pattern in _DOMAIN_RE.values():
+        if pattern.search(text):
+            return True
     return False
 
 
@@ -142,29 +165,25 @@ def extract_adr_metadata(adr_file: Path) -> Dict:
     content = adr_file.read_text(encoding="utf-8")
 
     # ADR ID from filename
-    id_match = re.search(r"ADR-(\d{1,4})", adr_file.name, re.IGNORECASE)
+    id_match = _ADR_FILENAME_RE.search(adr_file.name)
     if id_match:
         adr_id = f"ADR-{int(id_match.group(1)):03d}"
     else:
         adr_id = adr_file.stem
 
     # Title from first heading
-    title_match = re.search(r"^#\s+ADR-\d+\s+(.+)$", content, re.MULTILINE)
+    title_match = _TITLE_RE.search(content)
     title = title_match.group(1).strip() if title_match else ""
 
     # Status from ## Status section (first word after status heading)
-    status_match = re.search(
-        r"^##\s+Status.*?\n+([A-Za-z]+)", content, re.IGNORECASE | re.MULTILINE
-    )
+    status_match = _STATUS_WORD_RE.search(content)
     status = status_match.group(1).capitalize() if status_match else "Unknown"
 
     # Date: look for YYYY-MM-DD pattern in the ## Status section
-    status_section_match = re.search(
-        r"^##\s+Status(.*?)(?=^##|\Z)", content, re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
+    status_section_match = _STATUS_SECTION_RE.search(content)
     adr_date: Optional[date] = None
     if status_section_match:
-        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", status_section_match.group(1))
+        date_match = _DATE_RE.search(status_section_match.group(1))
         if date_match:
             try:
                 adr_date = date.fromisoformat(date_match.group(1))
@@ -172,20 +191,15 @@ def extract_adr_metadata(adr_file: Path) -> Dict:
                 adr_date = None
 
     # Decision text for domain + keyword scoring
-    decision_match = re.search(
-        r"^##\s+Decision(.*?)(?=^##|\Z)", content, re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
+    decision_match = _DECISION_SECTION_RE.search(content)
     decision_text = decision_match.group(1).strip() if decision_match else ""
 
     # Related ADR IDs from ## Related Decisions section
-    related_section_match = re.search(
-        r"^##\s+Related Decisions(.*?)(?=^##|\Z)", content,
-        re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
+    related_section_match = _RELATED_SECTION_RE.search(content)
     related_ids: List[str] = []
     if related_section_match:
         related_text = related_section_match.group(1)
-        for m in re.finditer(r"ADR-(\d{1,4})", related_text, re.IGNORECASE):
+        for m in _ADR_REF_RE.finditer(related_text):
             related_ids.append(f"ADR-{int(m.group(1)):03d}")
 
     # Domain: infer from title + decision text
@@ -209,7 +223,7 @@ def extract_adr_metadata(adr_file: Path) -> Dict:
 # Scoring
 # ---------------------------------------------------------------------------
 
-def score_adr(query: str, keywords: List[str], domain: str, metadata: Dict,
+def score_adr(query: str, keywords: List[str], domain: Optional[str], metadata: Dict,
               weights: Optional[Dict[str, float]] = None) -> Dict:
     """Calculate 5-signal relevance score for an ADR.
 
@@ -257,9 +271,14 @@ def score_adr(query: str, keywords: List[str], domain: str, metadata: Dict,
         signals["exact_keyword"] = 0.0
 
     # --- domain_tag signal ---
+    # No credit when the query has no recognisable domain (domain is None) —
+    # avoids awarding fake matches for unknown-vs-unknown.
     query_domain_has_signal = _domain_has_signal(query)
     adr_domain_has_keywords = metadata.get("domain_has_keywords", False)
-    if (domain == metadata["domain_tags"]
+    adr_domain = metadata.get("domain_tags")
+    if (domain is not None
+            and adr_domain is not None
+            and domain == adr_domain
             and query_domain_has_signal
             and adr_domain_has_keywords):
         signals["domain_tag"] = round(w_dom, 4)
@@ -346,9 +365,9 @@ def load_adr_context(
                     "score": total,
                     "signals": score_result["signals"],
                 })
-        except Exception:
-            # Skip unparseable ADR files silently
-            pass
+        except Exception as e:
+            # Skip unparseable ADR files but warn so problems are visible.
+            print(f"[adr-context] WARN: {adr_file.name}: {e}", file=sys.stderr)
 
     results.sort(key=lambda x: x["score"], reverse=True)
     return results[:limit]
@@ -416,8 +435,8 @@ def main() -> None:
 
     # Apply config defaults, CLI flags take priority
     limit = args.limit if args.limit is not None else ctx_cfg.get("default_limit", 5)
-    # Support both "min_score" and legacy "min_relevance_threshold" in config
-    cfg_min_score = ctx_cfg.get("min_score", ctx_cfg.get("min_relevance_threshold", 0.1))
+    # Canonical key is "min_score"; legacy "min_relevance_threshold" was removed.
+    cfg_min_score = ctx_cfg.get("min_score", 0.1)
     min_score = args.min_score if args.min_score is not None else cfg_min_score
 
     if not adr_dir.exists():

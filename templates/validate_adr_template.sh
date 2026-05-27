@@ -7,8 +7,11 @@
 #
 # Generated script behaviour:
 #   - Reads stdin completely into memory (supports piping).
-#   - Applies every forbid_pattern / forbid_import rule from the ADR's
-#     ## Enforcement block via grep -E (POSIX extended regex).
+#   - Validates each pattern as POSIX ERE at startup and warns about
+#     any pattern grep -E rejects (Python-only regex features won't compile
+#     under ERE — use adr-judge for authoritative validation).
+#   - Runs ONE grep -nE pass per rule across the full input
+#     (O(rules) subprocess spawns, not O(lines × rules)).
 #   - Reports VIOLATION to stderr with line number, message, and snippet.
 #   - Exit 0 = clean, exit 1 = at least one violation.
 #
@@ -21,29 +24,47 @@
 #
 #   set -euo pipefail
 #
+#   # --- Pattern validation at startup --------------------------------
+#   _INVALID=0
+#   for _pat in \
+#     '\bFoo\b'
+#   do
+#     if ! printf '' | grep -qE -- "$_pat" 2>/dev/null; then
+#       printf '[adr-validate] WARN: invalid ERE pattern: %s\n' "$_pat" >&2
+#       _INVALID=1
+#     fi
+#   done
+#   if [ "$_INVALID" -eq 1 ]; then
+#     printf '%s\n' '[adr-validate] WARN: some patterns invalid for ERE (grep). Results may be incomplete. Use adr-judge for authoritative validation.' >&2
+#   fi
+#
+#   # --- Main validation ---------------------------------------------
 #   VIOLATIONS=0
 #   INPUT=$(cat)
 #
-#   check_pattern() {
+#   check_rule() {
 #       local pattern="$1"
 #       local message="$2"
-#       local line_num=0
-#
-#       while IFS= read -r line; do
-#           line_num=$((line_num + 1))
-#           if echo "$line" | grep -qE "$pattern" 2>/dev/null; then
-#               echo "VIOLATION line $line_num: $message" >&2
-#               echo "  $line" >&2
+#       local matches
+#       matches=$(printf '%s\n' "$INPUT" | grep -nE -- "$pattern" || true)
+#       if [ -n "$matches" ]; then
+#           while IFS= read -r hit; do
+#               [ -z "$hit" ] && continue
+#               local lineno="${hit%%:*}"
+#               local content="${hit#*:}"
+#               printf 'VIOLATION line %s: %s\n' "$lineno" "$message" >&2
+#               printf '  %s\n' "$content" >&2
 #               VIOLATIONS=$((VIOLATIONS + 1))
-#           fi
-#       done <<< "$INPUT"
+#           done <<< "$matches"
+#       fi
 #   }
 #
-#   check_pattern '\bFoo\b' 'Do not use Foo.'
+#   check_rule '\bFoo\b' 'Do not use Foo.'
 #
 #   [ "$VIOLATIONS" -gt 0 ] && exit 1
 #   exit 0
 #
 # Template placeholders (replaced by generate_shell_script in bin/adr-generate-scripts):
-#   {adr_id}       — e.g. "ADR-001"
-#   {checks_block} — one line per rule: check_pattern 'PATTERN' 'MESSAGE'
+#   {adr_id}         — e.g. "ADR-001"
+#   {patterns_block} — one quoted pattern per line, for the startup validity loop
+#   {checks_block}   — one line per rule: check_rule 'PATTERN' 'MESSAGE'

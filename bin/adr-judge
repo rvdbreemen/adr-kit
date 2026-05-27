@@ -44,6 +44,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from datetime import date
 from pathlib import Path
@@ -53,6 +54,85 @@ from typing import Dict, List, Optional, Tuple
 # .adr-kit.json's judge.llm_cmd. Tests inject a fake binary here.
 DEFAULT_LLM_CMD = ["claude", "-p", "--model", "claude-sonnet-4-6"]
 DEFAULT_LLM_TIMEOUT_S = 120
+
+# SEC-HIGH: only these binaries may be specified via repo-tracked
+# .adr-kit.json (judge.llm_cmd). Env (ADR_KIT_LLM_CMD) and CLI (--llm-cmd)
+# remain unrestricted because those are operator-controlled, not
+# arbitrarily-checked-in by collaborators.
+_LLM_CMD_ALLOWLIST = {
+    "claude",
+    "claude-code",
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001",
+}
+
+# PERF-HIGH: cache glob_to_regex translations across rules and files.
+_GLOB_PATTERN_CACHE: Dict[str, re.Pattern] = {}
+
+# PERF-MEDIUM: cache the JSON-schema validator instance so we don't reload
+# and re-parse adr-enforcement.schema.json for every ADR.
+_ENFORCEMENT_VALIDATOR = None
+_ENFORCEMENT_VALIDATOR_LOADED = False
+
+
+def _get_enforcement_validator():
+    """Return a cached Draft7Validator for the enforcement schema, or None.
+
+    Returns None when jsonschema isn't installed or the schema file is missing
+    — callers should treat that as "no deeper validation available" and
+    proceed with the lightweight structural checks.
+    """
+    global _ENFORCEMENT_VALIDATOR, _ENFORCEMENT_VALIDATOR_LOADED
+    if _ENFORCEMENT_VALIDATOR_LOADED:
+        return _ENFORCEMENT_VALIDATOR
+    _ENFORCEMENT_VALIDATOR_LOADED = True
+    try:
+        import jsonschema  # type: ignore
+    except ImportError:
+        return None
+    schema_path = (
+        Path(__file__).resolve().parent.parent
+        / "schemas"
+        / "adr-enforcement.schema.json"
+    )
+    if not schema_path.exists():
+        return None
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    _ENFORCEMENT_VALIDATOR = jsonschema.Draft7Validator(schema)
+    return _ENFORCEMENT_VALIDATOR
+
+
+def _safe_regex_search(
+    pattern: re.Pattern, text: str, timeout_s: float = 1.0
+) -> Optional[re.Match]:
+    """Run pattern.search(text) with a per-call wall-clock timeout.
+
+    Python's `re` engine is backtracking and has no native interrupt; the
+    practical mitigation is to run it on a daemon thread and abandon if it
+    takes too long. The thread keeps consuming CPU until it returns (you
+    can't kill a Python thread mid-regex), but at least the *caller* gets
+    control back so a single ReDoS-prone pattern can't wedge the whole
+    pre-commit hook.
+    """
+    result: List[Optional[re.Match]] = [None]
+    error: List[Optional[BaseException]] = [None]
+
+    def _run() -> None:
+        try:
+            result[0] = pattern.search(text)
+        except BaseException as exc:  # pragma: no cover - defensive
+            error[0] = exc
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout_s)
+    if t.is_alive():
+        raise TimeoutError(f"Regex timed out after {timeout_s}s")
+    if error[0] is not None:
+        raise error[0]
+    return result[0]
 
 
 def _split_cmd(cmd_str: str) -> List[str]:
@@ -330,20 +410,12 @@ def parse_enforcement(adr_text: str, adr_path: Path) -> Optional[Dict]:
     if "llm_judge" in data and not isinstance(data["llm_judge"], bool):
         raise JudgeError(f"{adr_path}: Enforcement.llm_judge must be a boolean")
 
-    try:
-        import jsonschema  # type: ignore
-        schema_path = (
-            Path(__file__).resolve().parent.parent
-            / "schemas"
-            / "adr-enforcement.schema.json"
-        )
-        if schema_path.exists():
-            schema = json.loads(schema_path.read_text(encoding="utf-8"))
-            jsonschema.validate(data, schema)
-    except ImportError:
-        pass
-    except Exception as e:
-        raise JudgeError(f"{adr_path}: Enforcement block fails schema validation: {e}")
+    validator = _get_enforcement_validator()
+    if validator is not None:
+        try:
+            validator.validate(data)
+        except Exception as e:
+            raise JudgeError(f"{adr_path}: Enforcement block fails schema validation: {e}")
 
     return data
 
@@ -396,7 +468,13 @@ def glob_to_regex(glob: str) -> re.Pattern:
     Brace expansion ({a,b,c}) was added in v0.12.2 — without it, real-world
     Enforcement-block path_globs that scope to a list of source files
     silently match nothing (regressed from common shell-glob expectations).
+
+    Compiled patterns are cached module-wide (v0.15) — the same glob string
+    typically reappears across every diffed file in the commit.
     """
+    cached = _GLOB_PATTERN_CACHE.get(glob)
+    if cached is not None:
+        return cached
     out: List[str] = []
     i = 0
     while i < len(glob):
@@ -439,7 +517,9 @@ def glob_to_regex(glob: str) -> re.Pattern:
         else:
             out.append(re.escape(c))
             i += 1
-    return re.compile("^" + "".join(out) + "$")
+    compiled = re.compile("^" + "".join(out) + "$")
+    _GLOB_PATTERN_CACHE[glob] = compiled
+    return compiled
 
 
 def path_matches(path: str, glob: Optional[str]) -> bool:
@@ -481,13 +561,19 @@ def apply_rules_to_diff(
                 raise JudgeError(
                     f"{adr_id}: invalid regex in {kind} rule ({pattern!r}): {e}"
                 )
+            timed_out = False
             for path, added in diff_files.items():
                 if any_skip_match(path, skip_files):
                     continue
                 if not path_matches(path, path_glob):
                     continue
                 for lineno, content in added:
-                    if regex.search(content):
+                    try:
+                        match = _safe_regex_search(regex, content)
+                    except TimeoutError:
+                        timed_out = True
+                        break
+                    if match:
                         findings.append(
                             {
                                 "adr": adr_id,
@@ -500,6 +586,24 @@ def apply_rules_to_diff(
                                 "severity": "violation",
                             }
                         )
+                if timed_out:
+                    break
+            if timed_out:
+                findings.append(
+                    {
+                        "adr": adr_id,
+                        "rule": kind,
+                        "pattern": pattern,
+                        "path": None,
+                        "line": None,
+                        "snippet": None,
+                        "message": (
+                            f"Pattern {pattern!r} regex timed out — possible ReDoS. "
+                            f"Check the pattern."
+                        ),
+                        "severity": "advisory",
+                    }
+                )
 
     for rule in enforcement.get("require_pattern", []):
         pattern = rule.get("pattern")
@@ -511,19 +615,37 @@ def apply_rules_to_diff(
             raise JudgeError(
                 f"{adr_id}: invalid regex in require_pattern rule ({pattern!r}): {e}"
             )
+        req_timed_out = False
         for path in diff_files:
             if any_skip_match(path, skip_files):
                 continue
             if not path_matches(path, path_glob):
                 continue
+            # SEC-LOW: reject paths containing .. before constructing file_path,
+            # then double-check the resolved path is still inside repo_root.
+            # Absolute paths in diff headers would otherwise be honoured by
+            # pathlib (Path('/a') / Path('/b') == Path('/b')) and escape the
+            # repo sandbox.
+            if ".." in Path(path).parts:
+                continue
             file_path = repo_root / path
+            try:
+                file_path.resolve().relative_to(repo_root.resolve())
+            except ValueError:
+                # path escapes repo_root — skip this file.
+                continue
             if not file_path.is_file():
                 continue
             try:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            if not regex.search(content):
+            try:
+                match = _safe_regex_search(regex, content)
+            except TimeoutError:
+                req_timed_out = True
+                break
+            if not match:
                 findings.append(
                     {
                         "adr": adr_id,
@@ -536,6 +658,22 @@ def apply_rules_to_diff(
                         "severity": "violation",
                     }
                 )
+        if req_timed_out:
+            findings.append(
+                {
+                    "adr": adr_id,
+                    "rule": "require_pattern",
+                    "pattern": pattern,
+                    "path": None,
+                    "line": None,
+                    "snippet": None,
+                    "message": (
+                        f"Pattern {pattern!r} regex timed out — possible ReDoS. "
+                        f"Check the pattern."
+                    ),
+                    "severity": "advisory",
+                }
+            )
 
     if enforcement.get("llm_judge") and not (
         enforcement.get("forbid_pattern")
@@ -733,16 +871,32 @@ def run_llm_batch(
         )
         return None
     if result.returncode != 0:
-        print(
-            f"[adr-judge] WARN: LLM judge command exited {result.returncode}: "
-            f"{result.stderr.strip()[:200]!r}; skipping LLM pass.",
-            file=sys.stderr,
-        )
+        # SEC-LOW: don't leak stderr (may contain tokens, paths, prompts) by
+        # default. Operators can opt in to the full payload via ADR_KIT_DEBUG=1.
+        if os.environ.get("ADR_KIT_DEBUG"):
+            print(
+                f"[adr-judge] WARN: LLM judge command exited {result.returncode}: "
+                f"{result.stderr.strip()[:200]!r}; skipping LLM pass.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "[adr-judge] WARN: LLM judge failed. Rerun with ADR_KIT_DEBUG=1 "
+                "for details.",
+                file=sys.stderr,
+            )
         return None
     try:
         verdicts = parse_llm_response(result.stdout)
     except JudgeError as e:
-        print(f"[adr-judge] WARN: {e}; skipping LLM pass.", file=sys.stderr)
+        if os.environ.get("ADR_KIT_DEBUG"):
+            print(f"[adr-judge] WARN: {e}; skipping LLM pass.", file=sys.stderr)
+        else:
+            print(
+                "[adr-judge] WARN: LLM judge response could not be parsed. "
+                "Rerun with ADR_KIT_DEBUG=1 for details.",
+                file=sys.stderr,
+            )
         return None
     findings: List[Dict] = []
     for t in targets:
@@ -886,12 +1040,28 @@ def adr_id_from_filename(name: str) -> Optional[str]:
     return f"ADR-{int(m.group(1)):03d}"
 
 
-def collect_adrs(adr_dir: Path) -> List[Tuple[str, Path, str]]:
-    """Return [(adr_id, path, body)] for every ADR-*.md file in adr_dir."""
+def collect_adrs(
+    adr_dir: Path, dry_run_target: Optional[str] = None
+) -> List[Tuple[str, Path, str]]:
+    """Return [(adr_id, path, body)] for every ADR-*.md file in adr_dir.
+
+    When ``dry_run_target`` is set (e.g. "ADR-042"), only ADR-042-*.md is
+    scanned first; we fall back to a full scan only when no file matches
+    (e.g. typo in the id) so the caller can report "not found" deterministically.
+    """
     out: List[Tuple[str, Path, str]] = []
     if not adr_dir.is_dir():
         return out
-    for p in sorted(adr_dir.glob("ADR-*.md")):
+    paths: List[Path] = []
+    if dry_run_target:
+        m = re.match(r"ADR-(\d+)", dry_run_target)
+        if m:
+            narrow = sorted(adr_dir.glob(f"ADR-{int(m.group(1)):03d}-*.md"))
+            if narrow:
+                paths = narrow
+    if not paths:
+        paths = sorted(adr_dir.glob("ADR-*.md"))
+    for p in paths:
         adr_id = adr_id_from_filename(p.name)
         if not adr_id:
             continue
@@ -1048,7 +1218,23 @@ def main() -> int:
         elif os.environ.get("ADR_KIT_LLM_CMD"):
             llm_cmd = _split_cmd(os.environ["ADR_KIT_LLM_CMD"])
         elif judge_cfg.get("llm_cmd"):
-            llm_cmd = list(judge_cfg["llm_cmd"]) if isinstance(judge_cfg["llm_cmd"], list) else _split_cmd(judge_cfg["llm_cmd"])
+            raw_cfg_cmd = judge_cfg["llm_cmd"]
+            candidate = list(raw_cfg_cmd) if isinstance(raw_cfg_cmd, list) else _split_cmd(raw_cfg_cmd)
+            # SEC-HIGH: repo-tracked config can be authored by anyone with
+            # commit access; restrict the binary to a known set. Env and CLI
+            # overrides remain unrestricted (operator-controlled).
+            cfg_binary = Path(candidate[0]).name if candidate else ""
+            cfg_binary_stem = Path(candidate[0]).stem if candidate else ""
+            if cfg_binary in _LLM_CMD_ALLOWLIST or cfg_binary_stem in _LLM_CMD_ALLOWLIST:
+                llm_cmd = candidate
+            else:
+                print(
+                    f"[adr-judge] WARN: repo config judge.llm_cmd[0]={cfg_binary!r} "
+                    f"is not in the allowed list. Ignoring repo config — use env "
+                    f"ADR_KIT_LLM_CMD or --llm-cmd to override.",
+                    file=sys.stderr,
+                )
+                llm_cmd = list(DEFAULT_LLM_CMD)
         elif judge_cfg.get("llm_model"):
             # User specified just the model — keep the default `claude -p` shape.
             llm_cmd = ["claude", "-p", "--model", str(judge_cfg["llm_model"])]
@@ -1092,7 +1278,9 @@ def main() -> int:
             dry_run_target = f"ADR-{int(m_target.group(1)):03d}"
 
         diff_text = read_diff(args.diff)
-        if max_diff_bytes and len(diff_text.encode("utf-8")) > max_diff_bytes:
+        # PERF-LOW: char count is always <= UTF-8 byte count, so this is a
+        # cheap upper bound that avoids encoding the whole diff just to bail.
+        if max_diff_bytes and len(diff_text) > max_diff_bytes:
             print(
                 f"[adr-judge] diff exceeds max_diff_bytes={max_diff_bytes}; skipping",
                 file=sys.stderr,
@@ -1100,7 +1288,7 @@ def main() -> int:
             return 0
         diff_files = parse_diff(diff_text)
 
-        adrs = collect_adrs(adr_dir)
+        adrs = collect_adrs(adr_dir, dry_run_target=dry_run_target)
 
         # --dry-run-enforcement: verify the ADR exists before doing any work.
         if dry_run_target is not None:

@@ -42,6 +42,7 @@ def _load_module():
     loader = importlib.machinery.SourceFileLoader("adr_context", str(SCRIPT))
     spec = importlib.util.spec_from_loader("adr_context", loader)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules["adr_context"] = mod
     loader.exec_module(mod)
     return mod
 

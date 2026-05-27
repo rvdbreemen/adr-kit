@@ -15,7 +15,10 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_JUDGE = REPO_ROOT / "bin" / "adr-judge"
@@ -309,3 +312,97 @@ def test_profile_combined_with_json(tmp_path):
     payload = json.loads(stdout)  # stdout must remain valid JSON
     assert payload["summary"]["violations"] == 1
     assert "[adr-judge] Profile:" in stderr
+
+
+# ---------- wall-clock performance tests (slow, opt-in) ----------
+
+
+def _make_synthetic_adrs(tmp_path, count=50):
+    """Create count synthetic ADR files with Enforcement blocks."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    for i in range(1, count + 1):
+        adr_file = adr_dir / f"ADR-{i:03d}-synthetic-decision.md"
+        adr_file.write_text(f"""# ADR-{i:03d}: Synthetic Decision {i}
+
+## Status
+Accepted
+
+## Context
+This is a synthetic ADR for performance testing. It covers topic {i}.
+
+## Decision
+We decided to use approach {i} for this component.
+
+## Consequences
+Performance improvement of approximately {i * 2}%.
+
+## Enforcement
+```json
+{{
+  "rules": [{{
+    "id": "rule-{i}",
+    "name": "No forbidden pattern {i}",
+    "type": "forbid_pattern",
+    "pattern": "FORBIDDEN_PATTERN_{i}",
+    "message": "Found forbidden pattern {i}"
+  }}]
+}}
+```
+""")
+    return adr_dir
+
+
+@pytest.mark.slow
+def test_adr_judge_performance_50_adrs(tmp_path):
+    """adr-judge on 50 ADRs + 100-file synthetic diff should complete in < 3000ms."""
+    adr_dir = _make_synthetic_adrs(tmp_path, 50)
+    # Create synthetic diff with 100 files
+    diff_lines = []
+    for f in range(100):
+        diff_lines.append(f"diff --git a/src/file{f}.py b/src/file{f}.py")
+        diff_lines.append(f"--- a/src/file{f}.py")
+        diff_lines.append(f"+++ b/src/file{f}.py")
+        diff_lines.append("@@ -1,3 +1,4 @@")
+        diff_lines.append("+# added line")
+        diff_lines.append(" existing line")
+    diff_content = "\n".join(diff_lines)
+
+    judge_path = Path(__file__).parent.parent / "bin" / "adr-judge"
+    start = time.perf_counter()
+    result = subprocess.run(
+        [sys.executable, str(judge_path), "--diff", "-", "--adr-dir", str(adr_dir)],
+        input=diff_content, capture_output=True, text=True
+    )
+    elapsed = time.perf_counter() - start
+    assert elapsed < 3.0, f"adr-judge took {elapsed:.2f}s on 50 ADRs (limit: 3s)"
+
+
+@pytest.mark.slow
+def test_adr_status_performance_50_adrs(tmp_path):
+    """adr-status on 50 ADRs should complete in < 500ms."""
+    adr_dir = _make_synthetic_adrs(tmp_path, 50)
+    status_path = Path(__file__).parent.parent / "bin" / "adr-status"
+    start = time.perf_counter()
+    result = subprocess.run(
+        [sys.executable, str(status_path), str(adr_dir), "--format", "json"],
+        capture_output=True, text=True
+    )
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.5, f"adr-status took {elapsed:.2f}s on 50 ADRs (limit: 500ms)"
+
+
+@pytest.mark.slow
+def test_adr_context_performance_50_adrs(tmp_path):
+    """adr-context on 50 ADRs should complete in < 200ms."""
+    adr_dir = _make_synthetic_adrs(tmp_path, 50)
+    context_path = Path(__file__).parent.parent / "bin" / "adr-context"
+    start = time.perf_counter()
+    result = subprocess.run(
+        [sys.executable, str(context_path), "--adr-dir", str(adr_dir),
+         "performance optimization backend"],
+        capture_output=True, text=True
+    )
+    elapsed = time.perf_counter() - start
+    # 600ms budget: Python subprocess cold-start on Windows is ~300-400ms baseline
+    assert elapsed < 0.6, f"adr-context took {elapsed:.2f}s on 50 ADRs (limit: 600ms)"

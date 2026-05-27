@@ -137,6 +137,38 @@
           "default": 120
         }
       }
+    },
+    "context": {
+      "type": "object",
+      "description": "Configuration for bin/adr-context semantic ranking",
+      "properties": {
+        "weights": {
+          "type": "object",
+          "description": "Scoring signal weights (must sum to 1.0)",
+          "properties": {
+            "exact_keyword": {"type": "number", "minimum": 0, "maximum": 1},
+            "domain_tag": {"type": "number", "minimum": 0, "maximum": 1},
+            "related_decisions": {"type": "number", "minimum": 0, "maximum": 1},
+            "acceptance_status": {"type": "number", "minimum": 0, "maximum": 1},
+            "recency": {"type": "number", "minimum": 0, "maximum": 1}
+          },
+          "additionalProperties": false
+        },
+        "default_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
+        "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.1}
+      },
+      "additionalProperties": false
+    },
+    "retirement": {
+      "type": "object",
+      "description": "Configuration for bin/adr-retire retirement detection",
+      "properties": {
+        "threshold_days": {"type": "integer", "minimum": 1, "default": 90},
+        "check_tech_removal": {"type": "boolean", "default": true},
+        "check_supersession": {"type": "boolean", "default": true},
+        "check_policy_mismatch": {"type": "boolean", "default": true}
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -40,17 +41,108 @@ ADR_REF_RE = re.compile(r"\bADR-(\d{3})\b", re.IGNORECASE)
 METRICS_RE = re.compile(r"\d+\s*(ms|MB|GB|KB|%|req|s|hours?)\b")
 FILE_LINE_RE = re.compile(r"[\w./]+:\d+")
 EXTERNAL_LINK_RE = re.compile(r"https?://")
+# Unified vague-words set; identical to bin/adr-lint's check_quality_gate().
 VAGUE_WORDS_RE = re.compile(
-    r"\b(might|maybe|possibly|could|should\s+consider)\b", re.IGNORECASE
+    r"\b(appropriate|somehow|maybe|possibly|might|could|"
+    r"should\s+consider|might\s+consider)\b",
+    re.IGNORECASE,
 )
+
+# Precompiled section-heading patterns: one regex per required section, used
+# for both presence checks (gate_completeness) and slicing (_section_text).
+_SECTION_PRESENCE_RE: Dict[str, re.Pattern] = {
+    section: re.compile(r"^" + re.escape(section) + r"\b", re.MULTILINE)
+    for section in REQUIRED_SECTIONS
+}
+_SECTION_BODY_RE: Dict[str, re.Pattern] = {
+    section: re.compile(
+        r"^" + re.escape(section) + r"\s*$\n(.*?)(?=\n##\s+|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    for section in REQUIRED_SECTIONS
+}
+
+# Acronym scanning (gate_clarity).
+_ACRO_RE = re.compile(r"\b([A-Z]{2,})\b")
+_ACRO_DEFINED_RE = re.compile(
+    r"\b([A-Z]{2,})\b\s*(?:\(|stands\s+for|means\b|\:)"
+)
+
+
+# ---------------------------------------------------------------------------
+# Structured quality issues
+# ---------------------------------------------------------------------------
+
+ISSUE_MESSAGES: Dict[str, str] = {
+    "MISSING_SECTION": "Required section missing: {detail}",
+    "DECISION_TOO_SHORT":
+        "Decision section too short ({detail} chars, minimum 100)",
+    "TOO_FEW_ALTERNATIVES":
+        "Too few alternatives considered ({detail} found, minimum 2)",
+    "CONSEQUENCES_EMPTY": "Consequences section is empty",
+    "NO_REFERENCES": "References section is empty or contains only 'None'",
+    "NO_MEASUREMENTS":
+        "No quantitative measurements found (e.g., '50 ms', '10 MB', '30%')",
+    "NO_EXTERNAL_LINK":
+        "No external links found in the document; add https:// references",
+    "NO_FILE_LINE_REF":
+        "No file:line references found (e.g., 'src/main.py:42')",
+    "VAGUE_LANGUAGE": "Decision section uses vague language: {detail}",
+    "NO_TITLE": "No ADR title heading found (expected '# ADR-NNN Title')",
+    "ACRONYM_UNEXPLAINED": "More than 3 undefined acronyms: {detail}",
+    "CONTEXT_TOO_SHORT":
+        "Context section too short ({detail} chars, minimum 50)",
+    "NO_RELATED_DECISIONS":
+        "Related Decisions is empty or 'None'; reference related ADRs "
+        "(or explain why there are none)",
+    "ORPHAN_RELATED_ID": "Referenced ADRs do not exist: {detail}",
+    "INVALID_STATUS":
+        "Status section has no valid status value "
+        "(expected one of: {detail})",
+}
+
+# Severity ordering for triage display (lower = more severe).
+SEVERITY_ORDER: Dict[str, int] = {"high": 0, "medium": 1, "low": 2}
+
+
+@dataclass
+class QualityIssue:
+    """Structured issue produced by a quality gate.
+
+    ``code`` is a stable machine-readable identifier (see ISSUE_MESSAGES);
+    ``detail`` is free-form context interpolated into the human message.
+    """
+
+    code: str
+    detail: str = ""
+    severity: str = "medium"  # "high" | "medium" | "low"
+
+    def message(self) -> str:
+        template = ISSUE_MESSAGES.get(self.code, self.code)
+        try:
+            return template.format(detail=self.detail)
+        except (KeyError, IndexError):
+            return template
+
+    def to_dict(self) -> Dict:
+        return {
+            "code": self.code,
+            "detail": self.detail,
+            "severity": self.severity,
+            "message": self.message(),
+        }
 
 
 def _section_text(content: str, heading: str) -> str:
     """Extract text of a markdown section (up to the next ## heading or EOF)."""
-    m = re.search(
-        rf"^{re.escape(heading)}\s*$\n(.*?)(?=\n##\s+|\Z)",
-        content, re.MULTILINE | re.DOTALL,
-    )
+    pat = _SECTION_BODY_RE.get(heading)
+    if pat is None:
+        # Fallback for any heading not in REQUIRED_SECTIONS.
+        pat = re.compile(
+            r"^" + re.escape(heading) + r"\s*$\n(.*?)(?=\n##\s+|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+    m = pat.search(content)
     return m.group(1) if m else ""
 
 
@@ -63,17 +155,15 @@ def gate_completeness(content: str) -> Dict:
     - ## Alternatives Considered contains >= 2 bullet/heading items (else: -0.15)
     - ## Consequences section present and not empty (else: -0.1)
 
-    Returns: {score: float, issues: List[str], checks: Dict[str, bool]}
+    Returns: {score: float, issues: List[QualityIssue], checks: Dict[str, bool]}
     """
-    issues: List[str] = []
+    issues: List[QualityIssue] = []
     checks: Dict[str, bool] = {}
 
     # Check all required sections present
     missing_sections = []
     for section in REQUIRED_SECTIONS:
-        present = bool(re.search(
-            r"^" + re.escape(section) + r"\b", content, re.MULTILINE
-        ))
+        present = bool(_SECTION_PRESENCE_RE[section].search(content))
         checks[f"section_{section.replace('## ', '').replace(' ', '_').lower()}"] = present
         if not present:
             missing_sections.append(section)
@@ -82,17 +172,25 @@ def gate_completeness(content: str) -> Dict:
     n_missing = len(missing_sections)
     if n_missing > 0:
         score -= n_missing / 7.0
-        issues.append(
-            f"Missing sections: {', '.join(s.replace('## ', '') for s in missing_sections)}"
-        )
+        missing_names = ", ".join(s.replace("## ", "") for s in missing_sections)
+        issues.append(QualityIssue(
+            code="MISSING_SECTION",
+            detail=missing_names,
+            severity="high",
+        ))
 
     # Check Decision section length
     decision_text = _section_text(content, "## Decision")
-    decision_long_enough = len(decision_text.strip()) > 100
+    decision_len = len(decision_text.strip())
+    decision_long_enough = decision_len > 100
     checks["decision_length_ok"] = decision_long_enough
     if not decision_long_enough:
         score -= 0.1
-        issues.append("## Decision section is too short (< 100 chars); elaborate the rationale")
+        issues.append(QualityIssue(
+            code="DECISION_TOO_SHORT",
+            detail=str(decision_len),
+            severity="medium",
+        ))
 
     # Check Alternatives Considered has >= 2 items
     alternatives_text = _section_text(content, "## Alternatives Considered")
@@ -103,9 +201,11 @@ def gate_completeness(content: str) -> Dict:
     checks["alternatives_count_ok"] = enough_alternatives
     if not enough_alternatives:
         score -= 0.15
-        issues.append(
-            f"## Alternatives Considered has {total_alternatives} item(s); list at least 2"
-        )
+        issues.append(QualityIssue(
+            code="TOO_FEW_ALTERNATIVES",
+            detail=str(total_alternatives),
+            severity="medium",
+        ))
 
     # Check Consequences present and not empty
     consequences_text = _section_text(content, "## Consequences")
@@ -113,7 +213,10 @@ def gate_completeness(content: str) -> Dict:
     checks["consequences_not_empty"] = consequences_ok
     if not consequences_ok:
         score -= 0.1
-        issues.append("## Consequences section is empty; describe trade-offs and risks")
+        issues.append(QualityIssue(
+            code="CONSEQUENCES_EMPTY",
+            severity="high",
+        ))
 
     score = max(0.0, min(1.0, score))
     return {"score": score, "issues": issues, "checks": checks}
@@ -130,7 +233,7 @@ def gate_evidence(content: str) -> Dict:
 
     Returns: {score: float, issues: List[str], checks: Dict[str, bool]}
     """
-    issues: List[str] = []
+    issues: List[QualityIssue] = []
     checks: Dict[str, bool] = {}
 
     # Check References section has at least 1 non-None entry
@@ -145,7 +248,7 @@ def gate_evidence(content: str) -> Dict:
     if has_references:
         score += 0.4
     else:
-        issues.append("## References section is empty or contains only 'None'")
+        issues.append(QualityIssue(code="NO_REFERENCES", severity="high"))
 
     # Check for metrics/measurements in the whole document
     has_metrics = bool(METRICS_RE.search(content))
@@ -153,7 +256,7 @@ def gate_evidence(content: str) -> Dict:
     if has_metrics:
         score += 0.3
     else:
-        issues.append("No quantitative measurements found (e.g., '50 ms', '10 MB', '30%')")
+        issues.append(QualityIssue(code="NO_MEASUREMENTS", severity="low"))
 
     # Check for external links
     has_external_link = bool(EXTERNAL_LINK_RE.search(content))
@@ -161,7 +264,7 @@ def gate_evidence(content: str) -> Dict:
     if has_external_link:
         score += 0.2
     else:
-        issues.append("No external links found in the document; add https:// references")
+        issues.append(QualityIssue(code="NO_EXTERNAL_LINK", severity="low"))
 
     # Check for file:line references
     has_file_line = bool(FILE_LINE_RE.search(content))
@@ -169,7 +272,7 @@ def gate_evidence(content: str) -> Dict:
     if has_file_line:
         score += 0.1
     else:
-        issues.append("No file:line references found (e.g., 'src/main.py:42')")
+        issues.append(QualityIssue(code="NO_FILE_LINE_REF", severity="low"))
 
     score = max(0.0, min(1.0, score))
     return {"score": score, "issues": issues, "checks": checks}
@@ -188,7 +291,7 @@ def gate_clarity(content: str) -> Dict:
 
     Returns: {score: float, issues: List[str], checks: Dict[str, bool]}
     """
-    issues: List[str] = []
+    issues: List[QualityIssue] = []
     checks: Dict[str, bool] = {}
 
     score = 0.5  # base score
@@ -199,9 +302,11 @@ def gate_clarity(content: str) -> Dict:
     checks["no_vague_language"] = not has_vague
     if has_vague:
         vague_found = VAGUE_WORDS_RE.findall(decision_text)
-        issues.append(
-            f"## Decision section uses vague language: {', '.join(repr(w) for w in vague_found[:5])}"
-        )
+        issues.append(QualityIssue(
+            code="VAGUE_LANGUAGE",
+            detail=", ".join(repr(w) for w in vague_found[:5]),
+            severity="medium",
+        ))
         score -= 0.15
 
     # Check ADR has a title heading
@@ -210,23 +315,20 @@ def gate_clarity(content: str) -> Dict:
     if has_title:
         score += 0.3
     else:
-        issues.append("No ADR title heading found (expected '# ADR-NNN Title')")
+        issues.append(QualityIssue(code="NO_TITLE", severity="high"))
 
-    # Check acronyms are defined (all-caps words >= 2 letters)
-    acro_re = re.compile(r"\b([A-Z]{2,})\b")
-    # Stopwords that are definitely not acronyms
+    # Check acronyms are defined (all-caps words >= 2 letters).
+    # Stopwords that are definitely not acronyms.
     acro_stopwords = frozenset({
         "OK", "TO", "BY", "AS", "IS", "ON", "OR", "AN", "AT", "IN", "OF",
         "IF", "DO", "NO", "SO", "UP", "US", "WE", "MY", "IT",
         "ADR", "ID",  # ADR is always defined in the context of this tool
     })
     # Words followed by definition patterns: '(', 'stands for', 'means', ':'
-    defined_acros = set()
-    for m in re.finditer(r"\b([A-Z]{2,})\b\s*(?:\(|stands\s+for|means\b|\:)", content):
-        defined_acros.add(m.group(1))
+    defined_acros = {m.group(1) for m in _ACRO_DEFINED_RE.finditer(content)}
 
     undefined_acros = set()
-    for m in acro_re.finditer(content):
+    for m in _ACRO_RE.finditer(content):
         acro = m.group(1)
         if acro not in acro_stopwords and acro not in defined_acros:
             undefined_acros.add(acro)
@@ -235,18 +337,25 @@ def gate_clarity(content: str) -> Dict:
     checks["acronyms_defined"] = acros_ok
     if not acros_ok:
         score -= 0.2
-        issues.append(
-            f"More than 3 undefined acronyms: {', '.join(sorted(undefined_acros)[:5])}"
-        )
+        issues.append(QualityIssue(
+            code="ACRONYM_UNEXPLAINED",
+            detail=", ".join(sorted(undefined_acros)[:5]),
+            severity="low",
+        ))
 
     # Check Context section > 50 chars
     context_text = _section_text(content, "## Context")
-    context_ok = len(context_text.strip()) > 50
+    context_len = len(context_text.strip())
+    context_ok = context_len > 50
     checks["context_sufficient"] = context_ok
     if context_ok:
         score += 0.2
     else:
-        issues.append("## Context section is too short (< 50 chars); explain the problem")
+        issues.append(QualityIssue(
+            code="CONTEXT_TOO_SHORT",
+            detail=str(context_len),
+            severity="medium",
+        ))
 
     score = max(0.0, min(1.0, score))
     return {"score": score, "issues": issues, "checks": checks}
@@ -262,7 +371,7 @@ def gate_consistency(content: str, adr_dir: Optional[Path] = None) -> Dict:
 
     Returns: {score: float, issues: List[str], checks: Dict[str, bool]}
     """
-    issues: List[str] = []
+    issues: List[QualityIssue] = []
     checks: Dict[str, bool] = {}
 
     score = 0.0
@@ -278,10 +387,10 @@ def gate_consistency(content: str, adr_dir: Optional[Path] = None) -> Dict:
     if has_related:
         score += 0.4
     else:
-        issues.append(
-            "## Related Decisions is empty or 'None'; "
-            "reference related ADRs (or explain why there are none)"
-        )
+        issues.append(QualityIssue(
+            code="NO_RELATED_DECISIONS",
+            severity="medium",
+        ))
 
     # Check if mentioned ADR references exist in adr_dir
     mentioned_adrs = set(ADR_REF_RE.findall(content))
@@ -300,9 +409,11 @@ def gate_consistency(content: str, adr_dir: Optional[Path] = None) -> Dict:
         if refs_valid:
             score += 0.3
         else:
-            issues.append(
-                f"Referenced ADRs do not exist in {adr_dir}: {', '.join(missing_refs)}"
-            )
+            issues.append(QualityIssue(
+                code="ORPHAN_RELATED_ID",
+                detail=", ".join(missing_refs),
+                severity="high",
+            ))
     elif mentioned_adrs:
         # ADR references found but can't verify — give partial credit
         checks["referenced_adrs_exist"] = True
@@ -324,10 +435,11 @@ def gate_consistency(content: str, adr_dir: Optional[Path] = None) -> Dict:
     if has_valid_status:
         score += 0.3
     else:
-        issues.append(
-            f"## Status section has no valid status value "
-            f"(expected one of: {', '.join(sorted(VALID_STATUSES))})"
-        )
+        issues.append(QualityIssue(
+            code="INVALID_STATUS",
+            detail=", ".join(sorted(VALID_STATUSES)),
+            severity="high",
+        ))
 
     score = max(0.0, min(1.0, score))
     return {"score": score, "issues": issues, "checks": checks}
@@ -350,57 +462,53 @@ def _extract_adr_id(adr_path: Path) -> str:
     return adr_path.stem
 
 
-def _severity_label(issue: str) -> str:
-    """Heuristic severity based on issue content."""
-    high_markers = ["Missing section", "empty", "Status section has no valid"]
-    medium_markers = ["vague language", "too short", "less than", "< 100", "< 50"]
-    for marker in high_markers:
-        if marker.lower() in issue.lower():
-            return "HIGH"
-    for marker in medium_markers:
-        if marker.lower() in issue.lower():
-            return "MEDIUM"
-    return "LOW"
+# Per-code recommendation strings. Driven by the structured issue code rather
+# than human-text matching, so wording changes don't silently break behaviour.
+_RECOMMENDATIONS_BY_CODE: Dict[str, str] = {
+    "MISSING_SECTION": "Add the missing required sections listed above",
+    "DECISION_TOO_SHORT":
+        "Expand ## Decision to > 100 characters explaining the rationale",
+    "TOO_FEW_ALTERNATIVES":
+        "Add at least 2 alternatives in ## Alternatives Considered "
+        "(including 'do nothing')",
+    "CONSEQUENCES_EMPTY":
+        "Fill in ## Consequences with benefits, trade-offs, and risks",
+    "NO_REFERENCES":
+        "Add at least one entry to ## References (issue, file, or external link)",
+    "NO_MEASUREMENTS":
+        "Add measurements to ## Consequences (e.g., '50 ms', '10 MB', '30%')",
+    "NO_EXTERNAL_LINK": "Add at least one https:// link in ## References",
+    "NO_FILE_LINE_REF":
+        "Add a file:line reference (e.g., 'src/main.py:42') in ## References",
+    "VAGUE_LANGUAGE":
+        "Replace vague language in ## Decision with a concrete, "
+        "declarative statement",
+    "NO_TITLE": "Add a title heading '# ADR-NNN Title' as the first line",
+    "ACRONYM_UNEXPLAINED":
+        "Define acronyms on first use, e.g., 'REST (Representational "
+        "State Transfer)'",
+    "CONTEXT_TOO_SHORT":
+        "Expand ## Context to > 50 chars; explain the problem and constraints",
+    "NO_RELATED_DECISIONS":
+        "Reference related ADRs in ## Related Decisions "
+        "(or state 'None' with explanation)",
+    "ORPHAN_RELATED_ID":
+        "Verify that referenced ADR numbers exist in the docs/adr/ directory",
+    "INVALID_STATUS":
+        "Set a valid status in ## Status: Proposed, Accepted, Deprecated, "
+        "Superseded, or Amended",
+}
 
 
-def _recommendations_from_issues(issues: List[str]) -> List[str]:
-    """Generate concrete action items from issue descriptions."""
-    recs = []
+def _recommendations_from_issues(issues: List[QualityIssue]) -> List[str]:
+    """Generate concrete action items from structured issue codes."""
+    recs: List[str] = []
     for issue in issues:
-        low = issue.lower()
-        if "missing section" in low:
-            sections = issue.split(":", 1)[1].strip() if ":" in issue else issue
-            recs.append(f"Add the following required sections: {sections}")
-        elif "decision section is too short" in low:
-            recs.append("Expand ## Decision to > 100 characters explaining the rationale")
-        elif "alternatives considered" in low and "item" in low:
-            recs.append("Add at least 2 alternatives in ## Alternatives Considered (including 'do nothing')")
-        elif "consequences section is empty" in low:
-            recs.append("Fill in ## Consequences with benefits, trade-offs, and risks")
-        elif "references section is empty" in low:
-            recs.append("Add at least one entry to ## References (issue, file, or external link)")
-        elif "quantitative measurements" in low:
-            recs.append("Add measurements to ## Consequences (e.g., '50 ms', '10 MB', '30%')")
-        elif "external links" in low:
-            recs.append("Add at least one https:// link in ## References")
-        elif "file:line" in low:
-            recs.append("Add a file:line reference (e.g., 'src/main.py:42') in ## References")
-        elif "vague language" in low:
-            recs.append("Replace vague language in ## Decision with a concrete, declarative statement")
-        elif "adr title" in low or "no adr title" in low:
-            recs.append("Add a title heading '# ADR-NNN Title' as the first line")
-        elif "undefined acronyms" in low:
-            recs.append("Define acronyms on first use, e.g., 'REST (Representational State Transfer)'")
-        elif "context section" in low:
-            recs.append("Expand ## Context to > 50 chars; explain the problem and constraints")
-        elif "related decisions" in low:
-            recs.append("Reference related ADRs in ## Related Decisions (or state 'None' with explanation)")
-        elif "referenced adrs do not exist" in low:
-            recs.append("Verify that referenced ADR numbers exist in the docs/adr/ directory")
-        elif "no valid status" in low or "status section has no valid" in low:
-            recs.append("Set a valid status in ## Status: Proposed, Accepted, Deprecated, or Superseded")
+        rec = _RECOMMENDATIONS_BY_CODE.get(issue.code)
+        if rec is None:
+            recs.append(issue.message())
         else:
-            recs.append(issue)
+            recs.append(rec)
     return recs
 
 
@@ -436,25 +544,16 @@ def score_adr_quality(content: str, adr_path: Path) -> Dict:
     )
     overall = max(0.0, min(1.0, round(overall, 4)))
 
-    all_issues = (
-        [(i, "HIGH") for i in comp["issues"] if _severity_label(i) == "HIGH"]
-        + [(i, "HIGH") for i in evid["issues"] if _severity_label(i) == "HIGH"]
-        + [(i, "HIGH") for i in clar["issues"] if _severity_label(i) == "HIGH"]
-        + [(i, "HIGH") for i in cons["issues"] if _severity_label(i) == "HIGH"]
-        + [(i, "MEDIUM") for i in comp["issues"] if _severity_label(i) == "MEDIUM"]
-        + [(i, "MEDIUM") for i in evid["issues"] if _severity_label(i) == "MEDIUM"]
-        + [(i, "MEDIUM") for i in clar["issues"] if _severity_label(i) == "MEDIUM"]
-        + [(i, "MEDIUM") for i in cons["issues"] if _severity_label(i) == "MEDIUM"]
-        + [(i, "LOW") for i in comp["issues"] if _severity_label(i) == "LOW"]
-        + [(i, "LOW") for i in evid["issues"] if _severity_label(i) == "LOW"]
-        + [(i, "LOW") for i in clar["issues"] if _severity_label(i) == "LOW"]
-        + [(i, "LOW") for i in cons["issues"] if _severity_label(i) == "LOW"]
-    )
-
-    combined_issues = [f"[{sev}] {msg}" for msg, sev in all_issues]
-    all_raw_issues = (
-        comp["issues"] + evid["issues"] + clar["issues"] + cons["issues"]
-    )
+    # Single-pass triage: collect all QualityIssues across the four gates,
+    # then sort by severity (high -> medium -> low). The previous 12-way
+    # comprehension was O(4 * 3 * n) and re-evaluated _severity_label
+    # repeatedly; this is O(n log n) with a tiny constant.
+    all_issues: List[QualityIssue] = [
+        issue
+        for gate_result in (comp, evid, clar, cons)
+        for issue in gate_result["issues"]
+    ]
+    all_issues.sort(key=lambda i: SEVERITY_ORDER.get(i.severity, 99))
 
     return {
         "overall": overall,
@@ -465,8 +564,8 @@ def score_adr_quality(content: str, adr_path: Path) -> Dict:
             "clarity": clar,
             "consistency": cons,
         },
-        "issues": combined_issues,
-        "recommendations": _recommendations_from_issues(all_raw_issues),
+        "issues": all_issues,
+        "recommendations": _recommendations_from_issues(all_issues),
     }
 
 
@@ -499,7 +598,11 @@ def _render_text(adr_id: str, result: Dict) -> str:
         g = gates[key]
         score_str = f"{g['score']:.2f}"
         checks_str = _count_checks_passed(g)
-        issue_summary = "; ".join(g["issues"][:2]) if g["issues"] else "ok"
+        if g["issues"]:
+            issue_msgs = [issue.message() for issue in g["issues"][:2]]
+            issue_summary = "; ".join(issue_msgs)
+        else:
+            issue_summary = "ok"
         if len(issue_summary) > 50:
             issue_summary = issue_summary[:47] + "..."
         lines.append(f"  {label:<16} {score_str}  [{checks_str} checks passed]  {issue_summary}")
@@ -508,7 +611,7 @@ def _render_text(adr_id: str, result: Dict) -> str:
         lines.append("")
         lines.append("Issues:")
         for issue in result["issues"]:
-            lines.append(f"  {issue}")
+            lines.append(f"  [{issue.severity.upper()}] {issue.message()}")
 
     if result["recommendations"]:
         lines.append("")
@@ -519,13 +622,25 @@ def _render_text(adr_id: str, result: Dict) -> str:
     return "\n".join(lines)
 
 
+def _serialize_gates(gates: Dict) -> Dict:
+    """Convert QualityIssue objects in each gate to plain dicts for JSON."""
+    out: Dict = {}
+    for name, gate_result in gates.items():
+        out[name] = {
+            "score": gate_result["score"],
+            "issues": [issue.to_dict() for issue in gate_result["issues"]],
+            "checks": gate_result["checks"],
+        }
+    return out
+
+
 def _render_json(adr_id: str, result: Dict) -> str:
     output = {
         "adr_id": adr_id,
         "overall": result["overall"],
         "grade": result["grade"],
-        "gates": result["gates"],
-        "issues": result["issues"],
+        "gates": _serialize_gates(result["gates"]),
+        "issues": [issue.to_dict() for issue in result["issues"]],
         "recommendations": result["recommendations"],
     }
     return json.dumps(output, indent=2, ensure_ascii=False)
@@ -545,7 +660,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Output format (default: text)",
     )
     parser.add_argument(
-        "--version", action="version", version="adr-quality 0.14.0",
+        "--version", action="version", version="adr-quality 0.15.0",
     )
     args = parser.parse_args(argv)
 

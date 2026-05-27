@@ -48,8 +48,15 @@ fi
 ADR_KIT_BASE="${HOME}/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit"
 ADR_JUDGE=""
 if [ -d "$ADR_KIT_BASE" ]; then
-  # Pick the highest installed version (lexicographic sort works for SemVer-shaped dirs).
-  ADR_JUDGE=$(ls -d "$ADR_KIT_BASE"/*/bin/adr-judge 2>/dev/null | sort -V | tail -1)
+  # Pick the highest installed version (SemVer sort over directory names).
+  # Use a bash array + nullglob so filenames with spaces/odd chars don't break us
+  # and so an empty glob doesn't expand to the literal pattern.
+  shopt -s nullglob
+  _candidates=("$ADR_KIT_BASE"/*/bin/adr-judge)
+  shopt -u nullglob
+  if [ ${#_candidates[@]} -gt 0 ]; then
+    ADR_JUDGE=$(printf '%s\n' "${_candidates[@]}" | sort -V | tail -1)
+  fi
 fi
 
 if [ -z "$ADR_JUDGE" ] || [ ! -x "$ADR_JUDGE" ]; then
@@ -59,8 +66,8 @@ if [ -z "$ADR_JUDGE" ] || [ ! -x "$ADR_JUDGE" ]; then
 fi
 
 ROOT=$(git rev-parse --show-toplevel)
-DIFF=$(git diff --cached --unified=0)
-if [ -z "$DIFF" ]; then
+# Skip when there are no staged changes — cheaper than buffering the full diff just to test emptiness.
+if [ -z "$(git diff --cached --name-only)" ]; then
   exit 0
 fi
 
@@ -86,7 +93,7 @@ _ms_now() {
 #   1  at least one violation (declarative or LLM)
 #   2  config or runtime error
 _T0=$(_ms_now)
-ADR_OUT=$(echo "$DIFF" | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --llm 2>&1)
+ADR_OUT=$(git diff --cached --unified=0 | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --llm 2>&1)
 ADR_EXIT=$?
 _T1=$(_ms_now)
 # Suppress per-ADR llm_judge advisory lines: they repeat once per ADR with llm_judge:true

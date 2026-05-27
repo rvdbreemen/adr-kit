@@ -6,7 +6,6 @@ enforcement health, retirement candidates.
 
 Usage:
   adr-status [--format json|markdown|table] [--adr-dir DIR] [--limit N]
-             [--show-enforcement] [--show-retirement]
   adr-status --format markdown > /tmp/health.md
 """
 
@@ -22,7 +21,90 @@ from typing import Any, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
-# Extraction helpers
+# Module-level compiled regexes (hoisted from per-call usage)
+# ---------------------------------------------------------------------------
+
+# Status section: "## Status" (not "## Status History") followed by a status word
+_STATUS_SECTION_RE = re.compile(
+    r"^##\s+Status(?!\s+History)\s*$\s+([A-Za-z]+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Bold inline: **Status:** Accepted  or  **Status: Accepted**
+_STATUS_BOLD_RE = re.compile(
+    r"\*\*Status\s*:?\*\*\s*:?\s*([A-Za-z]+)",
+    re.IGNORECASE,
+)
+
+# Date patterns
+_DATE_ISO_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+_MONTHS = (
+    "January|February|March|April|May|June|July|August|September|"
+    "October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
+)
+_DATE_LONG_RE = re.compile(
+    rf"\b(\d{{1,2}})\s+({_MONTHS})\s+(\d{{4}})\b",
+    re.IGNORECASE,
+)
+
+# Enforcement block: "## Enforcement" followed by ```json {...} ```
+_ENFORCEMENT_BLOCK_RE = re.compile(
+    r"^##\s+Enforcement\s*$.*?```(?:json)?\s*(\{.*?\})\s*```",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+
+# Title: first heading line, stripping the ADR-XXX prefix
+_TITLE_RE = re.compile(r"^#\s+(?:ADR-\d+\s+)?(.+)$", re.MULTILINE)
+
+# ADR-id from filename
+_ADR_ID_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
+
+
+# ---------------------------------------------------------------------------
+# Canonical statuses
+# ---------------------------------------------------------------------------
+
+CANONICAL_STATUSES = {"proposed", "accepted", "deprecated", "superseded", "amended"}
+
+
+# ---------------------------------------------------------------------------
+# Per-ADR record (computed once per file)
+# ---------------------------------------------------------------------------
+
+class AdrRecord:
+    """Per-ADR record. Plain class (not @dataclass) to avoid Python 3.14's
+    SourceFileLoader+dataclass interaction issue when this file is imported
+    without a .py extension via importlib."""
+
+    __slots__ = (
+        "path", "adr_id", "title", "status", "date", "age_days",
+        "has_enforcement", "enforcement_valid", "enforcement_types",
+    )
+
+    def __init__(
+        self,
+        path: Path,
+        adr_id: str,
+        title: str,
+        status: str,
+        date: Optional[str],
+        age_days: Optional[int],
+        has_enforcement: bool,
+        enforcement_valid: bool,
+        enforcement_types: Optional[List[str]] = None,
+    ) -> None:
+        self.path = path
+        self.adr_id = adr_id
+        self.title = title
+        self.status = status
+        self.date = date
+        self.age_days = age_days
+        self.has_enforcement = has_enforcement
+        self.enforcement_valid = enforcement_valid
+        self.enforcement_types = enforcement_types if enforcement_types is not None else []
+
+
+# ---------------------------------------------------------------------------
+# Extraction helpers (kept as standalone callables for tests / external use)
 # ---------------------------------------------------------------------------
 
 def extract_status(content: str) -> str:
@@ -35,24 +117,12 @@ def extract_status(content: str) -> str:
 
     Returns 'Unknown' if nothing found.
     """
-    # Section-based: ## Status (not ## Status History) followed by a status word
-    m = re.search(
-        r"^##\s+Status(?!\s+History)\s*$\s+([A-Za-z]+)",
-        content,
-        re.IGNORECASE | re.MULTILINE,
-    )
+    m = _STATUS_SECTION_RE.search(content)
     if m:
         return m.group(1).capitalize()
-
-    # Bold inline: **Status:** Accepted  or  **Status: Accepted**
-    m = re.search(
-        r"\*\*Status\s*:?\*\*\s*:?\s*([A-Za-z]+)",
-        content,
-        re.IGNORECASE,
-    )
+    m = _STATUS_BOLD_RE.search(content)
     if m:
         return m.group(1).capitalize()
-
     return "Unknown"
 
 
@@ -62,21 +132,11 @@ def extract_date(content: str) -> Optional[str]:
     Looks for YYYY-MM-DD first (ISO), then 'DD Month YYYY' (long form).
     Returns the first valid date found, or None.
     """
-    # ISO date YYYY-MM-DD
-    m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", content)
+    m = _DATE_ISO_RE.search(content)
     if m:
         return m.group(1)
 
-    # Long form: "15 January 2024" or "15 Jan 2024"
-    months = (
-        "January|February|March|April|May|June|July|August|September|"
-        "October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
-    )
-    m = re.search(
-        rf"\b(\d{{1,2}})\s+({months})\s+(\d{{4}})\b",
-        content,
-        re.IGNORECASE,
-    )
+    m = _DATE_LONG_RE.search(content)
     if m:
         try:
             d = datetime.strptime(f"{m.group(1)} {m.group(2)} {m.group(3)}", "%d %B %Y")
@@ -102,93 +162,124 @@ def compute_age_days(date_str: Optional[str]) -> Optional[int]:
         return None
 
 
+def _parse_enforcement(content: str):
+    """Return (has_block, parsed_dict_or_None). Used internally by parse_adr().
+
+    Single regex scan, single JSON parse.
+    """
+    m = _ENFORCEMENT_BLOCK_RE.search(content)
+    if not m:
+        return False, None
+    try:
+        parsed = json.loads(m.group(1))
+    except (json.JSONDecodeError, ValueError):
+        return True, None
+    if not isinstance(parsed, dict):
+        return True, None
+    return True, parsed
+
+
 def has_enforcement(content: str) -> bool:
     """True if the ADR has an ## Enforcement section containing a JSON block."""
-    m = re.search(
-        r"^##\s+Enforcement\s*$.*?```(?:json)?\s*(\{.*?\})\s*```",
-        content,
-        re.IGNORECASE | re.MULTILINE | re.DOTALL,
-    )
-    return m is not None
+    return _ENFORCEMENT_BLOCK_RE.search(content) is not None
 
 
 def has_valid_enforcement_json(content: str) -> bool:
     """True if the Enforcement JSON block is parseable as a dict."""
-    m = re.search(
-        r"^##\s+Enforcement\s*$.*?```(?:json)?\s*(\{.*?\})\s*```",
-        content,
-        re.IGNORECASE | re.MULTILINE | re.DOTALL,
-    )
-    if not m:
-        return False
-    try:
-        parsed = json.loads(m.group(1))
-        return isinstance(parsed, dict)
-    except (json.JSONDecodeError, ValueError):
-        return False
+    has_block, parsed = _parse_enforcement(content)
+    return has_block and parsed is not None
 
 
-def extract_enforcement_types(content: str) -> List[str]:
-    """Return list of rule-types from the Enforcement JSON block."""
-    m = re.search(
-        r"^##\s+Enforcement\s*$.*?```(?:json)?\s*(\{.*?\})\s*```",
-        content,
-        re.IGNORECASE | re.MULTILINE | re.DOTALL,
-    )
-    if not m:
-        return []
-    try:
-        parsed = json.loads(m.group(1))
-    except (json.JSONDecodeError, ValueError):
-        return []
-    if not isinstance(parsed, dict):
-        return []
+_KNOWN_ENFORCEMENT_TYPES = [
+    "forbid_pattern",
+    "forbid_import",
+    "require_pattern",
+    "llm_judge",
+]
 
-    known_types = [
-        "forbid_pattern",
-        "forbid_import",
-        "require_pattern",
-        "llm_judge",
-    ]
-    types = []
-    for t in known_types:
+
+def _types_from_parsed(parsed: Dict[str, Any]) -> List[str]:
+    types: List[str] = []
+    for t in _KNOWN_ENFORCEMENT_TYPES:
         val = parsed.get(t)
         if val is True or (isinstance(val, list) and len(val) > 0):
             types.append(t)
     return types
 
 
+def extract_enforcement_types(content: str) -> List[str]:
+    """Return list of rule-types from the Enforcement JSON block."""
+    _, parsed = _parse_enforcement(content)
+    if parsed is None:
+        return []
+    return _types_from_parsed(parsed)
+
+
 def extract_title(content: str) -> str:
     """Extract ADR title from the first heading line, stripping the ADR-XXX prefix."""
-    m = re.search(r"^#\s+(?:ADR-\d+\s+)?(.+)$", content, re.MULTILINE)
+    m = _TITLE_RE.search(content)
     if m:
         return m.group(1).strip()
     return ""
 
 
 # ---------------------------------------------------------------------------
-# Loading
+# Loading — single pass per file produces a full AdrRecord
 # ---------------------------------------------------------------------------
 
-def load_adr_set(adr_dir: Path) -> List[tuple]:
-    """Load all ADRs from adr_dir. Returns list of (adr_id, path, content)."""
-    adrs = []
+def parse_adr(path: Path) -> Optional[AdrRecord]:
+    """Read a single ADR file once and extract all fields into an AdrRecord.
+
+    Returns None if the file cannot be read or the filename doesn't match ADR-NNN.
+    """
+    m = _ADR_ID_RE.search(path.name)
+    if not m:
+        return None
+    adr_id = f"ADR-{int(m.group(1)):03d}"
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    status = extract_status(content)
+    title = extract_title(content)
+    dt = extract_date(content)
+    age = compute_age_days(dt)
+
+    has_block, parsed = _parse_enforcement(content)
+    has_enf = has_block
+    enf_valid = has_block and parsed is not None
+    enf_types = _types_from_parsed(parsed) if parsed is not None else []
+
+    return AdrRecord(
+        path=path,
+        adr_id=adr_id,
+        title=title,
+        status=status,
+        date=dt,
+        age_days=age,
+        has_enforcement=has_enf,
+        enforcement_valid=enf_valid,
+        enforcement_types=enf_types,
+    )
+
+
+def load_adr_set(adr_dir: Path) -> List[AdrRecord]:
+    """Load all ADRs from adr_dir. Returns list of AdrRecord, sorted by filename."""
+    records: List[AdrRecord] = []
     for f in sorted(adr_dir.glob("ADR-*.md")):
-        m = re.search(r"ADR-(\d{1,4})", f.name, re.IGNORECASE)
-        if m:
-            adr_id = f"ADR-{int(m.group(1)):03d}"
-            try:
-                adrs.append((adr_id, f, f.read_text(encoding="utf-8")))
-            except OSError:
-                pass
-    return adrs
+        rec = parse_adr(f)
+        if rec is not None:
+            records.append(rec)
+    return records
 
 
 # ---------------------------------------------------------------------------
 # Analytics
 # ---------------------------------------------------------------------------
 
-def compute_summary(adrs: List[tuple]) -> Dict[str, Any]:
+def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
     """Compute summary statistics for the ADR set.
 
     Returns:
@@ -196,29 +287,25 @@ def compute_summary(adrs: List[tuple]) -> Dict[str, Any]:
         enforcement_valid_pct
     """
     total = len(adrs)
-    by_status: Dict[str, int] = {
-        "accepted": 0,
-        "proposed": 0,
-        "superseded": 0,
-        "deprecated": 0,
-        "unknown": 0,
-    }
+    by_status: Dict[str, int] = {s: 0 for s in CANONICAL_STATUSES}
+    by_status["unknown"] = 0
+
     ages: List[int] = []
     with_enforcement = 0
     enforcement_valid = 0
 
-    for adr_id, path, content in adrs:
-        status = extract_status(content).lower()
-        key = status if status in by_status else "unknown"
+    for rec in adrs:
+        key = rec.status.lower()
+        if key not in by_status:
+            key = "unknown"
         by_status[key] += 1
 
-        age = compute_age_days(extract_date(content))
-        if age is not None:
-            ages.append(age)
+        if rec.age_days is not None:
+            ages.append(rec.age_days)
 
-        if has_enforcement(content):
+        if rec.has_enforcement:
             with_enforcement += 1
-            if has_valid_enforcement_json(content):
+            if rec.enforcement_valid:
                 enforcement_valid += 1
 
     health_pct = round(by_status["accepted"] / total * 100, 1) if total > 0 else 0.0
@@ -242,7 +329,7 @@ def compute_summary(adrs: List[tuple]) -> Dict[str, Any]:
 _CONFIDENCE_ORDER = {"high": 3, "medium": 2, "low": 1}
 
 
-def find_retirement_candidates(adrs: List[tuple]) -> List[Dict[str, Any]]:
+def find_retirement_candidates(adrs: List[AdrRecord]) -> List[Dict[str, Any]]:
     """Identify top-10 retirement candidates.
 
     Candidates:
@@ -253,14 +340,14 @@ def find_retirement_candidates(adrs: List[tuple]) -> List[Dict[str, Any]]:
     Sorted by confidence desc, then age desc.
     """
     candidates: List[Dict[str, Any]] = []
-    for adr_id, path, content in adrs:
-        status = extract_status(content)
+    for rec in adrs:
+        status = rec.status
         status_lower = status.lower()
-        age = compute_age_days(extract_date(content))
+        age = rec.age_days
 
         if status_lower in ("superseded", "deprecated"):
             candidates.append({
-                "adr_id": adr_id,
+                "adr_id": rec.adr_id,
                 "status": status,
                 "age_days": age,
                 "reason": f"{status} — consider archiving",
@@ -268,7 +355,7 @@ def find_retirement_candidates(adrs: List[tuple]) -> List[Dict[str, Any]]:
             })
         elif status_lower == "proposed" and age is not None and age > 365:
             candidates.append({
-                "adr_id": adr_id,
+                "adr_id": rec.adr_id,
                 "status": status,
                 "age_days": age,
                 "reason": "Proposed for >365 days without acceptance",
@@ -278,10 +365,10 @@ def find_retirement_candidates(adrs: List[tuple]) -> List[Dict[str, Any]]:
             status_lower == "accepted"
             and age is not None
             and age > 730
-            and not has_enforcement(content)
+            and not rec.has_enforcement
         ):
             candidates.append({
-                "adr_id": adr_id,
+                "adr_id": rec.adr_id,
                 "status": status,
                 "age_days": age,
                 "reason": "Accepted >730 days without Enforcement block",
@@ -302,7 +389,7 @@ def find_retirement_candidates(adrs: List[tuple]) -> List[Dict[str, Any]]:
 # Formatting
 # ---------------------------------------------------------------------------
 
-def _health_indicator(status: str, has_enf: bool) -> str:
+def _health_indicator(status: str) -> str:
     s = status.lower()
     if s == "accepted":
         return "OK"
@@ -313,17 +400,17 @@ def _health_indicator(status: str, has_enf: bool) -> str:
     return "?"
 
 
-def _enforce_label(content: str) -> str:
-    if not has_enforcement(content):
+def _enforce_label(rec: AdrRecord) -> str:
+    if not rec.has_enforcement:
         return "none"
-    if has_valid_enforcement_json(content):
+    if rec.enforcement_valid:
         return "json"
     return "invalid"
 
 
 def format_table(
     summary: Dict[str, Any],
-    adrs: List[tuple],
+    adrs: List[AdrRecord],
     candidates: List[Dict[str, Any]],
     adr_dir: Path,
     limit: Optional[int] = None,
@@ -384,16 +471,14 @@ def format_table(
     lines.append(sep)
 
     display_adrs = adrs[:limit] if limit is not None else adrs
-    for adr_id, path, content in display_adrs:
-        status = extract_status(content)
-        age = compute_age_days(extract_date(content))
-        age_str = str(age) if age is not None else "?"
-        enf = _enforce_label(content)
-        health = _health_indicator(status, has_enforcement(content))
-        title = extract_title(content)
+    for rec in display_adrs:
+        age_str = str(rec.age_days) if rec.age_days is not None else "?"
+        enf = _enforce_label(rec)
+        health = _health_indicator(rec.status)
+        title = rec.title
         title_trunc = title[:col_title] if len(title) > col_title else title
         lines.append(
-            f"{adr_id:<{col_id}}  {title_trunc:<{col_title}}  {status:<{col_status}}"
+            f"{rec.adr_id:<{col_id}}  {title_trunc:<{col_title}}  {rec.status:<{col_status}}"
             f"  {age_str:>{col_age}}  {enf:<{col_enf}}  {health:<{col_health}}"
         )
 
@@ -410,7 +495,7 @@ def format_table(
 
 def format_markdown(
     summary: Dict[str, Any],
-    adrs: List[tuple],
+    adrs: List[AdrRecord],
     candidates: List[Dict[str, Any]],
     adr_dir: Path,
     limit: Optional[int] = None,
@@ -449,15 +534,12 @@ def format_markdown(
     ]
 
     display_adrs = adrs[:limit] if limit is not None else adrs
-    for adr_id, path, content in display_adrs:
-        status = extract_status(content)
-        age = compute_age_days(extract_date(content))
-        age_str = f"{age}d" if age is not None else "?"
-        enf = _enforce_label(content)
-        health = _health_indicator(status, has_enforcement(content))
-        title = extract_title(content)
+    for rec in display_adrs:
+        age_str = f"{rec.age_days}d" if rec.age_days is not None else "?"
+        enf = _enforce_label(rec)
+        health = _health_indicator(rec.status)
         lines.append(
-            f"| {adr_id} | {title} | {status} | {age_str} | {enf} | {health} |"
+            f"| {rec.adr_id} | {rec.title} | {rec.status} | {age_str} | {enf} | {health} |"
         )
 
     if candidates:
@@ -478,27 +560,20 @@ def format_markdown(
 
 def format_json_output(
     summary: Dict[str, Any],
-    adrs: List[tuple],
+    adrs: List[AdrRecord],
     candidates: List[Dict[str, Any]],
 ) -> str:
     adr_list = []
-    for adr_id, path, content in adrs:
-        status = extract_status(content)
-        dt = extract_date(content)
-        age = compute_age_days(dt)
-        enf = has_enforcement(content)
-        enf_valid = has_valid_enforcement_json(content) if enf else False
-        enf_types = extract_enforcement_types(content) if enf else []
-        title = extract_title(content)
+    for rec in adrs:
         adr_list.append({
-            "adr_id": adr_id,
-            "status": status,
-            "date": dt,
-            "age_days": age,
-            "has_enforcement": enf,
-            "enforcement_valid": enf_valid,
-            "enforcement_types": enf_types,
-            "title": title,
+            "adr_id": rec.adr_id,
+            "status": rec.status,
+            "date": rec.date,
+            "age_days": rec.age_days,
+            "has_enforcement": rec.has_enforcement,
+            "enforcement_valid": rec.enforcement_valid,
+            "enforcement_types": rec.enforcement_types,
+            "title": rec.title,
         })
 
     data = {
@@ -525,6 +600,8 @@ def _ensure_utf8_stdout() -> None:
 
 
 def main() -> None:
+    _ensure_utf8_stdout()
+
     parser = argparse.ArgumentParser(
         description="ADR repository health dashboard",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -556,20 +633,7 @@ def main() -> None:
         metavar="N",
         help="Limit ADR rows in table/markdown output (summary and candidates always shown in full)",
     )
-    parser.add_argument(
-        "--show-enforcement",
-        action="store_true",
-        default=False,
-        help="Always show enforcement column (already shown by default; accepted for compatibility)",
-    )
-    parser.add_argument(
-        "--show-retirement",
-        action="store_true",
-        default=False,
-        help="Always show retirement candidates (already shown by default; accepted for compatibility)",
-    )
 
-    _ensure_utf8_stdout()
     args = parser.parse_args()
 
     # --adr-dir takes precedence over positional; positional falls back to docs/adr

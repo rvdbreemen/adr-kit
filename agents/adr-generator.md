@@ -122,6 +122,8 @@ Before saving the file, the ADR must pass all four gates from the project's `SKI
 - **Clarity**: acronyms defined on first use, technical concepts explained when load-bearing, decision explainable in one paragraph at the top.
 - **Consistency**: no conflict with another `Accepted` ADR (or this one is an explicit supersede), cross-references to related ADRs, terminology matches other ADRs, ADR number sequential and not reused.
 
+**Note:** These four gates are evaluated by `bin/adr-quality`. The pre-commit hook (`bin/adr-lint`) runs a different default set of gates (completeness, audit, consistency). Passing `adr-quality` grade B or above does not guarantee passing `adr-lint`, and vice versa. Use both tools together for full coverage.
+
 If a gate cannot pass, do not save the file. Tell the user which gate fails and why.
 
 ### Step 3b: Propose an Enforcement block (v0.12+)

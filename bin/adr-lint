@@ -47,6 +47,50 @@ CANONICAL_REQUIRED_SECTIONS = [
     "## References",
 ]
 
+# PERF-MEDIUM: precompile section-heading patterns. gate_completeness used to
+# compile these per call per heading per file; for large ADR sets this
+# dominated the run.
+_SECTION_PATTERNS: Dict[str, "re.Pattern[str]"] = {
+    s: re.compile(r"^" + re.escape(s) + r"\b", re.MULTILINE)
+    for s in CANONICAL_REQUIRED_SECTIONS
+}
+
+
+def _section_pattern(heading: str) -> "re.Pattern[str]":
+    """Return a cached MULTILINE pattern for a `## Heading` line."""
+    pat = _SECTION_PATTERNS.get(heading)
+    if pat is None:
+        pat = re.compile(r"^" + re.escape(heading) + r"\b", re.MULTILINE)
+        _SECTION_PATTERNS[heading] = pat
+    return pat
+
+
+# PERF-MEDIUM: cached jsonschema validator for the enforcement block.
+_ENFORCEMENT_VALIDATOR = None
+_ENFORCEMENT_VALIDATOR_LOADED = False
+
+
+def _get_enforcement_validator():
+    """Return a cached Draft7Validator for the enforcement schema, or None."""
+    global _ENFORCEMENT_VALIDATOR, _ENFORCEMENT_VALIDATOR_LOADED
+    if _ENFORCEMENT_VALIDATOR_LOADED:
+        return _ENFORCEMENT_VALIDATOR
+    _ENFORCEMENT_VALIDATOR_LOADED = True
+    try:
+        import jsonschema  # type: ignore
+    except ImportError:
+        return None
+    schema_path = (
+        Path(__file__).resolve().parent.parent
+        / "schemas"
+        / "adr-enforcement.schema.json"
+    )
+    if not schema_path.exists():
+        return None
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    _ENFORCEMENT_VALIDATOR = jsonschema.Draft7Validator(schema)
+    return _ENFORCEMENT_VALIDATOR
+
 LEGAL_SEVERITIES = {"always_strict", "always_advisory", "advisory_before_strict_from"}
 ALL_GATES = ["completeness", "audit", "evidence", "clarity", "consistency", "policy", "quality"]
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
@@ -197,7 +241,7 @@ def gate_completeness(text: str, required: List[str]) -> Optional[List[str]]:
     """Return list of missing required headings, or None if all present."""
     missing = []
     for s in required:
-        if not re.search(r"^" + re.escape(s) + r"\b", text, re.MULTILINE):
+        if not _section_pattern(s).search(text):
             missing.append(s)
     return missing or None
 
@@ -432,27 +476,18 @@ def check_policy_gate(content: str, adr_id: str) -> List[Dict]:
     findings: List[Dict] = []
 
     # Optional: deeper schema validation when jsonschema is available.
-    try:
-        import jsonschema  # type: ignore
-        schema_path = (
-            Path(__file__).resolve().parent.parent
-            / "schemas"
-            / "adr-enforcement.schema.json"
-        )
-        if schema_path.exists():
-            schema = json.loads(schema_path.read_text(encoding="utf-8"))
-            try:
-                jsonschema.validate(data, schema)
-            except jsonschema.ValidationError as ve:
-                findings.append({
-                    "gate": "policy",
-                    "severity": "FAIL",
-                    "code": "POLICY_SCHEMA_INVALID",
-                    "message": f"schema validation failed: {ve.message}",
-                })
-                return findings
-    except ImportError:
-        pass
+    validator = _get_enforcement_validator()
+    if validator is not None:
+        try:
+            validator.validate(data)
+        except Exception as ve:
+            findings.append({
+                "gate": "policy",
+                "severity": "FAIL",
+                "code": "POLICY_SCHEMA_INVALID",
+                "message": f"schema validation failed: {getattr(ve, 'message', str(ve))}",
+            })
+            return findings
 
     # Regex compilation checks across all pattern-bearing keys.
     for key in ("forbid_pattern", "forbid_import", "require_pattern"):
@@ -502,11 +537,13 @@ def check_policy_gate(content: str, adr_id: str) -> List[Dict]:
 
 
 def check_quality_gate(content: str, adr_id: str) -> List[Dict]:
-    """Advisory quality checks. Returns list of findings."""
+    """Advisory quality checks. For comprehensive scoring, use bin/adr-quality (which runs 4 weighted gates with letter grades)."""
     findings: List[Dict] = []
 
+    # Unified vague-words set; identical to bin/adr-quality's VAGUE_WORDS_RE.
     vague_words = re.compile(
-        r"\b(appropriate|somehow|maybe|possibly|might\s+consider)\b",
+        r"\b(appropriate|somehow|maybe|possibly|might|could|"
+        r"should\s+consider|might\s+consider)\b",
         re.IGNORECASE,
     )
     decision_text = _section_text(content, "## Decision")
@@ -517,7 +554,8 @@ def check_quality_gate(content: str, adr_id: str) -> List[Dict]:
             "code": "QUALITY_VAGUE_LANGUAGE",
             "message": (
                 "## Decision section contains vague language "
-                "(appropriate / somehow / maybe / possibly / might consider); "
+                "(appropriate / somehow / maybe / possibly / might / could / "
+                "should consider / might consider); "
                 "prefer concrete, measurable statements"
             ),
         })
@@ -780,8 +818,8 @@ def main(argv: Optional[List[str]] = None) -> int:
              f"All: {','.join(ALL_GATES)}",
     )
     parser.add_argument(
-        "--format", choices=["human", "json"], default="human",
-        help="Output format (default: human)",
+        "--format", choices=["human", "text", "json"], default="human",
+        help="Output format (default: human). 'text' is an alias for 'human'.",
     )
     parser.add_argument(
         "--config", metavar="PATH", default=None,
@@ -792,7 +830,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Show ADVISORY and SKIPPED details too",
     )
     parser.add_argument(
-        "--version", action="version", version="adr-lint 0.14.0",
+        "--version", action="version", version="adr-lint 0.15.0",
     )
     args = parser.parse_args(argv)
 
