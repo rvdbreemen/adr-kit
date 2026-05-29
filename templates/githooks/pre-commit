@@ -12,9 +12,14 @@
 # As of v0.14.1 the hook measures adr-judge wall-clock time and warns (non-blocking)
 # when execution exceeds 5000ms. Uses `date +%s%3N`; falls back to perl on macOS.
 #
-# Disable LLM pass per commit:  ADR_KIT_NO_LLM=1 git commit ...
-# Disable hook entirely:        ADR_KIT_HOOK_DISABLE=1 git commit ...
-# Remove permanently:           /adr-kit:install-hooks --uninstall  (in a Claude Code session)
+# As of v0.16.0 the hook also runs `adr-suggest` (advisory): it detects whether
+# the staged diff introduces a NEW architectural decision not yet covered by an
+# ADR and prints a one-line nudge. This NEVER blocks the commit.
+#
+# Disable LLM pass per commit:    ADR_KIT_NO_LLM=1 git commit ...
+# Disable ADR-suggestion nudge:   ADR_KIT_SUGGEST_DISABLE=1 git commit ...
+# Disable hook entirely:          ADR_KIT_HOOK_DISABLE=1 git commit ...
+# Remove permanently:             /adr-kit:install-hooks --uninstall  (in a Claude Code session)
 
 set -e
 
@@ -47,15 +52,20 @@ fi
 
 ADR_KIT_BASE="${HOME}/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit"
 ADR_JUDGE=""
+ADR_SUGGEST=""
 if [ -d "$ADR_KIT_BASE" ]; then
   # Pick the highest installed version (SemVer sort over directory names).
   # Use a bash array + nullglob so filenames with spaces/odd chars don't break us
   # and so an empty glob doesn't expand to the literal pattern.
   shopt -s nullglob
   _candidates=("$ADR_KIT_BASE"/*/bin/adr-judge)
+  _suggest_candidates=("$ADR_KIT_BASE"/*/bin/adr-suggest)
   shopt -u nullglob
   if [ ${#_candidates[@]} -gt 0 ]; then
     ADR_JUDGE=$(printf '%s\n' "${_candidates[@]}" | sort -V | tail -1)
+  fi
+  if [ ${#_suggest_candidates[@]} -gt 0 ]; then
+    ADR_SUGGEST=$(printf '%s\n' "${_suggest_candidates[@]}" | sort -V | tail -1)
   fi
 fi
 
@@ -106,5 +116,22 @@ if [ "$_ELAPSED" -gt 5000 ] 2>/dev/null; then
   echo "[adr-kit] WARN: pre-commit hook took ${_ELAPSED}ms (threshold: 5000ms). Consider ADR_KIT_NO_LLM=1 for faster commits." >&2
 fi
 [ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"
+
+# --- Advisory ADR-suggestion pass (adr-suggest, v0.16.0+) ---------------------
+# Distinct from adr-judge above: adr-judge ENFORCES existing ADRs and can block
+# the commit. adr-suggest only DETECTS whether the diff introduces a NEW
+# architectural decision not yet covered by any ADR, and prints a one-line
+# nudge. It NEVER blocks — its exit status is swallowed with `|| true`.
+#
+# Runs on every commit unless ADR_KIT_SUGGEST_DISABLE=1. Like the judge pass it
+# uses `claude -p`; a missing CLI / timeout / unparseable response degrades to
+# a silent skip. The advisory text is printed to the user but the commit
+# proceeds regardless.
+if [ "${ADR_KIT_SUGGEST_DISABLE:-0}" != "1" ] && [ -n "$ADR_SUGGEST" ] && [ -x "$ADR_SUGGEST" ]; then
+  SUGGEST_OUT=$(git diff --cached --unified=0 | "$ADR_SUGGEST" --diff - --adr-dir "$ROOT/docs/adr/" 2>&1 || true)
+  # Only surface the actual suggestion lines; the "(skipped: ...)" / "LLM
+  # unavailable" notes are noise on commits that don't introduce a decision.
+  printf '%s\n' "$SUGGEST_OUT" | grep -aE "^\[adr-suggest\] (This change|  )" >&2 || true
+fi
 
 exit 0

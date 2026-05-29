@@ -4,6 +4,18 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-29
+
+### Added
+
+- **`bin/adr-suggest` — advisory ADR-needed detector.** A new bin, distinct from `bin/adr-judge`. Where `adr-judge` *enforces* existing Accepted ADRs and can block a commit, `adr-suggest` runs one LLM pass over the staged diff to detect whether the change introduces a *new* architectural / contract / dependency decision **not yet covered by any ADR**, and prints a one-line nudge to run `/adr-kit:adr`. It **never blocks the commit**: the advisory path always exits 0. A missing `claude` CLI, a timeout, a non-zero exit, a malformed response, or a docs/lockfile-only diff all resolve to a silent skip. CLI: `adr-suggest [--diff PATH|-] [--adr-dir DIR] [--config PATH] [--llm-cmd CMD] [--llm-timeout SECS] [--json] [--repo-root ROOT]`.
+  - Reuses the same LLM-command resolution as `adr-judge` (`--llm-cmd` > `ADR_KIT_LLM_CMD` env > `.adr-kit.json` `suggest.llm_cmd`/`suggest.llm_model` > `judge.llm_cmd`/`judge.llm_model` > default `claude -p --model claude-sonnet-4-6`), including the repo-config binary allowlist (SEC-HIGH).
+  - Existing ADR ids + titles + one-line decisions are passed to the model so it does not suggest a duplicate of a decision already recorded.
+  - Advisory output goes to **stderr** only (stdout stays pipe-clean); `--json` emits the parsed result object `{needs_adr, confidence, reason, suggested_title, category}` to stdout.
+- **Pre-commit hook: advisory suggestion section** (`templates/githooks/pre-commit`). A third section runs `adr-suggest` after the `adr-judge` pass, piping `git diff --cached --unified=0` to it. Its exit status is swallowed (`|| true`) so it can never fail a commit. Gated by `ADR_KIT_SUGGEST_DISABLE` (runs by default; set `=1` to skip).
+- **Config: `suggest.*` block** in `.adr-kit.json` (`schemas/adr-kit-config.schema.json`). Optional, back-compatible (absent block = defaults): `suggest.enabled` (bool, default true), `suggest.llm_cmd` / `suggest.llm_model` (fall back to `judge.*`), `suggest.llm_timeout_seconds` (default 120).
+- **Tests**: `tests/test_adr_suggest.py` — fake-`claude` binary approach mirroring `tests/test_adr_judge_llm.py`. Covers high-confidence advisory, needs_adr=false silence, low-confidence silence, docs-only / lockfile / empty-diff skips (no LLM call), missing CLI, malformed JSON, `--json` output, fenced-JSON parsing, and assertions that existing ADR titles reach the prompt.
+
 ## [0.15.0] - 2026-05-27
 
 ### Fixed / Improved (37 review findings from multi-agent code review)

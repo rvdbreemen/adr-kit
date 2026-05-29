@@ -138,6 +138,36 @@
         }
       }
     },
+    "suggest": {
+      "type": "object",
+      "description": "Per-project policy for bin/adr-suggest (introduced in adr-kit v0.16.0). adr-suggest is the advisory counterpart to adr-judge: it runs an LLM pass over the staged diff to detect whether the change introduces a NEW architectural decision not yet covered by an ADR, and prints a non-blocking suggestion. It NEVER blocks a commit. All keys are optional; an absent block means defaults, and llm_cmd / llm_model fall back to the judge.* equivalents.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, the pre-commit hook skips the adr-suggest pass entirely. Equivalent to setting ADR_KIT_SUGGEST_DISABLE=1 for every commit. Default true.",
+          "default": true
+        },
+        "llm_model": {
+          "type": "string",
+          "description": "Model identifier passed to `claude -p --model` for the suggestion pass. Defaults to judge.llm_model, then 'claude-sonnet-4-6'. Ignored when llm_cmd is set.",
+          "default": "claude-sonnet-4-6"
+        },
+        "llm_cmd": {
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "string" }
+          ],
+          "description": "Override the entire LLM invocation for the suggestion pass. Accepts a tokenised array or a single shell-quoted string. Repo-tracked values are validated against the same Claude-CLI allowlist as judge.llm_cmd. Falls back to judge.llm_cmd when absent."
+        },
+        "llm_timeout_seconds": {
+          "type": "integer",
+          "description": "Per-call timeout for the suggestion LLM pass in seconds. Defaults to judge.llm_timeout_seconds, then 120.",
+          "minimum": 1,
+          "default": 120
+        }
+      }
+    },
     "context": {
       "type": "object",
       "description": "Configuration for bin/adr-context semantic ranking",
