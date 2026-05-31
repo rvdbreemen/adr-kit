@@ -1,0 +1,550 @@
+"""Tests for bin/adr-guardian — the periodic ADR-set staleness detector.
+
+Design invariants under test:
+  - check: always exits 0 (SessionStart must never fail)
+  - check: silent (no stdout) when nothing is due
+  - check: cwd-guard — silent when no docs/adr/ with ADRs present
+  - check: nudge_cooldown_hours throttle — silent within cooldown window
+  - check: cheap-tier and llm-tier due/not-due logic across two clocks
+  - check: change-based retire nudge (candidate set changes → DUE; same → quiet)
+  - stamp: updates .adr-kit-state.json for the named tier
+  - state: prints current state JSON; always exits 0
+
+Strategy:
+  - Write state + config files into tmp directories.
+  - Invoke adr-guardian via subprocess (same pattern as test_adr_suggest.py and
+    test_adr_judge_llm.py).
+  - Assert exit codes and stdout/stderr content.
+  - No LLM is invoked — the guardian bin is stdlib-only.
+"""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ADR_GUARDIAN = REPO_ROOT / "bin" / "adr-guardian"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _run(args: list, cwd=None, env_extra=None) -> tuple[int, str, str]:
+    """Run adr-guardian with given args; return (returncode, stdout, stderr)."""
+    import os
+    env = os.environ.copy()
+    # Remove CLAUDE_PROJECT_DIR so tests don't accidentally pick up the repo's
+    # own docs/adr/ when running inside an adr-kit checkout.
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    if env_extra:
+        env.update(env_extra)
+    result = subprocess.run(
+        [sys.executable, str(ADR_GUARDIAN)] + args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=cwd or str(Path.cwd()),
+        env=env,
+    )
+    return result.returncode, result.stdout, result.stderr
+
+
+def _make_adr_dir(tmp_path: Path, num_adrs: int = 1) -> Path:
+    """Create a minimal docs/adr/ directory with the requested number of stub ADR files."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    for i in range(1, num_adrs + 1):
+        (adr_dir / f"ADR-{i:03d}-stub.md").write_text(
+            f"# ADR-{i:03d} Stub\n\n## Status\n\nAccepted\n",
+            encoding="utf-8",
+        )
+    return adr_dir
+
+
+def _write_state(adr_dir: Path, state: dict) -> None:
+    (adr_dir / ".adr-kit-state.json").write_text(
+        json.dumps(state, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _write_config(adr_dir: Path, guardian_cfg: dict) -> None:
+    (adr_dir / ".adr-kit.json").write_text(
+        json.dumps({"guardian": guardian_cfg}), encoding="utf-8"
+    )
+
+
+def _iso(dt: datetime) -> str:
+    return dt.isoformat()
+
+
+def _now() -> datetime:
+    return datetime.now(tz=timezone.utc)
+
+
+def _days_ago(n: float) -> str:
+    return _iso(_now() - timedelta(days=n))
+
+
+def _hours_ago(n: float) -> str:
+    return _iso(_now() - timedelta(hours=n))
+
+
+# ---------------------------------------------------------------------------
+# cwd-guard tests
+# ---------------------------------------------------------------------------
+
+class TestCwdGuard:
+    """The binary must exit 0 silently when there is no docs/adr/ with ADRs."""
+
+    def test_no_docs_adr_dir(self, tmp_path):
+        """Completely empty directory: exit 0, no stdout."""
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert out.strip() == ""
+
+    def test_docs_adr_dir_exists_but_empty(self, tmp_path):
+        """docs/adr/ exists but has no ADR-*.md files."""
+        (tmp_path / "docs" / "adr").mkdir(parents=True)
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert out.strip() == ""
+
+    def test_with_adrs_but_guardian_disabled(self, tmp_path):
+        """docs/adr/ has ADRs but guardian is disabled in config."""
+        adr_dir = _make_adr_dir(tmp_path)
+        _write_config(adr_dir, {"enabled": False})
+        # State is never run, so tiers are due — but disabled guardian stays silent.
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert out.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Due / not-due logic
+# ---------------------------------------------------------------------------
+
+class TestDueTiers:
+    """Tier clocks: cheap daily, LLM bi-weekly."""
+
+    def test_both_tiers_due_when_never_run(self, tmp_path):
+        """Both tiers due when last_run is None (first session ever)."""
+        adr_dir = _make_adr_dir(tmp_path)
+        # No state file → defaults to None last_run for both tiers.
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+        assert "DUE" in out
+
+    def test_cheap_tier_due_after_drift_stale_days(self, tmp_path):
+        """cheap tier is due when last_run is > drift_stale_days ago."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": _days_ago(2), "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": _days_ago(1), "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, state)
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "DUE" in out  # cheap tier is due
+
+    def test_cheap_tier_not_due_when_fresh(self, tmp_path):
+        """cheap tier is NOT due when last_run is < drift_stale_days ago."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": _hours_ago(6), "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": _hours_ago(6), "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, state)
+        # drift_stale_days=1 (24h) — 6h ago is NOT stale; llm_stale_days=14 — also not stale.
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert out.strip() == ""  # nothing due → no output
+
+    def test_llm_tier_due_after_llm_stale_days(self, tmp_path):
+        """llm tier is due when last_run is > llm_stale_days ago; cheap is not due."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": _hours_ago(6), "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": _days_ago(20), "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, state)
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        # llm tier is due
+        assert "[adr-guardian]" in out
+        assert "llm-tier" in out
+        assert "DUE" in out
+        assert "costs $" in out  # LLM cost annotation
+
+    def test_neither_tier_due_when_both_fresh(self, tmp_path):
+        """Both tiers recently run: no output."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": _hours_ago(12), "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": _days_ago(5), "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, state)
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert out.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Nudge cooldown throttle
+# ---------------------------------------------------------------------------
+
+class TestNudgeCooldown:
+    """nudge_cooldown_hours prevents repeated nags within a session window."""
+
+    def test_suppressed_within_cooldown(self, tmp_path):
+        """If last_nudged is within cooldown window, output is suppressed even when DUE."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": None, "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": None, "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": _hours_ago(2),  # 2h ago, cooldown=24h
+        }
+        _write_state(adr_dir, state)
+        _write_config(adr_dir, {"nudge_cooldown_hours": 24})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert out.strip() == ""  # throttled
+
+    def test_not_suppressed_after_cooldown(self, tmp_path):
+        """last_nudged > cooldown_hours ago: nudge fires."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": None, "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": None, "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": _hours_ago(25),  # 25h ago, cooldown=24h
+        }
+        _write_state(adr_dir, state)
+        _write_config(adr_dir, {"nudge_cooldown_hours": 24})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+
+    def test_zero_cooldown_always_nudges(self, tmp_path):
+        """cooldown_hours=0 means always nudge when due."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": None, "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": None, "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": _hours_ago(0.1),  # very recent nudge
+        }
+        _write_state(adr_dir, state)
+        _write_config(adr_dir, {"nudge_cooldown_hours": 0})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+
+
+# ---------------------------------------------------------------------------
+# Change-based retire nudge
+# ---------------------------------------------------------------------------
+
+class TestRetireNudge:
+    """Retire detection: the detector surfaces retire_candidates count from last stamp.
+
+    The change-based retire nudge logic (nudge only when candidate set changes vs
+    retire_seen) lives in the /adr-kit:guardian skill, not in the detector binary.
+    The skill: runs adr-retire, diffs fresh candidates against state.retire_seen,
+    highlights only the new ones, then stamps the new seen set. The detector binary
+    only reads what was stamped; it does not freshly compute candidates.
+    """
+
+    def test_retire_candidate_count_displayed_from_state(self, tmp_path):
+        """The state line shows retire_candidates count from the stamped state.
+
+        This tests what the detector actually does: read and display stored counts.
+        The comparison (fresh candidates vs retire_seen) is the skill's job.
+        """
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=2)
+        state = {
+            "cheap_tier": {"last_run": _days_ago(2), "drift_violations": 0,
+                           "retire_candidates": 1, "lint": "0F/0A"},
+            "llm_tier": {"last_run": _days_ago(1), "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, state)
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        # cheap tier is due (2d > 1d threshold)
+        assert "[adr-guardian]" in out
+        assert "retire candidates" in out
+
+    def test_retire_candidate_count_in_state_block(self, tmp_path):
+        """The state line shows retire_candidates count from stored state."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": None, "drift_violations": 3,
+                           "retire_candidates": 2, "lint": "1F/2A"},
+            "llm_tier": {"last_run": None, "suggest_hits": 1, "audit_findings": 4},
+            "retire_seen": ["ADR-001"],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, state)
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "2 retire candidates" in out
+        assert "3 drift" in out
+        assert "1 suggestion" in out
+
+
+# ---------------------------------------------------------------------------
+# Stamp subcommand
+# ---------------------------------------------------------------------------
+
+class TestStamp:
+    """stamp updates .adr-kit-state.json for the named tier."""
+
+    def test_stamp_cheap_tier(self, tmp_path):
+        """stamp cheap sets last_run and the provided metrics."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, out, err = _run(
+            ["stamp", "cheap",
+             "--violations", "2",
+             "--retire", "1",
+             "--lint", "2F/3A",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0
+        state_path = adr_dir / ".adr-kit-state.json"
+        assert state_path.exists()
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        cheap = state["cheap_tier"]
+        assert cheap["last_run"] is not None
+        assert cheap["drift_violations"] == 2
+        assert cheap["retire_candidates"] == 1
+        assert cheap["lint"] == "2F/3A"
+
+    def test_stamp_llm_tier(self, tmp_path):
+        """stamp llm sets last_run and suggest/audit counts."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, out, err = _run(
+            ["stamp", "llm",
+             "--suggest", "3",
+             "--audit", "5",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        llm = state["llm_tier"]
+        assert llm["last_run"] is not None
+        assert llm["suggest_hits"] == 3
+        assert llm["audit_findings"] == 5
+
+    def test_stamp_preserves_other_tier(self, tmp_path):
+        """Stamping one tier does not clobber the other tier."""
+        adr_dir = _make_adr_dir(tmp_path)
+        initial_state = {
+            "cheap_tier": {"last_run": _days_ago(3), "drift_violations": 5,
+                           "retire_candidates": 2, "lint": "5F/0A"},
+            "llm_tier": {"last_run": _days_ago(10), "suggest_hits": 7, "audit_findings": 3},
+            "retire_seen": ["ADR-007"],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, initial_state)
+        # Stamp only the cheap tier.
+        _run(["stamp", "cheap", "--violations", "0", "--state-dir", str(adr_dir)],
+             cwd=str(tmp_path))
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        # cheap tier updated
+        assert state["cheap_tier"]["drift_violations"] == 0
+        # llm tier preserved
+        assert state["llm_tier"]["suggest_hits"] == 7
+        assert state["retire_seen"] == ["ADR-007"]
+
+    def test_stamp_retire_seen(self, tmp_path):
+        """stamp cheap with --retire-seen updates the retire_seen list."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, out, err = _run(
+            ["stamp", "cheap",
+             "--retire-seen", '["ADR-003", "ADR-012"]',
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert state["retire_seen"] == ["ADR-003", "ADR-012"]
+
+    def test_stamp_always_exits_0(self, tmp_path):
+        """stamp exits 0 even with bad state dir (gracefully degrades)."""
+        bad_dir = tmp_path / "nonexistent" / "deep"
+        rc, out, err = _run(
+            ["stamp", "cheap", "--violations", "1", "--state-dir", str(bad_dir)],
+        )
+        # May succeed (creating dirs) or degrade silently — must not raise.
+        assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# State subcommand
+# ---------------------------------------------------------------------------
+
+class TestStateCmd:
+    """state prints current JSON state."""
+
+    def test_state_no_file(self, tmp_path):
+        """state with no state file prints default state JSON."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, out, err = _run(["state", "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        assert rc == 0
+        data = json.loads(out)
+        assert "cheap_tier" in data
+        assert "llm_tier" in data
+
+    def test_state_with_file(self, tmp_path):
+        """state reads and prints existing state file."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": _days_ago(2), "drift_violations": 1,
+                           "retire_candidates": 0, "lint": "1F/0A"},
+            "llm_tier": {"last_run": _days_ago(10), "suggest_hits": 2, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, state)
+        rc, out, err = _run(["state", "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        assert rc == 0
+        data = json.loads(out)
+        assert data["cheap_tier"]["drift_violations"] == 1
+        assert data["llm_tier"]["suggest_hits"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Always-exit-0 invariant
+# ---------------------------------------------------------------------------
+
+class TestAlwaysExit0:
+    """The check subcommand must NEVER return non-zero under any circumstances."""
+
+    def test_check_with_corrupt_state(self, tmp_path):
+        """check exits 0 even if state file is corrupt JSON."""
+        adr_dir = _make_adr_dir(tmp_path)
+        (adr_dir / ".adr-kit-state.json").write_text("{not valid json", encoding="utf-8")
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+
+    def test_check_with_corrupt_config(self, tmp_path):
+        """check exits 0 even if config file is corrupt JSON."""
+        adr_dir = _make_adr_dir(tmp_path)
+        (adr_dir / ".adr-kit.json").write_text("{broken", encoding="utf-8")
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+
+    def test_check_empty_project_dir(self, tmp_path):
+        """check exits 0 for a completely empty cwd."""
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+
+    def test_stamp_always_exits_0_corrupt_json(self, tmp_path):
+        """stamp exits 0 even when existing state is corrupt."""
+        adr_dir = _make_adr_dir(tmp_path)
+        (adr_dir / ".adr-kit-state.json").write_text("garbage", encoding="utf-8")
+        rc, out, err = _run(
+            ["stamp", "cheap", "--violations", "1", "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Output format
+# ---------------------------------------------------------------------------
+
+class TestOutputFormat:
+    """Verify the [adr-guardian] block content and JSON envelope."""
+
+    def test_block_mentions_slash_command(self, tmp_path):
+        """The block always advertises /adr-kit:guardian."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=5)
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "/adr-kit:guardian" in out
+
+    def test_block_is_json_envelope(self, tmp_path):
+        """Output is a JSON object wrapping the block in additionalContext."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, out, err = _run(
+            ["check"],
+            cwd=str(tmp_path),
+            # No CLAUDE_PLUGIN_ROOT → use top-level additionalContext format.
+            env_extra={"CLAUDE_PLUGIN_ROOT": "", "COPILOT_CLI": ""},
+        )
+        assert rc == 0
+        if out.strip():  # may be empty if cooldown or not-due
+            data = json.loads(out)
+            assert "additionalContext" in data or "hookSpecificOutput" in data
+
+    def test_claude_code_envelope(self, tmp_path):
+        """With CLAUDE_PLUGIN_ROOT set (no COPILOT_CLI), uses hookSpecificOutput format."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, out, err = _run(
+            ["check"],
+            cwd=str(tmp_path),
+            env_extra={"CLAUDE_PLUGIN_ROOT": "/some/plugin/path", "COPILOT_CLI": ""},
+        )
+        assert rc == 0
+        if out.strip():
+            data = json.loads(out)
+            assert "hookSpecificOutput" in data
+            assert data["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+            assert "additionalContext" in data["hookSpecificOutput"]
+
+    def test_adr_count_in_block(self, tmp_path):
+        """The state line includes the ADR count from the directory."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=7)
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        if out.strip():
+            assert "7 ADRs" in out
+
+    def test_check_writes_last_nudged(self, tmp_path):
+        """After a nudge is emitted, last_nudged is updated in the state file."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state_path = adr_dir / ".adr-kit-state.json"
+        initial = {
+            "cheap_tier": {"last_run": None, "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": None, "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+        }
+        _write_state(adr_dir, initial)
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+        # last_nudged should now be set.
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state["last_nudged"] is not None

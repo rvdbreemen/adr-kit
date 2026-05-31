@@ -167,6 +167,7 @@ This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architec
 
 Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
 Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time (free). The Claude LLM pass for `llm_judge: true` ADRs is opt-in (enable in `docs/adr/.adr-kit.json`, or review in-session via `/adr-kit:judge`).
+Guardian: when an `[adr-guardian] ... DUE` block appears at session start, proactively offer to run the due tier via `/adr-kit:guardian`. Confirm cost before the LLM tier. Apply mix-by-finding-type responses: drift violations surfaced prominently; missing-ADR suggestions passive; stale ADRs drafted for review; health issues reported with fix offer.
 <!-- ADR-KIT STUB END -->
 ```
 
@@ -264,6 +265,36 @@ $ADR_KIT/bin/adr-lint docs/adr/
 
 Report the result: `<N PASS, M ADVISORY, K FAIL>`. If any FAIL: list them with the gate name and ask the user whether to fix now (re-invoke `adr-generator` for the offending ADR) or defer to a follow-up.
 
+## Step 5b — Guardian setup (new in v0.18.0)
+
+After the hook and LLM opt-in are configured, offer the ADR Guardian.
+
+Print this notice:
+
+```
+[adr-guardian] The ADR Guardian is a SessionStart staleness detector (v0.18.0).
+It checks ADR health at session start and nudges when a sweep is due:
+  - cheap tier (drift + retire + lint): daily, free
+  - LLM tier   (suggest + audit):      bi-weekly, asks before spending (~$0.10–0.30)
+Two registration paths:
+  A. Plugin-level (default, recommended): auto-registers when the adr-kit plugin is enabled.
+     The guardian self-guards (no-ops silently in non-ADR projects).
+  B. Project-scoped: adds a SessionStart entry to .claude/settings.json (explicit, contained).
+```
+
+Ask two questions (default A/No):
+
+1. `Enable guardian? (Y/n)` — Write `{"guardian": {"enabled": true}}` into `docs/adr/.adr-kit.json` (merge if present). If No: write `{"guardian": {"enabled": false}}` and skip the rest of this step.
+2. `Register project-scoped SessionStart hook in .claude/settings.json? (y/N)` — If yes, follow the instructions in `skills/install-hooks/SKILL.md` under "Adding the project-scoped guardian hook". If no, remind the user the plugin-level hook is used by default.
+
+Add `.adr-kit-state.json` to the project's `.gitignore` (idempotent):
+
+```bash
+grep -q "\.adr-kit-state\.json" .gitignore 2>/dev/null || echo "docs/adr/.adr-kit-state.json" >> .gitignore
+```
+
+Confirm: `[adr-guardian] enabled (<path>); state file gitignored.`
+
 ## Step 6 — Generate standalone validation scripts (optional)
 
 Ask the user: "Generate standalone validation scripts for CI/CD pipelines? (Y/n)"
@@ -291,6 +322,7 @@ adr-kit init complete:
 - ADRs:     <N> created, <M> already present
 - hook:     installed (or already present + reason)
 - llm:      per-commit judging <enabled|disabled>, suggest <enabled|disabled>
+- guardian: <enabled|disabled> (plugin-level | project-scoped | disabled)
 - lint:     <P> PASS, <A> ADVISORY, <F> FAIL
 - scripts:  generated | skipped (user declined)
 ```

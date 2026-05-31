@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# SessionStart hook for adr-kit plugin (v0.18.0+)
+#
+# Runs bin/adr-guardian check in the current project context.
+# The guardian self-guards: it exits 0 silently when there is no docs/adr/
+# with ADRs in the working directory, so this hook is safe in any project.
+#
+# Output format mirrors the superpowers session-start hook:
+#   CURSOR_PLUGIN_ROOT set  -> {"additional_context": "..."}
+#   CLAUDE_PLUGIN_ROOT set  -> {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "..."}}
+#   otherwise               -> {"additionalContext": "..."}
+#
+# The guardian bin handles the output format branching itself, so this
+# wrapper just needs to locate Python and run the bin.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Locate Python 3 (mirrors the pre-commit hook's resolver).
+_PYTHON3=""
+for _cmd in python3 python py; do
+  if command -v "$_cmd" >/dev/null 2>&1; then
+    _ver=$("$_cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    _major=$(echo "$_ver" | cut -d. -f1)
+    if [ "${_major:-0}" -ge 3 ] 2>/dev/null; then
+      _PYTHON3="$_cmd"
+      break
+    fi
+  fi
+done
+
+if [ -z "$_PYTHON3" ]; then
+  # Python not found — degrade gracefully, never block session start.
+  exit 0
+fi
+
+GUARDIAN="$PLUGIN_ROOT/bin/adr-guardian"
+if [ ! -f "$GUARDIAN" ]; then
+  exit 0
+fi
+
+# Run the detector. It always exits 0; any non-zero would be a bug.
+# Capture stdout and relay it (JSON additionalContext or empty).
+OUTPUT=$("$_PYTHON3" "$GUARDIAN" check 2>/dev/null || true)
+if [ -n "$OUTPUT" ]; then
+  printf '%s\n' "$OUTPUT"
+fi
+
+exit 0

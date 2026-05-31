@@ -1,4 +1,4 @@
-<!-- adr-kit-guide v0.17.0 -->
+<!-- adr-kit-guide v0.18.0 -->
 <!-- Canonical project-side ADR guide. Copied from the plugin's templates/adr-kit-guide.md to .claude/adr-kit-guide.md by /adr-kit:init, /adr-kit:upgrade, and /adr-kit:setup. -->
 <!-- This file is plain markdown — readable by Claude Code, headless `claude -p`, shell scripts in pre-commit hooks, evaluator scripts, and any agent that doesn't process @-imports. Do not embed Claude-Code-specific syntax inside this file. -->
 
@@ -19,6 +19,7 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 | **Init / bootstrap** | Once per project: scan source + docs, propose a starter ADR set, hook the kit into `CLAUDE.md`, install the pre-commit hook | `/adr-kit:init` |
 | **Per-commit verification** | Every `git commit`: declarative-rule check (always-on, free). Claude Sonnet LLM judge for `llm_judge: true` ADRs is opt-in as of v0.17.0 (enable via `judge.llm_enabled:true` or `ADR_KIT_LLM=1`). Falls back to declarative-only when the `claude` CLI is unavailable | `.githooks/pre-commit` (auto) |
 | **On-demand invocation** | Mid-session: write a new ADR, judge a staged diff, supersede an existing decision | `/adr-kit:adr`, `/adr-kit:judge`, `adr-generator` subagent |
+| **Guardian (v0.18+)** | Periodic staleness detector at SessionStart; in-session model runs due health tiers | `bin/adr-guardian` (hook, free) + `/adr-kit:guardian` (sweep) |
 
 ## Slash commands
 
@@ -31,7 +32,8 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 | `/adr-kit:migrate` | Rewrite legacy ADRs into canonical format. | yes |
 | `/adr-kit:setup` | Append `## ADR Kit` block to `CLAUDE.md` (idempotent). | yes |
 | `/adr-kit:upgrade` | Migrate v0.11 → v0.12 footprint without re-running the heavy audit. | yes |
-| `/adr-kit:install-hooks` | Install or uninstall the pre-commit hook. | yes |
+| `/adr-kit:install-hooks` | Install or uninstall the pre-commit hook; also manages the guardian's project-scoped SessionStart hook. | yes |
+| `/adr-kit:guardian` | Run the ADR-set health sweep for due tier(s). Cheap tier is free; LLM tier confirms cost first. | no — model can self-call |
 
 ## The four verification gates
 
@@ -132,6 +134,50 @@ When `/adr-kit:adr` is asked to write or accept an ADR, it actively pushes back 
 - "It's reversible" — most architecture is partially reversible; the ADR captures the *current* commitment.
 - "It's a refactor" — pure refactors don't need ADRs; *new patterns* introduced during refactoring do.
 - "We don't have time" — opportunity cost of skipping is a future maintainer hunting for the why.
+
+## Guardian (v0.18.0+)
+
+The ADR Guardian is a periodic staleness detector that injects an `[adr-guardian]` nudge block at Claude Code SessionStart when a health tier is due. It never blocks session start, never runs an LLM, and emits nothing when nothing is due.
+
+**Two-tier cadence:**
+
+| Tier | Default cadence | Tools | Cost |
+|---|---|---|---|
+| **cheap** | Daily (`drift_stale_days: 1`) | `adr-judge` (declarative), `adr-retire`, `adr-lint`/`adr-status` | Free |
+| **llm** | Bi-weekly (`llm_stale_days: 14`) | `adr-suggest` (missing-ADR), `adr-judge --llm` (audit) | ~$0.10–0.30 |
+
+**On seeing an `[adr-guardian] ... DUE` block at session start:**
+1. Identify which tier(s) are marked `DUE`.
+2. For the cheap tier: offer "ADR drift/health check is due — run `/adr-kit:guardian cheap` to sweep (free, ~30s)?"
+3. For the LLM tier: offer "ADR semantic check is due (bi-weekly) — run `/adr-kit:guardian llm`? This will confirm cost (~$0.10–0.30) before spending."
+4. Confirm cost before the LLM tier. Never run LLM-tier work without explicit user confirmation (unless `guardian.llm_autorun: true` in `.adr-kit.json`).
+
+**Mix-by-finding-type responses:**
+
+| Finding | Response |
+|---|---|
+| **Drift** — code violates an Accepted ADR | Surface prominently. List violations with file:line + ADR. Offer fix or task. |
+| **Missing ADR** — new decision not recorded | Passive. List candidates; offer to author via `adr-generator`. User picks. |
+| **Stale ADR** — tech removed/superseded/policy drift | Draft retirement/supersession for review. Never auto-apply. |
+| **Health** — gate failures, broken chains | Report PASS/ADVISORY/FAIL. Offer to fix FAILs via `adr-generator`. |
+
+**Config** (`docs/adr/.adr-kit.json`, `guardian` block):
+
+```json
+"guardian": {
+  "enabled": true,
+  "drift_stale_days": 1,
+  "llm_stale_days": 14,
+  "nudge_cooldown_hours": 24,
+  "llm_autorun": false
+}
+```
+
+**Hook install paths (both are shipped):**
+- Plugin-level (default): the adr-kit plugin declares a `SessionStart` hook in `.claude-plugin/plugin.json`. Auto-registers when the plugin is enabled. Self-guards (no-ops in non-ADR projects).
+- Project-scoped (explicit): `/adr-kit:install-hooks` adds a `SessionStart` entry to the project's `.claude/settings.json`. Idempotent add and clean remove (JSON-structural, never clobbers other hooks).
+
+State file: `docs/adr/.adr-kit-state.json` (gitignored, per-machine).
 
 ## Plugin-side deep dives
 

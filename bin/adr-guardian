@@ -1,0 +1,560 @@
+#!/usr/bin/env python3
+"""adr-guardian: periodic ADR-set health detector for adr-kit (v0.18.0+).
+
+Three subcommands:
+
+  adr-guardian check
+      The SessionStart hook entry point. Reads docs/adr/.adr-kit-state.json and
+      docs/adr/.adr-kit.json, computes which health tiers are due, and prints the
+      [adr-guardian] block as JSON additionalContext for Claude Code's SessionStart
+      hook. ALWAYS exits 0. NEVER runs an LLM. NEVER spawns subprocesses.
+      Prints nothing when no tier is due or when the guardian is disabled.
+
+  adr-guardian stamp <cheap|llm> [--violations N] [--retire N] [--suggest N] [--audit N] [--lint STR]
+      Record that a sweep tier completed. Updates .adr-kit-state.json. Called by
+      the /adr-kit:guardian skill after a sweep completes. Always exits 0.
+
+  adr-guardian state
+      Print the current .adr-kit-state.json as formatted JSON to stdout. Exits 0
+      even when the file is missing (prints a default-empty state).
+
+Design invariants (match spec §3 / §12):
+  - check: pure read-only on ADRs (just counts files); never spawns; always exit 0.
+  - stamp: writes only .adr-kit-state.json; always exit 0.
+  - cwd-guard: check exits 0 silently when cwd has no docs/adr/ with ADRs.
+  - nudge_cooldown_hours: check skips output if last_nudged is within the window.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+import io
+from typing import Dict, List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# UTF-8 stream setup (mirrors adr-suggest._ensure_utf8_streams)
+# ---------------------------------------------------------------------------
+
+
+def _ensure_utf8_streams() -> None:
+    """Force stdout/stderr to UTF-8 on Windows where the console may default to cp1252."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, io.UnsupportedOperation):
+                pass
+
+
+# ---------------------------------------------------------------------------
+# State-file helpers
+# ---------------------------------------------------------------------------
+
+DEFAULT_STATE: Dict = {
+    "cheap_tier": {
+        "last_run": None,
+        "drift_violations": 0,
+        "retire_candidates": 0,
+        "lint": "0F/0A",
+    },
+    "llm_tier": {
+        "last_run": None,
+        "suggest_hits": 0,
+        "audit_findings": 0,
+    },
+    "retire_seen": [],
+    "last_nudged": None,
+}
+
+
+def _load_state(state_path: Path) -> Dict:
+    """Read .adr-kit-state.json. Returns DEFAULT_STATE when missing or invalid."""
+    if not state_path.exists():
+        return json.loads(json.dumps(DEFAULT_STATE))
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return json.loads(json.dumps(DEFAULT_STATE))
+        return data
+    except (json.JSONDecodeError, OSError):
+        return json.loads(json.dumps(DEFAULT_STATE))
+
+
+def _save_state(state_path: Path, state: Dict) -> None:
+    """Write .adr-kit-state.json atomically."""
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = state_path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(state_path)
+    except OSError:
+        # Non-fatal: if we can't write state, the next session just sees stale state.
+        pass
+
+
+def _load_config(config_path: Path) -> Dict:
+    """Read .adr-kit.json. Returns {} when missing or invalid."""
+    if not config_path.exists():
+        return {}
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _guardian_config(cfg: Dict) -> Dict:
+    """Return the guardian sub-block with defaults filled in."""
+    defaults = {
+        "enabled": True,
+        "drift_stale_days": 1,
+        "llm_stale_days": 14,
+        "nudge_cooldown_hours": 24,
+        "llm_autorun": False,
+    }
+    guardian = cfg.get("guardian") or {}
+    merged = {**defaults, **guardian}
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# Time helpers
+# ---------------------------------------------------------------------------
+
+def _now_utc() -> datetime:
+    return datetime.now(tz=timezone.utc)
+
+
+def _parse_iso(s: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO-8601 timestamp string, returning None on failure."""
+    if not s:
+        return None
+    try:
+        # Python 3.11+ handles Z; for 3.9/3.10 replace Z with +00:00
+        s_clean = s.replace("Z", "+00:00")
+        return datetime.fromisoformat(s_clean)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _hours_since(ts: Optional[datetime]) -> Optional[float]:
+    """Return hours elapsed since ts (UTC), or None when ts is None."""
+    if ts is None:
+        return None
+    delta = _now_utc() - ts
+    return delta.total_seconds() / 3600.0
+
+
+def _days_since(ts: Optional[datetime]) -> Optional[float]:
+    """Return days elapsed since ts (UTC), or None when ts is None."""
+    if ts is None:
+        return None
+    delta = _now_utc() - ts
+    return delta.total_seconds() / 86400.0
+
+
+# ---------------------------------------------------------------------------
+# CWD guard
+# ---------------------------------------------------------------------------
+
+def _find_adr_dir() -> Optional[Path]:
+    """Return docs/adr/ relative to the project root, or None if absent/empty.
+
+    Checks CLAUDE_PROJECT_DIR first (set by Claude Code for plugin-level hooks),
+    then falls back to cwd. A directory is valid when it exists and contains at
+    least one ADR-*.md file.
+    """
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    candidates = []
+    if project_dir:
+        candidates.append(Path(project_dir) / "docs" / "adr")
+    candidates.append(Path.cwd() / "docs" / "adr")
+
+    for adr_dir in candidates:
+        if adr_dir.is_dir():
+            # Quick check: at least one ADR file present.
+            try:
+                has_adrs = any(True for _ in adr_dir.glob("ADR-*.md"))
+            except OSError:
+                continue
+            if has_adrs:
+                return adr_dir
+    return None
+
+
+def _count_adrs(adr_dir: Path) -> int:
+    """Count ADR-*.md files in adr_dir."""
+    try:
+        return sum(1 for _ in adr_dir.glob("ADR-*.md"))
+    except OSError:
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Due-tier computation
+# ---------------------------------------------------------------------------
+
+def _compute_due_tiers(
+    state: Dict,
+    gcfg: Dict,
+    now: datetime,
+) -> Tuple[bool, bool]:
+    """Return (cheap_due, llm_due) booleans.
+
+    cheap_due: True when cheap-tier has never run OR last_run > drift_stale_days ago.
+    llm_due:   True when llm-tier has never run OR last_run > llm_stale_days ago.
+    """
+    cheap_tier = state.get("cheap_tier") or {}
+    llm_tier = state.get("llm_tier") or {}
+
+    drift_stale_days = float(gcfg.get("drift_stale_days", 1))
+    llm_stale_days = float(gcfg.get("llm_stale_days", 14))
+
+    cheap_last_run = _parse_iso(cheap_tier.get("last_run"))
+    llm_last_run = _parse_iso(llm_tier.get("last_run"))
+
+    cheap_days = _days_since(cheap_last_run)
+    llm_days = _days_since(llm_last_run)
+
+    cheap_due = cheap_days is None or cheap_days >= drift_stale_days
+    llm_due = llm_days is None or llm_days >= llm_stale_days
+
+    return cheap_due, llm_due
+
+
+def _is_throttled(state: Dict, gcfg: Dict) -> bool:
+    """Return True if we nudged within nudge_cooldown_hours."""
+    cooldown_h = float(gcfg.get("nudge_cooldown_hours", 24))
+    last_nudged = _parse_iso(state.get("last_nudged"))
+    h = _hours_since(last_nudged)
+    if h is None:
+        return False
+    return h < cooldown_h
+
+
+# ---------------------------------------------------------------------------
+# Block formatting (spec §9)
+# ---------------------------------------------------------------------------
+
+def _format_guardian_block(
+    cheap_due: bool,
+    llm_due: bool,
+    state: Dict,
+    adr_count: int,
+    now: datetime,
+) -> str:
+    """Return the [adr-guardian] block as a plain string.
+
+    Format:
+      [adr-guardian] ADR health — N item(s) due
+        • drift:     last Xd ago (daily)      DUE
+        • llm-tier:  last Xd ago (bi-weekly) DUE   (suggest + audit, costs $)
+        state: NN ADRs · last sweep: D drift · S suggestion · R retire candidates
+        → /adr-kit:guardian   (LLM tier asks before spending)
+    """
+    due_count = (1 if cheap_due else 0) + (1 if llm_due else 0)
+
+    cheap_tier = state.get("cheap_tier") or {}
+    llm_tier = state.get("llm_tier") or {}
+
+    cheap_last_run = _parse_iso(cheap_tier.get("last_run"))
+    llm_last_run = _parse_iso(llm_tier.get("last_run"))
+
+    cheap_days = _days_since(cheap_last_run)
+    llm_days = _days_since(llm_last_run)
+
+    def _age_label(days: Optional[float]) -> str:
+        if days is None:
+            return "never"
+        if days < 1.0:
+            h = days * 24.0
+            return f"{h:.0f}h ago"
+        return f"{days:.0f}d ago"
+
+    lines = [f"[adr-guardian] ADR health — {due_count} item(s) due"]
+
+    cheap_tag = "DUE" if cheap_due else "ok"
+    llm_tag = "DUE" if llm_due else "ok"
+
+    lines.append(
+        f"  • drift:     last {_age_label(cheap_days)} (daily)      {cheap_tag}"
+    )
+    lines.append(
+        f"  • llm-tier:  last {_age_label(llm_days)} (bi-weekly) {llm_tag}"
+        + ("   (suggest + audit, costs $)" if llm_due else "")
+    )
+
+    drift_violations = cheap_tier.get("drift_violations", 0)
+    retire_candidates = cheap_tier.get("retire_candidates", 0)
+    suggest_hits = llm_tier.get("suggest_hits", 0)
+
+    lines.append(
+        f"  state: {adr_count} ADRs · last sweep: {drift_violations} drift"
+        f" · {suggest_hits} suggestion · {retire_candidates} retire candidates"
+    )
+    lines.append("  → /adr-kit:guardian   (LLM tier asks before spending)")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# JSON envelope (SessionStart additionalContext contract)
+# ---------------------------------------------------------------------------
+
+def _escape_for_json(s: str) -> str:
+    """Escape a plain string for embedding as a JSON string value."""
+    s = s.replace("\\", "\\\\")
+    s = s.replace('"', '\\"')
+    s = s.replace("\n", "\\n")
+    s = s.replace("\r", "\\r")
+    s = s.replace("\t", "\\t")
+    return s
+
+
+def _emit_context(text: str) -> None:
+    """Print the SessionStart context-injection JSON envelope.
+
+    Mirrors the superpowers session-start hook logic:
+      CURSOR_PLUGIN_ROOT set  → Cursor format (additional_context, snake_case)
+      CLAUDE_PLUGIN_ROOT set, no COPILOT_CLI → Claude Code format (nested hookSpecificOutput)
+      otherwise               → SDK standard (top-level additionalContext)
+    """
+    escaped = _escape_for_json(text)
+    if os.environ.get("CURSOR_PLUGIN_ROOT"):
+        out = f'{{"additional_context": "{escaped}"}}'
+    elif os.environ.get("CLAUDE_PLUGIN_ROOT") and not os.environ.get("COPILOT_CLI"):
+        out = (
+            '{"hookSpecificOutput": {'
+            '"hookEventName": "SessionStart", '
+            f'"additionalContext": "{escaped}"'
+            "}}"
+        )
+    else:
+        out = f'{{"additionalContext": "{escaped}"}}'
+    sys.stdout.write(out + "\n")
+    sys.stdout.flush()
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: check
+# ---------------------------------------------------------------------------
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """Staleness detector. Always exits 0. Prints nothing when nothing is due."""
+    # cwd-guard: bail silently when there are no ADRs in this project.
+    adr_dir = _find_adr_dir()
+    if adr_dir is None:
+        return 0
+
+    state_path = adr_dir / ".adr-kit-state.json"
+    config_path = adr_dir / ".adr-kit.json"
+
+    state = _load_state(state_path)
+    cfg = _load_config(config_path)
+    gcfg = _guardian_config(cfg)
+
+    # Respect guardian.enabled (default True).
+    if not gcfg.get("enabled", True):
+        return 0
+
+    now = _now_utc()
+    cheap_due, llm_due = _compute_due_tiers(state, gcfg, now)
+
+    if not cheap_due and not llm_due:
+        return 0
+
+    # Throttle: if we nudged within nudge_cooldown_hours, stay silent.
+    if _is_throttled(state, gcfg):
+        return 0
+
+    adr_count = _count_adrs(adr_dir)
+    block = _format_guardian_block(cheap_due, llm_due, state, adr_count, now)
+
+    _emit_context(block)
+
+    # Write last_nudged so repeated session-starts don't nag.
+    state["last_nudged"] = now.isoformat()
+    _save_state(state_path, state)
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: stamp
+# ---------------------------------------------------------------------------
+
+def cmd_stamp(args: argparse.Namespace) -> int:
+    """Record completion of a sweep tier. Always exits 0."""
+    tier = args.tier  # "cheap" or "llm"
+
+    adr_dir = _find_adr_dir()
+    if adr_dir is None:
+        # No ADR dir — can happen if skill is invoked outside a project context.
+        # Honour the state-dir flag if provided.
+        if args.state_dir:
+            state_path = Path(args.state_dir) / ".adr-kit-state.json"
+        else:
+            return 0
+    else:
+        state_path = adr_dir / ".adr-kit-state.json"
+        if args.state_dir:
+            state_path = Path(args.state_dir) / ".adr-kit-state.json"
+
+    state = _load_state(state_path)
+    now_iso = _now_utc().isoformat()
+
+    if tier == "cheap":
+        cheap = dict(state.get("cheap_tier") or {})
+        cheap["last_run"] = now_iso
+        if args.violations is not None:
+            cheap["drift_violations"] = args.violations
+        if args.retire is not None:
+            cheap["retire_candidates"] = args.retire
+        if args.lint is not None:
+            cheap["lint"] = args.lint
+        state["cheap_tier"] = cheap
+        # Update retire_seen if retire candidates changed.
+        if args.retire_seen is not None:
+            try:
+                seen_list = json.loads(args.retire_seen)
+                if isinstance(seen_list, list):
+                    state["retire_seen"] = seen_list
+            except json.JSONDecodeError:
+                pass
+    elif tier == "llm":
+        llm = dict(state.get("llm_tier") or {})
+        llm["last_run"] = now_iso
+        if args.suggest is not None:
+            llm["suggest_hits"] = args.suggest
+        if args.audit is not None:
+            llm["audit_findings"] = args.audit
+        state["llm_tier"] = llm
+
+    _save_state(state_path, state)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: state
+# ---------------------------------------------------------------------------
+
+def cmd_state(args: argparse.Namespace) -> int:
+    """Print current state JSON to stdout. Always exits 0."""
+    adr_dir = _find_adr_dir()
+    if adr_dir is None:
+        if args.state_dir:
+            state_path = Path(args.state_dir) / ".adr-kit-state.json"
+        else:
+            json.dump(json.loads(json.dumps(DEFAULT_STATE)), sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return 0
+    else:
+        state_path = adr_dir / ".adr-kit-state.json"
+        if args.state_dir:
+            state_path = Path(args.state_dir) / ".adr-kit-state.json"
+
+    state = _load_state(state_path)
+    json.dump(state, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    _ensure_utf8_streams()
+    p = argparse.ArgumentParser(
+        prog="adr-guardian",
+        description=(
+            "ADR-set health detector for adr-kit (v0.18.0+). "
+            "Three subcommands: check (SessionStart hook), stamp (record sweep), state (inspect)."
+        ),
+    )
+    sub = p.add_subparsers(dest="command")
+
+    # check
+    check_p = sub.add_parser(
+        "check",
+        help=(
+            "Staleness detector for SessionStart hook. Prints nothing when nothing is due. "
+            "Always exits 0."
+        ),
+    )
+    check_p.add_argument(
+        "--adr-dir",
+        default=None,
+        help="Override docs/adr directory (default: auto-detect from CLAUDE_PROJECT_DIR or cwd).",
+    )
+
+    # stamp
+    stamp_p = sub.add_parser(
+        "stamp",
+        help="Record that a sweep tier completed. Updates .adr-kit-state.json.",
+    )
+    stamp_p.add_argument(
+        "tier",
+        choices=["cheap", "llm"],
+        help="Which tier completed.",
+    )
+    stamp_p.add_argument("--violations", type=int, default=None,
+                         help="Number of drift violations found (cheap tier).")
+    stamp_p.add_argument("--retire", type=int, default=None,
+                         help="Number of retire candidates found (cheap tier).")
+    stamp_p.add_argument("--retire-seen", dest="retire_seen", default=None,
+                         help="JSON array of ADR ids in the retire candidate set (cheap tier).")
+    stamp_p.add_argument("--lint", default=None,
+                         help="Lint summary string, e.g. '2F/5A' (cheap tier).")
+    stamp_p.add_argument("--suggest", type=int, default=None,
+                         help="Number of missing-ADR suggestions (llm tier).")
+    stamp_p.add_argument("--audit", type=int, default=None,
+                         help="Number of audit findings (llm tier).")
+    stamp_p.add_argument("--state-dir", dest="state_dir", default=None,
+                         help="Override directory for .adr-kit-state.json (tests/CI).")
+
+    # state
+    state_p = sub.add_parser(
+        "state",
+        help="Print current .adr-kit-state.json as formatted JSON. Always exits 0.",
+    )
+    state_p.add_argument("--state-dir", dest="state_dir", default=None,
+                         help="Override directory for .adr-kit-state.json (tests/CI).")
+
+    args = p.parse_args()
+
+    if args.command is None:
+        p.print_help(sys.stderr)
+        return 2
+
+    # Apply --adr-dir override for check (patch env var so _find_adr_dir picks it up).
+    if args.command == "check" and getattr(args, "adr_dir", None):
+        os.environ["CLAUDE_PROJECT_DIR"] = str(Path(args.adr_dir).resolve().parent.parent)
+
+    try:
+        if args.command == "check":
+            return cmd_check(args)
+        elif args.command == "stamp":
+            return cmd_stamp(args)
+        elif args.command == "state":
+            return cmd_state(args)
+    except KeyboardInterrupt:
+        return 0
+    except Exception:
+        # The check subcommand must NEVER propagate an exception — guardian must
+        # not block a session start. Other subcommands: same policy for safety.
+        return 0
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

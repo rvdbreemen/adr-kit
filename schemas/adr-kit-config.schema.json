@@ -204,6 +204,41 @@
         "check_policy_mismatch": {"type": "boolean", "default": true}
       },
       "additionalProperties": false
+    },
+    "guardian": {
+      "type": "object",
+      "description": "Configuration for the ADR Guardian (bin/adr-guardian + /adr-kit:guardian skill), introduced in adr-kit v0.18.0. The guardian is a periodic ADR-set health detector that injects a staleness nudge at Claude Code SessionStart when a health tier is due. Detection is free (no LLM) and default-on. The LLM tier (adr-suggest + audit) always asks before spending unless llm_autorun is explicitly set true.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, the guardian detector is disabled entirely and no nudge is ever emitted. Default true. The guardian's detection (cheap tier) is free; disabling it only makes sense for projects that run a CI-based sweep instead.",
+          "default": true
+        },
+        "drift_stale_days": {
+          "type": "number",
+          "description": "Number of days after which the cheap tier (drift + retire + lint) is considered stale and triggers a nudge. Default 1 (daily). Fractional values are accepted (e.g. 0.5 for a 12-hour cadence).",
+          "minimum": 0,
+          "default": 1
+        },
+        "llm_stale_days": {
+          "type": "number",
+          "description": "Number of days after which the LLM tier (adr-suggest missing-ADR detection + full audit) is considered stale and triggers a nudge. Default 14 (bi-weekly). The LLM tier costs money; keep this at 14 or higher to avoid frequent spend.",
+          "minimum": 0,
+          "default": 14
+        },
+        "nudge_cooldown_hours": {
+          "type": "number",
+          "description": "Minimum hours between successive nudges at SessionStart. Prevents repeated nags within a single work day when sessions are opened frequently. Default 24 (once per day at most).",
+          "minimum": 0,
+          "default": 24
+        },
+        "llm_autorun": {
+          "type": "boolean",
+          "description": "When false (default), the /adr-kit:guardian skill always asks the user to confirm cost before running the LLM tier (adr-suggest + full audit). Set true only if you want the LLM tier to run without an interactive confirmation — consistent with ADR-001's opt-in posture, this defaults to false. The cheap tier (drift + retire + lint) is always free and unaffected by this flag.",
+          "default": false
+        }
+      }
     }
   }
 }

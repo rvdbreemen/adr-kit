@@ -4,6 +4,26 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-05-31
+
+### Added
+
+- **`bin/adr-guardian` -- ADR-set health detector.** New stdlib-only Python bin with three subcommands: `check` (the SessionStart hook entry point; read-only, always exit 0, never spawns), `stamp <cheap|llm>` (records sweep completion in `.adr-kit-state.json`), and `state` (inspect current state). The `check` subcommand computes due tiers vs. the two-tier clocks, applies `nudge_cooldown_hours` throttle, and emits the `[adr-guardian]` block as Claude Code `hookSpecificOutput.additionalContext` JSON when a tier is due.
+- **`/adr-kit:guardian` skill** (`skills/guardian/SKILL.md`) -- the in-session ADR-set health sweep. Orchestrates `adr-judge` (declarative drift), `adr-retire` (stale detection), `adr-lint`/`adr-status` (health), `adr-suggest` (missing-ADR detection, LLM tier), and `adr-judge --llm` (full audit, LLM tier). Applies mix-by-finding-type responses (drift = prominent; missing ADR = passive; stale = autonomous draft; health = report). Confirms cost before any LLM-tier phase. Stamps state when done. Accepts optional argument `cheap | llm | all`.
+- **Two-tier cadence**: cheap tier (drift + retire + lint) runs daily (`guardian.drift_stale_days: 1`, free); LLM tier (suggest + audit) runs bi-weekly (`guardian.llm_stale_days: 14`, costs ~$0.10-0.30). Each tier stamped independently so the clocks do not interfere.
+- **Mix-by-finding-type responses**: drift violations surfaced prominently (highest signal); missing-ADR suggestions passive (user picks); stale ADRs get an autonomous draft for review (never auto-applied); ADR-set health reported with fix offer. Per spec 6.
+- **Both hook-install paths shipped** (spec 7): plugin-level (`hooks` key in `.claude-plugin/plugin.json` + `.claude-plugin/hooks/`) auto-registers when the plugin is enabled globally; project-scoped instructions added to `skills/install-hooks/SKILL.md` for JSON-structural add/remove of the SessionStart entry in `.claude/settings.json` (idempotent, never clobbers sibling hooks).
+- **`guardian` config block** in `schemas/adr-kit-config.schema.json` with full descriptions and defaults: `enabled` (default `true`), `drift_stale_days` (default 1), `llm_stale_days` (default 14), `nudge_cooldown_hours` (default 24), `llm_autorun` (default `false`, consistent with ADR-001 opt-in posture).
+- **Gitignored state file**: `docs/adr/.adr-kit-state.json` added to `.gitignore` (per-machine, never committed). `/adr-kit:init` adds it to the project gitignore during setup.
+- **Guardian section in `templates/adr-kit-guide.md`** (v0.18.0 header bump): documents the two-tier cadence, mix-by-finding-type table, config block, both hook-install paths, and in-session model behaviour for the `[adr-guardian] ... DUE` block.
+- **`/adr-kit:init` Step 5b** -- guardian setup step offering `enabled` toggle, project-scoped hook install, and gitignore update.
+- **`docs/adr/ADR-002-adr-guardian-session-start-staleness-detector.md`** -- dogfood ADR recording the guardian design decision (Status: Proposed).
+- **`tests/test_adr_guardian.py`** -- 29 tests covering due/not-due logic across both clocks, cwd-guard no-op, `nudge_cooldown_hours` throttle, retire-candidate state display, `stamp` updates, `state` round-trip, always-exit-0 under corrupt state/config, and JSON envelope format (Claude Code `hookSpecificOutput` path).
+
+### Changed
+
+- `.claude-plugin/plugin.json`: description updated to mention guardian; `hooks` key added declaring the SessionStart hook; version bumped to 0.18.0.
+
 ## [0.17.0] - 2026-05-31
 
 ### Changed (BREAKING DEFAULT)

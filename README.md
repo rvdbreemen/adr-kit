@@ -9,12 +9,13 @@ A complete Architecture Decision Record (ADR) toolkit for AI coding agents. Drop
 
 ## What it does
 
-Four coordinated operating modes, since v0.14.0:
+Five coordinated operating modes, since v0.18.0:
 
 - **Init** (`/adr-kit:init`, since v0.12.0): one-shot project bootstrap. Hooks the kit into `CLAUDE.md` (slim stub + canonical guide at `.claude/adr-kit-guide.md`), runs `bin/adr-audit` to enumerate decision-shaped artefacts in source + documentation, walks the user through batched approval to generate `Accepted` ADRs, and installs the pre-commit hook. Use once per project.
 - **Per-commit verification** (`bin/adr-judge` + pre-commit hook, since v0.12.0): every `git commit` runs declarative `Enforcement` rules from each Accepted ADR against the staged diff. Fast, deterministic, key-free. Default-on after init.
 - **On-demand** (`/adr-kit:adr`, `/adr-kit:judge`, since v0.12.0 for judge): author a new ADR mid-session, or interactively review a staged diff against existing ADRs (declarative + in-session LLM review for `llm_judge: true` ADRs).
 - **Observability** (`bin/adr-status`, `bin/adr-quality`, `bin/adr-context`, since v0.14.0): repository-wide health dashboard, per-ADR quality scoring (A–D grade), and semantic ADR ranking for task context.
+- **Guardian** (`bin/adr-guardian` + `/adr-kit:guardian`, v0.18.0+): periodic ADR-set health detector. Fires at Claude Code SessionStart when a health tier is due. Cheap tier daily (drift + retire + lint, free); LLM tier bi-weekly (suggest + audit, asks before spending). Mix-by-finding-type in-session responses. No background processes.
 
 ### Components
 
@@ -87,8 +88,12 @@ adr-kit/
 ├── LICENSE                         # MIT
 ├── INSTALL.md                      # per-tool install (manual route)
 ├── .claude-plugin/
-│   ├── plugin.json                 # Claude Code plugin manifest (v0.12.0)
-│   └── marketplace.json            # marketplace listing
+│   ├── plugin.json                 # Claude Code plugin manifest (hooks: SessionStart guardian, v0.18+)
+│   ├── marketplace.json            # marketplace listing
+│   └── hooks/
+│       ├── hooks.json              # SessionStart hook declaration (v0.18+)
+│       ├── run-hook.cmd            # cross-platform polyglot runner (v0.18+)
+│       └── session-start           # bash hook script invoking bin/adr-guardian check (v0.18+)
 ├── skills/
 │   ├── adr/SKILL.md                # the comprehensive ADR guide
 │   ├── init/SKILL.md               # /adr-kit:init: one-shot project bootstrap (v0.12+)
@@ -98,7 +103,8 @@ adr-kit/
 │   ├── setup/SKILL.md              # /adr-kit:setup: lighter CLAUDE.md+guide hookup
 │   ├── lint/SKILL.md               # /adr-kit:lint: validates ADRs against the four gates
 │   ├── migrate/SKILL.md            # /adr-kit:migrate: rewrite legacy ADRs into canonical
-│   └── retire/SKILL.md             # /adr-kit:retire: rank retirement candidates (v0.14+)
+│   ├── retire/SKILL.md             # /adr-kit:retire: rank retirement candidates (v0.14+)
+│   └── guardian/SKILL.md           # /adr-kit:guardian: ADR-set health sweep (v0.18+)
 ├── agents/
 │   └── adr-generator.md            # subagent: create a new ADR (proposes Enforcement blocks v0.12+)
 ├── bin/
@@ -110,15 +116,18 @@ adr-kit/
 │   ├── adr-status                  # repository health dashboard (v0.14+)
 │   ├── adr-quality                 # per-ADR quality scorer, grade A-D (v0.14+)
 │   ├── adr-context                 # semantic ADR relevance ranker (v0.14+)
-│   └── adr-generate-scripts        # standalone validate.py / validate.sh generator (v0.14+)
+│   ├── adr-generate-scripts        # standalone validate.py / validate.sh generator (v0.14+)
+│   └── adr-guardian                # ADR-set staleness detector: check/stamp/state (v0.18+)
 ├── templates/
 │   ├── adr-template.md             # ADR template with optional Enforcement section (v0.12+)
 │   ├── adr-kit-guide.md            # canonical project-side guide; copied to .claude/ (v0.12+)
 │   ├── githooks/pre-commit         # pre-commit hook template (v0.12+)
 │   ├── validate_adr_template.py    # reference template for generated Python validator (v0.14+)
-│   └── validate_adr_template.sh    # reference template for generated shell validator (v0.14+)
+│   ├── validate_adr_template.sh    # reference template for generated shell validator (v0.14+)
+│   └── cc-settings/
+│       └── guardian-hook-entry.json # project-scoped SessionStart hook JSON fragment (v0.18+)
 ├── schemas/
-│   ├── adr-kit-config.schema.json  # .adr-kit.json schema (judge.* v0.12+, suggest.* v0.16+)
+│   ├── adr-kit-config.schema.json  # .adr-kit.json schema (judge.* v0.12+, suggest.* v0.16+, guardian.* v0.18+)
 │   └── adr-enforcement.schema.json # ADR Enforcement block schema (v0.12+)
 ├── instructions/
 │   ├── adr.coding.md               # ADR rules during coding
@@ -282,6 +291,55 @@ As of v0.17.0 the suggest pass is **opt-in** (default off). Enable it per-projec
 - `suggest.llm_timeout_seconds` (default `120`): per-call timeout; falls back to `judge.llm_timeout_seconds`.
 
 Enable for a single commit: `ADR_KIT_SUGGEST=1 git commit ...`.
+
+### ADR Guardian: periodic health detection (v0.18.0+)
+
+The ADR Guardian is a SessionStart staleness detector that nudges the in-session model when an ADR health tier is due. It has no background processes, never runs an LLM in the hook, and always exits 0. The heavy sweep runs in-session via `/adr-kit:guardian`.
+
+**Two-tier cadence:**
+
+| Tier | Default | Tools | Cost |
+|---|---|---|---|
+| cheap | Daily (`drift_stale_days: 1`) | `adr-judge` (declarative drift), `adr-retire`, `adr-lint`/`adr-status` | Free |
+| llm | Bi-weekly (`llm_stale_days: 14`) | `adr-suggest` (missing-ADR), `adr-judge --llm` (full audit) | ~$0.10–0.30 |
+
+When a tier is due, `bin/adr-guardian check` emits an `[adr-guardian] ... DUE` block as `additionalContext` into the Claude Code session. The in-session model sees it and offers to run `/adr-kit:guardian`.
+
+**Hook install paths:**
+
+- **Plugin-level (default, frictionless):** the adr-kit plugin declares the `SessionStart` hook in `.claude-plugin/plugin.json`. It auto-registers when the plugin is enabled globally. The `bin/adr-guardian check` binary self-guards: it no-ops silently unless the current directory has `docs/adr/` with ADRs.
+- **Project-scoped (explicit):** `/adr-kit:install-hooks` can add/remove the guardian hook entry from the project's `.claude/settings.json` using JSON-structural editing (never clobbers sibling hooks).
+
+**Config block** in `docs/adr/.adr-kit.json`:
+
+```json
+{
+  "guardian": {
+    "enabled": true,
+    "drift_stale_days": 1,
+    "llm_stale_days": 14,
+    "nudge_cooldown_hours": 24,
+    "llm_autorun": false
+  }
+}
+```
+
+- `enabled` (default `true`): set `false` to disable all guardian nudges.
+- `drift_stale_days` (default `1`): cheap tier cadence in days.
+- `llm_stale_days` (default `14`): LLM tier cadence in days.
+- `nudge_cooldown_hours` (default `24`): minimum hours between successive nudges.
+- `llm_autorun` (default `false`): set `true` to let the skill run the LLM tier without asking (not recommended for most projects — keeps the opt-in posture from ADR-001).
+
+**State file:** `docs/adr/.adr-kit-state.json` (gitignored, per-machine). Added to `.gitignore` by `/adr-kit:init`.
+
+**Mix-by-finding-type responses** (in-session, via `/adr-kit:guardian`):
+
+| Finding | Response |
+|---|---|
+| Drift — code violates an Accepted ADR | Surface prominently. List violations with file:line + ADR id. Offer to fix or create a task. |
+| Missing ADR — new decision not recorded | Passive. List candidates; offer to author via `adr-generator`. User picks. |
+| Stale ADR — tech removed / superseded / policy drift | Draft retirement/supersession skeleton for review. Never auto-apply. |
+| ADR-set health — gate failures, broken chains | Report PASS/ADVISORY/FAIL. Offer to fix FAILs via `adr-generator`. |
 
 ### Per-ADR markers
 

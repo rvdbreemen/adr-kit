@@ -62,6 +62,57 @@ When invoked as `/adr-kit:install-hooks --uninstall`:
    - **`.githooks/pre-commit.backup-<timestamp>` exists** (from a prior `replace` install). Tell the user the backup is there and ask whether to restore that instead. Apply choice.
 3. Confirm with one line: `Pre-commit ADR judge uninstalled. (restored prior hook | removed .githooks/ | unset core.hooksPath)`
 
+## Guardian (SessionStart) hook — project-scoped install
+
+The ADR Guardian has **two registration paths** (spec §7):
+
+- **Plugin-level (default, frictionless):** The adr-kit plugin declares a `SessionStart` hook in its manifest. It auto-registers in every Claude Code session when the plugin is enabled globally, and self-guards (exits silently when no `docs/adr/` with ADRs is present). This is the recommended path.
+- **Project-scoped (explicit):** Adds the guardian's `SessionStart` entry directly to the project's `.claude/settings.json`. Contained to this project only. Use when the user wants explicit per-project control or does not enable the plugin globally.
+
+### Adding the project-scoped guardian hook
+
+When the user asks to add the guardian hook to the project's `.claude/settings.json`:
+
+1. Read `.claude/settings.json` (create it as `{}` if missing).
+2. Check if `hooks.SessionStart` already contains an entry whose `command` contains the string `adr-guardian`. If yes: print "Already installed" and stop.
+3. If no SessionStart array exists: create it. Parse the JSON structurally — never do text substitution on a JSON file.
+4. Append the following hook object to `hooks.SessionStart[0].hooks` (create the array path if absent):
+
+```json
+{
+  "type": "command",
+  "command": "ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1) && [ -n \"$ADR_KIT\" ] && _PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
+  "timeout": 10,
+  "statusMessage": "Checking ADR health..."
+}
+```
+
+5. Write the updated JSON back. The existing `SessionStart` hooks (if any) are **preserved byte-for-byte** — only the new entry is appended.
+6. Confirm: "Guardian hook added to .claude/settings.json. It will fire at the next session start."
+
+### Removing the project-scoped guardian hook
+
+When the user asks to remove the guardian hook from `.claude/settings.json`:
+
+1. Read `.claude/settings.json`. Parse as JSON.
+2. Find entries in `hooks.SessionStart[*].hooks[*]` whose `command` contains `adr-guardian`. If none found: print "Guardian hook not found in .claude/settings.json" and stop.
+3. Remove exactly those entries. Leave all sibling hooks untouched.
+4. If the containing `hooks` array becomes empty after removal, remove the empty array (but keep the parent `SessionStart` entry if other entries exist in other groups).
+5. Write the updated JSON back.
+6. Confirm: "Guardian hook removed from .claude/settings.json."
+
+**Safety invariant:** Never remove or modify any hook entry that does not contain `adr-guardian` in its `command`. This is the cozempic lesson — a remove that also clobbers unrelated hooks is worse than not removing at all.
+
+### Adding .adr-kit-state.json to .gitignore
+
+After adding the guardian hook (project-scoped or as part of `/adr-kit:init`):
+
+```bash
+echo "docs/adr/.adr-kit-state.json" >> .gitignore
+```
+
+Verify it is not already present first (idempotent). The state file is per-machine and must never be committed.
+
 ## Constraints
 
 - **Never silently overwrite a pre-existing user hook.** Always detect, show, ask.
