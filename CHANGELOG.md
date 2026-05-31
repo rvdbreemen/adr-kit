@@ -4,6 +4,22 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-05-31
+
+### Added
+
+- **`.github/actions/adr-judge/action.yml` — reusable composite GitHub Action for PR-level enforcement.** Computes the PR diff via `git diff --unified=0 origin/<base>...HEAD` (using `GITHUB_BASE_REF`), fetches the base branch explicitly so shallow clones work, downloads `bin/adr-judge` from the same tag the action was loaded from, and pipes the diff to `adr-judge --diff - --adr-dir`. **Declarative-only by default** — no `--llm` flag, no API key, no `claude` CLI required in the runner. Exits 1 on any Enforcement-block violation, 0 on a clean diff, 2 on config/input error.
+- **`.github/workflows/adr-judge-self.yml` — self-dogfood workflow.** Runs the composite action against adr-kit's own `docs/adr/` on every PR targeting `main`. Trigger is `pull_request` only (`push` excluded because `GITHUB_BASE_REF` is empty on push commits and the PR diff collapses to nothing). Confirms declarative-only enforcement gates work with no secrets.
+- **`bin/adr-judge-precommit` — thin Python wrapper for the `pre-commit` framework.** The framework passes staged filenames to hooks, but `bin/adr-judge` needs the diff on stdin. This wrapper: (1) runs `git diff --cached --unified=0`, (2) pipes the result to the sibling `bin/adr-judge` resolved via `Path(__file__).resolve().parent`, (3) propagates the exit code. Sibling-resolution means it works regardless of PATH, consistent with how the native pre-commit hook resolves `bin/adr-judge` via the plugin cache.
+- **`.pre-commit-hooks.yaml` — pre-commit framework hook declaration.** Declares an `adr-judge` hook (`id: adr-judge`, `language: script`, `pass_filenames: false`, `stages: [pre-commit]`, `minimum_pre_commit_version: "2.18.0"`) that invokes `bin/adr-judge-precommit`. Declarative-only by default. Enables teams already using the `pre-commit` framework to register enforcement without writing a native git hook.
+- **README "CI integration" section extended.** New sub-section "PR-level enforcement: `bin/adr-judge`" (after the existing `adr-lint` section) with: a copy-paste GitHub Actions workflow snippet for downstream projects; a pre-commit framework usage snippet (`.pre-commit-config.yaml`); honest documentation of the opt-in LLM path (requires the `claude` CLI authenticated in the runner — an `ANTHROPIC_API_KEY` alone is not sufficient; declarative-only is the supported default).
+- **`tests/test_adr_judge_precommit.py` — four pytest tests** covering: exit 1 on a staged violation, exit 0 on a clean staging area, exit 0 on an empty staging area, and static verification that `bin/adr-judge` exists at the expected sibling path.
+
+### Notes
+
+- Both features are declarative-only and key-free by default, consistent with the v0.17.0 LLM opt-in posture.
+- No ADR authored for v0.19.0: CI enforcement and pre-commit delivery are additive tooling within the existing `bin/adr-judge` contract, not new interfaces, dependencies, or NFR shifts. The roadmap explicitly targets an ADR for v0.22.0 (MADR/Nygard format compatibility) and v0.18.0 (guardian), not v0.19.0.
+
 ## [0.18.0] - 2026-05-31
 
 ### Added

@@ -1,0 +1,14 @@
+- id: adr-judge
+  name: ADR enforcement (adr-judge)
+  description: >
+    Run bin/adr-judge against the staged diff.  Fails on any Enforcement-block
+    violation from an Accepted ADR.  Declarative-only by default (no LLM, no
+    API key).  Mirrors the native pre-commit hook that /adr-kit:install-hooks
+    writes, but hooks into the pre-commit framework instead of .githooks/.
+  entry: bin/adr-judge-precommit
+  language: script
+  pass_filenames: false
+  stages: [pre-commit]
+  # pre-commit 3.2.0 renamed the "commit" stage token to "pre-commit".
+  # Versions before 3.2.0 do not recognise "pre-commit" as a valid stage name.
+  minimum_pre_commit_version: "3.2.0"

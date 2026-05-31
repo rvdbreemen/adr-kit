@@ -1,0 +1,84 @@
+name: ADR Judge (adr-kit)
+description: >
+  Run bin/adr-judge against the full PR diff — declarative-only by default
+  (no LLM, no API key needed). Fails the step on any Enforcement violation
+  (exit 1); passes when all Accepted ADR Enforcement rules are satisfied.
+
+  Use this action in a pull_request workflow so GITHUB_BASE_REF is set.
+  The calling workflow must check out the repository with fetch-depth: 0
+  (or at minimum fetch the base branch) so that origin/<base> is reachable.
+
+  For the LLM pass (llm_judge: true ADRs via Claude Sonnet): the adr-judge
+  binary shells out to the `claude` CLI — an ANTHROPIC_API_KEY alone is not
+  sufficient. See the README "CI integration" section for advanced setup.
+  Declarative-only (the default) requires no secrets.
+
+inputs:
+  adr-dir:
+    description: >
+      Path to the ADR directory, relative to the repository root being
+      checked out by the calling workflow.
+    required: false
+    default: docs/adr/
+  python-version:
+    description: Python version to use when invoking bin/adr-judge.
+    required: false
+    default: "3.11"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Fetch base branch (ensure origin/<base> is reachable)
+      shell: bash
+      run: |
+        # GITHUB_BASE_REF is set for pull_request events (e.g. "main").
+        # Explicit fetch ensures the ref is available even in shallow clones
+        # that were initialised with fetch-depth: 0.
+        BASE_REF="${GITHUB_BASE_REF:-main}"
+        echo "[adr-judge] fetching origin/${BASE_REF} ..."
+        git fetch --no-tags origin "${BASE_REF}" || {
+          echo "[adr-judge] WARNING: fetch of origin/${BASE_REF} failed; diff may be empty." >&2
+        }
+
+    - name: Run adr-judge against PR diff (declarative-only)
+      shell: bash
+      run: |
+        BASE_REF="${GITHUB_BASE_REF:-main}"
+
+        # GITHUB_ACTION_PATH is set by Actions to the directory containing this
+        # action.yml.  bin/adr-judge lives three levels up from this file:
+        #   .github/actions/adr-judge/  <-- GITHUB_ACTION_PATH
+        #   .github/actions/
+        #   .github/
+        #   bin/adr-judge               <-- three levels up + bin/adr-judge
+        #
+        # This works for both remote (uses: rvdbreemen/adr-kit/.github/actions/adr-judge@ref)
+        # and local (uses: ./.github/actions/adr-judge) invocations because Actions
+        # always sets GITHUB_ACTION_PATH to the action's directory in the checkout.
+        JUDGE="${GITHUB_ACTION_PATH}/../../../bin/adr-judge"
+
+        if [ ! -f "$JUDGE" ]; then
+          echo "[adr-judge] ERROR: bin/adr-judge not found at expected path: $JUDGE" >&2
+          echo "[adr-judge] Ensure the checkout step uses fetch-depth: 0 and that bin/adr-judge exists." >&2
+          exit 2
+        fi
+
+        echo "[adr-judge] checking diff origin/${BASE_REF}...HEAD against ${{ inputs.adr-dir }}"
+
+        # TODO(verify-in-CI): `git diff origin/<base>...HEAD` relies on
+        # `origin/<base>` being populated after the `git fetch` above.  With
+        # actions/checkout@v4 + fetch-depth: 0 this is reliable; if the fetch
+        # failed (see warning above) the diff may be empty rather than spanning
+        # the full PR.  An alternative is to use
+        #   git diff ${{ github.event.pull_request.base.sha }}...HEAD
+        # which uses the explicit base commit SHA and is independent of whether
+        # the base *branch* ref was successfully fetched.
+        git diff --unified=0 "origin/${BASE_REF}...HEAD" \
+          | python "$JUDGE" \
+              --diff - \
+              --adr-dir "${{ inputs.adr-dir }}"

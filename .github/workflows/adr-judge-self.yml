@@ -1,0 +1,27 @@
+name: adr-judge self-dogfood
+
+# Run adr-judge on every PR targeting main so the judge guards adr-kit's own
+# ADRs.  Push events are deliberately excluded: GITHUB_BASE_REF is empty on
+# push, so the PR diff would collapse to nothing.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  adr-judge:
+    name: ADR Enforcement (declarative)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history required so git diff origin/<base>...HEAD has both
+          # sides of the diff available.
+          fetch-depth: 0
+
+      # Use the composite action from this repo (self-dogfood).
+      # For downstream users, replace with:
+      #   uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.19.0
+      - name: Run adr-judge on PR diff
+        uses: ./.github/actions/adr-judge
+        with:
+          adr-dir: docs/adr/

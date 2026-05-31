@@ -449,6 +449,96 @@ options:
 
 The two are designed to agree on Completeness, Audit, and Consistency. They can disagree on Evidence and Clarity by design: Claude's judgement is structurally better at those.
 
+## CI integration: `bin/adr-judge` (since v0.19.0)
+
+`bin/adr-judge` enforces the Accepted ADRs' `## Enforcement` blocks against a diff.
+In a PR workflow, pipe the full PR diff into it and block the merge on exit 1.
+
+### Composite GitHub Action (recommended)
+
+The toolkit ships a reusable composite action at `.github/actions/adr-judge/`.
+Add it to a PR workflow in your project:
+
+```yaml
+# .github/workflows/adr-judge.yml
+name: ADR enforcement
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  adr-judge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # required: both sides of the diff must be available
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.19.0
+        with:
+          adr-dir: docs/adr/   # adjust if your ADR directory differs
+```
+
+Declarative-only by default: no `--llm` flag, no secrets, no API key.
+Exit codes: `0` = no violations, `1` = at least one Enforcement violation, `2` = config error.
+
+### Opt-in LLM pass in CI (advanced)
+
+The `--llm` pass (which evaluates `llm_judge: true` ADRs via Claude Sonnet) shells out
+to the `claude` CLI. An `ANTHROPIC_API_KEY` environment variable alone is **not**
+sufficient — the runner must have the `claude` CLI installed and authenticated.
+The recommended setup is to install `claude` in a CI step and point `judge.llm_cmd`
+at it in `docs/adr/.adr-kit.json`. This is an advanced, optional path; the declarative
+pass is the supported and key-free default.
+
+### Inline snippet (no action dependency)
+
+If you prefer not to use the composite action, the same behaviour without the
+action dependency:
+
+```yaml
+adr-judge:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+      with: { fetch-depth: 0 }
+    - uses: actions/setup-python@v5
+      with: { python-version: '3.11' }
+    - name: Fetch adr-judge
+      run: |
+        curl -fsSL -o /tmp/adr-judge \
+          https://raw.githubusercontent.com/rvdbreemen/adr-kit/main/bin/adr-judge
+        chmod +x /tmp/adr-judge
+    - name: Run adr-judge against PR diff
+      run: |
+        git fetch --no-tags origin "$GITHUB_BASE_REF"
+        git diff --unified=0 "origin/${GITHUB_BASE_REF}...HEAD" \
+          | python /tmp/adr-judge --diff - --adr-dir docs/adr/
+```
+
+### `pre-commit` framework support (v0.19.0+)
+
+Teams using the [`pre-commit`](https://pre-commit.com) framework can register
+`adr-judge` without writing a native git hook. Add this to your
+`.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/rvdbreemen/adr-kit
+    rev: v0.19.0
+    hooks:
+      - id: adr-judge
+```
+
+The hook runs `git diff --cached --unified=0` internally via the
+`bin/adr-judge-precommit` wrapper and pipes the result to `bin/adr-judge`.
+Declarative-only (no LLM, no API key). Fails the commit on any Enforcement
+violation; passes on a clean staging area.
+
+Note: the `pre-commit` framework downloads and caches the hook repository.
+The wrapper resolves the sibling `bin/adr-judge` via its own file path, so
+it works regardless of PATH or how `pre-commit` places the files.
+
 ## FAQ
 
 **Where are ADRs stored?**
