@@ -94,7 +94,7 @@
     },
     "judge": {
       "type": "object",
-      "description": "Per-project policy for bin/adr-judge (introduced in adr-kit v0.12.0). Controls how Enforcement blocks are evaluated against a staged git diff at commit time. v0.13.0 added the llm_* knobs for the Sonnet-by-default LLM pass.",
+      "description": "Per-project policy for bin/adr-judge (introduced in adr-kit v0.12.0). Controls how Enforcement blocks are evaluated against a staged git diff at commit time. v0.13.0 added the llm_* knobs; v0.17.0 made the per-commit LLM pass opt-in (see llm_enabled).",
       "additionalProperties": false,
       "properties": {
         "skip_files": {
@@ -113,9 +113,14 @@
           "minimum": 0,
           "default": 1048576
         },
+        "llm_enabled": {
+          "type": "boolean",
+          "description": "User-facing master switch for the per-commit LLM pass. When true, bin/adr-judge runs the Claude LLM judge for llm_judge:true ADRs at commit time. Default false (opt-in). Set interactively by /adr-kit:init, or by hand. The pre-commit hook no longer hard-codes --llm (changed in v0.17.0); per-commit LLM is governed by this flag (or judge.llm_default, or ADR_KIT_LLM=1 for a single commit).",
+          "default": false
+        },
         "llm_default": {
           "type": "boolean",
-          "description": "When true, bin/adr-judge runs the LLM pass even without --llm on the command line. Useful when invoking the runner outside the pre-commit hook (e.g. CI). The hook template already passes --llm so this is independent of hook behaviour. Default false.",
+          "description": "Legacy/CI-oriented equivalent of llm_enabled. When true, bin/adr-judge runs the LLM pass even without --llm on the command line. Useful when invoking the runner outside the pre-commit hook (e.g. CI). The hook template no longer hard-codes --llm as of v0.17.0; prefer llm_enabled for the per-commit master switch. Default false.",
           "default": false
         },
         "llm_model": {
@@ -145,8 +150,8 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "When false, the pre-commit hook skips the adr-suggest pass entirely. Equivalent to setting ADR_KIT_SUGGEST_DISABLE=1 for every commit. Default true.",
-          "default": true
+          "description": "When true, the pre-commit hook runs the adr-suggest pass. Default false (opt-in as of v0.17.0); enable per-project here or per-commit with ADR_KIT_SUGGEST=1. Honored by bin/adr-suggest directly (prior versions documented but did not read this flag).",
+          "default": false
         },
         "llm_model": {
           "type": "string",

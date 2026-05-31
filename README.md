@@ -22,8 +22,8 @@ Four coordinated operating modes, since v0.14.0:
 - **Agent** (`agents/adr-generator.md`): the subagent for *creating* a new ADR. Includes a decision tree ("when do I need an ADR?"), proposes an `## Enforcement` block when the ADR has a code surface, and runs a post-decision quality check.
 - **Init skill** (`/adr-kit:init`, v0.12.0+): umbrella project bootstrap (audit + ADR generation + hook install). Checks for Python 3.9+ and guides installation if absent.
 - **Judge runner** (`bin/adr-judge`, v0.12.0+): declarative diff-vs-ADR engine. Parses fenced JSON `## Enforcement` blocks; applies `forbid_pattern` / `forbid_import` / `require_pattern` rules to the staged diff with file:line citations. `--profile` for timing, `--dry-run-enforcement ADR-NNN` for single-ADR testing.
-- **Judge skill** (`/adr-kit:judge`, v0.12.0+): on-demand interactive judge. Runs the same `bin/adr-judge --llm` engine as the hook for `llm_judge: true` ADRs.
-- **Suggestion runner** (`bin/adr-suggest`, v0.16.0+): the **advisory** counterpart to the judge. Where `adr-judge` *enforces* existing ADRs and can block a commit, `adr-suggest` runs one LLM pass over the staged diff to detect whether the change introduces a *new* architectural / contract / dependency decision **not yet covered by any ADR**, then prints a one-line nudge to run `/adr-kit:adr`. It is wired into the pre-commit hook (since v0.16.0) and **never blocks the commit** — a missing `claude` CLI, a timeout, a malformed response, or "no decision detected" all resolve to a silent skip and exit 0. Disable per-commit with `ADR_KIT_SUGGEST_DISABLE=1`, or project-wide via `suggest.enabled: false` in `.adr-kit.json`.
+- **Judge skill** (`/adr-kit:judge`, v0.12.0+): on-demand interactive judge. Runs `bin/adr-judge --llm` for `llm_judge: true` ADRs in-session. LLM judging at commit time is opt-in (see `judge.llm_enabled`); `/adr-kit:judge` always fires the LLM pass regardless of that config.
+- **Suggestion runner** (`bin/adr-suggest`, v0.16.0+): the **advisory** counterpart to the judge. Where `adr-judge` *enforces* existing ADRs and can block a commit, `adr-suggest` runs one LLM pass over the staged diff to detect whether the change introduces a *new* architectural / contract / dependency decision **not yet covered by any ADR**, then prints a one-line nudge to run `/adr-kit:adr`. It is wired into the pre-commit hook (since v0.16.0) and **never blocks the commit** — a missing `claude` CLI, a timeout, a malformed response, or "no decision detected" all resolve to a silent skip and exit 0. Opt-in as of v0.17.0: enable per-project via `suggest.enabled: true` in `.adr-kit.json`, or per-commit with `ADR_KIT_SUGGEST=1`.
 - **Audit runner** (`bin/adr-audit`, v0.12.0+): deterministic candidate scanner used by init.
 - **Hook installer** (`/adr-kit:install-hooks`, v0.12.0+): installs/uninstalls the pre-commit hook. Default-on after init or upgrade.
 - **Upgrade skill** (`/adr-kit:upgrade`, v0.12.0+): guided v0.11 → v0.12 migration without re-running the heavy audit.
@@ -235,9 +235,37 @@ Drop this file at `docs/adr/.adr-kit.json` to set the project's lint policy. Ski
 
 A fully annotated copy lives at [`examples/.adr-kit.sample.json`](examples/.adr-kit.sample.json).
 
+### Per-commit LLM judging: `judge.llm_enabled` (opt-in since v0.17.0)
+
+The pre-commit hook always runs the **declarative** Enforcement gate (fast, free, no LLM). The **LLM pass** — which evaluates `llm_judge: true` ADRs via Claude Sonnet — is opt-in as of v0.17.0. Previously the hook hard-coded `--llm`; that was changed to reduce surprise cost.
+
+Enable per-project:
+
+```json
+{
+  "judge": {
+    "llm_enabled": true
+  }
+}
+```
+
+Enable for a single commit: `ADR_KIT_LLM=1 git commit ...`
+Disable for a single commit: `ADR_KIT_NO_LLM=1 git commit ...`
+
+- `judge.llm_enabled` (default `false` since v0.17.0): user-facing master switch for the per-commit LLM pass.
+- `judge.llm_default` (legacy, kept for CI back-compat): equivalent alternative to `llm_enabled`; prefer `llm_enabled` for the per-commit hook.
+- `judge.llm_model` (default `claude-sonnet-4-6`): switch to `claude-haiku-4-5` for higher throughput at lower cost.
+- `judge.llm_timeout_seconds` (default `120`): per-call timeout.
+
+**Concurrency guard (v0.17.0):** the hook uses `flock` (when available) to serialize the LLM passes across parallel commits. Under lock contention the cheap declarative gate still runs; the LLM passes are suppressed for that commit rather than piling up concurrent `claude -p` calls.
+
+LLM review is always available on demand regardless of config: `/adr-kit:judge` in a Claude Code session always runs the full LLM pass.
+
 ### Advisory ADR-suggestion: `suggest.*` (since v0.16.0)
 
-The pre-commit hook also runs `bin/adr-suggest` — the **advisory** counterpart to `adr-judge`. It runs one LLM pass over the staged diff to detect whether the change introduces a *new* architectural / contract / dependency decision not yet covered by any ADR, then prints a one-line nudge to run `/adr-kit:adr`. It **never blocks the commit**: missing CLI, timeout, malformed response, or "no decision" all resolve to a silent skip and exit 0.
+The pre-commit hook can also run `bin/adr-suggest` — the **advisory** counterpart to `adr-judge`. It runs one LLM pass over the staged diff to detect whether the change introduces a *new* architectural / contract / dependency decision not yet covered by any ADR, then prints a one-line nudge to run `/adr-kit:adr`. It **never blocks the commit**: missing CLI, timeout, malformed response, or "no decision" all resolve to a silent skip and exit 0.
+
+As of v0.17.0 the suggest pass is **opt-in** (default off). Enable it per-project or per-commit:
 
 ```json
 {
@@ -249,11 +277,11 @@ The pre-commit hook also runs `bin/adr-suggest` — the **advisory** counterpart
 }
 ```
 
-- `suggest.enabled` (default `true`): set `false` to skip the suggestion pass project-wide. Equivalent to exporting `ADR_KIT_SUGGEST_DISABLE=1` for every commit.
+- `suggest.enabled` (default `false` since v0.17.0): set `true` to enable the suggestion pass project-wide, or use `ADR_KIT_SUGGEST=1` for a single commit.
 - `suggest.llm_cmd` / `suggest.llm_model`: override the model for the suggestion pass. Both fall back to the `judge.*` equivalents when absent, so a project that already configured the judge LLM gets the same model for suggestions for free. Repo-tracked `llm_cmd` binaries are validated against the same Claude-CLI allowlist as `judge.llm_cmd`.
 - `suggest.llm_timeout_seconds` (default `120`): per-call timeout; falls back to `judge.llm_timeout_seconds`.
 
-Disable for a single commit: `ADR_KIT_SUGGEST_DISABLE=1 git commit ...`.
+Enable for a single commit: `ADR_KIT_SUGGEST=1 git commit ...`.
 
 ### Per-ADR markers
 

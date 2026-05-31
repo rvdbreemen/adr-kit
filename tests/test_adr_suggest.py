@@ -19,12 +19,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_SUGGEST = REPO_ROOT / "bin" / "adr-suggest"
 
 
-def _make_project(tmp_path: Path, adrs: dict) -> Path:
+def _make_project(tmp_path: Path, adrs: dict, enabled: bool = True) -> Path:
+    """Create a minimal project with ADRs and an .adr-kit.json config.
+
+    By default suggest.enabled is True so existing tests exercise the real
+    suggestion path. Pass enabled=False to test the opt-in skip behaviour.
+    """
     (tmp_path / "docs" / "adr").mkdir(parents=True)
     for name, body in adrs.items():
         (tmp_path / "docs" / "adr" / name).write_text(
             textwrap.dedent(body), encoding="utf-8"
         )
+    import json as _json
+    (tmp_path / "docs" / "adr" / ".adr-kit.json").write_text(
+        _json.dumps({"suggest": {"enabled": enabled}}), encoding="utf-8"
+    )
     return tmp_path
 
 
@@ -309,6 +318,11 @@ def test_no_existing_adrs_prompt_has_sentinel(tmp_path):
     """With no ADRs on disk the prompt still lists a clear '(none recorded yet)'."""
     proj = tmp_path
     (proj / "docs" / "adr").mkdir(parents=True)
+    # Enable suggest so the pass actually runs (opt-in default as of v0.17.0).
+    import json as _json
+    (proj / "docs" / "adr" / ".adr-kit.json").write_text(
+        _json.dumps({"suggest": {"enabled": True}}), encoding="utf-8"
+    )
     fake = _make_fake_claude(
         tmp_path,
         json.dumps({
@@ -322,3 +336,53 @@ def test_no_existing_adrs_prompt_has_sentinel(tmp_path):
     captured = (tmp_path / "captured-prompt.txt").read_text(encoding="utf-8")
     assert "(none recorded yet)" in captured
     assert "new architecture decision" in err
+
+
+def test_opt_in_disabled_by_default_no_llm_call(tmp_path):
+    """With default config (no suggest block), adr-suggest exits 0 and does NOT
+    invoke the fake LLM binary — the opt-in skip fires before any LLM round-trip.
+    """
+    # No .adr-kit.json written; suggest.enabled defaults to false.
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    (tmp_path / "docs" / "adr" / "ADR-001-eventual.md").write_text(
+        textwrap.dedent(EXISTING_ADR), encoding="utf-8"
+    )
+    # Crashing fake: if invoked, exits 99 to make the test fail loudly.
+    crashing = tmp_path / "crashing-fake.py"
+    crashing.write_text("import sys; sys.exit(99)\n", encoding="utf-8")
+    code, out, err = _run_suggest(tmp_path, CODE_DIFF, "--llm-cmd", _fake_cmd(crashing))
+    assert code == 0, "opt-in skip must not block commits"
+    assert "skipped" in err, "should report skip reason"
+    # Verify the crashing fake was NOT invoked (if it were, code would be 0 only
+    # because adr-suggest swallows the exit — but stderr would carry no advisory).
+    assert "This change looks like a new" not in err
+
+
+def test_opt_in_env_enables_suggest(tmp_path):
+    """ADR_KIT_SUGGEST=1 enables the pass even without suggest.enabled in config."""
+    import os as _os
+    # No .adr-kit.json — opt-in via env only.
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    (tmp_path / "docs" / "adr" / "ADR-001-eventual.md").write_text(
+        textwrap.dedent(EXISTING_ADR), encoding="utf-8"
+    )
+    fake = _make_fake_claude(tmp_path, json.dumps({
+        "needs_adr": True,
+        "confidence": "high",
+        "reason": "new redis dependency",
+        "suggested_title": "Adopt Redis",
+        "category": "dependency",
+    }))
+    env = {**_os.environ, "ADR_KIT_SUGGEST": "1"}
+    result = subprocess.run(
+        [
+            sys.executable, str(ADR_SUGGEST),
+            "--diff", "-",
+            "--adr-dir", str(tmp_path / "docs" / "adr"),
+            "--repo-root", str(tmp_path),
+            "--llm-cmd", _fake_cmd(fake),
+        ],
+        input=CODE_DIFF, capture_output=True, text=True, encoding="utf-8", env=env,
+    )
+    assert result.returncode == 0
+    assert "This change looks like a new dependency decision" in result.stderr

@@ -4,6 +4,23 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-05-31
+
+### Changed (BREAKING DEFAULT)
+
+- **Per-commit LLM judge is now OPT-IN.** The pre-commit hook no longer hard-codes `--llm`. Existing users who relied on automatic per-commit LLM judging must set `judge.llm_enabled: true` in `docs/adr/.adr-kit.json` to restore the old behaviour. One-liner migration: `echo '{"judge":{"llm_enabled":true}}' > docs/adr/.adr-kit.json`. Enable for a single commit: `ADR_KIT_LLM=1 git commit ...`. On-demand LLM review is always available via `/adr-kit:judge` and `adr-judge --llm` — these are unaffected by this change.
+- **`suggest.enabled` default flipped `true` → `false` (opt-in).** The per-commit `adr-suggest` nudge pass is now off by default. Enable per-project: `suggest.enabled: true` in `.adr-kit.json`. Enable per-commit: `ADR_KIT_SUGGEST=1 git commit ...`.
+
+### Added
+
+- **`judge.llm_enabled` config switch** (default `false`): user-facing master switch for the per-commit LLM pass. `/adr-kit:init` now interactively asks whether to enable it and writes the choice to `docs/adr/.adr-kit.json`. The legacy `judge.llm_default` key is preserved for CI / direct-CLI back-compat.
+- **Flock concurrency guard in the pre-commit hook.** When `flock` is available, the hook takes a non-blocking advisory lock (`$ROOT/.git/adr-kit-judge.lock`). Under lock contention (rapid or parallel commits) the cheap declarative gate still runs; LLM passes are suppressed via `ADR_KIT_NO_LLM` for that commit instead of piling up concurrent `claude -p` calls. Degrades gracefully to no-lock on bare Windows cmd.exe where `flock` is absent.
+- **`/adr-kit:init` interactive LLM opt-in.** After hook install the skill now prints a cost/latency notice (up to 2 Sonnet calls per commit, 120s timeout each, ~$0.10–$0.30 per commit) and asks two questions (both defaulting to No): enable per-commit LLM judging, enable per-commit ADR-suggest. Writes the chosen booleans to `docs/adr/.adr-kit.json`. Adds a `llm:` line to the wrap-up summary.
+
+### Fixed
+
+- **`bin/adr-suggest` now honors `suggest.enabled`** (previously documented but never read — latent no-op). The opt-in check fires before any diff reading or LLM invocation, mirroring the judge LLM opt-in pattern.
+
 ## [0.16.0] - 2026-05-29
 
 ### Added

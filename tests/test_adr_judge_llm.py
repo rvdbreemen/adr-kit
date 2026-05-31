@@ -287,6 +287,27 @@ def test_llm_pass_via_env_no_llm_disables(tmp_path):
     assert out["summary"]["advisories"] == 1
 
 
+def test_llm_enabled_config_activates_llm_without_flag(tmp_path):
+    """judge.llm_enabled:true in config activates the LLM pass even without --llm flag.
+
+    This tests the opt-in path added in v0.17.0: the hook no longer hard-codes
+    --llm; instead it reads judge.llm_enabled from config to decide.
+    """
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
+    # Write config with llm_enabled:true
+    import json as _json
+    (proj / "docs" / "adr" / ".adr-kit.json").write_text(
+        _json.dumps({"judge": {"llm_enabled": True}}), encoding="utf-8"
+    )
+    fake = _make_fake_claude(tmp_path, _json.dumps({
+        "ADR-001": {"verdict": "VIOLATION", "reason": "synchronous read of audit_replica"}
+    }))
+    # No --llm flag passed — must still fire the LLM pass via config
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm-cmd", _fake_cmd(fake))
+    assert code == 1, "llm_enabled:true should activate LLM pass and produce violation"
+    assert out["summary"]["violations"] == 1
+
+
 def test_llm_batches_multiple_adrs_in_one_call(tmp_path):
     """Two llm_judge ADRs result in ONE claude invocation, not two."""
     counter_path = tmp_path / "counter"

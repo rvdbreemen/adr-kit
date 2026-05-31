@@ -575,6 +575,32 @@ def main() -> int:
         config_path = Path(args.config) if args.config else (adr_dir / ".adr-kit.json")
         cfg = load_config(config_path)
 
+        # Opt-in gate (v0.17.0): the suggestion pass is OFF unless explicitly
+        # enabled — per-commit via ADR_KIT_SUGGEST=1, or per-project via
+        # suggest.enabled:true in .adr-kit.json. Previously suggest.enabled was
+        # documented but never read here (latent no-op); this fixes that and
+        # flips the default to off, mirroring the judge LLM opt-in.
+        suggest_cfg = cfg.get("suggest") or {}
+        env_enable = os.environ.get("ADR_KIT_SUGGEST", "0") == "1"
+        if not (env_enable or bool(suggest_cfg.get("enabled", False))):
+            if args.json:
+                json.dump(
+                    {
+                        "needs_adr": False,
+                        "confidence": "low",
+                        "reason": "adr-suggest disabled (opt-in: set suggest.enabled or ADR_KIT_SUGGEST=1)",
+                        "suggested_title": "",
+                        "category": "none",
+                        "skipped": True,
+                    },
+                    sys.stdout,
+                    indent=2,
+                )
+                sys.stdout.write("\n")
+            else:
+                print("[adr-suggest] (skipped: disabled — opt-in)", file=sys.stderr)
+            return 0
+
         diff_text = read_diff(args.diff)
         diff_files = parse_diff(diff_text)
 

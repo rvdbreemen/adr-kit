@@ -1205,11 +1205,16 @@ def main() -> int:
         advisory_only = bool(judge_cfg.get("advisory_only", False))
         max_diff_bytes = int(judge_cfg.get("max_diff_bytes", 1048576))
 
-        # LLM mode resolution. Precedence: ADR_KIT_NO_LLM env (highest),
-        # --llm flag, judge.llm_default in config (lowest).
+        # LLM mode resolution. Precedence: ADR_KIT_NO_LLM env (highest, force-off),
+        # then any opt-in signal: --llm flag, judge.llm_enabled (the user-facing
+        # per-commit master switch, default false), or judge.llm_default (legacy
+        # knob kept for CI / direct-CLI back-compat). All default false, so the
+        # per-commit LLM pass is OFF unless explicitly opted in.
         env_no_llm = os.environ.get("ADR_KIT_NO_LLM", "0") == "1"
         llm_mode_active = (
-            args.llm or bool(judge_cfg.get("llm_default", False))
+            args.llm
+            or bool(judge_cfg.get("llm_enabled", False))
+            or bool(judge_cfg.get("llm_default", False))
         ) and not env_no_llm
 
         # LLM command resolution.

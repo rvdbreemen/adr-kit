@@ -166,7 +166,7 @@ The stub:
 This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architectural decisions live as ADRs in `docs/adr/`. Full guide: @.claude/adr-kit-guide.md
 
 Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
-Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time. ADRs with `llm_judge: true` are reviewed in-session via `/adr-kit:judge`.
+Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time (free). The Claude LLM pass for `llm_judge: true` ADRs is opt-in (enable in `docs/adr/.adr-kit.json`, or review in-session via `/adr-kit:judge`).
 <!-- ADR-KIT STUB END -->
 ```
 
@@ -208,7 +208,7 @@ Do not race ahead. Wait for the user's response per batch.
 
 When all candidates are processed, summarise: `<created N new ADRs, merged M, dropped K>`.
 
-## Step 4 — Hook installation (default-on)
+## Step 4 — Hook installation
 
 Run the `install-hooks` skill (or do its work inline if delegating is awkward):
 
@@ -217,9 +217,42 @@ Run the `install-hooks` skill (or do its work inline if delegating is awkward):
 3. If the project already has a `.githooks/pre-commit`, do NOT overwrite. Read both. Tell the user the existing hook content. Ask: `prepend adr-kit check before existing hook | replace | abort install`. On `prepend`, write a wrapper that runs adr-kit then exec's the original (saved as `.githooks/pre-commit.adr-kit-saved`).
 4. Run `git config core.hooksPath .githooks` once. Confirm with `git config --get core.hooksPath`.
 
-Print a one-liner: `Pre-commit ADR judge installed. Disable a single commit with ADR_KIT_HOOK_DISABLE=1 git commit ...; remove permanently with /adr-kit:install-hooks --uninstall.`
+### 4a — Interactive LLM opt-in (new in v0.17.0)
 
-Hook is **default-on** as of v0.12 — no prompt for installation. The user can opt out per-commit with the env var or remove the hook with the `--uninstall` flag on the install-hooks skill.
+The hook installs, but the per-commit LLM passes are **OFF by default**. The declarative regex/glob gate is always-on and free.
+
+Print this notice first:
+
+```
+[adr-kit] Per-commit LLM judging (claude-sonnet-4-6) adds up to 2 Sonnet calls
+per commit (adr-judge + adr-suggest), each with a 120s timeout. Estimated cost:
+$0.10–$0.30 per commit on a typical project. The declarative Enforcement gate is
+always-on and costs nothing. LLM review is always available on demand via
+/adr-kit:judge and `adr-judge --llm`.
+```
+
+Then ask two questions (default No for both):
+
+1. `Enable per-commit LLM judging (claude-sonnet-4-6) for llm_judge:true ADRs? (y/N)`
+2. `Enable per-commit ADR-suggest nudges? (y/N)`
+
+Write the answers into `docs/adr/.adr-kit.json` (create if absent, merge if present):
+
+```json
+{
+  "judge": { "llm_enabled": <true|false> },
+  "suggest": { "enabled": <true|false> }
+}
+```
+
+Write the file even when both are declined (both `false`) — explicit configuration is better than absent-and-defaulting. Tell the user:
+
+```
+[adr-kit] LLM judging: <enabled|disabled>. Suggest: <enabled|disabled>.
+LLM review is always available on demand: /adr-kit:judge or ADR_KIT_LLM=1 git commit ...
+```
+
+Print the final one-liner: `Pre-commit ADR judge installed (declarative gate always-on; LLM passes opt-in). Disable a single commit with ADR_KIT_HOOK_DISABLE=1 git commit ...; enable LLM for one commit with ADR_KIT_LLM=1 git commit ...; remove permanently with /adr-kit:install-hooks --uninstall.`
 
 ## Step 5 — Final lint
 
@@ -257,6 +290,7 @@ adr-kit init complete:
 - audit:    <N> candidates → <X> kept, <Y> merged, <Z> dropped
 - ADRs:     <N> created, <M> already present
 - hook:     installed (or already present + reason)
+- llm:      per-commit judging <enabled|disabled>, suggest <enabled|disabled>
 - lint:     <P> PASS, <A> ADVISORY, <F> FAIL
 - scripts:  generated | skipped (user declined)
 ```

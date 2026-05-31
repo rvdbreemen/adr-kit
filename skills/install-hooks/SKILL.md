@@ -47,6 +47,8 @@ Pre-commit ADR judge installed.
 - core.hooksPath: .githooks
 - disable a single commit:  ADR_KIT_HOOK_DISABLE=1 git commit ...
 - remove permanently:       /adr-kit:install-hooks --uninstall
+- LLM pass is opt-in (off by default). Enable per-project: judge.llm_enabled:true in docs/adr/.adr-kit.json. Enable one commit: ADR_KIT_LLM=1 git commit ...
+- ADR-suggest is opt-in too: suggest.enabled:true, or ADR_KIT_SUGGEST=1 for one commit.
 ```
 
 ## Uninstall behaviour: `--uninstall`

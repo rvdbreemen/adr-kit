@@ -5,18 +5,29 @@
 # don't require re-running install-hooks. Degrades gracefully when the plugin
 # cache is missing — the hook never blocks a commit because of tooling drift.
 #
-# As of v0.13.0 the LLM pass (Claude Sonnet) is enabled by default. ADRs with
-# `"llm_judge": true` are evaluated against the staged diff via `claude -p`.
-# A missing `claude` CLI logs a warning and falls back to declarative-only.
+# As of v0.17.0 the per-commit LLM pass (Claude Sonnet) is OPT-IN (off by default).
+# ADRs with `"llm_judge": true` are evaluated via `claude -p` ONLY when opted in.
+# The declarative regex/glob Enforcement pass is always-on and free.
+# Enable per-commit LLM judging:  ADR_KIT_LLM=1 git commit ...
+# Enable project-wide:            set judge.llm_enabled:true in docs/adr/.adr-kit.json
+# On-demand LLM review:           /adr-kit:judge  (in a Claude Code session)
+#
+# As of v0.17.0 a flock concurrency guard serializes the heavy LLM passes so
+# rapid or parallel commits do not fan out concurrent `claude -p` processes.
+# Under lock contention the declarative pass still runs; LLM passes are suppressed.
 #
 # As of v0.14.1 the hook measures adr-judge wall-clock time and warns (non-blocking)
 # when execution exceeds 5000ms. Uses `date +%s%3N`; falls back to perl on macOS.
 #
-# As of v0.16.0 the hook also runs `adr-suggest` (advisory): it detects whether
-# the staged diff introduces a NEW architectural decision not yet covered by an
-# ADR and prints a one-line nudge. This NEVER blocks the commit.
+# As of v0.16.0 the hook also runs `adr-suggest` (advisory, opt-in as of v0.17.0):
+# it detects whether the staged diff introduces a NEW architectural decision not
+# covered by an ADR and prints a one-line nudge. This NEVER blocks the commit.
+# Enable per-commit:              ADR_KIT_SUGGEST=1 git commit ...
+# Enable project-wide:            set suggest.enabled:true in docs/adr/.adr-kit.json
 #
 # Disable LLM pass per commit:    ADR_KIT_NO_LLM=1 git commit ...
+# Force LLM pass on per commit:   ADR_KIT_LLM=1 git commit ...
+# Force suggest on per commit:    ADR_KIT_SUGGEST=1 git commit ...
 # Disable ADR-suggestion nudge:   ADR_KIT_SUGGEST_DISABLE=1 git commit ...
 # Disable hook entirely:          ADR_KIT_HOOK_DISABLE=1 git commit ...
 # Remove permanently:             /adr-kit:install-hooks --uninstall  (in a Claude Code session)
@@ -81,6 +92,21 @@ if [ -z "$(git diff --cached --name-only)" ]; then
   exit 0
 fi
 
+# Concurrency guard: serialize the heavy LLM passes so rapid or parallel commits
+# don't fan out concurrent `claude -p` processes. We take a non-blocking advisory
+# lock; if another adr-judge already holds it, we keep the cheap declarative pass
+# but suppress the LLM passes for THIS commit (via ADR_KIT_NO_LLM). The lockfile
+# lives under .git/ so it's never committed. flock is absent on bare Windows
+# cmd.exe; there we degrade to no-lock (same behaviour as before).
+_NO_LLM_OVERRIDE=""
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$ROOT/.git/adr-kit-judge.lock" 2>/dev/null || true
+  if ! flock -n 9 2>/dev/null; then
+    echo "[adr-kit] another ADR judge is running; declarative-only for this commit (LLM gate skipped)." >&2
+    _NO_LLM_OVERRIDE=1
+  fi
+fi
+
 # Portable millisecond timestamp: `date +%s%3N` works on Linux/Git-Bash/WSL.
 # On macOS the GNU %3N extension is absent, so we fall back to perl.
 _ms_now() {
@@ -93,17 +119,20 @@ _ms_now() {
   printf '%s' "$t"
 }
 
-# Run the judge. Default mode (v0.13.0+):
-#   - declarative pass:  fast, regex-only, exits non-zero on violation
-#   - LLM pass:          claude -p --model claude-sonnet-4-6 evaluates llm_judge:true
-#                        ADRs in one batched call; falls back gracefully if `claude`
-#                        is missing or unauthenticated
+# Run the judge.
+#   - declarative pass:  always-on; fast, regex-only, exits non-zero on violation
+#   - LLM pass (opt-in): claude -p --model claude-sonnet-4-6 evaluates llm_judge:true
+#                        ADRs; enabled by ADR_KIT_LLM=1 (per-commit) or
+#                        judge.llm_enabled:true in .adr-kit.json (per-project);
+#                        suppressed under lock contention (_NO_LLM_OVERRIDE)
 # Exit codes:
 #   0  no violations (advisory entries are non-blocking)
 #   1  at least one violation (declarative or LLM)
 #   2  config or runtime error
+_LLM_FLAG=""
+[ "${ADR_KIT_LLM:-0}" = "1" ] && _LLM_FLAG="--llm"
 _T0=$(_ms_now)
-ADR_OUT=$(git diff --cached --unified=0 | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --llm 2>&1)
+ADR_OUT=$(git diff --cached --unified=0 | ADR_KIT_NO_LLM="${_NO_LLM_OVERRIDE:-0}" "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" $_LLM_FLAG 2>&1)
 ADR_EXIT=$?
 _T1=$(_ms_now)
 # Suppress per-ADR llm_judge advisory lines: they repeat once per ADR with llm_judge:true
@@ -117,17 +146,16 @@ if [ "$_ELAPSED" -gt 5000 ] 2>/dev/null; then
 fi
 [ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"
 
-# --- Advisory ADR-suggestion pass (adr-suggest, v0.16.0+) ---------------------
+# --- Advisory ADR-suggestion pass (adr-suggest, v0.16.0+; opt-in as of v0.17.0) -
 # Distinct from adr-judge above: adr-judge ENFORCES existing ADRs and can block
 # the commit. adr-suggest only DETECTS whether the diff introduces a NEW
 # architectural decision not yet covered by any ADR, and prints a one-line
 # nudge. It NEVER blocks — its exit status is swallowed with `|| true`.
 #
-# Runs on every commit unless ADR_KIT_SUGGEST_DISABLE=1. Like the judge pass it
-# uses `claude -p`; a missing CLI / timeout / unparseable response degrades to
-# a silent skip. The advisory text is printed to the user but the commit
-# proceeds regardless.
-if [ "${ADR_KIT_SUGGEST_DISABLE:-0}" != "1" ] && [ -n "$ADR_SUGGEST" ] && [ -x "$ADR_SUGGEST" ]; then
+# Opt-in since v0.17.0: requires ADR_KIT_SUGGEST=1 (per-commit) or
+# suggest.enabled:true in .adr-kit.json (per-project). adr-suggest itself
+# self-skips when not opted in. Suppressed under lock contention.
+if [ "${ADR_KIT_SUGGEST_DISABLE:-0}" != "1" ] && [ "${_NO_LLM_OVERRIDE:-0}" != "1" ] && [ -n "$ADR_SUGGEST" ] && [ -x "$ADR_SUGGEST" ]; then
   SUGGEST_OUT=$(git diff --cached --unified=0 | "$ADR_SUGGEST" --diff - --adr-dir "$ROOT/docs/adr/" 2>&1 || true)
   # Only surface the actual suggestion lines; the "(skipped: ...)" / "LLM
   # unavailable" notes are noise on commits that don't introduce a decision.
