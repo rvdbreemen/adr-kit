@@ -117,6 +117,20 @@ def test_policy_mismatch_accepts_bounded_rule():
     assert RETIRE["detect_policy_mismatch"]("ADR-001", adr(enforcement=block), {}) == 0.0
 
 
+def test_enforcement_without_json_fence_scores_zero_quickly():
+    # Regression (adr-kit#9): a ## Enforcement section with no ```json fence
+    # must yield no rules (score 0.0) without catastrophic backtracking. The
+    # old nested-quantifier regex `(?:.*?\n)*?` hung for seconds on inputs
+    # like this, scaling with the prose length below the heading.
+    prose = "\n".join(f"- manual review rule {n}" for n in range(400))
+    block = f"## Enforcement\n\n{prose}\n"
+    start = time.perf_counter()
+    score = RETIRE["detect_policy_mismatch"]("ADR-001", adr(enforcement=block), {})
+    elapsed = time.perf_counter() - start
+    assert score == 0.0
+    assert elapsed < 0.5
+
+
 def test_score_is_average_of_four_signals(tmp_path):
     block = '## Enforcement\n\n```json\n{"forbid_pattern": [{"pattern": ".*", "path_glob": "**/*"}]}\n```\n'
     text = adr(day="2026-01-01", decision="Use `GoneTech`. Superseded by ADR-999.", enforcement=block)

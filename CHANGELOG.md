@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-06-05
+
+### Fixed
+
+- **`bin/adr-retire` hung on ADRs with a fence-less `## Enforcement` section (#9).** `ENFORCEMENT_BLOCK_RE` used a nested lazy quantifier `(?:.*?\n)*?` under `re.DOTALL`. When an ADR had a `## Enforcement` heading but no ` ```json ` fenced block to anchor on, the regex backtracked catastrophically (~0.75s for a single 7.5KB ADR, growing with file size), stacking into a multi-minute hang across a real ADR set (observed on a 123-ADR project where 4 ADRs carried prose-only "manual review" Enforcement notes). Replaced with the linear, lookahead-anchored `extract_section("Enforcement")` plus a simple non-nested `JSON_FENCE_RE`. Behaviour is preserved (a fence-less Enforcement section yields no rules and `policy_mismatch` 0.0, identical to the previous non-match path); the unused `ENFORCEMENT_BLOCK_RE` is removed. Regex work drops from a timeout to 0.118s over 128 ADRs, with verified capture parity against all properly-fenced ADRs. Added regression test `test_enforcement_without_json_fence_scores_zero_quickly`.
+
 ## [0.19.0] - 2026-05-31
 
 ### Added
