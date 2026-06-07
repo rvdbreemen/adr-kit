@@ -184,7 +184,7 @@ STATUS_HISTORY_REQUIRED_FIELDS = (
     "changed_via",
 )
 ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+(?:.*?\n)*?```json\s*\n(.*?)\n```",
+    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
 HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")

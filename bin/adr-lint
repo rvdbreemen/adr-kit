@@ -96,7 +96,7 @@ ALL_GATES = ["completeness", "audit", "evidence", "clarity", "consistency", "pol
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
 
 ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+(?:.*?\n)*?```json\s*\n(.*?)\n```",
+    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
 

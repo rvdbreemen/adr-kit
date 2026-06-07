@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-06-07
+
+### Fixed
+
+- **Catastrophic regex backtracking (ReDoS) in `## Enforcement` parsing — remaining tools (issue #9 follow-up).** v0.19.1 fixed the nested lazy quantifier `(?:.*?\n)*?` in `bin/adr-retire` only. The identical pattern lived on in three sibling tools that also parse `## Enforcement` blocks: `bin/adr-judge` (the pre-commit / CI enforcement gate), `bin/adr-generate-scripts`, and `bin/adr-lint`. A fence-less `## Enforcement` section (heading with prose but no ` ```json ` block) therefore still hung those tools — most importantly `adr-judge`, which runs on every commit. De-nested the quantifier (`(?:.*?\n)*?` → `.*?`); a single lazy quantifier under `re.DOTALL` is linear and behaviour-identical on properly-fenced ADRs. `bin/adr-status` already used a single non-nested `.*?` and was unaffected. Added `tests/test_enforcement_redos.py` — a parametrized guard across all three tools asserting linear runtime, no nested quantifier in the pattern, and continued matching of fenced blocks.
+
 ## [0.19.1] - 2026-06-05
 
 ### Fixed
