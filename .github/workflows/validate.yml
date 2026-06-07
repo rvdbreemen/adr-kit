@@ -48,6 +48,7 @@ jobs:
             "skills/init/SKILL.md"
             "skills/judge/SKILL.md"
             "skills/retire/SKILL.md"
+            "skills/context/SKILL.md"
             "skills/install-hooks/SKILL.md"
             "skills/upgrade/SKILL.md"
             "agents/adr-generator.md"

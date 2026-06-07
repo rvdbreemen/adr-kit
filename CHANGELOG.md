@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-06-07
+
+### Added
+
+- **`/adr-kit:context` skill (`skills/context/SKILL.md`) — load the relevant ADRs before implementing (issue #7).** Projects with many ADRs make it expensive for an agent to know which decisions apply before starting work: loading all of them burns the context window, loading none means existing decisions get ignored. This skill takes a topic (e.g. `"mqtt discovery"`, `"caching"`) and drives the existing `bin/adr-context` ranker (`--format json --limit 5`), then reads the top hits and presents them as readable context — `ADR-NNN — title`, a one-line paraphrase of the `## Decision`, the file path, and the relevance score — followed by a one-or-two-sentence statement of the net constraint. Empty results are reported honestly ("No ADRs match '<topic>'; all existing ADRs may apply, or none constrain this work") rather than silently. Read-only and safe to call from parallel subagents; no MCP server required (unlike the `adr_planning_context` MCP tool in the `kschlt/adr-kit` fork, which has a known subagent-blocking issue). The `bin/adr-context` CLI and its 20 tests already shipped; this release adds the missing slash-command wrapper that exposes it in Claude Code.
+
 ## [0.19.2] - 2026-06-07
 
 ### Fixed
