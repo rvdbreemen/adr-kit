@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-06-07
+
+### Fixed
+
+- **`bin/bump-version` now also bumps `.claude-plugin/marketplace.json`.** The helper previously updated only `plugin.json` and `CHANGELOG.md`, leaving the marketplace manifest to be edited by hand. `marketplace.json` `plugins[].version` is the field the Claude Code plugin update system compares against, so a bump that misses it ships to the repo but is never picked up by clients (the propagation gap behind the "fixed but still serving the old version" reports, e.g. issue #6). The script now updates the marketplace entry whose `name` matches `plugin.json`, and errors out if no such entry exists rather than bumping silently. Documented and staging hint updated to include `marketplace.json`.
+
 ## [0.20.0] - 2026-06-07
 
 ### Added

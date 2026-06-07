@@ -7,12 +7,15 @@
 # What it does:
 #   1. Validates semver format of the argument
 #   2. Updates .claude-plugin/plugin.json "version" field
-#   3. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>"
+#   3. Updates .claude-plugin/marketplace.json plugin "version" field
+#      (the field the Claude Code plugin update system compares against; a bump
+#      that misses it ships to the repo but is never picked up by clients)
+#   4. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>"
 #      and inserts a fresh "## [Unreleased]" block above it
-#   4. Prints what changed; does NOT commit or tag (do that yourself)
+#   5. Prints what changed; does NOT commit or tag (do that yourself)
 #
 # After running:
-#   git add .claude-plugin/plugin.json CHANGELOG.md
+#   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
 #   git commit -m "chore(release): v<version>"
 #   git tag v<version>
 #   git push origin main --tags
@@ -22,6 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && git rev-parse --show-toplevel)"
 PLUGIN_JSON="$REPO_ROOT/.claude-plugin/plugin.json"
+MARKETPLACE_JSON="$REPO_ROOT/.claude-plugin/marketplace.json"
 CHANGELOG="$REPO_ROOT/CHANGELOG.md"
 
 usage() {
@@ -40,9 +44,10 @@ if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-# Check plugin.json exists
-[[ -f "$PLUGIN_JSON" ]] || { echo "ERROR: $PLUGIN_JSON not found" >&2; exit 1; }
-[[ -f "$CHANGELOG" ]]   || { echo "ERROR: $CHANGELOG not found" >&2; exit 1; }
+# Check required files exist
+[[ -f "$PLUGIN_JSON" ]]      || { echo "ERROR: $PLUGIN_JSON not found" >&2; exit 1; }
+[[ -f "$MARKETPLACE_JSON" ]] || { echo "ERROR: $MARKETPLACE_JSON not found" >&2; exit 1; }
+[[ -f "$CHANGELOG" ]]        || { echo "ERROR: $CHANGELOG not found" >&2; exit 1; }
 
 CURRENT_VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$PLUGIN_JSON")
 TODAY=$(date +%Y-%m-%d)
@@ -62,7 +67,32 @@ with open(path, 'w') as f:
 PYEOF
 echo "  ✓ .claude-plugin/plugin.json -> $NEW_VERSION"
 
-# 2. Update CHANGELOG.md:
+# 2. Update marketplace.json version (the field the Claude Code plugin update
+#    system actually compares against). Bump the entry whose "name" matches
+#    plugin.json's name; error out if no such entry exists so a silent miss
+#    cannot ship.
+PLUGIN_NAME=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['name'])" "$PLUGIN_JSON")
+python3 - "$MARKETPLACE_JSON" "$NEW_VERSION" "$PLUGIN_NAME" <<'PYEOF'
+import json, sys
+path, version, name = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    data = json.load(f)
+plugins = data.get('plugins', [])
+matched = [p for p in plugins if p.get('name') == name]
+if not matched:
+    sys.stderr.write(
+        f"ERROR: no plugin named {name!r} in {path}; cannot bump marketplace version\n"
+    )
+    sys.exit(1)
+for p in matched:
+    p['version'] = version
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+PYEOF
+echo "  ✓ .claude-plugin/marketplace.json ($PLUGIN_NAME) -> $NEW_VERSION"
+
+# 3. Update CHANGELOG.md:
 #    Replace first occurrence of "## [Unreleased]" with
 #    "## [Unreleased]\n\n## [<version>] - <today>"
 if ! grep -q "^## \[Unreleased\]" "$CHANGELOG"; then
@@ -84,7 +114,7 @@ fi
 
 echo ""
 echo "Done. Verify the changes, then:"
-echo "  git add .claude-plugin/plugin.json CHANGELOG.md"
+echo "  git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md"
 echo "  git commit -m \"chore(release): v$NEW_VERSION\""
 echo "  git tag v$NEW_VERSION"
 echo "  git push origin main --tags"
