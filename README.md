@@ -404,6 +404,22 @@ adr-lint:
 
 The script is stdlib-only, so no `pip install` is needed in CI. `jsonschema` is auto-detected if installed and used for deeper config validation; absence is non-fatal.
 
+### Merge collisions on ADR numbers (v0.23.0+)
+
+Sequential numbering races when parallel branches (or parallel agents) both claim the next number: two branches each add ADR-043, both pass CI in isolation, and the collision only becomes visible after the merge.
+
+adr-kit handles this where it appears:
+
+1. **CI fails on the duplicate.** The `adr-lint` consistency gate flags duplicate numbers as FAIL (always strict, regardless of `strict_from`), naming both files and suggesting the fix.
+2. **`bin/adr-renumber` fixes it.** Renumber the ADR from the branch that merged last; dry-run first, review the plan, then apply:
+
+   ```bash
+   bin/adr-renumber docs/adr/ADR-043-use-postgres.md            # dry-run plan
+   bin/adr-renumber docs/adr/ADR-043-use-postgres.md --apply    # execute
+   ```
+
+   With no `--to`, the target is the next free number (max in use + 1; gaps are not reused so retired numbers stay retired). The tool renames the file, rewrites the heading, and updates every whole-token cross-reference (Related Decisions, Superseded by / Amended by, Status History, plain ADR-NNN mentions) across the ADR directory. ADR-0430 is never touched when you renumber ADR-043.
+
 ### Periodic retirement audit (v0.14.0+)
 
 `bin/adr-retire` is a read-only ranked audit. It averages four signals and

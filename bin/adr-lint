@@ -405,7 +405,9 @@ def gate_consistency(
         issues.append(f"filename {fp.name} does not match ADR-NNN-kebab.md")
     if adr_num in duplicates:
         issues.append(
-            f"duplicate ADR-{adr_num:03d}: {duplicates[adr_num]}"
+            f"duplicate ADR-{adr_num:03d}: number is shared by "
+            f"{', '.join(duplicates[adr_num])}; "
+            f"run bin/adr-renumber to move one to a free number"
         )
     return issues or None
 
