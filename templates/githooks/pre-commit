@@ -47,7 +47,7 @@ set -e
 # freezes at install time. adr-guardian compares this stamp against the
 # installed plugin version and nudges /adr-kit:upgrade when the wrapper lags.
 # Maintained by bin/bump-version; do not edit by hand.
-ADR_KIT_WRAPPER_VERSION="0.30.0"
+ADR_KIT_WRAPPER_VERSION="0.30.1"
 
 if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   echo "[adr-kit] hook disabled for this commit (ADR_KIT_HOOK_DISABLE=1)" >&2
