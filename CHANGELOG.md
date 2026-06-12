@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-12
+
 ### Added
 
 - **Guardian team mode (task-9).** New weekly CI-cron sweep workflow `.github/workflows/adr-guardian-audit.yml` runs the cheap tier only (`adr-lint` + `adr-retire` + `adr-status`), aggregates one markdown report, and maintains a single "ADR guardian audit" tracking issue (created on findings, body updated on later runs, closed when clean). Report-only: never fails the build, never runs an LLM (ADR-001 posture), no secrets beyond `GITHUB_TOKEN`. A copy-paste variant for downstream projects ships in `templates/github-workflows/adr-guardian-audit.yml`. The guardian skill (`skills/guardian/SKILL.md`) documents the split: SessionStart nudge = per-developer freshness, CI cron = shared team visibility.
