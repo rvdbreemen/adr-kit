@@ -4,6 +4,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`/adr-kit:review` skill (`skills/review/SKILL.md`): PR/branch-level ADR audit (task-14).** Audits the COMMITTED work of a branch or PR (merge-base with the base ref, default `origin/main`; `gh pr view` supplies the base and PR metadata when available) in two passes. Enforcement: the range diff is piped through `bin/adr-judge --diff` (declarative-only, key-free; identical verdicts to the pre-commit hook and the CI action), with the three `/adr-kit:judge` resolution paths offered per violation. Discovery: detects NEW architectural decisions the range introduces that no ADR documents yet, using both the headless `bin/adr-suggest` detector and an in-session vigilance pass over the diff PLUS the stated intent (commit subjects/bodies, PR title/body), because decisions are often confessed in prose while the diff looks like plumbing. Candidates are deduped against the existing set via `bin/adr-context`; the user picks which findings to act on; picked decisions are drafted via the `adr-generator` subagent with `Status: Proposed` and never auto-accepted. Degrades honestly: no `gh` means git-log intent only, no `claude` CLI means enforcement-only plus the in-session pass.
+- **`bin/adr-suggest --intent-file <path>` (task-14).** Appends the change author's stated intent (commit messages, PR description) to the decision-detector prompt as untrusted data inside the same content-derived sentinel fences introduced by the task-12 hardening: evidence of what the change intends, never instructions to the model (PR bodies are author-controlled). Content is truncated at 8000 chars. Without the flag the prompt is byte-identical to the no-intent form; the response schema, advisory posture, and opt-in gate are unchanged. A bad path is a usage error (exit 2), matching `--diff`. Four new tests in `tests/test_adr_suggest.py`.
+
 ## [0.25.0] - 2026-06-12
 
 ### Security

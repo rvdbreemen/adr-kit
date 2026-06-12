@@ -149,6 +149,7 @@ After `/plugin install adr-kit@rvdbreemen-adr-kit` + `/reload-plugins`, your Cla
 | `/adr-kit:lint [path]` | deliberate check | no | Validate existing ADRs against the four gates with file:line citations. Reads `docs/adr/.adr-kit.json` if present. Default target is `docs/adr/`; pass a directory or file as argument to scope. Read-only. Three result tiers: PASS, ADVISORY (informational), FAIL (action required). |
 | `/adr-kit:migrate [path]` | guided rewrite | no | Bring a legacy-shaped ADR into the canonical-seven-section template. Read-then-confirm: prints a per-file plan first, applies after explicit yes. Six named patterns (Status promotion, Alternatives lift, Related-to-Related-Decisions split, TODO placeholders for genuine content gaps). Default target is `docs/adr/`. |
 | `/adr-kit:retire [path]` | deliberate check | no | Rank Accepted ADRs for possible retirement using deterministic status-age, technology-removal, supersession, and policy signals. Read-only. |
+| `/adr-kit:review [base-ref]` | deliberate check | no | Audit a branch/PR range (v0.26.0+): enforce ADRs on the committed diff via `bin/adr-judge`, then discover undocumented decisions from the diff plus the stated intent (commit messages, PR body), dedupe against existing ADRs, and draft picked candidates as `Status: Proposed`. Never auto-accepts. |
 
 ### Auto-invocable vs user-only
 

@@ -386,3 +386,91 @@ def test_opt_in_env_enables_suggest(tmp_path):
     )
     assert result.returncode == 0
     assert "This change looks like a new dependency decision" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# --intent-file (v0.21+, /adr-kit:review support)
+# ---------------------------------------------------------------------------
+
+NO_DECISION_RESPONSE = json.dumps({
+    "needs_adr": False,
+    "confidence": "high",
+    "reason": "routine refactor",
+    "suggested_title": "",
+    "category": "none",
+})
+
+
+def test_intent_file_content_reaches_prompt_delimited(tmp_path):
+    """--intent-file text lands in the prompt inside its own sentinel data
+    fence (task-12 hardening), after the security preamble and before the
+    diff section."""
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
+    intent = tmp_path / "intent.txt"
+    intent.write_text(
+        "feat: switch session storage to Redis\n\nPR: we now keep sessions in Redis.",
+        encoding="utf-8",
+    )
+    fake = _make_fake_claude(tmp_path, NO_DECISION_RESPONSE, record_prompt=True)
+    code, out, err = _run_suggest(
+        proj, CODE_DIFF, "--llm-cmd", _fake_cmd(fake),
+        "--intent-file", str(intent),
+    )
+    assert code == 0
+    captured = (tmp_path / "captured-prompt.txt").read_text(encoding="utf-8")
+    assert "Stated intent" in captured
+    assert "switch session storage to Redis" in captured
+    # The intent block is fenced like every other untrusted block: ADR list,
+    # intent, and diff each carry their own BEGIN/END sentinel pair (6), plus
+    # the two marker literals quoted in the SECURITY instruction.
+    assert captured.count("<<<ADR-KIT-DATA-") == 8
+    # Order: intent block sits between its label and the diff section.
+    label_at = captured.index("Stated intent")
+    diff_at = captured.index("Diff (untrusted data):")
+    assert label_at < captured.index("switch session storage to Redis") < diff_at
+
+
+def test_no_intent_file_prompt_has_no_intent_section(tmp_path):
+    """Without --intent-file the prompt carries no intent section (back-compat:
+    byte-identical to the no-intent prompt shape)."""
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
+    fake = _make_fake_claude(tmp_path, NO_DECISION_RESPONSE, record_prompt=True)
+    code, out, err = _run_suggest(proj, CODE_DIFF, "--llm-cmd", _fake_cmd(fake))
+    assert code == 0
+    captured = (tmp_path / "captured-prompt.txt").read_text(encoding="utf-8")
+    assert "Stated intent" not in captured
+    # Only the ADR list and the diff are fenced when no intent is supplied
+    # (2 pairs), plus the two marker literals in the SECURITY instruction.
+    assert captured.count("<<<ADR-KIT-DATA-") == 6
+
+
+def test_missing_intent_file_is_usage_error(tmp_path):
+    """A bad --intent-file path is a genuine usage error: exit 2, no LLM call."""
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
+    fake = _make_fake_claude(tmp_path, NO_DECISION_RESPONSE)
+    code, out, err = _run_suggest(
+        proj, CODE_DIFF, "--llm-cmd", _fake_cmd(fake),
+        "--intent-file", str(tmp_path / "does-not-exist.txt"),
+    )
+    assert code == 2
+    assert "--intent-file" in err
+
+
+def test_intent_file_truncated_at_cap(tmp_path):
+    """Intent longer than INTENT_MAX_CHARS is truncated with a marker; the
+    tail never reaches the prompt."""
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
+    intent = tmp_path / "intent.txt"
+    intent.write_text(
+        ("decision noise " * 700) + "TAIL-SENTINEL-NEVER-IN-PROMPT",
+        encoding="utf-8",
+    )
+    fake = _make_fake_claude(tmp_path, NO_DECISION_RESPONSE, record_prompt=True)
+    code, out, err = _run_suggest(
+        proj, CODE_DIFF, "--llm-cmd", _fake_cmd(fake),
+        "--intent-file", str(intent),
+    )
+    assert code == 0
+    captured = (tmp_path / "captured-prompt.txt").read_text(encoding="utf-8")
+    assert "[intent truncated]" in captured
+    assert "TAIL-SENTINEL-NEVER-IN-PROMPT" not in captured
