@@ -23,12 +23,20 @@ If a breaking change becomes necessary before v1.0.0 (for example, renaming a de
 
 These are likely additions in upcoming versions. Priority is shaped by user requests; a feature without a real-world ask may slip indefinitely.
 
+A 2026-06-12 landscape research pass ([docs/research/2026-06-12-adr-landscape.md](docs/research/2026-06-12-adr-landscape.md)) confirmed that no classic ADR tool offers diff enforcement, staleness detection, or agent integration, and that the AI-native space is creation/templating-only or analysis-without-lifecycle. The three highest-leverage gaps it identified now lead this list:
+
+- **In-flight guidance (`adr-watch`, backlog task-6)**: a `PostToolUse` hook on Edit/Write that runs `bin/adr-context` on the touched path plus a light Enforcement pattern-match, and nudges the agent with the relevant Accepted ADRs *while it is editing*. Closes the gap between SessionStart context and pre-commit enforcement. Deterministic, key-free, per-session cooldown.
+- **Thin MCP server (`bin/adr-mcp`, backlog task-7)**: 4-6 MCP tools (context, judge, status, quality, suggest) wrapping the existing Python CLIs over stdio. Brings the same guardrails to Cursor, Windsurf, and Copilot without the skills format. Python stdlib only; deliberately small — the 73-tool approach elsewhere in the ecosystem is a cautionary tale, not a template. This revises the previously implicit "no MCP" posture: a stdio Python server adds no new runtime, so it stays within the no-build-step, no-JS constraint.
+- **Team-safe numbering (backlog task-8)**: CI duplicate-number check plus a `bin/adr-renumber` helper, addressing ADR-number races between parallel branches and agents.
+- **Guardian team mode (backlog task-9)**: weekly CI-cron cheap-tier sweep with issue reporting, plus multi-session-safe local state.
+- **Catalog listing (backlog task-11)**: submit adr-kit to the canonical [adr.github.io/adr-tooling](https://adr.github.io/adr-tooling/) catalog, which as of May 2026 lists zero AI-agent tools. Best done after MADR/Nygard compatibility (v0.22) since the catalog is template-organized.
 - **Tier-2 chore**: branch protection on `main`, dependabot for the GitHub Actions workflow, release-drafter for auto-generated release notes, codespell in CI. Repo-automation polish that benefits maintainers more than users. Likely v0.8.0.
 - **ADR query skill** (`/adr-kit:related ADR-XXX`): walks the `## Related Decisions` section across the ADR set and returns the dependency graph for a chosen ADR. Useful when an ADR is being superseded and you need to see who else points at it. Will land only if a real user asks for it; not auto-prioritised.
-- **`/adr-kit:context` skill** (issue #7): given a topic string, returns the 3-5 most relevant accepted ADRs with relevance explanation. Solves the context-window problem in projects with 30+ ADRs. Read-only; safe from parallel subagents.
 - **`/adr-kit:retirement-audit` skill** (issue #8): scans the ADR set for three signals -- stale status with no supersession link, 90+ days without a git touch, Enforcement pattern matching zero lines in `src/`. Presents candidates for human review; includes GitHub Actions weekly-cron template.
 
 ## Recently landed
+
+- ✅ **`/adr-kit:context` skill** (issue #7, v0.20.1, 2026-06): given a topic string, returns the 3-5 most relevant accepted ADRs with relevance explanation. Solves the context-window problem in projects with 30+ ADRs. Read-only; safe from parallel subagents.
 
 - ✅ **CI Action for `bin/adr-judge`** (v0.19.0, 2026-05-31): composite GitHub Action (`.github/actions/adr-judge/action.yml`) that computes the PR diff via `git diff --unified=0 origin/<base>...HEAD` and pipes it to `bin/adr-judge`. Declarative-only by default — no LLM, no API key required. Self-dogfooded via `.github/workflows/adr-judge-self.yml`. README "CI integration" section extended with a copy-paste snippet mirroring the v0.10 `adr-lint` pattern.
 - ✅ **`pre-commit` framework support** (v0.19.0, 2026-05-31): `.pre-commit-hooks.yaml` at repo root declares an `adr-judge` hook. A thin Python wrapper `bin/adr-judge-precommit` captures `git diff --cached --unified=0` and pipes it to the sibling `bin/adr-judge`, resolving the sibling path via `__file__` so it works regardless of PATH. Declarative-only by default. README documents the `.pre-commit-config.yaml` snippet.
