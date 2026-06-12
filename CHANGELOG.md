@@ -4,6 +4,16 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-06-13
+
+### Fixed
+
+- **`bin/bump-version` now also stamps the guide template's version line.** `templates/adr-kit-guide.md` opens with `<!-- adr-kit-guide vX.Y.Z -->`, which `/adr-kit:upgrade` uses to decide whether a project's copied guide is fresh; the line had been frozen at v0.18.0 because no release step updated it, so the freshness check would have reported every guide as stale forever. Found by running `/adr-kit:upgrade` on this repo itself. Covered by a lockstep test (template line must equal `plugin.json` version) and a bump fixture test.
+
+### Changed
+
+- **This repo now carries its own adr-kit footprint** (dogfooding): `CLAUDE.md` stub and the pre-commit wrapper at `.githooks/pre-commit` with `core.hooksPath` set, so Enforcement violations are caught locally before CI. ADR-003 deliberately carries no Enforcement block (process decision, no code surface).
+
 ## [0.30.3] - 2026-06-13
 
 ### Fixed
