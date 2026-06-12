@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-12
+
 ### Added
 
 - **`bin/adr-watch`: in-flight ADR guidance for just-edited files (task-6).** New stdlib-only Python bin that closes the guidance gap between SessionStart context injection (guardian) and pre-commit enforcement (adr-judge). Given one or more edited file paths it prints at most three compact one-line nudges naming the Accepted ADRs that likely apply. Two signals: Enforcement-block `path_glob` match (strongest, reuses the adr-judge glob translator including `**` and `{a,b}` brace expansion) and adr-context-style keyword relevance of the path against ADR title + Decision text. Deterministic, key-free, no LLM, no network; each ADR file is read exactly once and all regexes are precompiled and linear-time. Always exits 0 (advisory, never blocks). Self-guards: silent no-op when the working directory has no `docs/adr/` with ADRs.
