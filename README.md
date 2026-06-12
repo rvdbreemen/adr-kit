@@ -667,7 +667,7 @@ Open `skills/adr/SKILL.md` (or the installed copy in your tool's skills director
 
 **What if my project already has ADRs in a different format?**
 
-Two options. (1) Migrate the existing files to the adr-kit conventions in one pass; the most common change is the filename casing. (2) Override the conventions in `SKILL.md` to match what you have, so future ADRs use the same format. Migration is cleaner long-term; override is faster short-term.
+Run `/adr-kit:migrate` (v0.30.0+). Besides the legacy-shape patterns it natively imports the two most common formats: MADR via the "MADR mapping" pattern and Nygard / adr-tools via the "Nygard lift" pattern. `bin/adr-audit` detects MADR / Nygard shaped files in `docs/adr/` automatically and tells you which ones need migrating. The canonical seven-section template remains the storage format: after migration your ADRs lint clean and every other tool (judge, context, retire) works unmodified. The mapping preserves your prose verbatim; only headings and positions change, and genuinely missing content (e.g. alternatives a Nygard ADR never recorded) becomes a TODO placeholder for a human to fill in. Alternatively, override the conventions in `SKILL.md` to match what you have, so future ADRs use the same format; migration is cleaner long-term.
 
 **Does the skill auto-create ADRs without me asking?**
 

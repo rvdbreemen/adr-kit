@@ -1,6 +1,6 @@
 ---
 name: migrate
-description: Guided rewrite of legacy-shaped ADRs into the canonical-seven-section template enforced by /adr-kit:lint. Promotes inline status / date lines to a ## Status heading, promotes nested Alternatives subsections to top-level ## Alternatives Considered, renames ## Related to ## Related Decisions, and splits external references into ## References. Read-then-confirm: always shows the proposed restructure before applying. Respects per-ADR markers and template.required_sections from .adr-kit.json.
+description: Guided rewrite of legacy-shaped ADRs into the canonical-seven-section template enforced by /adr-kit:lint. Promotes inline status / date lines to a ## Status heading, promotes nested Alternatives subsections to top-level ## Alternatives Considered, renames ## Related to ## Related Decisions, and splits external references into ## References. Also imports MADR-shaped ADRs (Context and Problem Statement, Considered Options, Decision Outcome, frontmatter status) via the MADR mapping pattern and Nygard/adr-tools four-section ADRs via the Nygard lift pattern. Read-then-confirm: always shows the proposed restructure before applying. Respects per-ADR markers and template.required_sections from .adr-kit.json.
 argument-hint: "[file or directory; defaults to docs/adr/]"
 disable-model-invocation: true
 allowed-tools: [Read, Edit, Glob, Grep]
@@ -122,6 +122,52 @@ If the source legitimately has no alternatives discussion anywhere, create the s
 
 This is a real gap a human should fill, but the skill must not fabricate.
 
+#### Pattern G: MADR mapping
+
+Source is a MADR-shaped ADR (madr.github.io): YAML frontmatter carrying
+`status:` / `date:`, plus `## Context and Problem Statement`,
+`## Considered Options`, `## Decision Outcome`, and often
+`## Pros and Cons of the Options` and `### Positive Consequences` /
+`### Negative Consequences` subsections. `bin/adr-audit` flags these files
+as `template_profile: madr`.
+
+Mapping (content moves verbatim; only headings and position change):
+
+| MADR source | Canonical target |
+| --- | --- |
+| frontmatter `status:` + `date:` (or inline `* Status:` lines) | `## Status` section, e.g. `Accepted, 2026-04-02.` Drop the frontmatter block afterwards. |
+| `## Context and Problem Statement` (+ `## Decision Drivers` bullets, folded in below the problem statement) | `## Context` |
+| `## Considered Options` + `## Pros and Cons of the Options` | `## Alternatives Considered`: one bullet per option with its pro/con summary as the rejection or selection reasoning. The chosen option stays listed, marked as chosen. |
+| `## Decision Outcome` ("Chosen option: ..., because ...") | `## Decision` (the chosen option and its justification) |
+| `### Positive Consequences` / `### Negative Consequences` (or "Good, because" / "Bad, because" bullets under Decision Outcome) | `## Consequences` with `**Positive:**` / `**Negative:**` lists |
+| `## Links` / `## More Information` | split per Pattern D: ADR identifiers to `## Related Decisions`, external links to `## References` |
+
+If the source has no Related Decisions or References content, apply
+Patterns E / F TODO placeholders. Never invent rejection reasons that the
+Pros and Cons section does not state; if an option has no documented cons,
+carry it over with `<!-- TODO: state why this option was rejected -->`.
+
+#### Pattern H: Nygard lift
+
+Source is a Nygard / adr-tools ADR: exactly `## Status`, `## Context`,
+`## Decision`, `## Consequences`, nothing else. `bin/adr-audit` flags these
+files as `template_profile: nygard`.
+
+The four sections map 1:1 onto their canonical namesakes; their content is
+preserved verbatim. The three sections Nygard does not have are created with
+TODO placeholders, in canonical order:
+
+- `## Alternatives Considered` between Decision and Consequences, via
+  Pattern F's placeholder.
+- `## Related Decisions` after Consequences, with `- None.` unless the
+  Status or Context text references other ADRs (e.g. "Supersedes ADR-9"),
+  in which case those references move here.
+- `## References` last, via Pattern E's placeholder.
+
+Nygard Status sections often contain supersession links ("Superseded by
+[ADR-12]"). Keep them in `## Status` as prose and mirror the ADR identifier
+into `## Related Decisions`.
+
 ### Step 4: present the plan
 
 Before applying any edit, show the user a per-file summary:
@@ -188,7 +234,7 @@ Skipped:
   ADR-022 (already canonical)
 
 Deferred (manual review): 76 files.
-  Reason: complex shape that did not match any of patterns A through F. Inspect by hand.
+  Reason: complex shape that did not match any of patterns A through H. Inspect by hand.
 
 Run /adr-kit:lint docs/adr/ to confirm overall result.
 ```
@@ -201,7 +247,7 @@ The aggregate's bottom line tells the user one concrete next step (run lint), ne
 - **Empty Related section**: source has `## Related` with no body or only whitespace. Target: `## Related Decisions` with `- None.` body.
 - **Anchor comments inline at top**: source has a `Renumbered from ADR-XXX ...` line before `**Date:**`. Fold into the new `## Status` section as a trailing sentence: "Renumbered from ADR-XXX on YYYY-MM-DD to resolve duplicate numbering. Content unchanged."
 - **Body has Markdown that confuses heading-detection**: e.g. a `## ` inside a fenced code block. The skill treats only headings *outside* code fences as canonical sections. If unsure, ask the user.
-- **Source uses `## Pros and Cons` or `## Decision drivers`**: do not rename these; they are project-specific. The migration concerns the canonical-required sections only. The user can address custom subsections in a follow-up pass.
+- **Source uses `## Pros and Cons` or `## Decision drivers`**: if the file matches the MADR shape, Pattern G consumes these (`## Pros and Cons of the Options` feeds `## Alternatives Considered`, `## Decision Drivers` folds into `## Context`). Otherwise do not rename these; they are project-specific and the user can address custom subsections in a follow-up pass.
 
 ## Anti-patterns to refuse
 

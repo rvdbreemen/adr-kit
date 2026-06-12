@@ -4,6 +4,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **MADR / Nygard format compatibility (task-5).** Lowers the switching cost for projects with existing ADR sets in the two dominant community formats.
+  - `bin/adr-audit` now classifies every file in `docs/adr/` by template profile (`canonical` | `madr` | `nygard` | `unknown`) via a linear, fence-aware heuristic (`detect_template_profile`) and emits a new `template_profile` finding for MADR / Nygard shaped ADRs, pointing at `/adr-kit:migrate`. Advisory only; never blocks.
+  - `/adr-kit:migrate` gains two named patterns: **Pattern G "MADR mapping"** (Context and Problem Statement to Context; Considered Options plus Pros and Cons to Alternatives Considered; Decision Outcome to Decision plus Consequences; frontmatter status to `## Status`) and **Pattern H "Nygard lift"** (the four Nygard sections map 1:1; TODO placeholders for Alternatives Considered, Related Decisions, References). Read-then-confirm posture unchanged.
+  - Optional `template.profile` ("canonical" | "madr" | "nygard") in `.adr-kit.json` (`schemas/adr-kit-config.schema.json`): informational declaration of a project's source profile, surfaced in audit findings. Lint behaviour is unchanged.
+  - Fixtures `tests/fixtures/madr/` and `tests/fixtures/nygard/` plus hand-migrated, lint-clean counterparts in `tests/fixtures/madr-migrated/` and `tests/fixtures/nygard-migrated/`; covered by `tests/test_template_profiles.py` (13 tests).
+  - `docs/adr/ADR-003-template-profile-compatibility.md` records the input contract: the canonical seven-section template stays the only storage format; MADR and Nygard are import formats; detection is heuristic and advisory.
+
 ## [0.29.0] - 2026-06-12
 
 ### Added
