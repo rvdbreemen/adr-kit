@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-06-12
+
 ### Added
 
 - **MADR / Nygard format compatibility (task-5).** Lowers the switching cost for projects with existing ADR sets in the two dominant community formats.
