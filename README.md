@@ -357,6 +357,8 @@ When a tier is due, `bin/adr-guardian check` emits an `[adr-guardian] ... DUE` b
 
 **State file:** `docs/adr/.adr-kit-state.json` (gitignored, per-machine). Added to `.gitignore` by `/adr-kit:init`.
 
+**Copied-artifact staleness (v0.27.0+):** the engines in the plugin cache self-upgrade, but artifacts copied into your project freeze at install time (the git pre-commit wrapper, the project-scoped guardian entry in `.claude/settings.json`). The guardian compares their embedded version stamps against the installed plugin and adds a `wrapper: ... STALE` line to the SessionStart nudge when one lags; `/adr-kit:upgrade` refreshes them idempotently. Inspect manually with `bin/adr-guardian artifacts`. Non-adr-kit hooks are never reported, and up-to-date artifacts stay silent.
+
 **Team mode (v0.22.0+):** the guardian works at two levels that coexist. The SessionStart nudge is per-developer: each machine keeps its own gitignored state file (atomic writes, safe across parallel Claude Code sessions, last-writer-wins). For shared team visibility, copy `templates/github-workflows/adr-guardian-audit.yml` into your repo's `.github/workflows/`. It runs the free cheap tier only (lint + retire + status), maintains a single "ADR guardian audit" tracking issue, never fails the build, and never runs an LLM. The LLM tier stays local and opt-in (ADR-001).
 
 **Mix-by-finding-type responses** (in-session, via `/adr-kit:guardian`):

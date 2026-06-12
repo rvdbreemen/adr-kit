@@ -47,6 +47,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -307,6 +308,169 @@ def _count_adrs(adr_dir: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Copied-artifact staleness (task-15, v0.27.0+)
+#
+# Plugin-level hooks refresh automatically on plugin update, but artifacts
+# COPIED into a project freeze at install time: the git pre-commit wrapper
+# and the project-scoped guardian hook entry in .claude/settings.json. Their
+# engines self-upgrade (they resolve the newest plugin cache version per
+# run), but the wrapper's own feature surface lags until refreshed. The
+# checks below are pure file reads (no subprocesses, per the check
+# invariant) and compare embedded version stamps against this plugin's own
+# version.
+#
+# Staleness rules (no false positives when up to date, AC#3):
+#   - git wrapper stamped older than the plugin        -> stale
+#   - git wrapper clearly adr-kit's but unstamped      -> stale (pre-0.27)
+#   - non-adr-kit pre-commit hook                      -> ignored
+#   - settings entry stamped older than the plugin     -> stale
+#   - settings entry without a stamp                   -> ignored (it only
+#     re-resolves engines; entry-shape changes are rare and nagging every
+#     pre-0.27 install from a settings snapshot would be noise)
+# ---------------------------------------------------------------------------
+
+_WRAPPER_STAMP_RE = re.compile(r'^ADR_KIT_WRAPPER_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"', re.MULTILINE)
+_ARTIFACT_READ_CAP = 64 * 1024  # wrappers are a few KB; cap defends against odd files
+
+
+def _own_version() -> Optional[str]:
+    """Version of the plugin this script ships with (../.claude-plugin/plugin.json).
+
+    The hook resolvers always execute the newest installed adr-guardian, so
+    this is the newest installed plugin version by construction.
+    """
+    try:
+        manifest = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        version = data.get("version")
+        return version if isinstance(version, str) else None
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+
+
+def _parse_semver(s: Optional[str]) -> Optional[Tuple[int, int, int]]:
+    """Parse 'X.Y.Z' into an int tuple; None for anything else."""
+    if not s:
+        return None
+    m = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", s.strip())
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
+def _read_capped(path: Path) -> Optional[str]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read(_ARTIFACT_READ_CAP)
+    except OSError:
+        return None
+
+
+def _check_git_wrapper(path: Path, plugin_semver: Tuple[int, int, int]) -> Optional[Dict]:
+    """Inspect one candidate pre-commit file. None when absent or not ours."""
+    content = _read_capped(path)
+    if content is None:
+        return None
+    if "adr-kit" not in content and "adr-judge" not in content:
+        return None  # someone else's hook; never report it
+    m = _WRAPPER_STAMP_RE.search(content)
+    version = m.group(1) if m else None
+    wrapper_semver = _parse_semver(version)
+    stale = wrapper_semver is None or wrapper_semver < plugin_semver
+    return {
+        "kind": "git-pre-commit-wrapper",
+        "path": str(path),
+        "version": version,
+        "stale": stale,
+    }
+
+
+def _check_settings_entry(path: Path, plugin_semver: Tuple[int, int, int]) -> Optional[Dict]:
+    """Inspect .claude/settings.json for a stamped guardian hook entry."""
+    content = _read_capped(path)
+    if content is None or "adr-guardian" not in content:
+        return None
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+
+    def _walk(node) -> Optional[str]:
+        if isinstance(node, dict):
+            cmd = node.get("command")
+            if isinstance(cmd, str) and "adr-guardian" in cmd:
+                wv = node.get("_wrapper_version")
+                return wv if isinstance(wv, str) else ""
+            for value in node.values():
+                found = _walk(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for item in node:
+                found = _walk(item)
+                if found is not None:
+                    return found
+        return None
+
+    stamp = _walk(data)
+    if stamp is None:
+        return None  # no guardian entry in this settings file
+    if stamp == "":
+        # Unstamped entry: pre-0.27 snapshot, but it self-resolves engines.
+        # Reported as present, never as stale (AC#3: no noise).
+        return {
+            "kind": "settings-guardian-entry",
+            "path": str(path),
+            "version": None,
+            "stale": False,
+        }
+    entry_semver = _parse_semver(stamp)
+    stale = entry_semver is None or entry_semver < plugin_semver
+    return {
+        "kind": "settings-guardian-entry",
+        "path": str(path),
+        "version": stamp,
+        "stale": stale,
+    }
+
+
+def _artifact_report(project_root: Path) -> Dict:
+    """Compare copied artifacts in project_root against the plugin version."""
+    plugin_version = _own_version()
+    plugin_semver = _parse_semver(plugin_version)
+    report: Dict = {"plugin_version": plugin_version, "artifacts": []}
+    if plugin_semver is None:
+        return report  # cannot judge staleness without our own version
+    for candidate in (
+        project_root / ".githooks" / "pre-commit",
+        project_root / ".git" / "hooks" / "pre-commit",
+    ):
+        found = _check_git_wrapper(candidate, plugin_semver)
+        if found is not None:
+            report["artifacts"].append(found)
+    settings = _check_settings_entry(project_root / ".claude" / "settings.json", plugin_semver)
+    if settings is not None:
+        report["artifacts"].append(settings)
+    return report
+
+
+def _stale_artifact_lines(report: Dict) -> List[str]:
+    """Nudge lines for stale artifacts; empty list when everything is fresh."""
+    lines: List[str] = []
+    plugin_version = report.get("plugin_version") or "?"
+    for art in report.get("artifacts", []):
+        if not art.get("stale"):
+            continue
+        version_label = art.get("version") or "pre-0.27 (unstamped)"
+        rel = art.get("path", "")
+        lines.append(
+            f"  • wrapper:   {rel} is {version_label}, plugin is {plugin_version}"
+            "   STALE → /adr-kit:upgrade"
+        )
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # Due-tier computation
 # ---------------------------------------------------------------------------
 
@@ -476,7 +640,12 @@ def cmd_check(args: argparse.Namespace) -> int:
     now = _now_utc()
     cheap_due, llm_due = _compute_due_tiers(state, gcfg, now)
 
-    if not cheap_due and not llm_due:
+    # Copied-artifact staleness (task-15): pure file reads, never subprocesses.
+    # A stale wrapper counts as a due item so it surfaces even when both
+    # sweep tiers are fresh; it rides the same nudge cooldown as the tiers.
+    artifact_lines = _stale_artifact_lines(_artifact_report(adr_dir.parent.parent))
+
+    if not cheap_due and not llm_due and not artifact_lines:
         return 0
 
     # Throttle: if we nudged within nudge_cooldown_hours, stay silent.
@@ -485,6 +654,12 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     adr_count = _count_adrs(adr_dir)
     block = _format_guardian_block(cheap_due, llm_due, state, adr_count, now)
+    if artifact_lines:
+        block_lines = block.split("\n")
+        head = block_lines[0]
+        due_count = (1 if cheap_due else 0) + (1 if llm_due else 0) + len(artifact_lines)
+        head = f"[adr-guardian] ADR health — {due_count} item(s) due"
+        block = "\n".join([head] + block_lines[1:-1] + artifact_lines + [block_lines[-1]])
 
     _emit_context(block)
 
@@ -547,6 +722,46 @@ def cmd_stamp(args: argparse.Namespace) -> int:
         state["llm_tier"] = llm
 
     _save_state(state_path, state)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: artifacts
+# ---------------------------------------------------------------------------
+
+def cmd_artifacts(args: argparse.Namespace) -> int:
+    """Report copied-artifact freshness vs the installed plugin. Always exits 0.
+
+    Used by /adr-kit:upgrade as its detection step and available for manual
+    inspection. Pure file reads.
+    """
+    if args.project_root:
+        project_root = Path(args.project_root)
+    else:
+        adr_dir = _find_adr_dir()
+        project_root = adr_dir.parent.parent if adr_dir is not None else Path.cwd()
+
+    report = _artifact_report(project_root)
+
+    if args.format == "json":
+        json.dump(report, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
+    plugin_version = report.get("plugin_version") or "unknown"
+    sys.stdout.write(f"[adr-guardian] plugin version: {plugin_version}\n")
+    artifacts = report.get("artifacts", [])
+    if not artifacts:
+        sys.stdout.write("  no copied adr-kit artifacts found in this project\n")
+        return 0
+    for art in artifacts:
+        version_label = art.get("version") or "unstamped"
+        tag = "STALE" if art.get("stale") else "ok"
+        sys.stdout.write(
+            f"  {art.get('kind')}: {art.get('path')} ({version_label}) {tag}\n"
+        )
+    if any(a.get("stale") for a in artifacts):
+        sys.stdout.write("  → refresh with /adr-kit:upgrade (or /adr-kit:install-hooks)\n")
     return 0
 
 
@@ -637,6 +852,19 @@ def main() -> int:
     state_p.add_argument("--state-dir", dest="state_dir", default=None,
                          help="Override directory for .adr-kit-state.json (tests/CI).")
 
+    # artifacts
+    artifacts_p = sub.add_parser(
+        "artifacts",
+        help=(
+            "Report copied-artifact freshness (git pre-commit wrapper, settings "
+            "guardian entry) vs the installed plugin version. Always exits 0."
+        ),
+    )
+    artifacts_p.add_argument("--project-root", dest="project_root", default=None,
+                             help="Project root to inspect (default: auto-detect).")
+    artifacts_p.add_argument("--format", choices=["human", "json"], default="human",
+                             help="Output format (default: human).")
+
     args = p.parse_args()
 
     if args.command is None:
@@ -654,6 +882,8 @@ def main() -> int:
             return cmd_stamp(args)
         elif args.command == "state":
             return cmd_state(args)
+        elif args.command == "artifacts":
+            return cmd_artifacts(args)
     except KeyboardInterrupt:
         return 0
     except Exception:

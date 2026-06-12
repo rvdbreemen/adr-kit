@@ -1,6 +1,6 @@
 ---
 name: upgrade
-description: Migrate an existing v0.11 adr-kit project to the v0.12 footprint without re-running the heavy /adr-kit:init audit. Detects v0.11-style inline ADR Kit Rules in CLAUDE.md, replaces with the slim stub, copies templates/adr-kit-guide.md to .claude/, installs the pre-commit hook (default-on), and walks Accepted ADRs offering Enforcement-block backfill proposals one at a time. Idempotent — safe to re-run.
+description: Refresh a project's installed adr-kit artifacts after a plugin update, and migrate legacy footprints. Runs adr-guardian artifacts to detect copied wrappers (git pre-commit hook, project-scoped settings entry, guide file) that lag the installed plugin version, refreshes them idempotently, and still handles the legacy v0.11 to v0.12 migration (CLAUDE.md stub, guide copy, hook install, Enforcement backfill). Safe to re-run.
 argument-hint: "[no arguments]"
 disable-model-invocation: true
 allowed-tools: [Read, Write, Edit, Bash, Task]
@@ -8,13 +8,31 @@ allowed-tools: [Read, Write, Edit, Bash, Task]
 
 # adr-kit upgrade
 
-You migrate a project from the v0.11 footprint to the v0.12 footprint **without** doing the heavy initial codebase audit. Use this skill when:
+You bring a project's **installed adr-kit artifacts** in line with the **installed plugin version**. Two jobs, run in order:
 
-- A project has been running adr-kit ≤ v0.11 for a while.
-- The ADR set is already mature (lots of Accepted ADRs).
-- Re-running `/adr-kit:init` would propose duplicates against existing ADRs and waste the user's time.
+1. **Artifact refresh (any version, the common case).** Plugin-level hooks refresh automatically when the plugin updates, but artifacts copied into the project freeze at install time: the git pre-commit wrapper, the project-scoped guardian entry in `.claude/settings.json`, and `.claude/adr-kit-guide.md`. Step 0 detects and refreshes them.
+2. **Legacy footprint migration (v0.11 to v0.12, one-time).** Steps 1-4 below. Skip them when the project is already on the v0.12 footprint.
 
 If the project has no ADRs yet, point the user to `/adr-kit:init` instead.
+
+## Step 0 — Artifact freshness check and refresh
+
+Resolve the plugin path and run the detector:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+python3 "$ADR_KIT/bin/adr-guardian" artifacts --format json
+```
+
+The report lists each copied artifact with its embedded version stamp and a `stale` flag (the guardian SessionStart nudge uses the same detection, so this is the same signal that brought most users here). For each stale artifact:
+
+- **`git-pre-commit-wrapper`** (`.githooks/pre-commit` or `.git/hooks/pre-commit`): overwrite it with the current `$ADR_KIT/templates/githooks/pre-commit` (same target path it already occupies). Show a unified diff first when the installed wrapper differs from any shipped template version (the user may have local edits); ask `replace | keep | merge by hand` only in that case, otherwise replace silently. Preserve the executable bit.
+- **`settings-guardian-entry`** (`.claude/settings.json`): replace the guardian hook entry with the current `$ADR_KIT/templates/cc-settings/guardian-hook-entry.json` content using JSON-structural editing (never clobber sibling hooks; same posture as `/adr-kit:install-hooks`).
+- **`.claude/adr-kit-guide.md`**: if its version line (first line, `<!-- adr-kit-guide vX.Y.Z -->`) lags the plugin, refresh it from `$ADR_KIT/templates/adr-kit-guide.md` (diff-and-ask when the project copy has local edits, like Step 2 below).
+
+When the report shows no stale artifacts AND the project is already on the v0.12 footprint, exit with `everything up to date; nothing to do`.
+
+Artifacts the plugin cannot refresh from here (report them, do not edit): GitHub Action pins (`uses: ...adr-judge@vX` in workflows; suggest a Dependabot/Renovate rule or a manual bump) and a `pre-commit` framework `rev:` (suggest `pre-commit autoupdate`).
 
 ## Step 1 — Detect the installed footprint
 

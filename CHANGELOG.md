@@ -4,6 +4,14 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Copied-artifact staleness detection (task-15).** Plugin-level hooks refresh automatically when the plugin updates, but artifacts copied into a project freeze at install time: the git pre-commit wrapper and the project-scoped guardian entry in `.claude/settings.json` keep resolving the newest engines, yet their own feature surface lags until refreshed. The templates now carry version stamps (`ADR_KIT_WRAPPER_VERSION="X.Y.Z"` in `templates/githooks/pre-commit`, `_wrapper_version` in `templates/cc-settings/guardian-hook-entry.json`) that `bin/bump-version` keeps in lockstep with the release. `bin/adr-guardian check` compares the stamps against the installed plugin version with pure file reads (no subprocesses) and adds a `wrapper: ... STALE -> /adr-kit:upgrade` line to the SessionStart nudge; a stale wrapper counts as a due item, so it surfaces even when both sweep tiers are fresh, riding the existing nudge cooldown. Staleness rules avoid false positives: an up-to-date stamp is silent, a non-adr-kit pre-commit hook is never reported, and an unstamped settings entry is reported present but never stale (it self-resolves engines). New `adr-guardian artifacts [--format json]` subcommand exposes the same report for skills and manual inspection. 17 tests in `tests/test_adr_guardian_artifacts.py`, including lockstep guards that fail when a release bump misses the template stamps.
+
+### Changed
+
+- **`/adr-kit:upgrade` generalized into the artifact refresh driver (task-15).** Previously a one-shot v0.11 to v0.12 migration. New Step 0 runs `adr-guardian artifacts` and refreshes each stale artifact idempotently: the git wrapper is replaced from the current template (diff-and-ask when locally edited), the settings guardian entry is rewritten with JSON-structural editing (sibling hooks untouched), and an outdated `.claude/adr-kit-guide.md` is refreshed. Artifacts the plugin cannot reach (GitHub Action `@vX` pins, `pre-commit` framework `rev:`) are reported with the right tool to bump them (Dependabot/Renovate, `pre-commit autoupdate`). The legacy v0.11 to v0.12 migration remains as the one-time path.
+
 ## [0.26.0] - 2026-06-12
 
 ### Added
