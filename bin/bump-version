@@ -120,37 +120,39 @@ fi
 #    fresh install is never reported stale.
 PRECOMMIT_TEMPLATE="$REPO_ROOT/templates/githooks/pre-commit"
 GUARDIAN_ENTRY="$REPO_ROOT/templates/cc-settings/guardian-hook-entry.json"
-if [[ -f "$PRECOMMIT_TEMPLATE" ]] && grep -q '^ADR_KIT_WRAPPER_VERSION=' "$PRECOMMIT_TEMPLATE"; then
-  python3 - "$PRECOMMIT_TEMPLATE" "$NEW_VERSION" <<'PYEOF'
-import re, sys
-path, version = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as f:
-    content = f.read()
-content = re.sub(
-    r'^ADR_KIT_WRAPPER_VERSION="[^"]*"$',
-    f'ADR_KIT_WRAPPER_VERSION="{version}"',
-    content,
-    count=1,
-    flags=re.MULTILINE,
-)
-with open(path, "w", encoding="utf-8", newline="\n") as f:
-    f.write(content)
+# One python invocation for both stamps: no grep children (spawning extra
+# processes here has hit cygheap fork failures on Windows Git Bash).
+python3 - "$PRECOMMIT_TEMPLATE" "$GUARDIAN_ENTRY" "$NEW_VERSION" <<'PYEOF'
+import json, re, sys
+precommit, entry, version = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(precommit, encoding="utf-8") as f:
+        content = f.read()
+    if re.search(r'^ADR_KIT_WRAPPER_VERSION=', content, re.MULTILINE):
+        content = re.sub(
+            r'^ADR_KIT_WRAPPER_VERSION="[^"]*"$',
+            f'ADR_KIT_WRAPPER_VERSION="{version}"',
+            content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        with open(precommit, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+        print(f"  + templates/githooks/pre-commit wrapper stamp -> {version}")
+except OSError:
+    pass
+try:
+    with open(entry, encoding="utf-8") as f:
+        data = json.load(f)
+    if "_wrapper_version" in data:
+        data["_wrapper_version"] = version
+        with open(entry, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        print(f"  + templates/cc-settings/guardian-hook-entry.json stamp -> {version}")
+except (OSError, json.JSONDecodeError):
+    pass
 PYEOF
-  echo "  ✓ templates/githooks/pre-commit wrapper stamp -> $NEW_VERSION"
-fi
-if [[ -f "$GUARDIAN_ENTRY" ]] && grep -q '"_wrapper_version"' "$GUARDIAN_ENTRY"; then
-  python3 - "$GUARDIAN_ENTRY" "$NEW_VERSION" <<'PYEOF'
-import json, sys
-path, version = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as f:
-    data = json.load(f)
-data["_wrapper_version"] = version
-with open(path, "w", encoding="utf-8", newline="\n") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-PYEOF
-  echo "  ✓ templates/cc-settings/guardian-hook-entry.json stamp -> $NEW_VERSION"
-fi
 
 echo ""
 echo "Done. Verify the changes, then:"
