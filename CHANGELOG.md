@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-06-12
+
 ### Added
 
 - **Copied-artifact staleness detection (task-15).** Plugin-level hooks refresh automatically when the plugin updates, but artifacts copied into a project freeze at install time: the git pre-commit wrapper and the project-scoped guardian entry in `.claude/settings.json` keep resolving the newest engines, yet their own feature surface lags until refreshed. The templates now carry version stamps (`ADR_KIT_WRAPPER_VERSION="X.Y.Z"` in `templates/githooks/pre-commit`, `_wrapper_version` in `templates/cc-settings/guardian-hook-entry.json`) that `bin/bump-version` keeps in lockstep with the release. `bin/adr-guardian check` compares the stamps against the installed plugin version with pure file reads (no subprocesses) and adds a `wrapper: ... STALE -> /adr-kit:upgrade` line to the SessionStart nudge; a stale wrapper counts as a due item, so it surfaces even when both sweep tiers are fresh, riding the existing nudge cooldown. Staleness rules avoid false positives: an up-to-date stamp is silent, a non-adr-kit pre-commit hook is never reported, and an unstamped settings entry is reported present but never stale (it self-resolves engines). New `adr-guardian artifacts [--format json]` subcommand exposes the same report for skills and manual inspection. 17 tests in `tests/test_adr_guardian_artifacts.py`, including lockstep guards that fail when a release bump misses the template stamps.
