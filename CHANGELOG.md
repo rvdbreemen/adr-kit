@@ -4,6 +4,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- **Prompt-injection hardening for the LLM judge and suggest passes (task-12).** Diff and ADR content in `bin/adr-judge` and `bin/adr-suggest` prompts are now wrapped in unique sentinel data fences (`<<<ADR-KIT-DATA-<sha256-prefix> BEGIN/END>>>`), with an explicit instruction that fenced content is untrusted data and any instructions inside it must be ignored. The fence token is derived from a SHA-256 of the fenced content, so a diff cannot pre-place a matching END marker: embedding any guessed token changes the token. The ADR fence token depends only on the ADR set, preserving the prompt-cache prefix.
+- **Enforcement blocks are schema-validated before use (task-12).** `bin/adr-judge` now structurally validates every Enforcement block (known rule kinds only, required non-empty string `pattern`, optional `path_glob`/`message`, boolean `llm_judge`; mirrors `schemas/adr-enforcement.schema.json`, stdlib-only with jsonschema as optional deeper layer) BEFORE any rule is compiled as a regex or lands in an LLM prompt. Invalid blocks are reported as ADVISORY `enforcement_config` findings and never silently used; malformed JSON syntax keeps the existing exit-2 contract. Tests in `tests/test_adr_judge_security.py`, including a forged-END-marker test and a 4-way parallel-run concurrency test.
+
 ### Added
 
 - **Judge override audit trail (task-10).** A pre-commit FAIL can now be overridden for ONE named ADR per commit via `ADR_KIT_OVERRIDE="ADR-NNN: <reason>" git commit ...`. The override downgrades only that ADR's violations to loudly printed warnings (other ADRs still block), refuses an empty reason, and appends a record (timestamp, ADR id, reason, git user, SHA-256 of the judged diff) to the untracked log `docs/adr/.adr-kit-overrides.jsonl` (excluded via `.git/info/exclude`). Judging stays read-only: no tracked file is touched while a staged diff is evaluated. Convention: the commit message SHOULD carry a matching `ADR-Override: ADR-NNN <reason>` trailer. New modes: `adr-judge --check-override` (validate the env var) and `adr-judge --audit-overrides [--json]` (read-only reconciliation of the local log against commit trailers).
