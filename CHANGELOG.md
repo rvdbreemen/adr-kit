@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-06-12
+
 ### Security
 
 - **Prompt-injection hardening for the LLM judge and suggest passes (task-12).** Diff and ADR content in `bin/adr-judge` and `bin/adr-suggest` prompts are now wrapped in unique sentinel data fences (`<<<ADR-KIT-DATA-<sha256-prefix> BEGIN/END>>>`), with an explicit instruction that fenced content is untrusted data and any instructions inside it must be ignored. The fence token is derived from a SHA-256 of the fenced content, so a diff cannot pre-place a matching END marker: embedding any guessed token changes the token. The ADR fence token depends only on the ADR set, preserving the prompt-cache prefix.
