@@ -270,6 +270,24 @@ Disable for a single commit: `ADR_KIT_NO_LLM=1 git commit ...`
 
 LLM review is always available on demand regardless of config: `/adr-kit:judge` in a Claude Code session always runs the full LLM pass.
 
+### Overriding a judge FAIL, audited (v0.25.0+)
+
+Sometimes you must commit despite a judge FAIL (hotfix, agreed exception). Do it loudly and traceably, for exactly one ADR per commit:
+
+```bash
+ADR_KIT_OVERRIDE="ADR-003: hotfix for incident 42" git commit ...
+```
+
+- Only violations of the named ADR are downgraded to warnings; violations of any other ADR still block the commit.
+- An empty reason is refused: the FAIL stays a FAIL.
+- Each used override is appended to `docs/adr/.adr-kit-overrides.jsonl` (kept out of version control via `.git/info/exclude`), recording the timestamp, ADR id, reason, git user, and a SHA-256 of the judged diff.
+- Convention: the commit message SHOULD carry a matching trailer so the override is visible in shared history: `ADR-Override: ADR-003 hotfix for incident 42`.
+- Reconcile the local log with the trailers at any time (read-only): `bin/adr-judge --audit-overrides` (add `--json` for machine-readable output).
+
+The pre-commit hook stays read-only with respect to git content: the override log is untracked and excluded, so judging a staged diff never introduces staged or unstaged edits.
+
+`adr-lint` (consistency gate) also FAILs when two or more Accepted ADRs both declare `Supersedes ADR-NNN` for the same target: the target's `Superseded by ADR-X` status can name at most one successor; rival claims must be resolved by retiring or rewriting one of the claimants.
+
 ### Advisory ADR-suggestion: `suggest.*` (since v0.16.0)
 
 The pre-commit hook can also run `bin/adr-suggest` — the **advisory** counterpart to `adr-judge`. It runs one LLM pass over the staged diff to detect whether the change introduces a *new* architectural / contract / dependency decision not yet covered by any ADR, then prints a one-line nudge to run `/adr-kit:adr`. It **never blocks the commit**: missing CLI, timeout, malformed response, or "no decision" all resolve to a silent skip and exit 0.

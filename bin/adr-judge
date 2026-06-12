@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -46,7 +47,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -922,6 +923,270 @@ def run_llm_batch(
     return findings
 
 
+# ---------- override audit trail (task-10, v0.21+) ----------
+#
+# A judge FAIL can be overridden for ONE named ADR per commit via the
+# ADR_KIT_OVERRIDE environment variable:
+#
+#   ADR_KIT_OVERRIDE="ADR-003: hotfix for incident 42" git commit ...
+#
+# Mechanics and constraints:
+#   - The override downgrades violations of that specific ADR to loudly
+#     printed WARN advisories; violations of OTHER ADRs still block.
+#   - An empty or missing reason refuses the override (FAILs stay FAILs).
+#   - Every used override is appended to a gitignored per-repo JSONL log
+#     (<adr-dir>/.adr-kit-overrides.jsonl) with timestamp, ADR id, reason,
+#     git user, and a SHA-256 of the judged diff. The log lives outside
+#     version control (we register it in .git/info/exclude, best effort),
+#     so pre-commit judging stays read-only with respect to git: no staged
+#     or unstaged TRACKED content is ever modified while evaluating a diff.
+#   - The commit message SHOULD carry a matching trailer for team-visible
+#     traceability:  ADR-Override: ADR-003 hotfix for incident 42
+#     `adr-judge --audit-overrides` reconciles the local JSONL log against
+#     `git log` trailers on demand (read-only report).
+
+OVERRIDE_ENV_VAR = "ADR_KIT_OVERRIDE"
+OVERRIDE_LOG_NAME = ".adr-kit-overrides.jsonl"
+OVERRIDE_TRAILER_KEY = "ADR-Override"
+# Linear: anchored prefix, one digit run, one separator, rest of line.
+OVERRIDE_ENV_RE = re.compile(r"(?i)^\s*ADR-(\d{1,4})\s*:\s*(\S.*?)\s*$")
+ADR_ID_IN_TRAILER_RE = re.compile(r"(?i)\bADR-(\d{1,4})\b")
+
+
+def parse_override_env(raw: str) -> Optional[Tuple[str, str]]:
+    """Parse ADR_KIT_OVERRIDE into (normalised ADR id, reason).
+
+    Returns None when the value is malformed or the reason is empty.
+    An empty reason is an explicit refusal: overrides without a stated
+    reason must not weaken the gate.
+    """
+    m = OVERRIDE_ENV_RE.match(raw or "")
+    if not m:
+        return None
+    return f"ADR-{int(m.group(1)):03d}", m.group(2)
+
+
+def _git_output(repo_root: Path, *git_args: str) -> Optional[str]:
+    """Run a git command in repo_root, returning stdout or None on any failure."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), *git_args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def _git_user(repo_root: Path) -> str:
+    """Best-effort identification of who applied the override."""
+    name = (_git_output(repo_root, "config", "user.name") or "").strip()
+    email = (_git_output(repo_root, "config", "user.email") or "").strip()
+    if name and email:
+        return f"{name} <{email}>"
+    if name or email:
+        return name or email
+    return os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
+
+
+def _ensure_override_log_excluded(repo_root: Path) -> None:
+    """Register the override log in .git/info/exclude (best effort).
+
+    info/exclude is git metadata, not working-tree content, so writing it
+    does not violate the read-only-while-judging constraint. Failures are
+    swallowed: a missing exclude entry only means the log shows up as an
+    untracked file.
+    """
+    git_path = _git_output(repo_root, "rev-parse", "--git-path", "info/exclude")
+    if not git_path:
+        return
+    exclude_path = Path(git_path.strip())
+    if not exclude_path.is_absolute():
+        exclude_path = repo_root / exclude_path
+    pattern = OVERRIDE_LOG_NAME
+    try:
+        existing = (
+            exclude_path.read_text(encoding="utf-8") if exclude_path.exists() else ""
+        )
+        if pattern in existing.splitlines():
+            return
+        exclude_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(exclude_path, "a", encoding="utf-8") as fh:
+            if existing and not existing.endswith("\n"):
+                fh.write("\n")
+            fh.write(pattern + "\n")
+    except OSError:
+        pass
+
+
+def write_override_record(
+    adr_dir: Path, repo_root: Path, record: Dict[str, object]
+) -> Optional[Path]:
+    """Append one override record to the gitignored JSONL log.
+
+    Returns the log path on success, None on failure (never raises: the
+    override itself must not fail just because the log could not be written,
+    but callers print a loud warning when that happens).
+    """
+    log_path = adr_dir / OVERRIDE_LOG_NAME
+    line = json.dumps(record, ensure_ascii=True, sort_keys=True)
+    try:
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except OSError:
+        return None
+    _ensure_override_log_excluded(repo_root)
+    return log_path
+
+
+def apply_override(
+    findings: List[Dict],
+    override_id: str,
+    reason: str,
+) -> int:
+    """Downgrade violations of override_id to overridden advisories, in place.
+
+    Returns the number of findings downgraded. Findings for other ADRs are
+    untouched and keep blocking.
+    """
+    downgraded = 0
+    for f in findings:
+        if f.get("severity") == "violation" and f.get("adr") == override_id:
+            f["severity"] = "advisory"
+            f["overridden"] = True
+            f["override_reason"] = reason
+            downgraded += 1
+    return downgraded
+
+
+def _collect_trailer_overrides(repo_root: Path) -> Optional[Dict[str, List[str]]]:
+    """Map ADR id -> list of commit hashes whose message carries a matching
+    ADR-Override trailer. Returns None when git log is unavailable."""
+    out = _git_output(
+        repo_root,
+        "log",
+        "--format=%x1e%H%x1f%(trailers:key=" + OVERRIDE_TRAILER_KEY + ",valueonly=true)",
+    )
+    if out is None:
+        return None
+    mapping: Dict[str, List[str]] = {}
+    for record in out.split("\x1e"):
+        if "\x1f" not in record:
+            continue
+        commit_hash, trailer_blob = record.split("\x1f", 1)
+        commit_hash = commit_hash.strip()
+        for m in ADR_ID_IN_TRAILER_RE.finditer(trailer_blob):
+            adr_id = f"ADR-{int(m.group(1)):03d}"
+            mapping.setdefault(adr_id, []).append(commit_hash)
+    return mapping
+
+
+def audit_overrides(adr_dir: Path, repo_root: Path, as_json: bool) -> int:
+    """Read-only reconciliation of the override JSONL log with git trailers.
+
+    For every logged override, report whether at least one commit message in
+    `git log` carries an ADR-Override trailer naming the same ADR. Always
+    exits 0: this is a report, not a gate.
+    """
+    log_path = adr_dir / OVERRIDE_LOG_NAME
+    entries: List[Dict] = []
+    if log_path.exists():
+        try:
+            for lineno, line in enumerate(
+                log_path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    parsed = json.loads(line)
+                except json.JSONDecodeError:
+                    entries.append({"_parse_error": f"line {lineno} is not valid JSON"})
+                    continue
+                if isinstance(parsed, dict):
+                    entries.append(parsed)
+        except OSError as e:
+            print(f"[adr-judge] ERROR: cannot read {log_path}: {e}", file=sys.stderr)
+            return 2
+
+    trailers = _collect_trailer_overrides(repo_root)
+
+    report = []
+    for entry in entries:
+        adr_id = str(entry.get("adr", ""))
+        commits = (trailers or {}).get(adr_id, [])
+        report.append(
+            {
+                "adr": adr_id,
+                "timestamp": entry.get("timestamp"),
+                "reason": entry.get("reason"),
+                "user": entry.get("user"),
+                "reconciled": bool(commits),
+                "trailer_commits": commits[:5],
+                "parse_error": entry.get("_parse_error"),
+            }
+        )
+
+    payload = {
+        "log_path": str(log_path),
+        "log_present": log_path.exists(),
+        "git_log_available": trailers is not None,
+        "entries": report,
+        "summary": {
+            "logged": len(report),
+            "reconciled": sum(1 for r in report if r["reconciled"]),
+            "unmatched": sum(
+                1 for r in report if not r["reconciled"] and not r["parse_error"]
+            ),
+        },
+    }
+    if as_json:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
+    print(f"[adr-judge] override audit: {log_path}", file=sys.stderr)
+    if not log_path.exists():
+        print("[adr-judge] no override log found; nothing to audit.", file=sys.stderr)
+        return 0
+    if trailers is None:
+        print(
+            "[adr-judge] WARN: git log unavailable; cannot reconcile trailers.",
+            file=sys.stderr,
+        )
+    for r in report:
+        if r["parse_error"]:
+            print(f"  MALFORMED   {r['parse_error']}", file=sys.stderr)
+            continue
+        status = "RECONCILED" if r["reconciled"] else "UNMATCHED "
+        print(
+            f"  {status}  {r['adr']}  {r['timestamp']}  reason: {r['reason']}",
+            file=sys.stderr,
+        )
+        if r["reconciled"]:
+            print(f"              trailer commit(s): {', '.join(r['trailer_commits'])}", file=sys.stderr)
+    s = payload["summary"]
+    print(
+        f"[adr-judge] {s['logged']} logged override(s): "
+        f"{s['reconciled']} reconciled with {OVERRIDE_TRAILER_KEY} trailers, "
+        f"{s['unmatched']} without a matching trailer.",
+        file=sys.stderr,
+    )
+    if s["unmatched"]:
+        print(
+            f"[adr-judge] add '{OVERRIDE_TRAILER_KEY}: ADR-NNN <reason>' trailers to the "
+            "corresponding commit messages to close the audit trail.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 # ---------- profiling ----------
 
 
@@ -1186,6 +1451,20 @@ def main() -> int:
         "Budget%% is relative to judge.pre_commit_timeout_ms in .adr-kit.json.",
     )
     p.add_argument(
+        "--check-override",
+        action="store_true",
+        help="Validate the ADR_KIT_OVERRIDE environment variable and exit. "
+        "Exit 0 when it parses as 'ADR-NNN: <non-empty reason>', exit 2 "
+        "otherwise. Normal judging applies a valid override automatically.",
+    )
+    p.add_argument(
+        "--audit-overrides",
+        action="store_true",
+        help="Read-only report reconciling the gitignored override log "
+        "(<adr-dir>/.adr-kit-overrides.jsonl) with ADR-Override commit "
+        "message trailers from git log. Never modifies anything.",
+    )
+    p.add_argument(
         "--dry-run-enforcement",
         metavar="ADR-NNN",
         default=None,
@@ -1253,6 +1532,25 @@ def main() -> int:
         )
 
         repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd()
+
+        if args.check_override:
+            parsed = parse_override_env(os.environ.get(OVERRIDE_ENV_VAR, ""))
+            if parsed is None:
+                print(
+                    f"[adr-judge] {OVERRIDE_ENV_VAR} is unset or invalid. Expected "
+                    f"'ADR-NNN: <non-empty reason>'. Overrides without a reason "
+                    f"are refused.",
+                    file=sys.stderr,
+                )
+                return 2
+            print(
+                f"[adr-judge] override valid: {parsed[0]} (reason: {parsed[1]})",
+                file=sys.stderr,
+            )
+            return 0
+
+        if args.audit_overrides:
+            return audit_overrides(adr_dir, repo_root, as_json=args.json)
 
         if args.migrate_status_history:
             migrated = []
@@ -1359,6 +1657,69 @@ def main() -> int:
                 if llm_findings is not None:
                     all_findings.extend(llm_findings)
                     llm_findings_emitted = len(llm_findings)
+
+        # Override pass (task-10): a valid ADR_KIT_OVERRIDE downgrades FAILs of
+        # ONE named ADR to loudly printed WARN advisories and appends a record
+        # to the gitignored override log. Violations of other ADRs still block.
+        # Skipped in dry-run mode (dry-run promises zero state changes).
+        override_env_raw = os.environ.get(OVERRIDE_ENV_VAR, "")
+        if override_env_raw.strip() and dry_run_target is None:
+            parsed_override = parse_override_env(override_env_raw)
+            if parsed_override is None:
+                print(
+                    f"[adr-judge] WARN: {OVERRIDE_ENV_VAR}={override_env_raw!r} is "
+                    f"invalid (expected 'ADR-NNN: <non-empty reason>'). Override "
+                    f"REFUSED; violations remain blocking.",
+                    file=sys.stderr,
+                )
+            else:
+                override_id, override_reason = parsed_override
+                downgraded = apply_override(all_findings, override_id, override_reason)
+                if downgraded:
+                    record = {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "adr": override_id,
+                        "reason": override_reason,
+                        "user": _git_user(repo_root),
+                        "staged_diff_sha256": hashlib.sha256(
+                            diff_text.encode("utf-8")
+                        ).hexdigest(),
+                        "overridden_findings": downgraded,
+                    }
+                    log_path = write_override_record(adr_dir, repo_root, record)
+                    print(
+                        "[adr-judge] " + "=" * 60,
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"[adr-judge] WARN: OVERRIDE ACTIVE for {override_id}: "
+                        f"{downgraded} violation(s) downgraded to WARN.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"[adr-judge] WARN: reason: {override_reason}",
+                        file=sys.stderr,
+                    )
+                    if log_path is not None:
+                        print(
+                            f"[adr-judge] WARN: recorded in {log_path}",
+                            file=sys.stderr,
+                        )
+                    else:
+                        print(
+                            "[adr-judge] WARN: could not write the override log; "
+                            "the override still applies but is NOT locally recorded.",
+                            file=sys.stderr,
+                        )
+                    print(
+                        f"[adr-judge] WARN: add this trailer to your commit message: "
+                        f"{OVERRIDE_TRAILER_KEY}: {override_id} {override_reason}",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "[adr-judge] " + "=" * 60,
+                        file=sys.stderr,
+                    )
 
         # --dry-run-enforcement: announce we're in dry-run mode before results.
         if dry_run_target is not None:

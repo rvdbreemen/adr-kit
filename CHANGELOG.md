@@ -4,6 +4,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Judge override audit trail (task-10).** A pre-commit FAIL can now be overridden for ONE named ADR per commit via `ADR_KIT_OVERRIDE="ADR-NNN: <reason>" git commit ...`. The override downgrades only that ADR's violations to loudly printed warnings (other ADRs still block), refuses an empty reason, and appends a record (timestamp, ADR id, reason, git user, SHA-256 of the judged diff) to the untracked log `docs/adr/.adr-kit-overrides.jsonl` (excluded via `.git/info/exclude`). Judging stays read-only: no tracked file is touched while a staged diff is evaluated. Convention: the commit message SHOULD carry a matching `ADR-Override: ADR-NNN <reason>` trailer. New modes: `adr-judge --check-override` (validate the env var) and `adr-judge --audit-overrides [--json]` (read-only reconciliation of the local log against commit trailers).
+- **Concurrent-supersession detection (task-10)** in the adr-lint consistency gate. Two or more Accepted ADRs declaring `Supersedes ADR-NNN` for the same target now FAIL, with every claimant file named; the message reports whether the target's Status line names a successor. A single clean supersession still passes. Tests in `tests/test_adr_judge_override.py` and `tests/test_adr_lint_supersession.py`.
+
 ## [0.24.0] - 2026-06-12
 
 ### Added
