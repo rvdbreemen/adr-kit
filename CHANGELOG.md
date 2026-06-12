@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-06-12
+
 ### Added
 
 - **`bin/adr-renumber`: safely renumber one ADR for the merge-collision workflow (task-8).** Dry-run by default (prints the full plan: file rename, heading rewrite, and every cross-reference rewrite with file:line); `--apply` executes. `--to ADR-NNN` is optional and defaults to the next free number (max in use + 1; gaps are not reused so retired numbers stay retired). Updates Related Decisions entries, "Superseded by" and "Amended by" status strings, Status History mentions, and plain ADR-NNN references across all ADRs in the directory. Whole-token matching only: renumbering ADR-043 never touches ADR-0430. Refuses (exit 2) when the target number is taken, the source is missing, or the source number is ambiguous (duplicates: pass the file path). Stdlib-only, linear regexes. Tests in `tests/test_adr_renumber.py`.
