@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`bin/adr-watch`: in-flight ADR guidance for just-edited files (task-6).** New stdlib-only Python bin that closes the guidance gap between SessionStart context injection (guardian) and pre-commit enforcement (adr-judge). Given one or more edited file paths it prints at most three compact one-line nudges naming the Accepted ADRs that likely apply. Two signals: Enforcement-block `path_glob` match (strongest, reuses the adr-judge glob translator including `**` and `{a,b}` brace expansion) and adr-context-style keyword relevance of the path against ADR title + Decision text. Deterministic, key-free, no LLM, no network; each ADR file is read exactly once and all regexes are precompiled and linear-time. Always exits 0 (advisory, never blocks). Self-guards: silent no-op when the working directory has no `docs/adr/` with ADRs.
+- **PostToolUse hook wiring (plugin-level, task-6).** `.claude-plugin/plugin.json` now declares a `PostToolUse` hook (matcher `Edit|MultiEdit|Write`) invoking the new `.claude-plugin/hooks/post-tool-use` bash script via the existing `run-hook.cmd` cross-platform polyglot. In `--hook` mode adr-watch extracts `tool_input.file_path` from the payload and emits the nudges as a `hookSpecificOutput.additionalContext` envelope under Claude Code, or plain text elsewhere. Degrades silently (exit 0) when Python, the bin, or the payload is missing or malformed.
+- **Per-session nudge cooldown (task-6).** The same ADR+file pair is not nudged again within `watch.cooldown_hours` (default 4). State lives under a separate `watch` key in `docs/adr/.adr-kit-state.json`, written atomically via `os.replace`; sibling guardian keys are preserved and corrupt state is tolerated as empty. New `watch` config block (`enabled`, `cooldown_hours`) in `schemas/adr-kit-config.schema.json`. 23 tests in `tests/test_adr_watch.py`.
+
 ## [0.23.0] - 2026-06-12
 
 ### Added

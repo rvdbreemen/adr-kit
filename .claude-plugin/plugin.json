@@ -39,6 +39,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/run-hook.cmd\" post-tool-use",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "dependencies": []

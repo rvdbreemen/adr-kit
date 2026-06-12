@@ -205,6 +205,24 @@
       },
       "additionalProperties": false
     },
+    "watch": {
+      "type": "object",
+      "description": "Configuration for bin/adr-watch (in-flight ADR guidance via the PostToolUse hook), introduced in adr-kit v0.21. adr-watch prints at most three compact one-line nudges naming the Accepted ADRs that likely apply to a just-edited file. It is deterministic (no LLM, no network), advisory only, and always exits 0.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, adr-watch never emits a nudge and the PostToolUse hook is effectively a no-op for this project. Default true: detection is free and deterministic.",
+          "default": true
+        },
+        "cooldown_hours": {
+          "type": "number",
+          "description": "Minimum hours before the same ADR+file pair is nudged again. Prevents repeat nudges while iterating on one file within a session. Default 4. Set 0 to disable the cooldown entirely.",
+          "minimum": 0,
+          "default": 4
+        }
+      }
+    },
     "guardian": {
       "type": "object",
       "description": "Configuration for the ADR Guardian (bin/adr-guardian + /adr-kit:guardian skill), introduced in adr-kit v0.18.0. The guardian is a periodic ADR-set health detector that injects a staleness nudge at Claude Code SessionStart when a health tier is due. Detection is free (no LLM) and default-on. The LLM tier (adr-suggest + audit) always asks before spending unless llm_autorun is explicitly set true.",

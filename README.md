@@ -343,6 +343,35 @@ When a tier is due, `bin/adr-guardian check` emits an `[adr-guardian] ... DUE` b
 | Stale ADR — tech removed / superseded / policy drift | Draft retirement/supersession skeleton for review. Never auto-apply. |
 | ADR-set health — gate failures, broken chains | Report PASS/ADVISORY/FAIL. Offer to fix FAILs via `adr-generator`. |
 
+### In-flight ADR guidance: `bin/adr-watch` (v0.24.0+)
+
+The watcher closes the gap between SessionStart context (guardian) and pre-commit enforcement (adr-judge): while you edit, a PostToolUse hook on `Edit`/`Write` checks the just-edited file against the Accepted ADRs and nudges the in-session model with at most three compact one-liners:
+
+    [adr-watch] ADR-007 (no direct DB calls outside repository layer) may apply to src/db/foo.py
+
+How it matches, in order of strength:
+
+1. **Enforcement `path_glob`**: the edited path matches a `path_glob` in the ADR's `## Enforcement` block (same glob semantics as `bin/adr-judge`, including `**` and `{a,b}`).
+2. **Keyword relevance**: enough of the path's words (directory names, file stem) appear in the ADR title + `## Decision` text (same keyword model as `bin/adr-context`).
+
+Deterministic, key-free, no LLM, no network, and always exit 0: it never blocks an edit. It self-guards (silent no-op outside projects with `docs/adr/`) and a per-session cooldown prevents repeating the same ADR+file nudge within `watch.cooldown_hours` (state under the `watch` key of the gitignored `docs/adr/.adr-kit-state.json`).
+
+Config (`docs/adr/.adr-kit.json`):
+
+```json
+{
+  "watch": {
+    "enabled": true,
+    "cooldown_hours": 4
+  }
+}
+```
+
+- `enabled` (default `true`): set `false` to silence all watch nudges for the project.
+- `cooldown_hours` (default 4): minimum hours before the same ADR+file pair is nudged again; `0` disables the cooldown.
+
+Manual use: `bin/adr-watch src/db/foo.py` prints the nudges as plain text.
+
 ### Per-ADR markers
 
 For one-off grandfathering without a project-wide config, drop one of these HTML comments anywhere in an ADR file:
