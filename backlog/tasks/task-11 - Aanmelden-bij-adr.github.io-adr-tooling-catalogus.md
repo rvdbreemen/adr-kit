@@ -1,10 +1,10 @@
 ---
 id: TASK-11
 title: Aanmelden bij adr.github.io/adr-tooling catalogus
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-12 20:06'
-updated_date: '2026-06-12 21:05'
+updated_date: '2026-06-12 22:44'
 labels:
   - tier-3
   - adoptie
@@ -23,6 +23,12 @@ De canonieke ADR-tooling-catalogus (laatst bijgewerkt 2026-05-11) bevat nul AI-a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PR ingediend bij adr/adr.github.io met correcte categorisering
+- [x] #1 PR ingediend bij adr/adr.github.io met correcte categorisering
 - [ ] #2 README-badge of -vermelding zodra gemerged
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+PR submitted: https://github.com/adr/adr.github.io/pull/104 (adds adr-kit to the Any template section of _posts/2024-10-28-adr-tooling.md, alphabetically after ADG; entry covers agent enforcement, drift/staleness detection, context ranking, MCP server, MADR/Nygard import). Prerequisites completed first: 31 commits + 11 tags pushed to origin, 11 GitHub Releases created (v0.21.0 through v0.30.1). AC#2 (README badge/mention) pending until the PR merges; adr-kit would be the first AI-agent tool in the catalog.
+<!-- SECTION:FINAL_SUMMARY:END -->
