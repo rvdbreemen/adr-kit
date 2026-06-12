@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""adr-related: ADR dependency graph for a single ADR.
+
+Walks the whole ADR set and prints the inbound and outbound edges for the
+given ADR:
+
+- Outbound: entries in its "## Related Decisions" section, its
+  "Superseded by ADR-X" / "Amended by ADR-X" status references, and any
+  "Supersedes ADR-X" claims it makes.
+- Inbound: every other ADR that references it, with the reference kind
+  (related, supersedes, superseded-by, amended-by, mention).
+
+Matching is whole-token only: looking for ADR-043 never matches ADR-0430.
+Dangling references (target id does not exist in the set) are flagged.
+
+Read-only. Exit 0 on success, 2 on usage/config errors (unknown ADR id,
+missing directory).
+
+Usage:
+  adr-related ADR-007
+  adr-related 7 --adr-dir docs/adr
+  adr-related ADR-007 --format json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+
+
+# ---------------------------------------------------------------------------
+# Module-level compiled regexes (all linear; no nested quantifiers)
+# ---------------------------------------------------------------------------
+
+# ADR id token. \b on both sides gives whole-token matching: the greedy
+# \d{1,4} consumes all adjacent digits, so ADR-0430 can never be read as
+# ADR-043 plus a stray "0".
+_ADR_TOKEN_RE = re.compile(r"\bADR-(\d{1,4})\b", re.IGNORECASE)
+
+# ADR id from a filename (no trailing \b: filenames continue with "-slug").
+_ADR_FILENAME_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
+
+# Title: first heading line, stripping the ADR-XXX prefix.
+_TITLE_RE = re.compile(r"^#\s+(?:ADR-\d+\s+)?(.+)$", re.MULTILINE)
+
+# Status word: "## Status" (not "## Status History") followed by a word.
+_STATUS_SECTION_RE = re.compile(
+    r"^##\s+Status(?!\s+History)\s*$\s+([A-Za-z]+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Related Decisions section body (up to the next ## heading or EOF).
+_RELATED_SECTION_RE = re.compile(
+    r"^##\s+Related Decisions(.*?)(?=^##|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+
+# Supersession / amendment references. "Supersedes" (claim) does not match
+# "Superseded by" because of the literal spelling difference.
+_SUPERSEDES_CLAIM_RE = re.compile(
+    r"\bSupersedes\s+ADR-(\d{1,4})\b", re.IGNORECASE
+)
+_SUPERSEDED_BY_RE = re.compile(
+    r"\bSuperseded\s+by\s+ADR-(\d{1,4})\b", re.IGNORECASE
+)
+_AMENDED_BY_RE = re.compile(
+    r"\bAmended\s+by\s+ADR-(\d{1,4})\b", re.IGNORECASE
+)
+
+
+# Reference kinds, in display order (most specific first).
+KIND_ORDER = ["supersedes", "superseded-by", "amended-by", "related", "mention"]
+_KIND_RANK = {k: i for i, k in enumerate(KIND_ORDER)}
+
+
+# ---------------------------------------------------------------------------
+# Per-ADR record
+# ---------------------------------------------------------------------------
+
+class AdrRefs:
+    """Reference profile of a single ADR file.
+
+    Plain class (not @dataclass) for SourceFileLoader compatibility,
+    matching bin/adr-status.
+    """
+
+    __slots__ = (
+        "path", "adr_id", "title", "status",
+        "related_ids", "supersedes_ids", "superseded_by_ids",
+        "amended_by_ids", "mention_ids",
+    )
+
+    def __init__(
+        self,
+        path: Path,
+        adr_id: str,
+        title: str,
+        status: str,
+        related_ids: List[str],
+        supersedes_ids: List[str],
+        superseded_by_ids: List[str],
+        amended_by_ids: List[str],
+        mention_ids: List[str],
+    ) -> None:
+        self.path = path
+        self.adr_id = adr_id
+        self.title = title
+        self.status = status
+        self.related_ids = related_ids
+        self.supersedes_ids = supersedes_ids
+        self.superseded_by_ids = superseded_by_ids
+        self.amended_by_ids = amended_by_ids
+        self.mention_ids = mention_ids
+
+
+def normalize_adr_id(raw: str) -> Optional[str]:
+    """Normalize 'ADR-7', 'adr-007', or '7' to 'ADR-007'. None if invalid."""
+    s = raw.strip()
+    m = re.fullmatch(r"(?:ADR-)?(\d{1,4})", s, re.IGNORECASE)
+    if not m:
+        return None
+    return f"ADR-{int(m.group(1)):03d}"
+
+
+def _ids_from(pattern: re.Pattern, text: str) -> List[str]:
+    """Unique normalized ADR ids matched by pattern, in first-seen order."""
+    seen: List[str] = []
+    for m in pattern.finditer(text):
+        adr_id = f"ADR-{int(m.group(1)):03d}"
+        if adr_id not in seen:
+            seen.append(adr_id)
+    return seen
+
+
+def parse_adr_refs(path: Path) -> Optional[AdrRefs]:
+    """Read one ADR file and extract its reference profile.
+
+    Returns None if the file cannot be read or the name has no ADR id.
+    """
+    m = _ADR_FILENAME_RE.search(path.name)
+    if not m:
+        return None
+    adr_id = f"ADR-{int(m.group(1)):03d}"
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    title_m = _TITLE_RE.search(content)
+    title = title_m.group(1).strip() if title_m else ""
+
+    status_m = _STATUS_SECTION_RE.search(content)
+    status = status_m.group(1).capitalize() if status_m else "Unknown"
+
+    related_m = _RELATED_SECTION_RE.search(content)
+    related_text = related_m.group(1) if related_m else ""
+    related_ids = [i for i in _ids_from(_ADR_TOKEN_RE, related_text) if i != adr_id]
+
+    supersedes_ids = [i for i in _ids_from(_SUPERSEDES_CLAIM_RE, content) if i != adr_id]
+    superseded_by_ids = [i for i in _ids_from(_SUPERSEDED_BY_RE, content) if i != adr_id]
+    amended_by_ids = [i for i in _ids_from(_AMENDED_BY_RE, content) if i != adr_id]
+
+    classified = set(related_ids) | set(supersedes_ids) | set(superseded_by_ids) | set(amended_by_ids)
+    mention_ids = [
+        i for i in _ids_from(_ADR_TOKEN_RE, content)
+        if i != adr_id and i not in classified
+    ]
+
+    return AdrRefs(
+        path=path,
+        adr_id=adr_id,
+        title=title,
+        status=status,
+        related_ids=related_ids,
+        supersedes_ids=supersedes_ids,
+        superseded_by_ids=superseded_by_ids,
+        amended_by_ids=amended_by_ids,
+        mention_ids=mention_ids,
+    )
+
+
+def load_adr_set(adr_dir: Path) -> List[AdrRefs]:
+    """Load reference profiles for every ADR-*.md in adr_dir, sorted by name."""
+    records: List[AdrRefs] = []
+    for f in sorted(adr_dir.glob("ADR-*.md")):
+        rec = parse_adr_refs(f)
+        if rec is not None:
+            records.append(rec)
+    return records
+
+
+# ---------------------------------------------------------------------------
+# Graph construction
+# ---------------------------------------------------------------------------
+
+def _edges_of(rec: AdrRefs, include_mentions: bool) -> List[Dict[str, str]]:
+    """Flatten one ADR's references into (target, kind) edge dicts."""
+    edges: List[Dict[str, str]] = []
+    kinds = [
+        ("supersedes", rec.supersedes_ids),
+        ("superseded-by", rec.superseded_by_ids),
+        ("amended-by", rec.amended_by_ids),
+        ("related", rec.related_ids),
+    ]
+    if include_mentions:
+        kinds.append(("mention", rec.mention_ids))
+    for kind, ids in kinds:
+        for target in ids:
+            edges.append({"adr_id": target, "kind": kind})
+    return edges
+
+
+def build_graph(target_id: str, records: List[AdrRefs]) -> Dict:
+    """Build the inbound/outbound graph for target_id over the loaded set.
+
+    Raises KeyError if target_id is not in the set.
+    """
+    by_id: Dict[str, AdrRefs] = {r.adr_id: r for r in records}
+    if target_id not in by_id:
+        raise KeyError(target_id)
+    target = by_id[target_id]
+
+    def enrich(edge: Dict[str, str]) -> Dict:
+        other = by_id.get(edge["adr_id"])
+        return {
+            "adr_id": edge["adr_id"],
+            "kind": edge["kind"],
+            "exists": other is not None,
+            "title": other.title if other else None,
+            "status": other.status if other else None,
+            "path": str(other.path) if other else None,
+        }
+
+    # Outbound: the four explicit reference kinds of the target itself.
+    # Plain mentions inside the target are not outbound edges; they carry
+    # no declared relationship.
+    outbound = [enrich(e) for e in _edges_of(target, include_mentions=False)]
+
+    # Inbound: every other ADR whose references point at the target,
+    # including plain mentions (a mention of this ADR is still a dependency
+    # signal worth seeing).
+    inbound: List[Dict] = []
+    for rec in records:
+        if rec.adr_id == target_id:
+            continue
+        for edge in _edges_of(rec, include_mentions=True):
+            if edge["adr_id"] != target_id:
+                continue
+            inbound.append({
+                "adr_id": rec.adr_id,
+                "kind": edge["kind"],
+                "title": rec.title,
+                "status": rec.status,
+                "path": str(rec.path),
+            })
+
+    def sort_key(e: Dict):
+        return (e["adr_id"], _KIND_RANK.get(e["kind"], len(KIND_ORDER)))
+
+    outbound.sort(key=sort_key)
+    inbound.sort(key=sort_key)
+
+    dangling = sorted({e["adr_id"] for e in outbound if not e["exists"]})
+
+    return {
+        "adr": {
+            "adr_id": target.adr_id,
+            "title": target.title,
+            "status": target.status,
+            "path": str(target.path),
+        },
+        "outbound": outbound,
+        "inbound": inbound,
+        "dangling": dangling,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Formatting
+# ---------------------------------------------------------------------------
+
+def format_human(graph: Dict) -> str:
+    adr = graph["adr"]
+    lines = [
+        f"{adr['adr_id']} {adr['title']}".rstrip(),
+        f"Status: {adr['status']}  |  {adr['path']}",
+        "",
+        "Outbound (this ADR references):",
+    ]
+
+    if graph["outbound"]:
+        for e in graph["outbound"]:
+            label = f"  -> {e['adr_id']} [{e['kind']}]"
+            if e["exists"]:
+                title = f" {e['title']}" if e["title"] else ""
+                label += f"{title} ({e['status']})"
+            else:
+                label += " ** DANGLING: target not found **"
+            lines.append(label)
+    else:
+        lines.append("  (none)")
+
+    lines.append("")
+    lines.append("Inbound (other ADRs referencing this one):")
+    if graph["inbound"]:
+        for e in graph["inbound"]:
+            title = f" {e['title']}" if e["title"] else ""
+            lines.append(f"  <- {e['adr_id']} [{e['kind']}]{title} ({e['status']})")
+    else:
+        lines.append("  (none)")
+
+    if graph["dangling"]:
+        lines.append("")
+        lines.append(
+            "WARNING: dangling references (no such ADR in the set): "
+            + ", ".join(graph["dangling"])
+        )
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+def _ensure_utf8_stdout() -> None:
+    """Force stdout/stderr to UTF-8 on Windows consoles defaulting to cp1252."""
+    import io
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stderr.reconfigure(encoding="utf-8")
+        except (AttributeError, io.UnsupportedOperation):
+            pass
+
+
+def main() -> None:
+    _ensure_utf8_stdout()
+
+    parser = argparse.ArgumentParser(
+        description="Show the dependency graph (inbound + outbound edges) for one ADR.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "adr_id",
+        metavar="ADR-NNN",
+        help="ADR identifier (ADR-007, adr-7, or just 7)",
+    )
+    parser.add_argument(
+        "--adr-dir",
+        dest="adr_dir",
+        default="docs/adr",
+        help="Directory containing ADR-*.md files (default: docs/adr)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["human", "json"],
+        default="human",
+        help="Output format (default: human)",
+    )
+
+    args = parser.parse_args()
+
+    target_id = normalize_adr_id(args.adr_id)
+    if target_id is None:
+        print(f"adr-related: invalid ADR id: {args.adr_id}", file=sys.stderr)
+        sys.exit(2)
+
+    adr_dir = Path(args.adr_dir)
+    if not adr_dir.is_dir():
+        print(f"adr-related: directory not found: {adr_dir}", file=sys.stderr)
+        sys.exit(2)
+
+    records = load_adr_set(adr_dir)
+    try:
+        graph = build_graph(target_id, records)
+    except KeyError:
+        print(
+            f"adr-related: {target_id} not found in {adr_dir} "
+            f"({len(records)} ADRs scanned)",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    if args.format == "json":
+        print(json.dumps(graph, indent=2))
+    else:
+        print(format_human(graph))
+
+
+if __name__ == "__main__":
+    main()

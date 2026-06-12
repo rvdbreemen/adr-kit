@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`bin/adr-related`: read-only ADR dependency graph CLI (task-3).** `adr-related ADR-NNN [--adr-dir docs/adr] [--format human|json]` prints outbound edges (Related Decisions entries, Supersedes claims, Superseded by / Amended by status refs) and inbound edges (every other ADR referencing the target, with reference kind: related, supersedes, superseded-by, amended-by, mention). Whole-token id matching (ADR-043 never matches inside ADR-0430). Dangling references are flagged. Exit 0 on success, 2 on unknown id or missing directory. Stdlib-only, linear regexes. 24 tests in `tests/test_adr_related.py`.
+- **`/adr-kit:related` skill (task-3):** thin read-only wrapper around `bin/adr-related`. Model-invocable; safe from parallel subagents.
+- **`/adr-kit:supersede` skill (task-3):** guided supersession workflow (`disable-model-invocation: true`). Shows the target's dependency graph first, drafts the superseding ADR via the adr-generator subagent (Status: Proposed, back-linked), and only after user approval flips the old ADR's Status line to `Superseded by ADR-M` and appends status_history entries on both sides. Verifies the chain with `bin/adr-related` + `bin/adr-lint`. Hard-stops when the target already carries a `Superseded by` pointer at a different ADR (never overwrites an existing supersession; same invariant the adr-lint consistency gate enforces since v0.25.0). Never auto-accepts the new ADR.
+
 ## [0.27.0] - 2026-06-12
 
 ### Added
