@@ -23,11 +23,28 @@ Design invariants (match spec §3 / §12):
   - stamp: writes only .adr-kit-state.json; always exit 0.
   - cwd-guard: check exits 0 silently when cwd has no docs/adr/ with ADRs.
   - nudge_cooldown_hours: check skips output if last_nudged is within the window.
+
+Multi-session safety (task-9):
+  - .adr-kit-state.json is per-machine ADVISORY data, not a ledger. Concurrent
+    Claude Code sessions may stamp at the same time; last-writer-wins is the
+    accepted and documented semantics. The worst case is a slightly stale
+    timestamp, which self-heals on the next sweep.
+  - Writes are atomic: state is written to a unique temp file in the same
+    directory, then moved into place with os.replace (atomic on both POSIX and
+    NTFS). A reader can never observe a partial file.
+  - Corrupt or partial state files are tolerated on read: they are treated as
+    empty state, one warning line goes to stderr, and the next stamp overwrites
+    the file with valid JSON. The guardian never crashes on a bad state file.
+  - Best-effort advisory locking (fcntl on POSIX, msvcrt on Windows) narrows
+    the read-modify-write race during stamp. It is non-blocking and optional:
+    when the lock cannot be taken, the write proceeds anyway (atomic replace
+    still guarantees file integrity).
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -74,28 +91,119 @@ DEFAULT_STATE: Dict = {
 
 
 def _load_state(state_path: Path) -> Dict:
-    """Read .adr-kit-state.json. Returns DEFAULT_STATE when missing or invalid."""
+    """Read .adr-kit-state.json. Returns DEFAULT_STATE when missing or invalid.
+
+    A corrupt or partial file is tolerated: it is treated as empty state and a
+    single warning line is written to stderr. The file itself is left in place;
+    the next stamp overwrites it with valid JSON (last-writer-wins).
+    """
     if not state_path.exists():
         return json.loads(json.dumps(DEFAULT_STATE))
     try:
         data = json.loads(state_path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
+            sys.stderr.write(
+                f"[adr-guardian] warning: state file {state_path} is not a JSON object;"
+                " treating as empty state\n"
+            )
             return json.loads(json.dumps(DEFAULT_STATE))
         return data
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as exc:
+        sys.stderr.write(
+            f"[adr-guardian] warning: state file {state_path} unreadable or corrupt"
+            f" ({exc.__class__.__name__}); treating as empty state\n"
+        )
         return json.loads(json.dumps(DEFAULT_STATE))
 
 
-def _save_state(state_path: Path, state: Dict) -> None:
-    """Write .adr-kit-state.json atomically."""
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = state_path.with_suffix(".tmp")
+@contextlib.contextmanager
+def _state_lock(state_path: Path):
+    """Best-effort, non-blocking advisory lock around a state write.
+
+    Uses fcntl.flock on POSIX and msvcrt.locking on Windows, both guarded by
+    try/except ImportError so the script stays stdlib-only and portable. When
+    the lock cannot be acquired (held by a concurrent session, or no locking
+    primitive available), the write proceeds anyway: os.replace keeps the file
+    atomic and last-writer-wins is the documented semantics. The .lock file is
+    intentionally left in place (deleting it would reintroduce a race).
+    """
+    lock_path = state_path.parent / (state_path.name + ".lock")
+    fh = None
+    locked = False
     try:
-        tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(state_path)
+        try:
+            fh = open(lock_path, "a+b")
+        except OSError:
+            fh = None
+        if fh is not None:
+            try:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+            except ImportError:
+                try:
+                    import msvcrt
+
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                    locked = True
+                except (ImportError, OSError):
+                    pass
+            except OSError:
+                pass
+        yield
+    finally:
+        if fh is not None:
+            if locked:
+                try:
+                    import fcntl
+
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                except ImportError:
+                    try:
+                        import msvcrt
+
+                        fh.seek(0)
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    except (ImportError, OSError):
+                        pass
+                except OSError:
+                    pass
+            try:
+                fh.close()
+            except OSError:
+                pass
+
+
+def _save_state(state_path: Path, state: Dict) -> None:
+    """Write .adr-kit-state.json atomically (multi-session safe).
+
+    Strategy: serialize to a unique temp file in the SAME directory (so the
+    rename never crosses filesystems), then os.replace it over the state file.
+    os.replace is atomic on both POSIX and Windows, so concurrent readers see
+    either the old or the new file, never a partial one. A unique per-process
+    temp name avoids two sessions clobbering each other's temp file. The
+    surrounding best-effort lock narrows (but does not eliminate) the
+    read-modify-write window; last-writer-wins is acceptable for this advisory,
+    per-machine state.
+    """
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
-        # Non-fatal: if we can't write state, the next session just sees stale state.
-        pass
+        return
+    tmp = state_path.parent / f"{state_path.name}.{os.getpid()}.tmp"
+    with _state_lock(state_path):
+        try:
+            tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+            os.replace(str(tmp), str(state_path))
+        except OSError:
+            # Non-fatal: if we can't write state, the next session just sees
+            # stale state. Clean up the temp file if it was left behind.
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def _load_config(config_path: Path) -> Dict:

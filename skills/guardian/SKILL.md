@@ -172,6 +172,15 @@ Print a summary:
 - **Always stamp after each tier completes** so the next session's cooldown is correct.
 - **Model can self-call.** This skill is NOT `disable-model-invocation`. When the session model sees an `[adr-guardian] ... DUE` block injected at SessionStart, it should proactively offer to run the due tier via `/adr-kit:guardian`.
 
+## Team mode
+
+The guardian has two complementary triggers; use both on team projects:
+
+- **SessionStart nudge (per developer).** The local hook plus this skill gives each developer a freshness signal on their own machine. The state file (`docs/adr/.adr-kit-state.json`) is gitignored, per-machine, advisory data: atomic writes keep it safe across parallel Claude Code sessions, and last-writer-wins is the accepted semantics.
+- **CI-cron sweep (shared team visibility).** A weekly GitHub Actions workflow (`.github/workflows/adr-guardian-audit.yml`; downstream copy-paste variant in `templates/github-workflows/adr-guardian-audit.yml`) runs the cheap tier only (lint + retire + status) and maintains a single "ADR guardian audit" tracking issue. Report-only: it never fails the build, never runs an LLM (ADR-001 posture), and needs no secrets beyond `GITHUB_TOKEN`.
+
+Both can coexist: the CI sweep does not read or write the local state file, and the local nudge cadence is unaffected by CI runs. The LLM tier remains local and opt-in only.
+
 ## SessionStart block handling (for in-session model)
 
 When the in-session model reads an `additionalContext` block starting with `[adr-guardian]`:

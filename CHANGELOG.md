@@ -4,6 +4,14 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Guardian team mode (task-9).** New weekly CI-cron sweep workflow `.github/workflows/adr-guardian-audit.yml` runs the cheap tier only (`adr-lint` + `adr-retire` + `adr-status`), aggregates one markdown report, and maintains a single "ADR guardian audit" tracking issue (created on findings, body updated on later runs, closed when clean). Report-only: never fails the build, never runs an LLM (ADR-001 posture), no secrets beyond `GITHUB_TOKEN`. A copy-paste variant for downstream projects ships in `templates/github-workflows/adr-guardian-audit.yml`. The guardian skill (`skills/guardian/SKILL.md`) documents the split: SessionStart nudge = per-developer freshness, CI cron = shared team visibility.
+
+### Fixed
+
+- **Multi-session-safe guardian state (task-9).** `bin/adr-guardian` now writes `.adr-kit-state.json` via a unique per-process temp file plus `os.replace` (atomic on POSIX and Windows), tolerates corrupt or partial state files on read (treated as empty state, one stderr warning, file overwritten by the next stamp), and takes a best-effort non-blocking advisory lock (`fcntl`/`msvcrt`, guarded by `ImportError`) around writes. Last-writer-wins semantics are documented in the script header; the state file is per-machine advisory data, not a ledger. Tests in `tests/test_adr_guardian_state.py`.
+
 ## [0.21.0] - 2026-06-12
 
 ### Added

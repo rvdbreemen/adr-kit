@@ -1,0 +1,122 @@
+# ADR guardian audit: weekly CI-cron sweep of the cheap tier only.
+#
+# Team mode companion to the per-developer SessionStart nudge (ADR-002):
+# the local guardian gives each developer a freshness signal; this workflow
+# gives the whole team shared visibility via one tracking issue.
+#
+# Invariants:
+#   - Cheap tier only: adr-lint + adr-retire + adr-status. NEVER runs an LLM
+#     (ADR-001 posture: LLM gates are opt-in and local).
+#   - Report-only: findings go to the tracking issue; the job always succeeds.
+#   - No secrets beyond the default GITHUB_TOKEN.
+#   - One tracking issue ("ADR guardian audit"): created on first findings,
+#     body updated on later runs, closed when a run comes back clean.
+#
+# Downstream projects: see templates/github-workflows/adr-guardian-audit.yml
+# for a copy-paste variant that fetches the adr-kit tools first.
+
+name: ADR guardian audit
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run cheap-tier sweep (lint + retire + status)
+        id: sweep
+        shell: bash
+        run: |
+          REPORT="$RUNNER_TEMP/adr-guardian-report.md"
+          if [ ! -d docs/adr ]; then
+            echo "No docs/adr directory; nothing to audit."
+            echo "findings=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          lint_rc=0
+          python bin/adr-lint docs/adr > "$RUNNER_TEMP/lint.txt" 2>&1 || lint_rc=$?
+          python bin/adr-retire docs/adr --repo-root . --format markdown \
+            > "$RUNNER_TEMP/retire.md" 2>&1 || true
+          python bin/adr-status --adr-dir docs/adr --format markdown \
+            > "$RUNNER_TEMP/status.md" 2>&1 || true
+
+          {
+            echo "# ADR guardian audit (cheap tier)"
+            echo
+            echo "_Last sweep: $(date -u +%Y-%m-%dT%H:%M:%SZ) · commit ${GITHUB_SHA} · report-only, no LLM._"
+            echo
+            echo "## Lint (adr-lint, default gates)"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/lint.txt"
+            echo '```'
+            echo
+            echo "## Retirement candidates (adr-retire)"
+            echo
+            cat "$RUNNER_TEMP/retire.md"
+            echo
+            echo "## Status (adr-status)"
+            echo
+            cat "$RUNNER_TEMP/status.md"
+          } > "$REPORT"
+          cat "$REPORT"
+
+          findings=false
+          if [ "$lint_rc" -ne 0 ]; then
+            findings=true
+          fi
+          if grep -q '^## ADR-' "$RUNNER_TEMP/retire.md"; then
+            findings=true
+          fi
+          echo "findings=$findings" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update tracking issue
+        if: steps.sweep.outputs.findings == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TITLE="ADR guardian audit"
+          existing=$(gh issue list --state open --search "\"$TITLE\" in:title" \
+            --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")][0].number // empty")
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file "$RUNNER_TEMP/adr-guardian-report.md"
+            echo "Updated tracking issue #$existing"
+          else
+            gh issue create --title "$TITLE" \
+              --body-file "$RUNNER_TEMP/adr-guardian-report.md"
+          fi
+
+      - name: Close tracking issue when clean
+        if: steps.sweep.outputs.findings == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TITLE="ADR guardian audit"
+          existing=$(gh issue list --state open --search "\"$TITLE\" in:title" \
+            --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")][0].number // empty")
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" \
+              --comment "Latest guardian sweep came back clean. Closing."
+          else
+            echo "No open tracking issue and no findings. Nothing to do."
+          fi
