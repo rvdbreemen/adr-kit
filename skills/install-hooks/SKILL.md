@@ -78,14 +78,14 @@ When the user asks to add the guardian hook to the project's `.claude/settings.j
 3. If no SessionStart array exists: create it. Parse the JSON structurally — never do text substitution on a JSON file.
 4. Append the following hook object to `hooks.SessionStart[0].hooks` (create the array path if absent):
 
-```json
-{
-  "type": "command",
-  "command": "ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1) && [ -n \"$ADR_KIT\" ] && _PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
-  "timeout": 10,
-  "statusMessage": "Checking ADR health..."
-}
-```
+   ```json
+   {
+     "type": "command",
+     "command": "ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1) && [ -n \"$ADR_KIT\" ] && _PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
+     "timeout": 10,
+     "statusMessage": "Checking ADR health..."
+   }
+   ```
 
 5. Write the updated JSON back. The existing `SessionStart` hooks (if any) are **preserved byte-for-byte** — only the new entry is appended.
 6. Confirm: "Guardian hook added to .claude/settings.json. It will fire at the next session start."
