@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-06-12
+
 ### Added
 
 - **`bin/adr-status`: Enforcement coverage metric (task-4).** The summary now reports `coverage_pct` (percent of Accepted ADRs carrying a parseable `## Enforcement` block with at least one rule) and `llm_judge_pct` (percent of Accepted ADRs whose Enforcement includes `llm_judge: true`). Present in all three output formats (json, markdown, table). Additive only: all existing field names are unchanged. 12 tests in `tests/test_adr_status_coverage.py`.
