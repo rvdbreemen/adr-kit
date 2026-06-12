@@ -1,9 +1,10 @@
 ---
 id: TASK-9
 title: 'Guardian team-modus: CI-cron sweep + multi-sessie-veilige state'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-12 20:06'
+updated_date: '2026-06-12 20:41'
 labels:
   - tier-2
   - lifecycle
@@ -29,3 +30,9 @@ Guardian-state (.adr-kit-state.json) is per-machine en niet multi-sessie-veilig;
 - [ ] #2 State file schrijfveilig bij twee gelijktijdige sessies (atomic write of lock)
 - [ ] #3 Documentatie: wanneer SessionStart-nudge vs CI-cron gebruiken
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped in v0.22.0. Weekly cheap-tier CI sweep (.github/workflows/adr-guardian-audit.yml + downstream template) with single tracking issue create/update/close lifecycle; atomic state writes (per-process temp + os.replace), corrupt-state tolerance, best-effort non-blocking lock. SKILL.md Team mode section. 13 tests.
+<!-- SECTION:FINAL_SUMMARY:END -->

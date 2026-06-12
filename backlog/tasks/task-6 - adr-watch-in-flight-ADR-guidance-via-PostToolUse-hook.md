@@ -1,9 +1,10 @@
 ---
 id: TASK-6
 title: 'adr-watch: in-flight ADR-guidance via PostToolUse hook'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-12 20:06'
+updated_date: '2026-06-12 20:41'
 labels:
   - tier-1
   - agent-guardrails
@@ -28,3 +29,9 @@ PostToolUse-hook op Edit/Write die bin/adr-context draait op het gewijzigde pad 
 - [ ] #3 Cooldown voorkomt dubbele nudge voor zelfde ADR+file binnen een sessie
 - [ ] #4 Werkt als plugin-level hook en degradeert stil buiten Claude Code
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped in v0.24.0. bin/adr-watch + plugin-level PostToolUse hook (Edit|MultiEdit|Write) via run-hook.cmd; path_glob + keyword matching, max 3 nudges, 4h ADR+file cooldown in shared state file, watch config block in schema. 23 tests. ~28ms warm for 50 ADRs.
+<!-- SECTION:FINAL_SUMMARY:END -->
