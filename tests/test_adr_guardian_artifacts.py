@@ -275,3 +275,9 @@ def test_precommit_template_stamp_matches_plugin_version(plugin_version):
 def test_guardian_entry_template_stamp_matches_plugin_version(plugin_version):
     data = json.loads(GUARDIAN_ENTRY_TEMPLATE.read_text(encoding="utf-8"))
     assert data.get("_wrapper_version") == plugin_version
+
+
+def test_guide_template_version_line_matches_plugin_version(plugin_version):
+    guide = REPO_ROOT / "templates" / "adr-kit-guide.md"
+    first_line = guide.read_text(encoding="utf-8").splitlines()[0]
+    assert first_line == f"<!-- adr-kit-guide v{plugin_version} -->"

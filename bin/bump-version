@@ -50,9 +50,11 @@ MARKETPLACE_JSON = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 PRECOMMIT_TEMPLATE = REPO_ROOT / "templates" / "githooks" / "pre-commit"
 GUARDIAN_ENTRY = REPO_ROOT / "templates" / "cc-settings" / "guardian-hook-entry.json"
+GUIDE_TEMPLATE = REPO_ROOT / "templates" / "adr-kit-guide.md"
 
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 WRAPPER_STAMP_RE = re.compile(r'^ADR_KIT_WRAPPER_VERSION="[^"]*"$', re.MULTILINE)
+GUIDE_STAMP_RE = re.compile(r"^<!-- adr-kit-guide v[0-9.]+ -->")
 
 
 def _fail(msg: str) -> "NoReturn":
@@ -155,6 +157,16 @@ def main(argv: list) -> int:
                 f" -> {new_version}"
             )
     except (OSError, json.JSONDecodeError):
+        pass
+    try:
+        guide = GUIDE_TEMPLATE.read_text(encoding="utf-8")
+        if GUIDE_STAMP_RE.match(guide):
+            guide = GUIDE_STAMP_RE.sub(
+                f"<!-- adr-kit-guide v{new_version} -->", guide, count=1
+            )
+            GUIDE_TEMPLATE.write_text(guide, encoding="utf-8", newline="\n")
+            print(f"  + templates/adr-kit-guide.md version line -> {new_version}")
+    except OSError:
         pass
 
     print()

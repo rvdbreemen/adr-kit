@@ -65,6 +65,9 @@ def _make_tree(tmp_path: Path) -> Path:
     (root / "templates" / "cc-settings" / "guardian-hook-entry.json").write_text(
         json.dumps(GUARDIAN_ENTRY, indent=2) + "\n", encoding="utf-8"
     )
+    (root / "templates" / "adr-kit-guide.md").write_text(
+        "<!-- adr-kit-guide v0.30.0 -->\n# Guide\n", encoding="utf-8"
+    )
     return root
 
 
@@ -97,6 +100,8 @@ def test_bump_updates_all_five_files(tmp_path):
         (root / "templates" / "cc-settings" / "guardian-hook-entry.json").read_text()
     )
     assert entry["_wrapper_version"] == "0.31.0"
+    guide = (root / "templates" / "adr-kit-guide.md").read_text(encoding="utf-8")
+    assert guide.splitlines()[0] == "<!-- adr-kit-guide v0.31.0 -->"
 
 
 def test_invalid_semver_rejected(tmp_path):
