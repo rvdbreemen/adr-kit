@@ -4,6 +4,10 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`bin/bump-version` rewritten in pure stdlib Python (was bash).** The bash version shelled out to `python3` for each file edit. On Windows the `python3` command resolves to the Microsoft Store alias, which routes through the Python Install Manager; that launcher scans argv for a script file and dispatches on THAT file's shebang. Step 4 passed the bash-shebanged `templates/githooks/pre-commit` as an argument, so the launcher warned `shebang 'bash' ... treated as an arbitrary command` and executed bash instead of python, which crashed with cygheap fork errors during the v0.27.0 through v0.29.0 releases (stamps were applied by hand each time; the lockstep tests caught nothing missed). The rewrite spawns no child processes at all, so there is nothing for a launcher to misroute; it also needs no Git Bash, resolves the repo root from its own location (worktree-safe), and matches every other bin in this repo. Same CLI, same output, same exit codes. Invoke as `bin/bump-version X.Y.Z` (or `python bin/bump-version X.Y.Z` on Windows). 8 tests in `tests/test_bump_version.py`, including a structural guard that the script never gains a child-process call.
+
 ## [0.30.0] - 2026-06-12
 
 ### Added

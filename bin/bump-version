@@ -1,162 +1,174 @@
-#!/usr/bin/env bash
-# bump-version — adr-kit release helper
-#
-# Usage: bin/bump-version <new-version>
-#   e.g. bin/bump-version 0.16.0
-#
-# What it does:
-#   1. Validates semver format of the argument
-#   2. Updates .claude-plugin/plugin.json "version" field
-#   3. Updates .claude-plugin/marketplace.json plugin "version" field
-#      (the field the Claude Code plugin update system compares against; a bump
-#      that misses it ships to the repo but is never picked up by clients)
-#   4. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>"
-#      and inserts a fresh "## [Unreleased]" block above it
-#   5. Prints what changed; does NOT commit or tag (do that yourself)
-#
-# After running:
-#   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
-#   git commit -m "chore(release): v<version>"
-#   git tag v<version>
-#   git push origin main --tags
+#!/usr/bin/env python3
+"""bump-version: adr-kit release helper.
 
-set -euo pipefail
+Usage: bin/bump-version <new-version>
+  e.g. bin/bump-version 0.16.0
+  (on Windows: python bin/bump-version 0.16.0)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && git rev-parse --show-toplevel)"
-PLUGIN_JSON="$REPO_ROOT/.claude-plugin/plugin.json"
-MARKETPLACE_JSON="$REPO_ROOT/.claude-plugin/marketplace.json"
-CHANGELOG="$REPO_ROOT/CHANGELOG.md"
+What it does:
+  1. Validates semver format of the argument
+  2. Updates .claude-plugin/plugin.json "version" field
+  3. Updates .claude-plugin/marketplace.json plugin "version" field
+     (the field the Claude Code plugin update system compares against; a bump
+     that misses it ships to the repo but is never picked up by clients)
+  4. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>"
+     and inserts a fresh "## [Unreleased]" block above it
+  5. Updates the wrapper-version stamps in the copied-artifact templates
+     (templates/githooks/pre-commit, templates/cc-settings/
+     guardian-hook-entry.json); adr-guardian compares these stamps against
+     the plugin version to detect stale copied wrappers (task-15)
+  6. Prints what changed; does NOT commit or tag (do that yourself)
 
-usage() {
-  echo "Usage: $(basename "$0") <new-version>" >&2
-  echo "  e.g. $(basename "$0") 0.16.0" >&2
-  exit 1
-}
+After running:
+  git add .claude-plugin/plugin.json .claude-plugin/marketplace.json \
+      CHANGELOG.md templates/githooks/pre-commit \
+      templates/cc-settings/guardian-hook-entry.json
+  git commit -m "chore(release): v<version>"
+  git tag v<version>
+  git push origin main --tags
 
-[[ $# -eq 1 ]] || usage
+History: this was a bash script until v0.31.0. It shelled out to python3 for
+each file edit, and on Windows the `python3` Store alias routes through the
+Python Install Manager, which scans argv for a script file and dispatches on
+ITS shebang: passing the bash-shebanged pre-commit template as an argument
+made the launcher exec bash instead of python. Pure stdlib Python avoids the
+launcher's argv scanning entirely, needs no Git Bash, and matches every other
+bin in this repo.
+"""
 
-NEW_VERSION="$1"
+from __future__ import annotations
 
-# Validate semver (major.minor.patch)
-if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "ERROR: version must be semver (e.g. 0.16.0), got: $NEW_VERSION" >&2
-  exit 1
-fi
+import json
+import re
+import sys
+from datetime import date
+from pathlib import Path
 
-# Check required files exist
-[[ -f "$PLUGIN_JSON" ]]      || { echo "ERROR: $PLUGIN_JSON not found" >&2; exit 1; }
-[[ -f "$MARKETPLACE_JSON" ]] || { echo "ERROR: $MARKETPLACE_JSON not found" >&2; exit 1; }
-[[ -f "$CHANGELOG" ]]        || { echo "ERROR: $CHANGELOG not found" >&2; exit 1; }
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
+MARKETPLACE_JSON = REPO_ROOT / ".claude-plugin" / "marketplace.json"
+CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+PRECOMMIT_TEMPLATE = REPO_ROOT / "templates" / "githooks" / "pre-commit"
+GUARDIAN_ENTRY = REPO_ROOT / "templates" / "cc-settings" / "guardian-hook-entry.json"
 
-CURRENT_VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$PLUGIN_JSON")
-TODAY=$(date +%Y-%m-%d)
+SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+WRAPPER_STAMP_RE = re.compile(r'^ADR_KIT_WRAPPER_VERSION="[^"]*"$', re.MULTILINE)
 
-echo "Bumping adr-kit: $CURRENT_VERSION -> $NEW_VERSION (date: $TODAY)"
 
-# 1. Update plugin.json version
-python3 - "$PLUGIN_JSON" "$NEW_VERSION" <<'PYEOF'
-import json, sys
-path, version = sys.argv[1], sys.argv[2]
-with open(path) as f:
-    data = json.load(f)
-data['version'] = version
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-PYEOF
-echo "  ✓ .claude-plugin/plugin.json -> $NEW_VERSION"
-
-# 2. Update marketplace.json version (the field the Claude Code plugin update
-#    system actually compares against). Bump the entry whose "name" matches
-#    plugin.json's name; error out if no such entry exists so a silent miss
-#    cannot ship.
-PLUGIN_NAME=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['name'])" "$PLUGIN_JSON")
-python3 - "$MARKETPLACE_JSON" "$NEW_VERSION" "$PLUGIN_NAME" <<'PYEOF'
-import json, sys
-path, version, name = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(path) as f:
-    data = json.load(f)
-plugins = data.get('plugins', [])
-matched = [p for p in plugins if p.get('name') == name]
-if not matched:
-    sys.stderr.write(
-        f"ERROR: no plugin named {name!r} in {path}; cannot bump marketplace version\n"
-    )
+def _fail(msg: str) -> "NoReturn":
+    sys.stderr.write(f"ERROR: {msg}\n")
     sys.exit(1)
-for p in matched:
-    p['version'] = version
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-PYEOF
-echo "  ✓ .claude-plugin/marketplace.json ($PLUGIN_NAME) -> $NEW_VERSION"
 
-# 3. Update CHANGELOG.md:
-#    Replace first occurrence of "## [Unreleased]" with
-#    "## [Unreleased]\n\n## [<version>] - <today>"
-if ! grep -q "^## \[Unreleased\]" "$CHANGELOG"; then
-  echo "WARNING: no '## [Unreleased]' section found in CHANGELOG.md; skipping CHANGELOG update" >&2
-else
-  # Use python for reliable multiline replacement
-  python3 - "$CHANGELOG" "$NEW_VERSION" "$TODAY" <<'PYEOF'
-import sys, re
-path, version, today = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(path) as f:
-    content = f.read()
-replacement = f"## [Unreleased]\n\n## [{version}] - {today}"
-new_content = content.replace("## [Unreleased]", replacement, 1)
-with open(path, 'w') as f:
-    f.write(new_content)
-PYEOF
-  echo "  ✓ CHANGELOG.md: [Unreleased] -> [$NEW_VERSION] - $TODAY"
-fi
 
-# 4. Update the wrapper-version stamps in the copied-artifact templates
-#    (v0.27.0+). The git pre-commit wrapper and the project-scoped guardian
-#    hook entry are copied into user projects at install time and freeze
-#    there; adr-guardian compares their stamps against the plugin version to
-#    detect lag. Keeping the stamps in lockstep with the release means a
-#    fresh install is never reported stale.
-PRECOMMIT_TEMPLATE="$REPO_ROOT/templates/githooks/pre-commit"
-GUARDIAN_ENTRY="$REPO_ROOT/templates/cc-settings/guardian-hook-entry.json"
-# One python invocation for both stamps: no grep children (spawning extra
-# processes here has hit cygheap fork failures on Windows Git Bash).
-python3 - "$PRECOMMIT_TEMPLATE" "$GUARDIAN_ENTRY" "$NEW_VERSION" <<'PYEOF'
-import json, re, sys
-precommit, entry, version = sys.argv[1], sys.argv[2], sys.argv[3]
-try:
-    with open(precommit, encoding="utf-8") as f:
-        content = f.read()
-    if re.search(r'^ADR_KIT_WRAPPER_VERSION=', content, re.MULTILINE):
-        content = re.sub(
-            r'^ADR_KIT_WRAPPER_VERSION="[^"]*"$',
-            f'ADR_KIT_WRAPPER_VERSION="{version}"',
-            content,
-            count=1,
-            flags=re.MULTILINE,
+def _read_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _fail(f"{path}: {exc}")
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def main(argv: list) -> int:
+    if len(argv) != 2:
+        prog = Path(argv[0]).name if argv else "bump-version"
+        sys.stderr.write(f"Usage: {prog} <new-version>\n")
+        sys.stderr.write(f"  e.g. {prog} 0.16.0\n")
+        return 1
+    new_version = argv[1]
+
+    if not SEMVER_RE.match(new_version):
+        _fail(f"version must be semver (e.g. 0.16.0), got: {new_version}")
+
+    for required in (PLUGIN_JSON, MARKETPLACE_JSON, CHANGELOG):
+        if not required.is_file():
+            _fail(f"{required} not found")
+
+    plugin = _read_json(PLUGIN_JSON)
+    current = plugin.get("version", "?")
+    today = date.today().isoformat()
+    print(f"Bumping adr-kit: {current} -> {new_version} (date: {today})")
+
+    # 1. plugin.json
+    plugin["version"] = new_version
+    _write_json(PLUGIN_JSON, plugin)
+    print(f"  + .claude-plugin/plugin.json -> {new_version}")
+
+    # 2. marketplace.json: bump the entry whose name matches plugin.json's
+    #    name; error out if no such entry exists so a silent miss cannot ship.
+    plugin_name = plugin.get("name")
+    marketplace = _read_json(MARKETPLACE_JSON)
+    matched = [
+        p for p in marketplace.get("plugins", []) if p.get("name") == plugin_name
+    ]
+    if not matched:
+        _fail(
+            f"no plugin named {plugin_name!r} in {MARKETPLACE_JSON};"
+            " cannot bump marketplace version"
         )
-        with open(precommit, "w", encoding="utf-8", newline="\n") as f:
-            f.write(content)
-        print(f"  + templates/githooks/pre-commit wrapper stamp -> {version}")
-except OSError:
-    pass
-try:
-    with open(entry, encoding="utf-8") as f:
-        data = json.load(f)
-    if "_wrapper_version" in data:
-        data["_wrapper_version"] = version
-        with open(entry, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(data, f, indent=2)
-            f.write("\n")
-        print(f"  + templates/cc-settings/guardian-hook-entry.json stamp -> {version}")
-except (OSError, json.JSONDecodeError):
-    pass
-PYEOF
+    for entry in matched:
+        entry["version"] = new_version
+    _write_json(MARKETPLACE_JSON, marketplace)
+    print(f"  + .claude-plugin/marketplace.json ({plugin_name}) -> {new_version}")
 
-echo ""
-echo "Done. Verify the changes, then:"
-echo "  git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md templates/githooks/pre-commit templates/cc-settings/guardian-hook-entry.json"
-echo "  git commit -m \"chore(release): v$NEW_VERSION\""
-echo "  git tag v$NEW_VERSION"
-echo "  git push origin main --tags"
+    # 3. CHANGELOG.md: first "## [Unreleased]" becomes the release heading,
+    #    with a fresh empty Unreleased block above it.
+    changelog = CHANGELOG.read_text(encoding="utf-8")
+    if "## [Unreleased]" not in changelog:
+        sys.stderr.write(
+            "WARNING: no '## [Unreleased]' section found in CHANGELOG.md;"
+            " skipping CHANGELOG update\n"
+        )
+    else:
+        changelog = changelog.replace(
+            "## [Unreleased]",
+            f"## [Unreleased]\n\n## [{new_version}] - {today}",
+            1,
+        )
+        CHANGELOG.write_text(changelog, encoding="utf-8", newline="\n")
+        print(f"  + CHANGELOG.md: [Unreleased] -> [{new_version}] - {today}")
+
+    # 4. Wrapper-version stamps in the copied-artifact templates (task-15).
+    #    Keeping the stamps in lockstep with the release means a fresh install
+    #    is never reported stale by adr-guardian. Missing files or stamps are
+    #    tolerated (older checkouts); the lockstep tests in
+    #    tests/test_adr_guardian_artifacts.py catch a missed stamp on HEAD.
+    try:
+        content = PRECOMMIT_TEMPLATE.read_text(encoding="utf-8")
+        if WRAPPER_STAMP_RE.search(content):
+            content = WRAPPER_STAMP_RE.sub(
+                f'ADR_KIT_WRAPPER_VERSION="{new_version}"', content, count=1
+            )
+            PRECOMMIT_TEMPLATE.write_text(content, encoding="utf-8", newline="\n")
+            print(f"  + templates/githooks/pre-commit wrapper stamp -> {new_version}")
+    except OSError:
+        pass
+    try:
+        entry_data = json.loads(GUARDIAN_ENTRY.read_text(encoding="utf-8"))
+        if isinstance(entry_data, dict) and "_wrapper_version" in entry_data:
+            entry_data["_wrapper_version"] = new_version
+            _write_json(GUARDIAN_ENTRY, entry_data)
+            print(
+                "  + templates/cc-settings/guardian-hook-entry.json stamp"
+                f" -> {new_version}"
+            )
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    print()
+    print("Done. Verify the changes, then:")
+    print(
+        "  git add .claude-plugin/plugin.json .claude-plugin/marketplace.json"
+        " CHANGELOG.md templates/githooks/pre-commit"
+        " templates/cc-settings/guardian-hook-entry.json"
+    )
+    print(f'  git commit -m "chore(release): v{new_version}"')
+    print(f"  git tag v{new_version}")
+    print("  git push origin main --tags")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
