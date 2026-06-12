@@ -9,7 +9,7 @@
     {
       "name": "adr-kit",
       "source": "./",
-      "version": "0.25.0",
+      "version": "0.26.0",
       "description": "Drop-in ADR toolkit: /adr-kit:init (one-shot bootstrap + audit + hook), pre-commit verification via bin/adr-judge (declarative Enforcement blocks + opt-in Claude Sonnet LLM judge since v0.17), on-demand /adr-kit:adr and /adr-kit:judge, ADR Guardian (SessionStart staleness detection, v0.18+), CI composite action for PR-level enforcement and pre-commit framework support (v0.19+).",
       "homepage": "https://github.com/rvdbreemen/adr-kit",
       "license": "MIT"
