@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""adr-mcp: thin Model Context Protocol server wrapping the adr-kit CLIs.
+
+Speaks MCP over stdio: newline-delimited JSON-RPC 2.0 messages on
+stdin/stdout (MCP stdio transport does NOT use Content-Length framing).
+Hand-rolled on the Python stdlib only, so no `mcp` package is required.
+The protocol surface is deliberately tiny (initialize, initialized,
+tools/list, tools/call, ping); the dispatch table in serve() is shaped so
+swapping in the official `mcp` SDK later is a local change.
+
+Exposes exactly 4 tools, each a subprocess call into a sibling bin/ script:
+
+  adr_context   {query, limit?}  -> bin/adr-context --format json
+  adr_judge     {diff}           -> bin/adr-judge --json (declarative pass
+                                    only, never --llm: key-free by design)
+  adr_status    {}               -> bin/adr-status --format json
+  adr_quality   {adr_id?}        -> bin/adr-quality --format json per ADR
+
+adr-suggest is intentionally NOT exposed: it is an LLM-only advisory (its
+deterministic part is just a docs-only skip filter), and this server stays
+key-free. Thin beats feature count; see docs/research/2026-06-12-adr-landscape.md.
+
+Usage:
+  adr-mcp [--root DIR] [--adr-dir DIR]
+
+Project root resolution: --root flag > PROJECT_ROOT env > current directory.
+ADR directory defaults to <root>/docs/adr.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+BIN_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BIN_DIR.parent
+
+# Fallback when the client does not send a protocolVersion (it should).
+DEFAULT_PROTOCOL_VERSION = "2025-06-18"
+
+# Per-tool subprocess timeout. The wrapped CLIs are regex-only and fast;
+# this only guards against pathological inputs.
+CLI_TIMEOUT_S = 60
+
+_ADR_ID_RE = re.compile(r"ADR-0*(\d{1,4})", re.IGNORECASE)
+
+
+# ---------------------------------------------------------------------------
+# Server metadata
+# ---------------------------------------------------------------------------
+
+def server_version() -> str:
+    """Read the plugin version from .claude-plugin/plugin.json."""
+    manifest = REPO_ROOT / ".claude-plugin" / "plugin.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        version = data.get("version")
+        if isinstance(version, str) and version:
+            return version
+    except (OSError, ValueError):
+        pass
+    return "0.0.0"
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions (MCP tools/list shape)
+# ---------------------------------------------------------------------------
+
+TOOL_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "name": "adr_context",
+        "description": (
+            "Find the Architecture Decision Records most relevant to a task "
+            "query. Heuristic ranking, no LLM. Returns ranked ADRs as JSON."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Task description or question to rank ADRs against.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of ADRs to return.",
+                    "minimum": 1,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "adr_judge",
+        "description": (
+            "Judge a unified diff against the Enforcement blocks of Accepted "
+            "ADRs (declarative pass only, no LLM, key-free). Returns findings "
+            "and the adr-judge exit status (0 = clean, 1 = violations)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "diff": {
+                    "type": "string",
+                    "description": "Unified diff text (e.g. output of git diff --cached).",
+                },
+            },
+            "required": ["diff"],
+        },
+    },
+    {
+        "name": "adr_status",
+        "description": (
+            "ADR repository health dashboard: totals, status breakdown, "
+            "enforcement health, retirement candidates. Returns JSON."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "adr_quality",
+        "description": (
+            "Score ADRs on quality via 4 gates (0.0-1.0 each, grade A-D). "
+            "Pass adr_id (e.g. 'ADR-001' or '1') for one ADR; omit it to "
+            "score every ADR in the repository. Returns JSON."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "adr_id": {
+                    "type": "string",
+                    "description": "ADR identifier such as 'ADR-001', '001' or '1'. Omit to score all ADRs.",
+                },
+            },
+        },
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# CLI subprocess plumbing
+# ---------------------------------------------------------------------------
+
+def run_cli(
+    script: str,
+    args: List[str],
+    root: Path,
+    stdin_text: Optional[str] = None,
+    env_extra: Optional[Dict[str, str]] = None,
+) -> Tuple[int, str, str]:
+    """Run a sibling bin/ script via the current interpreter.
+
+    Returns (exit_code, stdout, stderr). Raises subprocess.TimeoutExpired
+    on timeout; callers convert that into a tool error.
+    """
+    cmd = [sys.executable, str(BIN_DIR / script)] + args
+    env = dict(os.environ)
+    if env_extra:
+        env.update(env_extra)
+    proc = subprocess.run(
+        cmd,
+        input=stdin_text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(root),
+        env=env,
+        timeout=CLI_TIMEOUT_S,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _parse_json_or_raw(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
+def _text_result(payload: Any, is_error: bool = False) -> Dict[str, Any]:
+    """Wrap a payload as an MCP tools/call result: one text content item."""
+    if isinstance(payload, str):
+        text = payload
+    else:
+        text = json.dumps(payload, indent=2, ensure_ascii=False)
+    result: Dict[str, Any] = {"content": [{"type": "text", "text": text}]}
+    if is_error:
+        result["isError"] = True
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Tool handlers
+# ---------------------------------------------------------------------------
+
+def tool_adr_context(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict[str, Any]:
+    query = arguments.get("query")
+    if not isinstance(query, str) or not query.strip():
+        return _text_result("adr_context: 'query' must be a non-empty string", is_error=True)
+    args = ["--format", "json", "--adr-dir", str(adr_dir)]
+    limit = arguments.get("limit")
+    if limit is not None:
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            return _text_result("adr_context: 'limit' must be a positive integer", is_error=True)
+        args += ["--limit", str(limit)]
+    args.append(query)
+    rc, out, err = run_cli("adr-context", args, root)
+    if rc != 0:
+        return _text_result(f"adr-context exited {rc}: {err.strip() or out.strip()}", is_error=True)
+    return _text_result(_parse_json_or_raw(out))
+
+
+def tool_adr_judge(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict[str, Any]:
+    diff = arguments.get("diff")
+    if not isinstance(diff, str) or not diff.strip():
+        return _text_result("adr_judge: 'diff' must be a non-empty string", is_error=True)
+    args = [
+        "--diff", "-",
+        "--adr-dir", str(adr_dir),
+        "--repo-root", str(root),
+        "--json",
+    ]
+    # Never run the LLM pass from the MCP server: key-free by design.
+    # --llm is simply not passed; ADR_KIT_NO_LLM=1 is belt and braces.
+    rc, out, err = run_cli(
+        "adr-judge", args, root, stdin_text=diff, env_extra={"ADR_KIT_NO_LLM": "1"},
+    )
+    if rc == 2:
+        return _text_result(f"adr-judge exited 2 (config/input error): {err.strip()}", is_error=True)
+    # rc 0 (clean) and rc 1 (violations) are both valid judge outcomes.
+    payload = {"exit_code": rc, "verdict": "violation" if rc == 1 else "ok",
+               "result": _parse_json_or_raw(out)}
+    return _text_result(payload)
+
+
+def tool_adr_status(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict[str, Any]:
+    rc, out, err = run_cli("adr-status", ["--format", "json", "--adr-dir", str(adr_dir)], root)
+    if rc != 0:
+        return _text_result(f"adr-status exited {rc}: {err.strip() or out.strip()}", is_error=True)
+    return _text_result(_parse_json_or_raw(out))
+
+
+def _resolve_adr_files(adr_dir: Path, adr_id: Optional[str]) -> List[Path]:
+    """List ADR markdown files, optionally filtered to one numeric id."""
+    files = sorted(p for p in adr_dir.glob("ADR-*.md") if p.is_file())
+    if adr_id is None:
+        return files
+    match = _ADR_ID_RE.search(adr_id) or re.fullmatch(r"0*(\d{1,4})", adr_id.strip())
+    if not match:
+        return []
+    wanted = int(match.group(1))
+    selected = []
+    for path in files:
+        m = _ADR_ID_RE.search(path.name)
+        if m and int(m.group(1)) == wanted:
+            selected.append(path)
+    return selected
+
+
+def tool_adr_quality(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict[str, Any]:
+    adr_id = arguments.get("adr_id")
+    if adr_id is not None and not isinstance(adr_id, str):
+        return _text_result("adr_quality: 'adr_id' must be a string", is_error=True)
+    if not adr_dir.is_dir():
+        return _text_result(f"adr_quality: ADR directory not found: {adr_dir}", is_error=True)
+    files = _resolve_adr_files(adr_dir, adr_id)
+    if not files:
+        what = f"no ADR matching '{adr_id}'" if adr_id else "no ADR files"
+        return _text_result(f"adr_quality: {what} in {adr_dir}", is_error=True)
+    reports = []
+    for path in files:
+        rc, out, err = run_cli("adr-quality", ["--format", "json", str(path)], root)
+        if rc == 2:
+            reports.append({"file": path.name, "error": err.strip() or f"exit {rc}"})
+        else:
+            entry = _parse_json_or_raw(out)
+            if isinstance(entry, dict):
+                entry.setdefault("file", path.name)
+            reports.append(entry)
+    payload: Any = reports[0] if adr_id else {"adrs": reports}
+    return _text_result(payload)
+
+
+TOOL_HANDLERS = {
+    "adr_context": tool_adr_context,
+    "adr_judge": tool_adr_judge,
+    "adr_status": tool_adr_status,
+    "adr_quality": tool_adr_quality,
+}
+
+
+# ---------------------------------------------------------------------------
+# JSON-RPC 2.0 plumbing (newline-delimited over stdio)
+# ---------------------------------------------------------------------------
+
+PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
+METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
+INTERNAL_ERROR = -32603
+
+
+def _write_message(payload: Dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+def _reply_result(req_id: Any, result: Dict[str, Any]) -> None:
+    _write_message({"jsonrpc": "2.0", "id": req_id, "result": result})
+
+
+def _reply_error(req_id: Any, code: int, message: str) -> None:
+    _write_message({"jsonrpc": "2.0", "id": req_id,
+                    "error": {"code": code, "message": message}})
+
+
+# ---------------------------------------------------------------------------
+# Method handlers
+# ---------------------------------------------------------------------------
+
+def handle_initialize(params: Dict[str, Any]) -> Dict[str, Any]:
+    requested = params.get("protocolVersion")
+    protocol = requested if isinstance(requested, str) and requested else DEFAULT_PROTOCOL_VERSION
+    return {
+        "protocolVersion": protocol,
+        "capabilities": {"tools": {}},
+        "serverInfo": {"name": "adr-kit", "version": server_version()},
+    }
+
+
+def handle_tools_list(params: Dict[str, Any]) -> Dict[str, Any]:
+    return {"tools": TOOL_DEFINITIONS}
+
+
+def handle_tools_call(params: Dict[str, Any], root: Path, adr_dir: Path) -> Dict[str, Any]:
+    name = params.get("name")
+    handler = TOOL_HANDLERS.get(name)
+    if handler is None:
+        raise KeyError(name)
+    arguments = params.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        return _text_result(f"{name}: 'arguments' must be an object", is_error=True)
+    try:
+        return handler(arguments, root, adr_dir)
+    except subprocess.TimeoutExpired:
+        return _text_result(f"{name}: underlying CLI timed out after {CLI_TIMEOUT_S}s", is_error=True)
+    except Exception as exc:  # noqa: BLE001 - tool failure must not kill the loop
+        return _text_result(f"{name}: internal error: {exc}", is_error=True)
+
+
+def dispatch(message: Dict[str, Any], root: Path, adr_dir: Path) -> None:
+    """Handle one JSON-RPC message. Notifications get no reply."""
+    req_id = message.get("id")
+    is_notification = "id" not in message
+    method = message.get("method")
+    params = message.get("params") or {}
+    if not isinstance(params, dict):
+        params = {}
+
+    if not isinstance(method, str):
+        if not is_notification:
+            _reply_error(req_id, INVALID_REQUEST, "Invalid request: missing method")
+        return
+
+    if method.startswith("notifications/"):
+        # notifications/initialized, notifications/cancelled, ...: ignore.
+        return
+
+    try:
+        if method == "initialize":
+            _reply_result(req_id, handle_initialize(params))
+        elif method == "ping":
+            _reply_result(req_id, {})
+        elif method == "tools/list":
+            _reply_result(req_id, handle_tools_list(params))
+        elif method == "tools/call":
+            try:
+                _reply_result(req_id, handle_tools_call(params, root, adr_dir))
+            except KeyError:
+                _reply_error(req_id, INVALID_PARAMS,
+                             f"Unknown tool: {params.get('name')!r}")
+        else:
+            if not is_notification:
+                _reply_error(req_id, METHOD_NOT_FOUND, f"Method not found: {method}")
+    except Exception as exc:  # noqa: BLE001 - the loop must survive anything
+        if not is_notification:
+            _reply_error(req_id, INTERNAL_ERROR, f"Internal error: {exc}")
+
+
+def serve(root: Path, adr_dir: Path) -> int:
+    """Main loop: one JSON-RPC message per line on stdin until EOF."""
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            message = json.loads(line)
+        except ValueError:
+            _reply_error(None, PARSE_ERROR, "Parse error")
+            continue
+        if not isinstance(message, dict):
+            _reply_error(None, INVALID_REQUEST, "Invalid request: expected object")
+            continue
+        dispatch(message, root, adr_dir)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="adr-mcp",
+        description="Thin MCP stdio server wrapping the adr-kit CLIs.",
+    )
+    parser.add_argument(
+        "--root",
+        default=None,
+        help="Project root the tools operate on. Default: PROJECT_ROOT env, "
+        "then the current working directory.",
+    )
+    parser.add_argument(
+        "--adr-dir",
+        default=None,
+        help="Directory containing ADR-*.md files. Default: <root>/docs/adr.",
+    )
+    args = parser.parse_args()
+
+    root = Path(args.root or os.environ.get("PROJECT_ROOT") or os.getcwd()).resolve()
+    if not root.is_dir():
+        print(f"adr-mcp: project root not found: {root}", file=sys.stderr)
+        return 2
+    adr_dir = Path(args.adr_dir).resolve() if args.adr_dir else root / "docs" / "adr"
+
+    print(f"adr-mcp {server_version()} serving root={root} adr_dir={adr_dir}",
+          file=sys.stderr)
+    try:
+        return serve(root, adr_dir)
+    except KeyboardInterrupt:
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

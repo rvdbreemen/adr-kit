@@ -4,6 +4,10 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`bin/adr-mcp`: thin Model Context Protocol server over stdio (task-7).** Hand-rolled JSON-RPC 2.0 on the Python stdlib only (no `mcp` package), newline-delimited messages. Exposes 4 key-free tools that wrap the existing CLIs via subprocess: `adr_context` (heuristic ADR ranking), `adr_judge` (declarative Enforcement pass on a diff, never `--llm`), `adr_status` (repository health JSON), `adr_quality` (per-ADR grades). `adr-suggest` is deliberately not exposed: it is LLM-only and the MCP server stays key-free. Project root via `--root`, `PROJECT_ROOT` env, or cwd; ADR directory via `--adr-dir` (default `<root>/docs/adr`). Brings the same guardrails to Cursor, Cline, Windsurf, and Copilot without the skills format. Tests in `tests/test_adr_mcp.py` (14 end-to-end stdio tests).
+
 ## [0.20.1] - 2026-06-07
 
 ### Fixed

@@ -539,6 +539,44 @@ Note: the `pre-commit` framework downloads and caches the hook repository.
 The wrapper resolves the sibling `bin/adr-judge` via its own file path, so
 it works regardless of PATH or how `pre-commit` places the files.
 
+## MCP server: `bin/adr-mcp` (since v0.21.0)
+
+A deliberately thin MCP server (stdio, newline-delimited JSON-RPC 2.0, Python stdlib only, zero dependencies) that exposes the adr-kit guardrails to any MCP client: Cursor, Cline, Windsurf, Copilot, or Claude Code itself. Four tools, all key-free (no LLM calls, no API keys):
+
+| Tool | Arguments | Wraps |
+| --- | --- | --- |
+| `adr_context` | `query` (string), `limit?` (int) | `adr-context --format json` |
+| `adr_judge` | `diff` (string) | `adr-judge --json` (declarative pass only) |
+| `adr_status` | none | `adr-status --format json` |
+| `adr_quality` | `adr_id?` (string) | `adr-quality --format json` per ADR |
+
+The project root the tools operate on is resolved from `--root`, then the `PROJECT_ROOT` environment variable, then the server's working directory. ADRs are read from `<root>/docs/adr` unless `--adr-dir` says otherwise.
+
+### Claude Code
+
+```bash
+claude mcp add adr-kit -- python /path/to/adr-kit/bin/adr-mcp --root "$(pwd)"
+```
+
+### Cursor / Cline / other stdio clients
+
+Generic stdio configuration (`.cursor/mcp.json`, Cline MCP settings, etc.):
+
+```json
+{
+  "mcpServers": {
+    "adr-kit": {
+      "command": "python",
+      "args": ["/path/to/adr-kit/bin/adr-mcp", "--root", "/path/to/your/project"]
+    }
+  }
+}
+```
+
+On Windows use `python` from your PATH or an absolute interpreter path; the server invokes its sibling `bin/` scripts with the same interpreter, so no shebang support is needed.
+
+Why only 4 tools? Contrast is the feature: the 73-tool approach already exists elsewhere. adr-kit ships the smallest surface that carries the guardrails (context injection, enforcement, health, quality) and nothing that needs an API key.
+
 ## FAQ
 
 **Where are ADRs stored?**
