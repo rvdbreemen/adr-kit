@@ -3,9 +3,10 @@ id: TASK-15
 title: >-
   Upgrade-staleness: guardian detecteert verouderde hook-wrappers + generieke
   /adr-kit:upgrade
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-06-12 20:49'
+updated_date: '2026-06-12 21:05'
 labels:
   - tier-2
   - lifecycle

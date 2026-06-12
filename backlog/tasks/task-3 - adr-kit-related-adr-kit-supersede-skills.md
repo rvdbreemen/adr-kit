@@ -1,9 +1,10 @@
 ---
 id: TASK-3
-title: 'Release v0.20.0: /adr-kit:related + /adr-kit:supersede'
+title: '/adr-kit:related + /adr-kit:supersede skills'
 status: To Do
 assignee: []
 created_date: '2026-05-31 13:19'
+updated_date: '2026-06-12 21:06'
 labels: []
 dependencies: []
 ---

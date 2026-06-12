@@ -4,11 +4,11 @@ title: Aanmelden bij adr.github.io/adr-tooling catalogus
 status: To Do
 assignee: []
 created_date: '2026-06-12 20:06'
+updated_date: '2026-06-12 21:05'
 labels:
   - tier-3
   - adoptie
-dependencies:
-  - TASK-5
+dependencies: []
 references:
   - docs/research/2026-06-12-adr-landscape.md
   - 'https://adr.github.io/adr-tooling/'

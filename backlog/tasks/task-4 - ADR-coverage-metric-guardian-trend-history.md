@@ -1,9 +1,10 @@
 ---
 id: TASK-4
-title: 'Release v0.21.0: ADR coverage metric + guardian trend history'
+title: ADR coverage metric + guardian trend history
 status: To Do
 assignee: []
 created_date: '2026-05-31 13:20'
+updated_date: '2026-06-12 21:06'
 labels: []
 dependencies:
   - TASK-1
