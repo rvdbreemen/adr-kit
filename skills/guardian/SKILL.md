@@ -89,17 +89,28 @@ Read `/tmp/guardian-retire.json`. Collect the candidate set: extract the list of
 
 **Response (mix-by-finding-type: Health):** Emit a PASS/ADVISORY/FAIL summary. For FAILs: list the gate name and ADR, offer to fix via `/adr-kit:adr` (re-run the adr-generator subagent on that ADR).
 
+Also read the Enforcement coverage percent for the trend history:
+
+```bash
+"$ADR_KIT/bin/adr-status" --adr-dir docs/adr/ --format json > /tmp/guardian-status.json 2>&1
+```
+
+Extract `summary.coverage_pct` from `/tmp/guardian-status.json`. You will pass it
+to the stamp call below so the trend log records coverage per sweep.
+
 ### 2d. Stamp cheap tier
 
 After completing 2a–2c, record the sweep. The `--retire-seen` argument must contain
 the full fresh candidate set (all ids, not just the new ones). The detector uses
-the stored set for the next session's change comparison.
+the stored set for the next session's change comparison. `--coverage` records the
+Enforcement coverage percent (from 2c) in the append-only trend log.
 
 ```bash
 "$ADR_KIT/bin/adr-guardian" stamp cheap \
     --violations <N_drift_violations> \
     --retire <N_retire_candidates> \
     --lint "<F>F/<A>A" \
+    --coverage <coverage_pct_from_adr_status> \
     --retire-seen '<json_array_of_ALL_retire_candidate_ids>'
 ```
 
@@ -147,10 +158,15 @@ Read `/tmp/guardian-audit.json`. Same response as Step 2a drift, but covering se
 
 ### 3c. Stamp LLM tier
 
+If the cheap tier did not run in this sweep, read `summary.coverage_pct` from
+`"$ADR_KIT/bin/adr-status" --adr-dir docs/adr/ --format json` and pass it via
+`--coverage` (when omitted, the trend entry carries the last known coverage).
+
 ```bash
 "$ADR_KIT/bin/adr-guardian" stamp llm \
     --suggest <N_suggest_hits> \
-    --audit <N_audit_findings>
+    --audit <N_audit_findings> \
+    --coverage <coverage_pct_from_adr_status>
 ```
 
 ## Step 4 — Wrap-up
@@ -184,6 +200,11 @@ Both can coexist: the CI sweep does not read or write the local state file, and 
 ## SessionStart block handling (for in-session model)
 
 When the in-session model reads an `additionalContext` block starting with `[adr-guardian]`:
+
+When at least two sweeps have been stamped, the block also carries a one-line
+delta vs the previous sweep, e.g. `trend: drift 2 -> 0, retire 1 -> 2,
+coverage 40% -> 45%`. Use it to call out improving or degrading KPIs when
+offering the sweep.
 
 1. Check which tier(s) are marked `DUE`.
 2. For the **cheap** tier: offer immediately: "ADR drift/health check is due — run `/adr-kit:guardian cheap` to sweep (free, ~30s)?"

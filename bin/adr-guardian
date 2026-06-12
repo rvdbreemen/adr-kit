@@ -10,8 +10,9 @@ Three subcommands:
       hook. ALWAYS exits 0. NEVER runs an LLM. NEVER spawns subprocesses.
       Prints nothing when no tier is due or when the guardian is disabled.
 
-  adr-guardian stamp <cheap|llm> [--violations N] [--retire N] [--suggest N] [--audit N] [--lint STR]
-      Record that a sweep tier completed. Updates .adr-kit-state.json. Called by
+  adr-guardian stamp <cheap|llm> [--violations N] [--retire N] [--suggest N] [--audit N] [--lint STR] [--coverage PCT]
+      Record that a sweep tier completed. Updates .adr-kit-state.json and appends
+      an entry to the append-only trend list (capped at 52 entries). Called by
       the /adr-kit:guardian skill after a sweep completes. Always exits 0.
 
   adr-guardian state
@@ -88,7 +89,11 @@ DEFAULT_STATE: Dict = {
     },
     "retire_seen": [],
     "last_nudged": None,
+    "trend": [],
 }
+
+# Maximum number of entries kept in the append-only trend list (oldest dropped).
+TREND_MAX_ENTRIES = 52
 
 
 def _load_state(state_path: Path) -> Dict:
@@ -513,6 +518,98 @@ def _is_throttled(state: Dict, gcfg: Dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Trend history helpers
+# ---------------------------------------------------------------------------
+
+def _trend_list(state: Dict) -> List:
+    """Return state['trend'] as a list, tolerating corrupt or missing values."""
+    trend = state.get("trend")
+    if not isinstance(trend, list):
+        return []
+    return trend
+
+
+def _is_number(v) -> bool:
+    """True for int/float metric values (bool excluded)."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _fmt_pct(v) -> str:
+    """Format a coverage percent compactly: 40.0 -> '40%', 45.5 -> '45.5%'."""
+    return f"{v:g}%"
+
+
+def _format_trend_delta(state: Dict) -> Optional[str]:
+    """One-line delta vs the previous sweep, or None when not enough trend data.
+
+    Example: 'trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%'
+    Requires at least two well-formed trend entries; corrupt entries are skipped.
+    """
+    trend = _trend_list(state)
+    if len(trend) < 2:
+        return None
+    prev, last = trend[-2], trend[-1]
+    if not isinstance(prev, dict) or not isinstance(last, dict):
+        return None
+
+    parts: List[str] = []
+    for label, key in (
+        ("drift", "drift_violations"),
+        ("retire", "retire_candidates"),
+        ("suggest", "suggest_hits"),
+        ("audit", "audit_findings"),
+    ):
+        a, b = prev.get(key), last.get(key)
+        if _is_number(a) and _is_number(b):
+            parts.append(f"{label} {a} -> {b}")
+    a, b = prev.get("coverage_percent"), last.get("coverage_percent")
+    if _is_number(a) and _is_number(b):
+        parts.append(f"coverage {_fmt_pct(a)} -> {_fmt_pct(b)}")
+
+    if not parts:
+        return None
+    return "trend: " + ", ".join(parts)
+
+
+def _append_trend_entry(
+    state: Dict,
+    tier: str,
+    now_iso: str,
+    total_adrs: Optional[int],
+    coverage: Optional[float],
+) -> None:
+    """Append a sweep entry to the append-only trend list (capped at 52).
+
+    Fields for the tier that did not run are carried from the last known
+    tier-state values; coverage and total_adrs carry from the previous trend
+    entry when not freshly supplied. Corrupt trend values are reset to [].
+    """
+    trend = _trend_list(state)
+    prev = trend[-1] if trend and isinstance(trend[-1], dict) else {}
+
+    cheap = state.get("cheap_tier") or {}
+    llm = state.get("llm_tier") or {}
+
+    if total_adrs is None:
+        total_adrs = prev.get("total_adrs")
+    if coverage is None:
+        coverage = prev.get("coverage_percent")
+
+    entry = {
+        "date": now_iso,
+        "tier": tier,
+        "total_adrs": total_adrs,
+        "drift_violations": cheap.get("drift_violations"),
+        "retire_candidates": cheap.get("retire_candidates"),
+        "suggest_hits": llm.get("suggest_hits"),
+        "audit_findings": llm.get("audit_findings"),
+        "coverage_percent": coverage,
+    }
+    trend.append(entry)
+    state["trend"] = trend[-TREND_MAX_ENTRIES:]
+
+
+# ---------------------------------------------------------------------------
 # Block formatting (spec §9)
 # ---------------------------------------------------------------------------
 
@@ -572,6 +669,9 @@ def _format_guardian_block(
         f"  state: {adr_count} ADRs · last sweep: {drift_violations} drift"
         f" · {suggest_hits} suggestion · {retire_candidates} retire candidates"
     )
+    delta_line = _format_trend_delta(state)
+    if delta_line is not None:
+        lines.append(f"  {delta_line}")
     lines.append("  → /adr-kit:guardian   (LLM tier asks before spending)")
 
     return "\n".join(lines)
@@ -721,6 +821,10 @@ def cmd_stamp(args: argparse.Namespace) -> int:
             llm["audit_findings"] = args.audit
         state["llm_tier"] = llm
 
+    # Append-only trend history (capped at TREND_MAX_ENTRIES, oldest dropped).
+    total_adrs = _count_adrs(adr_dir) if adr_dir is not None else None
+    _append_trend_entry(state, tier, now_iso, total_adrs, args.coverage)
+
     _save_state(state_path, state)
     return 0
 
@@ -841,6 +945,10 @@ def main() -> int:
                          help="Number of missing-ADR suggestions (llm tier).")
     stamp_p.add_argument("--audit", type=int, default=None,
                          help="Number of audit findings (llm tier).")
+    stamp_p.add_argument("--coverage", type=float, default=None,
+                         help="Enforcement coverage percent of Accepted ADRs "
+                              "(from adr-status --format json, summary.coverage_pct). "
+                              "Carried from the previous trend entry when omitted.")
     stamp_p.add_argument("--state-dir", dest="state_dir", default=None,
                          help="Override directory for .adr-kit-state.json (tests/CI).")
 

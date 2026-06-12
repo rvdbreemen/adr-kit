@@ -4,6 +4,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`bin/adr-status`: Enforcement coverage metric (task-4).** The summary now reports `coverage_pct` (percent of Accepted ADRs carrying a parseable `## Enforcement` block with at least one rule) and `llm_judge_pct` (percent of Accepted ADRs whose Enforcement includes `llm_judge: true`). Present in all three output formats (json, markdown, table). Additive only: all existing field names are unchanged. 12 tests in `tests/test_adr_status_coverage.py`.
+- **`bin/adr-guardian`: trend history (task-4).** `adr-guardian stamp` now appends an entry to a new append-only `trend` list in `.adr-kit-state.json`: `{date, tier, total_adrs, drift_violations, retire_candidates, suggest_hits, audit_findings, coverage_percent}`. Fields for the tier that did not run are carried from the last known values (or null). Capped at 52 entries (roughly a year of weekly sweeps; oldest dropped). New `stamp --coverage PCT` flag records the coverage percent that the guardian skill reads from `adr-status --format json`. Corrupt trend data degrades silently. When at least two sweeps have been stamped, the SessionStart nudge block adds a one-line delta vs the previous sweep, e.g. `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`: the guardian becomes a KPI with memory instead of a snapshot.
+
 ## [0.28.0] - 2026-06-12
 
 ### Added

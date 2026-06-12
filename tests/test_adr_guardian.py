@@ -548,3 +548,196 @@ class TestOutputFormat:
         # last_nudged should now be set.
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state["last_nudged"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Trend history (task-4)
+# ---------------------------------------------------------------------------
+
+def _trend_entry(date_str, tier="cheap", drift=0, retire=0, suggest=0, audit=0,
+                 coverage=None, total=1):
+    return {
+        "date": date_str,
+        "tier": tier,
+        "total_adrs": total,
+        "drift_violations": drift,
+        "retire_candidates": retire,
+        "suggest_hits": suggest,
+        "audit_findings": audit,
+        "coverage_percent": coverage,
+    }
+
+
+class TestTrendStamp:
+    """stamp appends an entry to the append-only trend list."""
+
+    def test_stamp_appends_trend_entry(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=3)
+        rc, out, err = _run(
+            ["stamp", "cheap",
+             "--violations", "2",
+             "--retire", "1",
+             "--coverage", "40.0",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        trend = state["trend"]
+        assert len(trend) == 1
+        entry = trend[0]
+        assert entry["tier"] == "cheap"
+        assert entry["date"] is not None
+        assert entry["total_adrs"] == 3
+        assert entry["drift_violations"] == 2
+        assert entry["retire_candidates"] == 1
+        assert entry["coverage_percent"] == 40.0
+        # llm-tier fields carried from last known values (DEFAULT_STATE = 0).
+        assert entry["suggest_hits"] == 0
+        assert entry["audit_findings"] == 0
+
+    def test_two_stamps_record_two_entries(self, tmp_path):
+        """Running the guardian twice records a delta-able trend."""
+        adr_dir = _make_adr_dir(tmp_path)
+        _run(["stamp", "cheap", "--violations", "2", "--coverage", "40",
+              "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        _run(["stamp", "cheap", "--violations", "0", "--coverage", "45",
+              "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        trend = state["trend"]
+        assert len(trend) == 2
+        assert trend[0]["drift_violations"] == 2
+        assert trend[1]["drift_violations"] == 0
+        assert trend[1]["coverage_percent"] == 45.0
+
+    def test_llm_stamp_carries_cheap_fields(self, tmp_path):
+        """Stamping llm carries last known cheap-tier counts and coverage."""
+        adr_dir = _make_adr_dir(tmp_path)
+        _run(["stamp", "cheap", "--violations", "3", "--retire", "2",
+              "--coverage", "33.3", "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        _run(["stamp", "llm", "--suggest", "4", "--audit", "1",
+              "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        entry = state["trend"][-1]
+        assert entry["tier"] == "llm"
+        assert entry["suggest_hits"] == 4
+        assert entry["audit_findings"] == 1
+        # carried from previous sweep / tier state
+        assert entry["drift_violations"] == 3
+        assert entry["retire_candidates"] == 2
+        assert entry["coverage_percent"] == 33.3
+
+    def test_trend_capped_at_52(self, tmp_path):
+        """The trend list never exceeds 52 entries; oldest are dropped."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": _days_ago(2), "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": None, "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+            "trend": [_trend_entry(_days_ago(60 - i), drift=i) for i in range(60)],
+        }
+        _write_state(adr_dir, state)
+        rc, out, err = _run(
+            ["stamp", "cheap", "--violations", "9", "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0
+        new_state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        trend = new_state["trend"]
+        assert len(trend) == 52
+        # Newest entry is the one we just stamped.
+        assert trend[-1]["drift_violations"] == 9
+        # Oldest entries were dropped (entry with drift=0..8 gone, drift=9.. remain
+        # before the new one).
+        assert trend[0]["drift_violations"] == 9
+
+    def test_corrupt_trend_tolerated(self, tmp_path):
+        """A corrupt trend value (not a list) is reset; stamp still exits 0."""
+        adr_dir = _make_adr_dir(tmp_path)
+        state = {
+            "cheap_tier": {"last_run": None, "drift_violations": 0,
+                           "retire_candidates": 0, "lint": "0F/0A"},
+            "llm_tier": {"last_run": None, "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+            "trend": "this is not a list",
+        }
+        _write_state(adr_dir, state)
+        rc, out, err = _run(
+            ["stamp", "cheap", "--violations", "1", "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0
+        new_state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert isinstance(new_state["trend"], list)
+        assert len(new_state["trend"]) == 1
+
+    def test_default_state_includes_trend(self, tmp_path):
+        """adr-guardian state with no file shows the trend key in defaults."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, out, err = _run(["state", "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        assert rc == 0
+        data = json.loads(out)
+        assert data["trend"] == []
+
+
+class TestTrendDelta:
+    """check emits a one-line delta vs the previous sweep when trend data exists."""
+
+    def _base_state(self, trend):
+        return {
+            "cheap_tier": {"last_run": _days_ago(2), "drift_violations": 0,
+                           "retire_candidates": 2, "lint": "0F/0A"},
+            "llm_tier": {"last_run": _days_ago(1), "suggest_hits": 0, "audit_findings": 0},
+            "retire_seen": [],
+            "last_nudged": None,
+            "trend": trend,
+        }
+
+    def test_delta_line_with_trend(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path)
+        trend = [
+            _trend_entry(_days_ago(9), drift=2, retire=1, coverage=40.0),
+            _trend_entry(_days_ago(2), drift=0, retire=2, coverage=45.0),
+        ]
+        _write_state(adr_dir, self._base_state(trend))
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+        assert "trend: " in out
+        assert "drift 2 -> 0" in out
+        assert "retire 1 -> 2" in out
+        assert "coverage 40% -> 45%" in out
+
+    def test_no_delta_line_without_trend(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path)
+        _write_state(adr_dir, self._base_state([]))
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+        assert "trend: " not in out
+
+    def test_no_delta_line_with_single_entry(self, tmp_path):
+        """One trend entry has no previous sweep to delta against."""
+        adr_dir = _make_adr_dir(tmp_path)
+        trend = [_trend_entry(_days_ago(2), drift=1)]
+        _write_state(adr_dir, self._base_state(trend))
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+        assert "trend: " not in out
+
+    def test_corrupt_trend_entries_tolerated_by_check(self, tmp_path):
+        """Non-dict trend entries do not break check; no delta line, exit 0."""
+        adr_dir = _make_adr_dir(tmp_path)
+        _write_state(adr_dir, self._base_state(["garbage", 42]))
+        _write_config(adr_dir, {"drift_stale_days": 1, "llm_stale_days": 14})
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "[adr-guardian]" in out
+        assert "trend: " not in out

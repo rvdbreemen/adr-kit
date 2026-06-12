@@ -284,7 +284,13 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
 
     Returns:
         total, by_status, health_pct, avg_age_days, with_enforcement,
-        enforcement_valid_pct
+        enforcement_valid_pct, coverage_pct, llm_judge_pct
+
+    Coverage definitions (over Accepted ADRs only):
+        coverage_pct:  percent of Accepted ADRs with a parseable Enforcement
+                       block carrying at least one rule.
+        llm_judge_pct: percent of Accepted ADRs whose Enforcement includes
+                       llm_judge: true.
     """
     total = len(adrs)
     by_status: Dict[str, int] = {s: 0 for s in CANONICAL_STATUSES}
@@ -293,6 +299,8 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
     ages: List[int] = []
     with_enforcement = 0
     enforcement_valid = 0
+    accepted_enforced = 0
+    accepted_llm_judge = 0
 
     for rec in adrs:
         key = rec.status.lower()
@@ -308,13 +316,22 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
             if rec.enforcement_valid:
                 enforcement_valid += 1
 
-    health_pct = round(by_status["accepted"] / total * 100, 1) if total > 0 else 0.0
+        if key == "accepted":
+            if rec.enforcement_valid and rec.enforcement_types:
+                accepted_enforced += 1
+            if "llm_judge" in rec.enforcement_types:
+                accepted_llm_judge += 1
+
+    accepted = by_status["accepted"]
+    health_pct = round(accepted / total * 100, 1) if total > 0 else 0.0
     avg_age_days: Optional[float] = round(sum(ages) / len(ages), 1) if ages else None
     enforcement_valid_pct = (
         round(enforcement_valid / with_enforcement * 100, 1)
         if with_enforcement > 0
         else 0.0
     )
+    coverage_pct = round(accepted_enforced / accepted * 100, 1) if accepted > 0 else 0.0
+    llm_judge_pct = round(accepted_llm_judge / accepted * 100, 1) if accepted > 0 else 0.0
 
     return {
         "total": total,
@@ -323,6 +340,8 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
         "avg_age_days": avg_age_days,
         "with_enforcement": with_enforcement,
         "enforcement_valid_pct": enforcement_valid_pct,
+        "coverage_pct": coverage_pct,
+        "llm_judge_pct": llm_judge_pct,
     }
 
 
@@ -448,6 +467,10 @@ def format_table(
     lines.append(
         f"With Enforcement:  {we} ({enf_pct_of_total}% of ADRs, {ev_pct}% valid)"
     )
+    lines.append(
+        f"Coverage:          {summary['coverage_pct']}% of Accepted ADRs enforced"
+        f" (llm_judge: {summary['llm_judge_pct']}%)"
+    )
 
     lines.append("")
 
@@ -526,6 +549,8 @@ def format_markdown(
         f"| Deprecated | {bs['deprecated']} |",
         f"| Avg age | {avg_str} |",
         f"| With Enforcement | {we} ({ev_pct}% valid) |",
+        f"| Enforcement coverage | {summary['coverage_pct']}% of Accepted"
+        f" (llm_judge: {summary['llm_judge_pct']}%) |",
         "",
         "## ADR List",
         "",
