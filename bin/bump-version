@@ -168,6 +168,20 @@ def main(argv: list) -> int:
             print(f"  + templates/adr-kit-guide.md version line -> {new_version}")
     except OSError:
         pass
+    # This repo dogfoods its own pre-commit wrapper at .githooks/pre-commit;
+    # without this it would lag the plugin version by one release forever and
+    # the guardian would flag the kit's own repo as stale.
+    own_wrapper = REPO_ROOT / ".githooks" / "pre-commit"
+    try:
+        content = own_wrapper.read_text(encoding="utf-8")
+        if WRAPPER_STAMP_RE.search(content):
+            content = WRAPPER_STAMP_RE.sub(
+                f'ADR_KIT_WRAPPER_VERSION="{new_version}"', content, count=1
+            )
+            own_wrapper.write_text(content, encoding="utf-8", newline="\n")
+            print(f"  + .githooks/pre-commit wrapper stamp -> {new_version}")
+    except OSError:
+        pass
 
     print()
     print("Done. Verify the changes, then:")
