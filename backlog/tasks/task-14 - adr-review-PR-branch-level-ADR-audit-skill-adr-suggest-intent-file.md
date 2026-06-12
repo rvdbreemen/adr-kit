@@ -1,9 +1,10 @@
 ---
 id: TASK-14
 title: 'adr-review: PR/branch-level ADR audit skill + adr-suggest --intent-file'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-12 20:36'
+updated_date: '2026-06-12 20:48'
 labels:
   - tier-1
   - agent-guardrails
@@ -30,9 +31,15 @@ Reuse: bin/adr-judge (enforcement engine), bin/adr-suggest (detector + llm_cmd s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 #1 /adr-kit:review resolves the branch range (merge-base with the base ref, default origin/main; gh pr view baseRefName when available) and runs bin/adr-judge --diff on it; enforcement pass works key-free (declarative-only) and reports violations per ADR
-- [ ] #2 #2 bin/adr-suggest accepts --intent-file PATH; the file content (commit messages / PR body) is appended to the LLM prompt as a delimited untrusted stated-intent block; missing file is a usage error (exit 2); response schema and advisory posture unchanged
-- [ ] #3 #3 Discovery pass surfaces candidate undocumented decisions from diff + intent; each candidate is deduped against existing ADRs via bin/adr-context before being proposed; user picks which to draft; drafted ADRs are Status: Proposed, never auto-accepted
-- [ ] #4 #4 Skill degrades gracefully: no gh CLI means no PR metadata (git log intent only), no claude CLI means enforcement-only with an honest note; advisory paths never fail the run
-- [ ] #5 #5 Tests cover --intent-file: intent text reaches the prompt inside the delimiters, intent absent keeps prompt byte-identical to before, missing intent file exits 2, intent is truncated to the documented cap
+- [x] #1 #1 /adr-kit:review resolves the branch range (merge-base with the base ref, default origin/main; gh pr view baseRefName when available) and runs bin/adr-judge --diff on it; enforcement pass works key-free (declarative-only) and reports violations per ADR
+- [x] #2 #2 bin/adr-suggest accepts --intent-file PATH; the file content (commit messages / PR body) is appended to the LLM prompt as a delimited untrusted stated-intent block; missing file is a usage error (exit 2); response schema and advisory posture unchanged
+- [x] #3 #3 Discovery pass surfaces candidate undocumented decisions from diff + intent; each candidate is deduped against existing ADRs via bin/adr-context before being proposed; user picks which to draft; drafted ADRs are Status: Proposed, never auto-accepted
+- [x] #4 #4 Skill degrades gracefully: no gh CLI means no PR metadata (git log intent only), no claude CLI means enforcement-only with an honest note; advisory paths never fail the run
+- [x] #5 #5 Tests cover --intent-file: intent text reaches the prompt inside the delimiters, intent absent keeps prompt byte-identical to before, missing intent file exits 2, intent is truncated to the documented cap
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped in v0.26.0. skills/review/SKILL.md (merge-base range, gh-aware, key-free judge pass, suggest + in-session discovery, adr-context dedupe, Proposed-only drafting) plus bin/adr-suggest --intent-file. Integration change vs the worktree version: the intent block uses the task-12 content-derived sentinel fences instead of static BEGIN-INTENT/END-INTENT markers, so intent gets the same unforgeable anti-injection guarantee as the diff; the 4 new tests were adapted accordingly. Full suite 373 passed.
+<!-- SECTION:FINAL_SUMMARY:END -->
