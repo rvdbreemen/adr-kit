@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-06-13
+
+### Fixed
+
+- **markdownlint failure in `skills/install-hooks/SKILL.md` (MD029).** The JSON hook-entry example sat unindented inside an ordered list, splitting the list and failing the `validate` workflow on main. The block is now indented as a continuation of list item 4; numbering is valid again and CI is green.
+
 ## [0.30.2] - 2026-06-13
 
 ### Changed
