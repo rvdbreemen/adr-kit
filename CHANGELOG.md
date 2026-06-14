@@ -4,6 +4,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.30.5] - 2026-06-14
+
+### Fixed
+
+- **Config schema rejected the `judge.*` performance-budget knobs (#10).** `schemas/adr-kit-config.schema.json` declares the `judge` object with `additionalProperties: false` but omitted the TASK-712 performance-bounded-hooks fields that adr-kit's own dogfood `.adr-kit.json` (and downstream projects) already set: `pre_commit_timeout_ms`, `pre_push_timeout_ms`, `llm_timeout_ms`, `warn_on_exceed`. Config validation therefore failed with `'pre_commit_timeout_ms' was unexpected` before any ADR was evaluated, including against this repo's own config. The four knobs are now declared as permissive, documented properties; the change is additive, so previously-valid configs stay valid.
+
 ## [0.30.4] - 2026-06-13
 
 ### Fixed
