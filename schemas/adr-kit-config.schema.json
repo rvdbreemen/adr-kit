@@ -145,6 +145,29 @@
           "description": "Per-call timeout for the LLM pass in seconds. Default 120. Increase if your ADR set is large enough that one batch call routinely exceeds this.",
           "minimum": 1,
           "default": 120
+        },
+        "pre_commit_timeout_ms": {
+          "type": "integer",
+          "description": "Performance budget in milliseconds for the non-blocking pre-commit perf WARN (TASK-712 performance-bounded hooks; surfaced in bin/adr-judge --profile). When the pre-commit pass runs longer than this and warn_on_exceed is true, a non-blocking WARN is printed; the commit is never blocked by this budget. Distinct from llm_timeout_seconds, which is the hard per-call LLM call timeout. Default 5000.",
+          "minimum": 0,
+          "default": 5000
+        },
+        "pre_push_timeout_ms": {
+          "type": "integer",
+          "description": "Performance budget in milliseconds for the non-blocking pre-push perf WARN (TASK-712). Same WARN-only semantics as pre_commit_timeout_ms, applied to the pre-push hook's longer-running pass. Default 15000.",
+          "minimum": 0,
+          "default": 15000
+        },
+        "llm_timeout_ms": {
+          "type": "integer",
+          "description": "Performance budget in milliseconds attributed to the LLM phase in the bin/adr-judge --profile budget report (TASK-712). Advisory WARN budget for the LLM portion of a pass; distinct from llm_timeout_seconds, which is the hard per-call LLM timeout that actually aborts the call. Default 30000.",
+          "minimum": 0,
+          "default": 30000
+        },
+        "warn_on_exceed": {
+          "type": "boolean",
+          "description": "When true, emit a non-blocking WARN whenever a phase exceeds its *_timeout_ms performance budget (TASK-712). Advisory only; never blocks the commit or push. Default true.",
+          "default": true
         }
       }
     },
