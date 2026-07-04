@@ -152,3 +152,70 @@ def test_double_supersession_message_names_target_successor(tmp_path):
         if fnd["gate"] == "consistency"
     )
     assert "does not name a successor" in summary
+
+
+# --- One-directional (dangling) supersession: a single Accepted claim whose
+# --- target does not name it back. Bidirectional audit trail integrity.
+
+def test_one_directional_supersession_fails(tmp_path):
+    """A supersedes B, but B's Status still names no successor -> FAIL."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    # Target left Accepted: the supersession was never recorded on it.
+    _write(adr_dir, 1, "old-decision",
+           _adr(1, "old-decision", "Accepted, 2026-04-01."))
+    _write(adr_dir, 2, "new-decision",
+           _adr(2, "new-decision", "Accepted, 2026-05-01.",
+                related="- Supersedes ADR-001."))
+
+    code, out = run_lint(adr_dir)
+    assert code == 1
+    by_num = {f["adr_num"]: f for f in out["files"]}
+    consistency = [
+        fnd for fnd in by_num[2]["findings"]
+        if fnd["gate"] == "consistency" and fnd["level"] == "FAIL"
+    ]
+    assert consistency, "ADR-002 should FAIL consistency for a one-way supersession"
+    summary = consistency[0]["summary"]
+    assert "one-directional supersession of ADR-001" in summary
+    assert "Superseded by ADR-002" in summary
+    # The superseded target is not itself blamed for the claimant's omission.
+    assert not any(
+        "one-directional supersession" in fnd.get("summary", "")
+        for fnd in by_num[1]["findings"]
+    )
+
+
+def test_one_directional_wrong_successor_fails(tmp_path):
+    """A supersedes B, but B names a different successor -> FAIL."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    _write(adr_dir, 1, "old-decision",
+           _adr(1, "old-decision", "Superseded by ADR-999, 2026-05-01."))
+    _write(adr_dir, 2, "new-decision",
+           _adr(2, "new-decision", "Accepted, 2026-05-01.",
+                related="- Supersedes ADR-001."))
+
+    code, out = run_lint(adr_dir)
+    assert code == 1
+    by_num = {f["adr_num"]: f for f in out["files"]}
+    summary = next(
+        fnd["summary"] for fnd in by_num[2]["findings"]
+        if fnd["gate"] == "consistency" and fnd["level"] == "FAIL"
+    )
+    assert "one-directional supersession of ADR-001" in summary
+    assert "names ADR-999" in summary
+
+
+def test_supersession_missing_target_not_flagged(tmp_path):
+    """A claim against a target absent from the directory is NOT flagged here
+    (left to the broken-reference detectors; avoids prose false positives)."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    _write(adr_dir, 2, "new-decision",
+           _adr(2, "new-decision", "Accepted, 2026-05-01.",
+                related="- Supersedes ADR-777."))
+
+    code, out = run_lint(adr_dir)
+    assert code == 0
+    assert out["summary"]["fail"] == 0
