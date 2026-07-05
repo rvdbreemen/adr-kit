@@ -26,8 +26,9 @@ Both the index reader and the edit-tier injector read exactly what `bin/adr-judg
 already reads:
 
 - **Scope**: the `path_glob` of each rule in the ADR's `## Enforcement` block.
-- **Status**: the `## Status` line, cross-checked against the first
-  `status_history` entry. Only `Accepted` ADRs are injected.
+- **Status**: the `## Status` line, cross-checked against the latest (last)
+  `status_history` entry (`entries[-1]`, the same comparison `bin/adr-judge:298`
+  and `bin/adr-lint:335` make). Only `Accepted` ADRs are injected.
 
 No schema change to the ADR format. This phase is documentation plus a shared
 helper so the three readers (judge, index, injector) cannot drift.

@@ -97,7 +97,9 @@ share.
 2. **One fail-closed floor.** `bin/adr-judge` at pre-commit (and the CI action)
    remains the only mechanism that blocks. Injection hooks never block; they steer.
 3. **Pin canonical fields.** Scope is the `## Enforcement` `path_glob`; status is
-   the `## Status` line reconciled with the first `status_history` entry. The new
+   the `## Status` line reconciled with the latest (last) `status_history` entry,
+   the same `entries[-1]` comparison `bin/adr-judge` and `bin/adr-lint` already
+   make. The new
    injector and index reader use exactly these fields, the same ones `adr-judge`
    already reads. No new duplicate status or scope source is introduced.
 4. **Bound the injected content.** The edit-tier injector caps injected text to the
