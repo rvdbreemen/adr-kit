@@ -4,8 +4,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-07-05
+
 ### Added
 
+- **Layered ADR context injection (ADR-004).** A documented model for feeding ADR knowledge into agent work through three fail-open injection tiers plus the one fail-closed pre-commit floor, modeled on the OpenWolf inject/freshen/enforce loop. New surfaces:
+  - **`bin/adr-index`** generates `docs/adr/ADR-INDEX.md`, a compact one-row-per-ADR map (id, status, scope, one-line decision) that `CLAUDE.md` `@`-imports so every session is ADR-aware at a fixed low token cost. Deterministic and timestamp-free; a new `adr-index-check` CI workflow diffs the committed index against a fresh regenerate. The init/setup stubs now include the `@docs/adr/ADR-INDEX.md` import.
+  - **Edit-tier injector** (`bin/adr-watch --pre-edit`), wired as a `PreToolUse` hook for `Edit|MultiEdit|Write` in `.claude-plugin/plugin.json`. Before an edit it injects the single top-ranked governing Accepted ADR's `## Decision` text (bounded to `inject.max_tokens`, default 400) as `hookSpecificOutput.additionalContext`, so the agent honours the decision *as it writes* rather than after. Reuses the existing adr-watch matcher and a separate `inject` cooldown key in `.adr-kit-state.json`. Advisory only, always exits 0. New `inject` config block added to `schemas/adr-kit-config.schema.json`.
+  - **`bin/adr-status` floor coverage buckets**: the summary now reports how many Accepted ADRs are covered by declarative rules vs. manual review (`{"llm_judge": false}`) vs. no Enforcement block, in text and markdown, so the deterministic floor's coverage is visible without false-positiving the documented manual-review pattern.
+  - Canonical fields are pinned (scope = Enforcement `path_glob`; status = `## Status` reconciled with the latest `status_history` entry) and shared by all readers; a no-drift regression test locks `bin/adr-index`'s readers to `bin/adr-watch`'s. Covered by `tests/test_adr_index.py`, new `TestPreEditInject` cases in `tests/test_adr_watch.py`, and `TestFloorBuckets` in `tests/test_adr_status_coverage.py`.
 - **Lint consistency gate now flags one-directional (dangling) supersession.** `bin/adr-lint`'s consistency gate already FAILed *concurrent* supersession (2+ Accepted ADRs claiming one target); it now also catches the single-claimant case where an Accepted ADR claims `Supersedes ADR-X` but the target's Status line does not name it back as successor. This is the common drift where the successor lands but the superseded ADR is never flipped, so it still reads as live and the audit trail is one-way. A claim against a target absent from the directory is deliberately left to the broken-reference detectors (`bin/adr-retire`) to avoid flagging prose mentions of unknown ADR numbers; clean bidirectional supersessions are unaffected. The finding flows through the normal consistency-gate severity policy, so projects can tune it via their severity config. Covered by three new tests in `tests/test_adr_lint_supersession.py`.
 
 ## [0.30.5] - 2026-06-14

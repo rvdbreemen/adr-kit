@@ -21,5 +21,10 @@
     "check_tech_removal": true,
     "check_supersession": true,
     "check_policy_mismatch": true
+  },
+  "inject": {
+    "enabled": true,
+    "max_tokens": 400,
+    "cooldown_hours": 4
   }
 }

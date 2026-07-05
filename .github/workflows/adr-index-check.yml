@@ -1,0 +1,28 @@
+name: adr-index freshness
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  index-fresh:
+    name: docs/adr/ADR-INDEX.md is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Regenerate the ADR index and diff against the committed copy
+        run: |
+          chmod +x bin/adr-index
+          python bin/adr-index --adr-dir docs/adr -o docs/adr/ADR-INDEX.md
+          if ! git diff --exit-code -- docs/adr/ADR-INDEX.md; then
+            echo "::error::docs/adr/ADR-INDEX.md is stale. Regenerate with: bin/adr-index -o docs/adr/ADR-INDEX.md"
+            exit 1
+          fi

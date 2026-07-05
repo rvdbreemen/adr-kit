@@ -164,10 +164,12 @@ The stub:
 ## ADR Kit
 
 This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architectural decisions live as ADRs in `docs/adr/`. Full guide: @.claude/adr-kit-guide.md
+Decision index: @docs/adr/ADR-INDEX.md (compact one-row-per-ADR map; regenerate with `bin/adr-index -o docs/adr/ADR-INDEX.md`).
 
 Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
 Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time (free). The Claude LLM pass for `llm_judge: true` ADRs is opt-in (enable in `docs/adr/.adr-kit.json`, or review in-session via `/adr-kit:judge`).
 Guardian: when an `[adr-guardian] ... DUE` block appears at session start, proactively offer to run the due tier via `/adr-kit:guardian`. Confirm cost before the LLM tier. Apply mix-by-finding-type responses: drift violations surfaced prominently; missing-ADR suggestions passive; stale ADRs drafted for review; health issues reported with fix offer.
+Edit-tier injection: when an `[adr-inject] ADR-NNN ... governs <file>` block appears before an edit, treat the quoted Decision as a binding constraint for that file and comply with it.
 <!-- ADR-KIT STUB END -->
 ```
 

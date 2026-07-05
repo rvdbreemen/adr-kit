@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# PreToolUse hook for adr-kit plugin (v0.31+, ADR-004 edit tier).
+#
+# Runs bin/adr-watch --pre-edit in the current project context BEFORE Edit/Write
+# tool calls. adr-watch reads the PreToolUse JSON payload from stdin, extracts
+# tool_input.file_path, finds the top-ranked Accepted ADR governing that path,
+# and injects that ADR's Decision text (bounded to a token budget) as
+# hookSpecificOutput.additionalContext -- so the agent sees the governing
+# decision BEFORE it writes the code.
+#
+# adr-watch self-guards: it exits 0 silently when there is no docs/adr/ with
+# ADRs in the working directory, so this hook is safe in any project. It is
+# advisory only and ALWAYS exits 0; it never blocks an edit.
+#
+# This wrapper just needs to locate Python, run the bin, and pass stdin
+# through. Any failure degrades silently (exit 0).
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Locate Python 3 (mirrors the post-tool-use hook's resolver).
+_PYTHON3=""
+for _cmd in python3 python py; do
+  if command -v "$_cmd" >/dev/null 2>&1; then
+    _ver=$("$_cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    _major=$(echo "$_ver" | cut -d. -f1)
+    if [ "${_major:-0}" -ge 3 ] 2>/dev/null; then
+      _PYTHON3="$_cmd"
+      break
+    fi
+  fi
+done
+
+if [ -z "$_PYTHON3" ]; then
+  # Python not found: degrade gracefully, never disturb the session.
+  exit 0
+fi
+
+WATCH="$PLUGIN_ROOT/bin/adr-watch"
+if [ ! -f "$WATCH" ]; then
+  exit 0
+fi
+
+# Run the injector with stdin passed through (the PreToolUse JSON payload).
+# It always exits 0; any non-zero would be a bug, so swallow it anyway.
+"$_PYTHON3" "$WATCH" --pre-edit 2>/dev/null || true
+
+exit 0

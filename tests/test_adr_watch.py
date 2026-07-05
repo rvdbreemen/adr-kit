@@ -406,3 +406,136 @@ class TestPerformance:
         assert any("ADR-025" in line for line in lines)
         # Target is <100ms; CI budget is generous (2s) to absorb slow runners.
         assert elapsed < 2.0, f"run_watch took {elapsed:.3f}s for 50 ADRs"
+
+
+# ---------------------------------------------------------------------------
+# Edit-tier injector (--pre-edit, ADR-004)
+# ---------------------------------------------------------------------------
+
+# A long Decision so the token-budget truncation path is exercised.
+ADR_LONG_DECISION = """# ADR-001 No direct database calls outside the repository layer
+
+## Status
+
+Accepted, 2026-01-15.
+
+## Context
+
+Direct SQL in handlers caused tight coupling.
+
+## Decision
+
+All database access goes through the repository layer. """ + ("blah " * 400) + """
+
+## Enforcement
+
+```json
+{"forbid_pattern": [{"pattern": "cursor", "path_glob": "src/**/*.py"}]}
+```
+"""
+
+
+def _preedit_payload(file_path: str) -> str:
+    return json.dumps({"tool_name": "Edit", "tool_input": {"file_path": file_path}})
+
+
+class TestPreEditInject:
+
+    def test_injects_decision_before_edit_on_glob_match(self, tmp_path):
+        _standard_project(tmp_path)
+        rc, out, err = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            env_extra={"CLAUDE_PLUGIN_ROOT": "x"},
+            stdin_text=_preedit_payload("src/db/queries.py"),
+        )
+        assert rc == 0
+        payload = json.loads(out)
+        ctx = payload["hookSpecificOutput"]["additionalContext"]
+        assert payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+        assert "[adr-inject] ADR-001" in ctx
+        # It carries the Decision text, not just the ADR name.
+        assert "repository layer" in ctx
+
+    def test_glob_match_wins_over_keyword(self, tmp_path):
+        # ADR-001 governs src/**/*.py by glob; ADR-002 is keyword-only on auth.
+        _standard_project(tmp_path)
+        rc, out, _ = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            env_extra={"CLAUDE_PLUGIN_ROOT": "x"},
+            stdin_text=_preedit_payload("src/auth/session.py"),
+        )
+        assert rc == 0
+        ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        assert "ADR-001" in ctx  # the glob hit outranks the keyword hit
+
+    def test_no_injection_for_non_matching_path(self, tmp_path):
+        _standard_project(tmp_path)
+        rc, out, _ = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            stdin_text=_preedit_payload("assets/logo.svg"),
+        )
+        assert rc == 0
+        assert out.strip() == ""
+
+    def test_decision_truncated_to_token_budget(self, tmp_path):
+        adr_dir = _make_project(tmp_path)
+        _write_adr(adr_dir, "ADR-001-repo.md", ADR_LONG_DECISION)
+        (adr_dir / ".adr-kit.json").write_text(
+            json.dumps({"inject": {"max_tokens": 50}}), encoding="utf-8")
+        rc, out, _ = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            env_extra={"CLAUDE_PLUGIN_ROOT": "x"},
+            stdin_text=_preedit_payload("src/db/queries.py"),
+        )
+        assert rc == 0
+        ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        assert "[…]" in ctx  # truncation marker present
+        # 50 tokens ~ 200 chars budget; the whole envelope stays well under the
+        # untruncated ~2000-char decision.
+        assert len(ctx) < 700
+
+    def test_cooldown_suppresses_second_injection(self, tmp_path):
+        adr_dir = _standard_project(tmp_path)
+        rc1, out1, _ = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            env_extra={"CLAUDE_PLUGIN_ROOT": "x"},
+            stdin_text=_preedit_payload("src/db/queries.py"),
+        )
+        assert "ADR-001" in out1
+        rc2, out2, _ = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            env_extra={"CLAUDE_PLUGIN_ROOT": "x"},
+            stdin_text=_preedit_payload("src/db/queries.py"),
+        )
+        assert rc2 == 0
+        assert out2.strip() == ""
+        # Cooldown recorded under the separate "inject" key, not "watch".
+        state = json.loads(
+            (adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert "inject" in state
+        assert any(k.startswith("ADR-001|") for k in state["inject"]["nudges"])
+
+    def test_disabled_via_config(self, tmp_path):
+        adr_dir = _standard_project(tmp_path)
+        (adr_dir / ".adr-kit.json").write_text(
+            json.dumps({"inject": {"enabled": False}}), encoding="utf-8")
+        rc, out, _ = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            stdin_text=_preedit_payload("src/db/queries.py"),
+        )
+        assert rc == 0
+        assert out.strip() == ""
+
+    def test_malformed_payload_exits_zero(self, tmp_path):
+        _standard_project(tmp_path)
+        rc, out, _ = _run(["--pre-edit"], cwd=tmp_path, stdin_text="not json")
+        assert rc == 0
+        assert out.strip() == ""
+
+    def test_self_guard_no_adr_dir(self, tmp_path):
+        rc, out, _ = _run(
+            ["--pre-edit"], cwd=tmp_path,
+            stdin_text=_preedit_payload("src/db/queries.py"),
+        )
+        assert rc == 0
+        assert out.strip() == ""

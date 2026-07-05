@@ -251,6 +251,30 @@
         }
       }
     },
+    "inject": {
+      "type": "object",
+      "description": "Configuration for the bin/adr-watch edit-tier injector (PreToolUse hook), introduced in adr-kit v0.31 (ADR-004). Before an Edit/Write, it injects the top-ranked governing Accepted ADR's Decision text so the agent honours the decision before writing. Deterministic (no LLM, no network), advisory only, always exits 0.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, the PreToolUse injector never emits context and the hook is a no-op for this project. Default true.",
+          "default": true
+        },
+        "max_tokens": {
+          "type": "integer",
+          "description": "Approximate upper bound on injected Decision text, in tokens (coarse chars/token estimate). The single top-ranked ADR's Decision is truncated to this budget so context is not flooded. Default 400. Set 0 to disable truncation.",
+          "minimum": 0,
+          "default": 400
+        },
+        "cooldown_hours": {
+          "type": "number",
+          "description": "Minimum hours before the same ADR+file pair is injected again. Independent of the watch cooldown. Default 4. Set 0 to disable.",
+          "minimum": 0,
+          "default": 4
+        }
+      }
+    },
     "guardian": {
       "type": "object",
       "description": "Configuration for the ADR Guardian (bin/adr-guardian + /adr-kit:guardian skill), introduced in adr-kit v0.18.0. The guardian is a periodic ADR-set health detector that injects a staleness nudge at Claude Code SessionStart when a health tier is due. Detection is free (no LLM) and default-on. The LLM tier (adr-suggest + audit) always asks before spending unless llm_autorun is explicitly set true.",
