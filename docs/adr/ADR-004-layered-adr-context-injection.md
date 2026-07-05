@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed, 2026-07-05.
+Accepted, 2026-07-05.
 
 <!-- When accepted or superseded: update this line and append the same transition below in Status History. Do not edit earlier history entries or other sections of an Accepted/Deprecated ADR; write a new superseding ADR instead. -->
 
@@ -14,6 +14,11 @@ status_history:
     status: Proposed
     changed_by: robert@vandenbreemen.net
     reason: Initial proposal
+    changed_via: adr-kit v0.30.5
+  - date: 2026-07-05
+    status: Accepted
+    changed_by: robert@vandenbreemen.net
+    reason: Approved; implementing all phases of the companion design spec
     changed_via: adr-kit v0.30.5
 ```
 

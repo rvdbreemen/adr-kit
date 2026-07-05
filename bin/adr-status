@@ -301,7 +301,11 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
     enforcement_valid = 0
     accepted_enforced = 0
     accepted_llm_judge = 0
+    accepted_declarative = 0
+    accepted_manual_review = 0
+    accepted_no_enforcement = 0
 
+    _declarative_types = ("forbid_pattern", "forbid_import", "require_pattern")
     for rec in adrs:
         key = rec.status.lower()
         if key not in by_status:
@@ -321,6 +325,15 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
                 accepted_enforced += 1
             if "llm_judge" in rec.enforcement_types:
                 accepted_llm_judge += 1
+            # Fail-closed floor coverage buckets (ADR-004). A valid block with
+            # only "llm_judge": false (the documented manual-review pattern)
+            # has no rule types and is counted as manual review, not a gap.
+            if any(t in rec.enforcement_types for t in _declarative_types):
+                accepted_declarative += 1
+            elif rec.has_enforcement and rec.enforcement_valid and "llm_judge" not in rec.enforcement_types:
+                accepted_manual_review += 1
+            elif not rec.has_enforcement:
+                accepted_no_enforcement += 1
 
     accepted = by_status["accepted"]
     health_pct = round(accepted / total * 100, 1) if total > 0 else 0.0
@@ -342,6 +355,9 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
         "enforcement_valid_pct": enforcement_valid_pct,
         "coverage_pct": coverage_pct,
         "llm_judge_pct": llm_judge_pct,
+        "accepted_declarative": accepted_declarative,
+        "accepted_manual_review": accepted_manual_review,
+        "accepted_no_enforcement": accepted_no_enforcement,
     }
 
 
@@ -471,6 +487,11 @@ def format_table(
         f"Coverage:          {summary['coverage_pct']}% of Accepted ADRs enforced"
         f" (llm_judge: {summary['llm_judge_pct']}%)"
     )
+    lines.append(
+        f"Floor (ADR-004):   {summary['accepted_declarative']} declarative, "
+        f"{summary['accepted_manual_review']} manual-review, "
+        f"{summary['accepted_no_enforcement']} no block"
+    )
 
     lines.append("")
 
@@ -551,6 +572,9 @@ def format_markdown(
         f"| With Enforcement | {we} ({ev_pct}% valid) |",
         f"| Enforcement coverage | {summary['coverage_pct']}% of Accepted"
         f" (llm_judge: {summary['llm_judge_pct']}%) |",
+        f"| Floor coverage (ADR-004) | {summary['accepted_declarative']} declarative,"
+        f" {summary['accepted_manual_review']} manual-review,"
+        f" {summary['accepted_no_enforcement']} no block |",
         "",
         "## ADR List",
         "",

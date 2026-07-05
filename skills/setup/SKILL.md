@@ -46,9 +46,11 @@ A project that ran v0.11 `/adr-kit:setup` has an inline `## ADR Kit Rules` secti
    ## ADR Kit
 
    This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architectural decisions live as ADRs in `docs/adr/`. Full guide: @.claude/adr-kit-guide.md
+   Decision index: @docs/adr/ADR-INDEX.md (compact one-row-per-ADR map; regenerate with `bin/adr-index -o docs/adr/ADR-INDEX.md`).
 
    Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
    Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time. ADRs with `llm_judge: true` are reviewed in-session via `/adr-kit:judge`.
+   Edit-tier injection: when an `[adr-inject] ADR-NNN ... governs <file>` block appears before an edit, treat the quoted Decision as a binding constraint for that file and comply with it.
    <!-- ADR-KIT STUB END -->
    ```
 

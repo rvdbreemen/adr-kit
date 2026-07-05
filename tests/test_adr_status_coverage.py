@@ -214,3 +214,42 @@ class TestOutputFormats:
         rc, out, err = _run_cli(["--format", "markdown", "--adr-dir", str(adr_dir)])
         assert rc == 0
         assert "| Enforcement coverage | 100.0% of Accepted (llm_judge: 0.0%) |" in out
+
+
+# ---------------------------------------------------------------------------
+# Fail-closed floor coverage buckets (ADR-004)
+# ---------------------------------------------------------------------------
+
+class TestFloorBuckets:
+
+    def test_buckets_split_by_enforcement_shape(self, tmp_path):
+        adr_dir = tmp_path / "adr"
+        _write_adr(adr_dir, 1, enforcement_json=_ENF_RULES_ONLY)   # declarative
+        _write_adr(adr_dir, 2, enforcement_json=_ENF_LLM_JUDGE)    # llm_judge
+        _write_adr(adr_dir, 3, enforcement_json=_ENF_EMPTY)        # manual review
+        _write_adr(adr_dir, 4)                                     # no block
+        s = _summary_for(adr_dir)
+        assert s["accepted_declarative"] == 1
+        assert s["accepted_manual_review"] == 1
+        assert s["accepted_no_enforcement"] == 1
+
+    def test_manual_review_pattern_not_counted_as_gap(self, tmp_path):
+        """An `{"llm_judge": false}` block is manual review, not 'no block'."""
+        adr_dir = tmp_path / "adr"
+        _write_adr(adr_dir, 1, enforcement_json=_ENF_EMPTY)
+        s = _summary_for(adr_dir)
+        assert s["accepted_manual_review"] == 1
+        assert s["accepted_no_enforcement"] == 0
+
+    def test_proposed_adrs_excluded_from_buckets(self, tmp_path):
+        adr_dir = tmp_path / "adr"
+        _write_adr(adr_dir, 1, status="Proposed", enforcement_json=_ENF_RULES_ONLY)
+        s = _summary_for(adr_dir)
+        assert s["accepted_declarative"] == 0
+
+    def test_buckets_rendered_in_text_output(self, tmp_path):
+        adr_dir = tmp_path / "adr"
+        _write_adr(adr_dir, 1, enforcement_json=_ENF_RULES_ONLY)
+        rc, out, _ = _run_cli(["--adr-dir", str(adr_dir)])
+        assert rc == 0
+        assert "Floor (ADR-004):" in out

@@ -61,6 +61,12 @@ DEFAULT_COOLDOWN_HOURS = 4.0
 KEYWORD_SCORE_THRESHOLD = 0.5  # at least half the path keywords must hit
 KEYWORD_SCORE_SCALE = 0.8      # keyword-only hits never outrank a glob hit
 
+# Edit-tier injector (ADR-004): inject the governing ADR's Decision text
+# *before* an Edit/Write, bounded to a token budget, on the PreToolUse hook.
+DEFAULT_INJECT_MAX_TOKENS = 400
+DEFAULT_INJECT_COOLDOWN_HOURS = 4.0
+_CHARS_PER_TOKEN = 4  # coarse estimate, matches the OpenWolf prose heuristic
+
 # ---------------------------------------------------------------------------
 # Precompiled regexes (all linear-time; reused from adr-judge / adr-context)
 # ---------------------------------------------------------------------------
@@ -211,6 +217,19 @@ def watch_config(cfg: Dict) -> Dict:
     return {**defaults, **watch}
 
 
+def inject_config(cfg: Dict) -> Dict:
+    """Return the inject sub-block with defaults filled in (ADR-004)."""
+    defaults = {
+        "enabled": True,
+        "max_tokens": DEFAULT_INJECT_MAX_TOKENS,
+        "cooldown_hours": DEFAULT_INJECT_COOLDOWN_HOURS,
+    }
+    inject = cfg.get("inject")
+    if not isinstance(inject, dict):
+        inject = {}
+    return {**defaults, **inject}
+
+
 # ---------------------------------------------------------------------------
 # State (cooldown bookkeeping under the "watch" key of .adr-kit-state.json)
 # ---------------------------------------------------------------------------
@@ -252,15 +271,20 @@ def _parse_iso(s: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _watch_nudges(state: Dict) -> Dict[str, str]:
-    """Return the watch.nudges map ("ADR-NNN|path" -> ISO timestamp)."""
-    watch = state.get("watch")
-    if not isinstance(watch, dict):
+def _section_nudges(state: Dict, section: str) -> Dict[str, str]:
+    """Return the nudges map ("ADR-NNN|path" -> ISO timestamp) for a section."""
+    block = state.get(section)
+    if not isinstance(block, dict):
         return {}
-    nudges = watch.get("nudges")
+    nudges = block.get("nudges")
     if not isinstance(nudges, dict):
         return {}
     return {k: v for k, v in nudges.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _watch_nudges(state: Dict) -> Dict[str, str]:
+    """Return the watch.nudges map ("ADR-NNN|path" -> ISO timestamp)."""
+    return _section_nudges(state, "watch")
 
 
 def _within_cooldown(nudges: Dict[str, str], key: str, cooldown_hours: float,
@@ -361,6 +385,7 @@ def load_adrs(adr_dir: Path) -> List[Dict]:
             "adr_id": adr_id,
             "title": title,
             "search_text": f"{title} {decision_text}".lower(),
+            "decision": decision_text.strip(),
             "globs": _parse_enforcement_globs(text),
         })
     return adrs
@@ -499,11 +524,99 @@ def run_watch(paths: List[str], adr_dir: Path, now: Optional[datetime] = None) -
 
 
 # ---------------------------------------------------------------------------
+# Edit-tier injector (ADR-004): inject the governing ADR's Decision text
+# *before* an Edit/Write, bounded to a token budget, on the PreToolUse hook.
+# ---------------------------------------------------------------------------
+
+def _bound_decision(decision: str, max_tokens: int) -> str:
+    """Truncate decision text to a token budget (coarse chars/token estimate)."""
+    if max_tokens <= 0 or not decision:
+        return decision.strip()
+    max_chars = max_tokens * _CHARS_PER_TOKEN
+    if len(decision) <= max_chars:
+        return decision.strip()
+    cut = decision[:max_chars]
+    # Prefer to break on the last paragraph or sentence boundary in-budget.
+    for sep in ("\n\n", ". ", "\n"):
+        idx = cut.rfind(sep)
+        if idx >= max_chars // 2:
+            cut = cut[: idx + (1 if sep == ". " else 0)]
+            break
+    return cut.strip() + " […]"
+
+
+def run_inject(paths: List[str], adr_dir: Path,
+               now: Optional[datetime] = None) -> Optional[str]:
+    """Return injectable context for the top governing ADR of an about-to-edit
+    path, or None when nothing applies. Updates the inject cooldown state.
+
+    Never raises. Injects only the single highest-scored Accepted ADR, so the
+    agent sees the governing decision before it writes, without flooding
+    context.
+    """
+    if now is None:
+        now = _now_utc()
+
+    cfg = _load_config(adr_dir / ".adr-kit.json")
+    icfg = inject_config(cfg)
+    if not icfg.get("enabled", True):
+        return None
+    try:
+        max_tokens = int(icfg.get("max_tokens", DEFAULT_INJECT_MAX_TOKENS))
+    except (TypeError, ValueError):
+        max_tokens = DEFAULT_INJECT_MAX_TOKENS
+    try:
+        cooldown_hours = float(icfg.get("cooldown_hours", DEFAULT_INJECT_COOLDOWN_HOURS))
+    except (TypeError, ValueError):
+        cooldown_hours = DEFAULT_INJECT_COOLDOWN_HOURS
+
+    adrs = load_adrs(adr_dir)
+    if not adrs:
+        return None
+    decisions = {a["adr_id"]: a.get("decision", "") for a in adrs}
+
+    state_path = adr_dir / ".adr-kit-state.json"
+    state = _load_state(state_path)
+    nudges = _section_nudges(state, "inject")
+    project_root = _project_root()
+
+    for raw_path in paths:
+        rel_path = normalize_path(raw_path, project_root)
+        if not rel_path:
+            continue
+        hits = match_adrs(rel_path, adrs)
+        if not hits:
+            continue
+        top = hits[0]
+        key = f"{top['adr_id']}|{rel_path}"
+        if cooldown_hours > 0 and _within_cooldown(nudges, key, cooldown_hours, now):
+            continue
+        decision = _bound_decision(decisions.get(top["adr_id"], ""), max_tokens)
+        if not decision:
+            continue
+
+        pruned = _prune_nudges(nudges, max(cooldown_hours, DEFAULT_INJECT_COOLDOWN_HOURS), now)
+        pruned[key] = now.isoformat()
+        inject_state = state.get("inject")
+        if not isinstance(inject_state, dict):
+            inject_state = {}
+        inject_state["nudges"] = pruned
+        state["inject"] = inject_state
+        _save_state(state_path, state)
+
+        return (
+            f"[adr-inject] {top['adr_id']} ({top['title']}) governs {rel_path}. "
+            f"Honour its decision before editing:\n{decision}"
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Output envelopes
 # ---------------------------------------------------------------------------
 
-def _emit_hook_output(text: str) -> None:
-    """Emit nudge text in the PostToolUse hookSpecificOutput envelope.
+def _emit_hook_output(text: str, event: str = "PostToolUse") -> None:
+    """Emit text in a Claude Code hookSpecificOutput envelope for `event`.
 
     Mirrors adr-guardian._emit_context: Claude Code gets the nested
     hookSpecificOutput form; anything else gets plain text.
@@ -511,7 +624,7 @@ def _emit_hook_output(text: str) -> None:
     if os.environ.get("CLAUDE_PLUGIN_ROOT") and not os.environ.get("COPILOT_CLI"):
         payload = {
             "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
+                "hookEventName": event,
                 "additionalContext": text,
             }
         }
@@ -553,10 +666,15 @@ def main() -> int:
         ),
     )
     parser.add_argument("paths", nargs="*",
-                        help="File path(s) that were just edited.")
+                        help="File path(s) that were just edited (or about to be, "
+                             "with --pre-edit).")
     parser.add_argument("--hook", action="store_true",
                         help="PostToolUse hook mode: read the tool payload JSON "
                              "from stdin and emit a hookSpecificOutput envelope.")
+    parser.add_argument("--pre-edit", action="store_true",
+                        help="PreToolUse edit-tier mode (ADR-004): inject the "
+                             "governing ADR's Decision text before the edit. Reads "
+                             "the tool payload JSON from stdin like --hook.")
     args = parser.parse_args()
 
     # Self-guard: no ADR dir means nothing to say, anywhere.
@@ -564,7 +682,8 @@ def main() -> int:
     if adr_dir is None:
         return 0
 
-    if args.hook:
+    hook_mode = args.hook or args.pre_edit
+    if hook_mode:
         try:
             raw = sys.stdin.read()
         except OSError:
@@ -574,6 +693,13 @@ def main() -> int:
         paths = list(args.paths)
 
     if not paths:
+        return 0
+
+    if args.pre_edit:
+        context = run_inject(paths, adr_dir)
+        if not context:
+            return 0
+        _emit_hook_output(context, event="PreToolUse")
         return 0
 
     lines = run_watch(paths, adr_dir)

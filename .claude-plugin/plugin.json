@@ -1,6 +1,6 @@
 {
   "name": "adr-kit",
-  "description": "Architecture Decision Record toolkit for AI coding agents. Four modes: /adr-kit:init for one-shot project bootstrap; pre-commit verification via bin/adr-judge (declarative Enforcement blocks plus Claude Sonnet LLM judge, opt-in since v0.17); on-demand /adr-kit:adr authoring and /adr-kit:judge resolution; and the ADR Guardian (v0.18): a SessionStart staleness detector with two-tier cadence (drift daily, LLM bi-weekly) and mix-by-finding-type in-session responses.",
+  "description": "Architecture Decision Record toolkit for AI coding agents. Four modes: /adr-kit:init for one-shot project bootstrap; pre-commit verification via bin/adr-judge (declarative Enforcement blocks plus Claude Sonnet LLM judge, opt-in since v0.17); on-demand /adr-kit:adr authoring and /adr-kit:judge resolution; and the ADR Guardian (v0.18): a SessionStart staleness detector with two-tier cadence (drift daily, LLM bi-weekly) and mix-by-finding-type in-session responses. v0.31 adds ADR-004 layered context injection: a PreToolUse edit-tier hook (bin/adr-watch --pre-edit) that injects the governing ADR's decision before an edit, plus bin/adr-index for a CLAUDE.md-imported decision map.",
   "version": "0.30.5",
   "author": {
     "name": "Robert van den Breemen",
@@ -36,6 +36,18 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/run-hook.cmd\" session-start",
             "timeout": 10,
             "statusMessage": "Checking ADR health..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/run-hook.cmd\" pre-tool-use",
+            "timeout": 10
           }
         ]
       }
