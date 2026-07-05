@@ -404,13 +404,22 @@ def _status_line(text: str) -> Optional[str]:
 
 
 def detect_supersession_conflicts(files: List[Path]) -> Dict[int, List[str]]:
-    """Detect concurrent supersession: 2+ Accepted ADRs claiming the same target.
+    """Detect supersession-integrity problems for the consistency gate.
 
     A claim is any 'Supersedes ADR-NNN' phrase in an Accepted ADR (self-claims
     ignored). The target's Status line is the single source of truth and can
-    name at most ONE successor ('Superseded by ADR-X'); when two Accepted ADRs
-    claim the same target, at least one claim is dangling, so all claimants
-    FAIL with every involved file named. A single clean claim passes.
+    name at most ONE successor ('Superseded by ADR-X'). Two problems are FAILed:
+
+    - Concurrent supersession: 2+ Accepted ADRs claim the same target, so at
+      least one claim is dangling; every claimant FAILs with all files named.
+    - One-directional supersession: a single Accepted ADR claims a target that
+      exists but whose Status line does not name it back. The audit trail is
+      then one-way (the superseded ADR still reads as live), so the claimant
+      FAILs. A claim against a target absent from the directory is left to the
+      broken-reference detectors (bin/adr-retire) to avoid flagging prose
+      mentions of unknown ADR numbers.
+
+    A single clean, bidirectional supersession passes.
 
     Returns: claimant adr_num -> list of issue strings for the consistency gate.
     """
@@ -439,28 +448,49 @@ def detect_supersession_conflicts(files: List[Path]) -> Dict[int, List[str]]:
 
     issues: Dict[int, List[str]] = {}
     for target, claimants in by_target.items():
-        if len(claimants) < 2:
-            continue
-        names = sorted(name for _, name in claimants)
         target_info = info.get(target)
         successor: Optional[int] = None
         if target_info:
             sm = SUPERSEDED_BY_RE.search(target_info[2])
             if sm:
                 successor = int(sm.group(1))
-        if successor is not None:
-            agreement = f"target Status names ADR-{successor:03d} as successor"
-        elif target_info is None:
-            agreement = f"ADR-{target:03d} not found in this directory"
-        else:
-            agreement = "target Status does not name a successor"
-        msg = (
-            f"concurrent supersession of ADR-{target:03d}: claimed by multiple "
-            f"Accepted ADRs ({', '.join(names)}); {agreement}. A target can have "
-            f"exactly one successor."
-        )
-        for num, _name in claimants:
-            issues.setdefault(num, []).append(msg)
+
+        if len(claimants) >= 2:
+            names = sorted(name for _, name in claimants)
+            if successor is not None:
+                agreement = f"target Status names ADR-{successor:03d} as successor"
+            elif target_info is None:
+                agreement = f"ADR-{target:03d} not found in this directory"
+            else:
+                agreement = "target Status does not name a successor"
+            msg = (
+                f"concurrent supersession of ADR-{target:03d}: claimed by multiple "
+                f"Accepted ADRs ({', '.join(names)}); {agreement}. A target can have "
+                f"exactly one successor."
+            )
+            for num, _name in claimants:
+                issues.setdefault(num, []).append(msg)
+            continue
+
+        # Single Accepted claimant: the supersession must be bidirectional.
+        # A target absent from the directory is left to the broken-reference
+        # detectors (bin/adr-retire); flagging it here would trip on prose
+        # mentions of unknown ADR numbers.
+        if target_info is None:
+            continue
+        num, _name = claimants[0]
+        if successor != num:
+            detail = (
+                f"ADR-{target:03d} Status names ADR-{successor:03d}"
+                if successor is not None
+                else f"ADR-{target:03d} Status names no successor"
+            )
+            issues.setdefault(num, []).append(
+                f"one-directional supersession of ADR-{target:03d}: ADR-{num:03d} "
+                f"claims to supersede it, but {detail}. The superseded ADR's Status "
+                f"line must read 'Superseded by ADR-{num:03d}' so the audit trail is "
+                f"bidirectional."
+            )
     return issues
 
 
