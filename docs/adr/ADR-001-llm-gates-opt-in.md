@@ -1,3 +1,15 @@
+---
+id: "ADR-001"
+title: "Make Per-Commit LLM Gates Opt-In"
+status: "Accepted"
+date: "2026-05-31"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+---
 # ADR-001 Make Per-Commit LLM Gates Opt-In
 
 ## Status

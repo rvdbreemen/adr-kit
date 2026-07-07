@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rvdbreemen.github.io/adr-kit/schemas/adr-frontmatter.schema.json",
+  "title": "adr-kit canonical ADR frontmatter",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "id",
+    "title",
+    "status",
+    "date",
+    "binding",
+    "gate",
+    "documents_shipped",
+    "verified_in",
+    "supersedes",
+    "superseded_by"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^ADR-[0-9]{3,4}$",
+      "description": "Canonical ADR identifier."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human title without the ADR id prefix."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Proposed",
+        "Accepted",
+        "Deprecated",
+        "Superseded",
+        "Amended",
+        "Rejected"
+      ],
+      "description": "Current lifecycle status."
+    },
+    "date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Date from the status line when known."
+    },
+    "binding": {
+      "type": "boolean",
+      "description": "True when the ADR constrains future implementation."
+    },
+    "gate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Named consuming-repo verification gate, if any."
+    },
+    "documents_shipped": {
+      "type": "boolean",
+      "description": "True when this ADR documents behavior already shipped before authoring."
+    },
+    "verified_in": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Local evidence pointers such as file paths, symbols, tests, or commits."
+    },
+    "supersedes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^ADR-[0-9]{3,4}$"
+      },
+      "description": "ADR ids this ADR supersedes."
+    },
+    "superseded_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^ADR-[0-9]{3,4}$",
+      "description": "Successor ADR id when this ADR is superseded."
+    }
+  }
+}
+

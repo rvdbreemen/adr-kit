@@ -22,6 +22,7 @@ Usage:
   adr-lint docs/adr/ADR-042-foo.md    # lint a single file
   adr-lint --strict-from ADR-100      # override config strict_from
   adr-lint --gates completeness       # only completeness gate
+  adr-lint --gates schema             # validate canonical frontmatter
   adr-lint --format json              # machine-readable output
   adr-lint --config /tmp/policy.json  # custom config path
 """
@@ -32,10 +33,20 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from adr_schema import (
+    FrontmatterError,
+    parse_frontmatter,
+    split_frontmatter,
+    validate_frontmatter,
+)
 
 CANONICAL_REQUIRED_SECTIONS = [
     "## Status",
@@ -92,7 +103,16 @@ def _get_enforcement_validator():
     return _ENFORCEMENT_VALIDATOR
 
 LEGAL_SEVERITIES = {"always_strict", "always_advisory", "advisory_before_strict_from"}
-ALL_GATES = ["completeness", "audit", "evidence", "clarity", "consistency", "policy", "quality"]
+ALL_GATES = [
+    "schema",
+    "completeness",
+    "audit",
+    "evidence",
+    "clarity",
+    "consistency",
+    "policy",
+    "quality",
+]
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
 
 ENFORCEMENT_BLOCK_RE = re.compile(
@@ -122,6 +142,34 @@ STATUS_HISTORY_REQUIRED_FIELDS = ("date", "status", "changed_by", "reason", "cha
 # whitespace run, a literal prefix, one bounded digit run.
 SUPERSEDES_CLAIM_RE = re.compile(r"(?i)\bsupersedes\s+ADR-(\d{1,4})\b")
 SUPERSEDED_BY_RE = re.compile(r"(?i)\bsuperseded\s+by\s+ADR-(\d{1,4})\b")
+TEXT_SCAN_SUFFIXES = {
+    ".cfg",
+    ".h",
+    ".hpp",
+    ".ini",
+    ".ino",
+    ".js",
+    ".json",
+    ".md",
+    ".py",
+    ".sh",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
+TEXT_SCAN_DIRS = {".github", ".githooks", "scripts", "tests"}
+TEXT_SCAN_SKIP_DIRS = {
+    ".git",
+    ".pytest_cache",
+    ".venv",
+    "__pycache__",
+    "backlog",
+    "docs",
+    "node_modules",
+    "vendor",
+}
 
 
 class PolicyError(Exception):
@@ -200,6 +248,22 @@ def severity_of(
     if s == "advisory_before_strict_from":
         return "ADVISORY" if (sf_num is None or adr_num < sf_num) else "FAIL"
     return "FAIL"
+
+
+def level_for(
+    gate: str,
+    adr_num: int,
+    cfg: Dict,
+    strict_from_override: Optional[str],
+    file_advisory: bool,
+    strict_mode: bool,
+) -> str:
+    """Resolve finding level for one gate."""
+    if strict_mode:
+        return "FAIL"
+    if file_advisory:
+        return "ADVISORY"
+    return severity_of(gate, adr_num, cfg, strict_from_override)
 
 
 def parse_marker(text: str) -> Tuple[bool, bool, Set[str], Optional[str]]:
@@ -494,6 +558,171 @@ def detect_supersession_conflicts(files: List[Path]) -> Dict[int, List[str]]:
     return issues
 
 
+def _frontmatter_records(files: List[Path]) -> Dict[str, Dict]:
+    """Return valid frontmatter records keyed by ADR id."""
+    records: Dict[str, Dict] = {}
+    for fp in files:
+        m = ADR_FILENAME_RE.match(fp.name)
+        if not m:
+            continue
+        try:
+            text = fp.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        raw_frontmatter, body = split_frontmatter(text)
+        if raw_frontmatter is None:
+            continue
+        try:
+            data = parse_frontmatter(raw_frontmatter)
+        except FrontmatterError:
+            continue
+        if validate_frontmatter(data):
+            continue
+        adr_id = data["id"]
+        records[adr_id] = {
+            "adr_num": int(m.group(1)),
+            "file": fp,
+            "body": body,
+            "data": data,
+        }
+    return records
+
+
+def _verified_pointer_resolves(pointer: str, repo_root: Path) -> bool:
+    """Resolve local evidence pointers: path, path:symbol, or commit:<sha>."""
+    if pointer.startswith("commit:"):
+        commit = pointer.split(":", 1)[1].strip()
+        if not commit:
+            return False
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(repo_root), "cat-file", "-e", f"{commit}^{{commit}}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0
+
+    path_part = pointer
+    symbol = None
+    if ":" in pointer and not re.match(r"^[A-Za-z]:[\\/]", pointer):
+        path_part, symbol = pointer.split(":", 1)
+        symbol = symbol.strip() or None
+    path = (repo_root / path_part).resolve()
+    if not path.exists() or not path.is_file():
+        return False
+    if symbol is None:
+        return True
+    try:
+        return symbol in path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+
+
+def _iter_gate_scan_files(repo_root: Path):
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(repo_root, followlinks=False):
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in TEXT_SCAN_SKIP_DIRS and d.lower() not in TEXT_SCAN_SKIP_DIRS
+        ]
+        current = Path(dirpath)
+        try:
+            rel_first = current.relative_to(repo_root).parts[:1]
+        except ValueError:
+            rel_first = ()
+        preferred_dir = bool(rel_first and rel_first[0] in TEXT_SCAN_DIRS)
+        for fname in filenames:
+            path = current / fname
+            if fname == "evaluate.py" or preferred_dir or path.suffix.lower() in TEXT_SCAN_SUFFIXES:
+                yield path
+                count += 1
+                if count >= 5000:
+                    return
+
+
+def _gate_exists_locally(gate: str, repo_root: Path) -> bool:
+    needle = gate.strip()
+    if not needle:
+        return False
+    for path in _iter_gate_scan_files(repo_root):
+        try:
+            if needle in path.read_text(encoding="utf-8", errors="ignore"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def detect_frontmatter_consistency(files: List[Path], repo_root: Path) -> Dict[int, List[str]]:
+    """Detect cross-file and consuming-repo frontmatter consistency issues."""
+    records = _frontmatter_records(files)
+    issues: Dict[int, List[str]] = {}
+
+    def add(record: Dict, message: str) -> None:
+        issues.setdefault(record["adr_num"], []).append(message)
+
+    for adr_id, record in records.items():
+        data = record["data"]
+        body_status = _current_status(record["body"])
+        if body_status and body_status.capitalize() != data["status"]:
+            add(
+                record,
+                f"frontmatter status {data['status']!r} does not match "
+                f"Status section {body_status!r}",
+            )
+
+        superseded_by = data.get("superseded_by")
+        if data["status"] == "Superseded" and not superseded_by:
+            add(record, "status Superseded requires superseded_by")
+        if data["status"] != "Superseded" and superseded_by:
+            add(record, "superseded_by is only valid when status is Superseded")
+
+        for target_id in data.get("supersedes", []):
+            target = records.get(target_id)
+            if target is None:
+                add(record, f"supersedes target {target_id} not found")
+                continue
+            if target["data"].get("superseded_by") != adr_id:
+                add(
+                    record,
+                    f"supersedes {target_id} but {target_id}.superseded_by "
+                    f"is not {adr_id}",
+                )
+
+        if superseded_by:
+            successor = records.get(superseded_by)
+            if successor is None:
+                add(record, f"superseded_by target {superseded_by} not found")
+            elif adr_id not in successor["data"].get("supersedes", []):
+                add(
+                    record,
+                    f"superseded_by {superseded_by} but {superseded_by}.supersedes "
+                    f"does not include {adr_id}",
+                )
+
+        for pointer in data.get("verified_in", []):
+            if not _verified_pointer_resolves(pointer, repo_root):
+                add(record, f"verified_in pointer does not resolve: {pointer}")
+
+        if data.get("documents_shipped") and not data.get("verified_in"):
+            add(record, "documents_shipped requires at least one verified_in pointer")
+
+        if (
+            data["status"] == "Accepted"
+            and data.get("binding") is True
+        ):
+            gate = data.get("gate")
+            if not gate:
+                add(record, "Accepted binding ADR requires a named gate")
+            elif not _gate_exists_locally(str(gate), repo_root):
+                add(record, f"gate {gate!r} was not found under {repo_root}")
+
+    return issues
+
+
 def gate_consistency(
     fp: Path, adr_num: int, text: str, duplicates: Dict[int, List[str]],
     supersession_issues: Optional[List[str]] = None,
@@ -715,6 +944,8 @@ def lint_file(
     required_sections: List[str],
     ignore: Set[str],
     supersession: Optional[Dict[int, List[str]]] = None,
+    frontmatter_consistency: Optional[Dict[int, List[str]]] = None,
+    strict_mode: bool = False,
 ) -> Dict:
     """Lint one file. Returns a dict ready for JSON serialisation."""
     m = ADR_FILENAME_RE.match(fp.name)
@@ -733,11 +964,36 @@ def lint_file(
 
     findings = []
 
+    if "schema" in enabled_gates and "schema" not in skip_gates:
+        raw_frontmatter, _body = split_frontmatter(text)
+        schema_issues: List[str] = []
+        if raw_frontmatter is None:
+            schema_issues.append(
+                "missing canonical frontmatter; run bin/adr-migrate"
+            )
+        else:
+            try:
+                schema_issues.extend(validate_frontmatter(parse_frontmatter(raw_frontmatter)))
+            except FrontmatterError as exc:
+                schema_issues.append(str(exc))
+        if schema_issues:
+            level = level_for(
+                "schema", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
+            )
+            findings.append({
+                "gate": "schema",
+                "level": level,
+                "details": schema_issues,
+                "summary": "; ".join(schema_issues),
+            })
+
     if "completeness" in enabled_gates and "completeness" not in skip_gates:
         miss = gate_completeness(text, required_sections)
         if miss:
-            level = "ADVISORY" if file_advisory else severity_of(
-                "completeness", adr_num, cfg, strict_from_override
+            level = level_for(
+                "completeness", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
             )
             findings.append({
                 "gate": "completeness", "level": level,
@@ -748,8 +1004,9 @@ def lint_file(
     if "audit" in enabled_gates and "audit" not in skip_gates:
         issues = gate_audit(text)
         if issues:
-            level = "ADVISORY" if file_advisory else severity_of(
-                "audit", adr_num, cfg, strict_from_override
+            level = level_for(
+                "audit", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
             )
             findings.append({
                 "gate": "audit", "level": level,
@@ -759,8 +1016,9 @@ def lint_file(
     if "evidence" in enabled_gates and "evidence" not in skip_gates:
         hits = gate_evidence(text)
         if hits:
-            level = "ADVISORY" if file_advisory else severity_of(
-                "evidence", adr_num, cfg, strict_from_override
+            level = level_for(
+                "evidence", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
             )
             findings.append({
                 "gate": "evidence", "level": level,
@@ -771,8 +1029,9 @@ def lint_file(
     if "clarity" in enabled_gates and "clarity" not in skip_gates:
         hits = gate_clarity(text)
         if hits:
-            level = "ADVISORY" if file_advisory else severity_of(
-                "clarity", adr_num, cfg, strict_from_override
+            level = level_for(
+                "clarity", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
             )
             findings.append({
                 "gate": "clarity", "level": level,
@@ -785,9 +1044,12 @@ def lint_file(
             fp, adr_num, text, duplicates,
             (supersession or {}).get(adr_num),
         )
+        if frontmatter_consistency:
+            issues = (issues or []) + frontmatter_consistency.get(adr_num, [])
         if issues:
-            level = "ADVISORY" if file_advisory else severity_of(
-                "consistency", adr_num, cfg, strict_from_override
+            level = level_for(
+                "consistency", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
             )
             findings.append({
                 "gate": "consistency", "level": level,
@@ -799,7 +1061,9 @@ def lint_file(
         for pf in policy_findings:
             # Intrinsic severity: FAIL for schema/regex errors, ADVISORY for anti-patterns.
             # Demote to ADVISORY if the whole file is marked advisory.
-            level = "ADVISORY" if file_advisory else pf["severity"]
+            level = "FAIL" if strict_mode else (
+                "ADVISORY" if file_advisory else pf["severity"]
+            )
             findings.append({
                 "gate": "policy",
                 "level": level,
@@ -815,7 +1079,7 @@ def lint_file(
             # honour file_advisory marker for uniformity.
             findings.append({
                 "gate": "quality",
-                "level": "ADVISORY",
+                "level": "FAIL" if strict_mode else "ADVISORY",
                 "code": qf["code"],
                 "details": [qf["message"]],
                 "summary": qf["message"],
@@ -847,6 +1111,8 @@ def render_human(result: Dict, verbose: bool) -> str:
         out.append(f"Config: {result['config_path']} ({cfg_str})")
     elif result["strict_from_override"]:
         out.append(f"Config: command-line --strict-from {result['strict_from_override']}")
+    if result.get("strict_mode"):
+        out.append(f"Mode: strict (repo_root={result.get('repo_root')})")
     out.append("")
     out.append(f"PASS strictly ({s['pass']}):")
     for f in result["files"]:
@@ -889,7 +1155,7 @@ def render_human(result: Dict, verbose: bool) -> str:
         )
         out.append(
             f"  Next steps: focus on {worst['file']}, "
-            f"which fails {n_fail_gates} of 4 gates."
+            f"which fails {n_fail_gates} enabled gate(s)."
         )
     else:
         out.append(
@@ -931,6 +1197,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="First ADR id (inclusive) on which gates are strict; overrides config.",
     )
     parser.add_argument(
+        "--strict", action="store_true",
+        help="CI governance mode: enable schema by default and make findings FAIL.",
+    )
+    parser.add_argument(
+        "--repo-root", metavar="PATH", default=None,
+        help="Consuming repo root for gate and verified_in resolution (default: cwd).",
+    )
+    parser.add_argument(
         "--gates", default=None,
         help=f"Comma-separated gates to run. Default: {','.join(DEFAULT_GATES)}. "
              f"All: {','.join(ALL_GATES)}",
@@ -962,6 +1236,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     except ValueError as e:
         print(f"adr-lint: {e}", file=sys.stderr)
         return 2
+    if args.strict and args.gates is None:
+        gates.add("schema")
+
+    repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd().resolve()
 
     config_path = (
         Path(args.config) if args.config
@@ -995,11 +1273,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     supersession = (
         detect_supersession_conflicts(files) if "consistency" in gates else {}
     )
+    frontmatter_consistency = (
+        detect_frontmatter_consistency(files, repo_root) if "consistency" in gates else {}
+    )
 
     file_results = [
         lint_file(
             fp, cfg, args.strict_from, gates, duplicates,
             required_sections, ignore, supersession,
+            frontmatter_consistency, args.strict,
         ) for fp in files
     ]
 
@@ -1022,6 +1304,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "config_path": str(config_path) if config_path.exists() else None,
         "config_summary": config_summary,
         "strict_from_override": args.strict_from,
+        "strict_mode": args.strict,
+        "repo_root": str(repo_root),
         "gates_enabled": sorted(gates),
         "summary": counts,
         "files": file_results,

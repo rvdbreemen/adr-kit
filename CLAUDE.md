@@ -7,3 +7,15 @@ This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architec
 Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
 Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time. ADRs with `llm_judge: true` are reviewed in-session via `/adr-kit:judge`.
 <!-- ADR-KIT STUB END -->
+
+## Backlog.md
+
+This repository uses Backlog.md (`backlog/`) as the source of truth for work.
+
+- Search for an existing task before starting any meaningful implementation or
+  design work.
+- If no task exists, create one before editing code or docs.
+- Prefer the Backlog MCP tools for reading, searching, creating, and updating
+  tasks. Use the `backlog` CLI only as a fallback.
+- Keep tasks small enough to complete in one focused pass.
+- Do not edit files in `backlog/tasks/` directly.

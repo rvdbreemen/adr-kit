@@ -340,6 +340,7 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 
 ### 1. Before making architectural changes
 
+- Run the local doctor to repair the generated index and surface ADR health issues before relying on the decision log: `bin/adr-doctor --fix-index docs/adr/`.
 - Review existing ADRs (`docs/adr/README.md` index).
 - Search for related decisions.
 - Check whether the change conflicts with any `Accepted` ADR.
@@ -359,7 +360,8 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 - Add the implementation date in the Status line: `Accepted. Date: YYYY-MM-DD.`
 - Append the matching `Accepted` transition to `## Status History`; never rewrite an earlier entry.
 - Add a `## Related Decisions` entry to any other ADR that newly relates.
-- Update `docs/adr/README.md` with the new ADR in the right category.
+- Refresh the generated index with `bin/adr-index docs/adr/`.
+- Run `bin/adr-doctor --fix-index docs/adr/` or `bin/adr-lint --strict docs/adr/` before treating the ADR set as clean.
 
 ### 4. When superseding an ADR
 
@@ -367,7 +369,7 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 - Reference the original in `## Related Decisions`: "Supersedes ADR-XXX (Title)".
 - Update the old ADR's Status line to `Superseded by ADR-YYY` and append that transition to `## Status History`.
 - Do NOT modify the old ADR's decision text or reasoning. Immutability is the rule.
-- Update `docs/adr/README.md` to mark both ADRs.
+- Refresh `docs/adr/README.md` through `bin/adr-index docs/adr/` so both sides appear in the generated index.
 
 ### 5. When amending an ADR (lighter alternative to supersession)
 
@@ -529,12 +531,15 @@ Maintain `docs/adr/README.md` as the navigation hub. Required sections:
 8. **Superseding ADRs**: how to handle changes.
 9. **Resources**: links to ADR best practices and external references.
 
+The ADR list inside the `<!-- adr-kit-index:begin -->` / `<!-- adr-kit-index:end -->` block is generated. Do not hand-edit that block. Run `bin/adr-index docs/adr/` after ADR mutations, use `bin/adr-index --check docs/adr/` in CI, and use `bin/adr-doctor --fix-index docs/adr/` when an agent starts or finishes ADR work.
+
 When adding a new ADR:
 
-1. Add an entry under the appropriate category.
-2. Update the category count in Quick Navigation.
-3. Update "Foundational ADRs" if the new one is highly referenced.
+1. Add or update the ADR file.
+2. Run `bin/adr-index docs/adr/`.
+3. Update "Foundational ADRs" or human-written notes only if the new decision changes that prose.
 4. Add cross-references in any older ADRs that relate.
+5. Run `bin/adr-doctor --fix-index docs/adr/` before reporting completion.
 
 ---
 
@@ -589,7 +594,7 @@ Creating a new ADR? Check these:
 - [ ] Code examples included (if applicable)
 - [ ] Related ADRs referenced
 - [ ] Implementation notes with affected files
-- [ ] Added to docs/adr/README.md index
+- [ ] Ran `bin/adr-index docs/adr/` and `bin/adr-doctor --fix-index docs/adr/`
 - [ ] Category assigned
 - [ ] References / external links included
 - [ ] Four verification gates pass
@@ -607,7 +612,7 @@ Creating a new ADR? Check these:
 - No decision maker attribution
 - Missing constraints that drove the decision
 - Modifying accepted ADRs instead of superseding
-- Not updating README.md index
+- Hand-editing the generated README index instead of running `bin/adr-index`
 - Using jargon without defining it
 - Being superficial: not digging into the "why" behind constraints
 - Hiding negative consequences
@@ -642,6 +647,7 @@ The full adr-kit toolset wraps this skill with three operational modes:
 - **`/adr-kit:install-hooks`** — install or uninstall the pre-commit hook. Default-on after `/adr-kit:init` (or `/adr-kit:upgrade`).
 - **`/adr-kit:upgrade`** — for users on v0.11: migrate to the v0.12 footprint without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
 - **`/adr-kit:lint`** — validate ADR file content against the four verification gates (Completeness / Evidence / Clarity / Consistency). The deterministic CLI is `bin/adr-lint`; the skill drives the heuristic gates.
+- **`bin/adr-doctor`** — local health check for agent start and finish: strict lint, generated-index freshness, shipped-but-Proposed ADRs, old Proposed ADRs, changed evidence behind Accepted ADRs, and missing named gates. Material drift auto-triggers a local `bin/adr-audit --root ...` pass and includes the audit summary in the doctor output. Use `--fix-index` to regenerate the index before checking it.
 - **`/adr-kit:migrate`** — rewrite legacy-shaped ADRs into the canonical seven-section template.
 
 ### When to invoke this skill (`/adr-kit:adr`) vs the others

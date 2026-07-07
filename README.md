@@ -101,11 +101,15 @@ Three layers, each with a clear path:
   - **Trend history (v0.29.0+)**: every sweep appends to a 52-entry trend log, and the nudge shows the delta: `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`. A KPI with memory, not a snapshot.
 - **Health dashboard (`bin/adr-status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, and since v0.29.0 the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
 - **Quality scoring (`bin/adr-quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
+- **Generated index (`bin/adr-index`)**: rebuilds `docs/adr/README.md` from local ADR metadata, replacing only the sentinel-owned generated block. `--check` exits non-zero when the index is stale or duplicate ADR ids exist.
+- **Local doctor (`bin/adr-doctor`)**: runs strict lint plus generated-index freshness checks, then nudges on shipped-but-still-Proposed ADRs, old Proposed ADRs, Accepted ADRs whose `verified_in` files changed after acceptance, and missing named gates. Material drift auto-triggers a local `bin/adr-audit --root ...` pass and includes the audit summary in the doctor output. `--fix-index` repairs the generated index before checking it.
+- **Lifecycle commands (`bin/adr`)**: local `propose`, `accept`, `supersede`, and `reject` commands update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated index.
+- **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then auto-accept only when strict lint and quality checks pass. `--auto-mode assist` reports eligibility without mutating until confirmed.
 - **Retirement audit (`/adr-kit:retire`, `bin/adr-retire`)**: ranks Accepted ADRs for retirement using four deterministic signals (status age, technology removal, supersession, policy drift). Read-only; a recommendation always needs a human.
 - **Dependency graph (`/adr-kit:related`, `bin/adr-related`)**: who does ADR-007 point at, and who points back? Outbound and inbound edges per reference kind, with dangling links flagged. Essential before touching a decision others depend on.
 - **Guided supersession (`/adr-kit:supersede`)**: replace a decision without rewriting history. Shows the dependency graph first, drafts the successor as `Proposed`, and only after your approval flips the old ADR's status to `Superseded by ADR-M` (the only edit ever made to it) and appends the audit trail on both sides. Refuses to overwrite an existing supersession pointer; the lint consistency gate enforces the same invariant when two branches race to supersede the same target, and also flags a one-directional supersession where the successor landed but the target's Status was never flipped back.
 - **Team-safe numbering (`bin/adr-renumber`, v0.23.0+)**: two branches both claim ADR-043, both pass CI in isolation, the collision appears after merge. The lint gate fails the duplicate with both files named, and `adr-renumber` moves one to a free number, dry-run first, updating every cross-reference in the set (and never touching ADR-0430 when you renumber ADR-043).
-- **Lint (`/adr-kit:lint`, `bin/adr-lint`)**: validates every ADR against the gates with file:line citations and three result tiers (PASS, ADVISORY, FAIL). The CLI form is deterministic and CI-ready; the skill form adds model judgement on the Evidence and Clarity gates.
+- **Lint (`/adr-kit:lint`, `bin/adr-lint`)**: validates every ADR against the gates with file:line citations and three result tiers (PASS, ADVISORY, FAIL). The CLI form is deterministic and CI-ready; `--strict` enables canonical frontmatter validation, local `verified_in` evidence resolution, reciprocal supersession checks, and binding gate lookup for CI. The skill form adds model judgement on the Evidence and Clarity gates.
 
 ## MCP server: `bin/adr-mcp`
 
@@ -167,6 +171,11 @@ The split is deliberate: knowledge and read-only skills are cheap to auto-trigge
 - **Sections** in order: Status, Context, Decision, Alternatives Considered, Consequences, Related Decisions, References.
 - **Status values**: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-YYY`, `Amended by ADR-YYY`.
 - **Status history**: an append-only YAML block records every transition (`date`, `status`, `changed_by`, `reason`, `changed_via`); the lint audit gate validates chronology and agreement with `## Status`.
+- **Canonical frontmatter**: `bin/adr-migrate` can add a local metadata block above legacy ADR prose without changing the body. The schema is [`schemas/adr-frontmatter.schema.json`](schemas/adr-frontmatter.schema.json) and carries the fields agents need for higher-quality local recall:
+  - `id`, `title`, `status`, `date`: the stable identity and lifecycle state.
+  - `binding`, `gate`: whether the decision constrains future work and which consuming-repo gate proves it.
+  - `documents_shipped`, `verified_in`: evidence for after-the-fact ADRs that document already-shipped behavior.
+  - `supersedes`, `superseded_by`: lifecycle links that tools can check for reciprocity.
 
 Different house style (lowercase, 4-digit, no prefix)? Edit the `## Project Conventions` section in the skill and the agent; the rest of the toolkit follows from there. Or keep your MADR/Nygard files and let `/adr-kit:migrate` import them.
 
@@ -272,10 +281,10 @@ adr-lint:
           https://raw.githubusercontent.com/rvdbreemen/adr-kit/main/bin/adr-lint
         chmod +x /tmp/adr-lint
     - name: Lint ADRs
-      run: python /tmp/adr-lint docs/adr/
+      run: python /tmp/adr-lint --strict docs/adr/
 ```
 
-Runs Completeness, Audit, and Consistency deterministically (Evidence and Clarity stay opt-in behind `--gates`: they need judgement a regex cannot give). Exit `1` on any FAIL makes blocking a PR trivial.
+Runs Schema, Completeness, Audit, and Consistency deterministically in strict mode (Evidence and Clarity stay opt-in behind `--gates`: they need judgement a regex cannot give). Exit `1` on any FAIL makes blocking a PR trivial.
 
 ### Scheduled health: guardian and retirement audits
 

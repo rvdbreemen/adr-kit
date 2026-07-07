@@ -69,6 +69,17 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
 
 Review the returned ADRs. If an existing ADR already covers the decision, suggest amending or superseding it instead of creating a new one. Include relevant ADR IDs in the "## Related Decisions" section of the new ADR.
 
+## Local Doctor Check (v0.31.0+)
+
+Before writing or changing an ADR, run the local doctor so the current ADR set is fresh in working memory and the generated index is repaired before you rely on it:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-doctor" --fix-index docs/adr/
+```
+
+Treat findings as context, not background noise. In particular, check for shipped-but-still-Proposed ADRs, old Proposed ADRs, Accepted ADRs whose evidence files changed after acceptance, and named gates that no longer exist locally. When material drift is present, the doctor auto-runs a local audit pass and includes the audit summary in its output.
+
 ## Quality Check (v0.15.1+)
 
 After drafting the ADR, score its quality before saving:
@@ -138,7 +149,13 @@ Propose the block to the user with a clear rationale ("Declarative: the rule map
 
 ### Step 4: Write the file
 
-Use the template below. Save it to `docs/adr/ADR-XXX-kebab-case-title.md`. After writing, append the new entry to `docs/adr/README.md` under the matching category (or note that the README index has a gap and recommend the user update it).
+Use the template below. Save it to `docs/adr/ADR-XXX-kebab-case-title.md`. After writing, regenerate the generated index instead of hand-editing the sentinel-owned block:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-index" docs/adr/
+"$ADR_KIT/bin/adr-lint" --strict docs/adr/
+```
 
 ### Step 5: Report
 
@@ -279,13 +296,13 @@ A bad ADR:
 - `bin/adr-judge`: the pre-commit runner that consumes Enforcement blocks. Pairs with `/adr-kit:judge` for in-session review.
 - The project's `docs/adr/README.md`: the project-specific ADR index and conventions.
 
-## Post-Decision Health Check (v0.15.1+)
+## Post-Decision Health Check (v0.31.0+)
 
-After writing the ADR, optionally run a health check to verify the ADR set is consistent:
+After writing the ADR, run the doctor to verify the ADR set is consistent and the generated index is fresh:
 
 ```bash
 ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
-"$ADR_KIT/bin/adr-status" --format table docs/adr/
+"$ADR_KIT/bin/adr-doctor" --fix-index docs/adr/
 ```
 
-If the retirement candidates list grows, consider superseding old Proposed ADRs rather than leaving them open-ended.
+If the doctor reports stale Proposed ADRs, shipped-but-unaccepted ADRs, changed evidence, or missing gates, include that in your report and do not mark the decision Accepted until the relevant issue is resolved.

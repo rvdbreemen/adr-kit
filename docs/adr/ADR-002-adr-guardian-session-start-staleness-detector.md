@@ -1,3 +1,15 @@
+---
+id: "ADR-002"
+title: "ADR Guardian: SessionStart Staleness Detector with Two-Tier Cadence"
+status: "Accepted"
+date: "2026-05-31"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+---
 # ADR-002 ADR Guardian: SessionStart Staleness Detector with Two-Tier Cadence
 
 ## Status

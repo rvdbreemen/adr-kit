@@ -1,3 +1,15 @@
+---
+id: "ADR-003"
+title: "Canonical Template Stays the Storage Format; MADR and Nygard Are Import Formats"
+status: "Accepted"
+date: "2026-06-12"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+---
 # ADR-003 Canonical Template Stays the Storage Format; MADR and Nygard Are Import Formats
 
 ## Status
