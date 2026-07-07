@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -23,12 +24,18 @@ from typing import Dict, List
 from adr_schema import migrate_text
 
 
+ADR_FILE_RE = re.compile(r"(?i)^ADR-\d{1,4}-.*\.md$")
+
+
 def discover_files(target: Path) -> List[Path]:
     if target.is_file():
         return [target]
     if not target.is_dir():
         return []
-    return sorted(target.glob("ADR-*.md"), key=lambda p: p.name.lower())
+    return sorted(
+        (path for path in target.glob("ADR-*.md") if ADR_FILE_RE.match(path.name)),
+        key=lambda p: p.name.lower(),
+    )
 
 
 def migrate_file(path: Path, write: bool) -> Dict:

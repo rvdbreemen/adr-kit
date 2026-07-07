@@ -1,7 +1,7 @@
 {
   "name": "adr-kit",
-  "description": "Architecture Decision Record toolkit for AI coding agents: /adr-kit:init bootstrap; pre-commit verification via bin/adr-judge (declarative Enforcement plus opt-in Sonnet LLM judge); /adr-kit:adr authoring and /adr-kit:judge; the ADR Guardian SessionStart staleness detector; and (v0.31, ADR-004) layered context injection: a PreToolUse edit-tier hook injecting the governing ADR's decision before an edit, plus bin/adr-index for a CLAUDE.md-imported decision map.",
-  "version": "0.31.0",
+  "description": "Architecture Decision Record toolkit for AI coding agents: /adr-kit:init bootstrap; bin/adr-judge enforcement; /adr-kit:adr authoring; Guardian staleness checks; layered context injection (ADR-004); and v0.32 local governance tools: canonical frontmatter, strict lint, lifecycle commands, generated indexes, and adr-doctor.",
+  "version": "0.32.0",
   "author": {
     "name": "Robert van den Breemen",
     "url": "https://github.com/rvdbreemen"

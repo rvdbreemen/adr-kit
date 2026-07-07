@@ -22,8 +22,55 @@ REPO_ROOT = pathlib.Path(__file__).parent.parent
 # Helpers
 # ---------------------------------------------------------------------------
 
-BASH = shutil.which("bash")  # None on Windows without Git Bash / WSL
+def _find_usable_bash() -> str | None:
+    """Return a bash executable that can actually run scripts.
+
+    On Windows, C:\\Windows\\system32\\bash.exe can exist even when WSL is not
+    usable. `shutil.which("bash")` alone then makes these tests fail with WSL
+    launcher errors instead of skipping as intended.
+    """
+    bash = shutil.which("bash")
+    if bash is None:
+        return None
+    try:
+        result = subprocess.run(
+            [bash, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return bash if result.returncode == 0 else None
+
+
+BASH = _find_usable_bash()
 REQUIRES_BASH = pytest.mark.skipif(BASH is None, reason="bash not available on this system")
+
+
+def _bash_can_see_python3() -> bool:
+    if BASH is None:
+        return False
+    result = subprocess.run(
+        [
+            BASH,
+            "-lc",
+            "for c in python3 python py; do "
+            "command -v \"$c\" >/dev/null 2>&1 || continue; "
+            "v=$(\"$c\" --version 2>&1 | grep -oE '[0-9]+\\.[0-9]+' | head -1); "
+            "m=$(echo \"$v\" | cut -d. -f1); "
+            "if [ \"${m:-0}\" -ge 3 ] 2>/dev/null; then exit 0; fi; "
+            "done; exit 1",
+        ],
+        capture_output=True,
+        text=True,
+        env=dict(os.environ),
+        timeout=10,
+    )
+    return result.returncode == 0
+
+
+BASH_HAS_PYTHON3 = _bash_can_see_python3()
 
 # Minimal bash script that replicates the Python-detection block from the hook.
 # It exits 42 if Python 3 is found (to distinguish from the exit 0 non-blocking path),
@@ -97,6 +144,10 @@ def test_hook_skips_gracefully_when_python_missing():
 
 
 @pytest.mark.skipif(BASH is None, reason="bash not available on this system")
+@pytest.mark.skipif(
+    not BASH_HAS_PYTHON3,
+    reason="bash is available but cannot see a Python 3 command",
+)
 def test_hook_continues_when_python3_found():
     """When Python 3 is available the check must pass through (sentinel exit 42)."""
     # Use the current process's PATH — Python is definitely available here because
@@ -160,8 +211,10 @@ def test_hook_template_bash_syntax():
     if BASH is None:
         pytest.skip("bash not available")
     hook_path = REPO_ROOT / "templates" / "githooks" / "pre-commit"
+    hook = hook_path.read_text(encoding="utf-8").replace("\r\n", "\n")
     result = subprocess.run(
-        [BASH, "-n", str(hook_path)],
+        [BASH, "-n"],
+        input=hook,
         capture_output=True,
         text=True,
         timeout=10,

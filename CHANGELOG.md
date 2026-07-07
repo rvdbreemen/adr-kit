@@ -4,6 +4,23 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-07-07
+
+### Added
+
+- **Canonical ADR frontmatter and migration tooling (tasks 17 and 18).** ADRs can now carry a small, stdlib-parseable metadata block with stable fields for `id`, `title`, `status`, `date`, binding/gate information, supersession links, `documents_shipped`, and `verified_in` evidence. `bin/adr-migrate` adds or repairs that metadata without rewriting the markdown body, and `schemas/adr-frontmatter.schema.json` documents the contract for other agents and CI systems.
+- **Strict local governance linting (task 18).** `bin/adr-lint --strict` now enables schema validation, local `verified_in` resolution, reciprocal supersession checks, binding gate lookup, and fail-level handling for all enabled findings. The strict path is intended for CI, doctor checks, and auto-acceptance workflows where advisory drift should not be silently ignored.
+- **Generated README index mode (task 19).** `bin/adr-index` now has a second, backward-compatible mode: `bin/adr-index docs/adr/` rebuilds only the sentinel-owned block in `docs/adr/README.md`, while `--check` fails when the README index is stale or duplicate ADR ids exist. The existing ADR-004 context-index mode remains intact through `--adr-dir docs/adr -o docs/adr/ADR-INDEX.md`.
+- **Lifecycle CLI commands (task 20).** New `bin/adr` commands cover `propose`, `accept`, `supersede`, `reject`, and `document`. They update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated README index.
+- **After-the-fact ADR acceptance (task 21).** `bin/adr document` marks shipped behaviour with `documents_shipped: true` and local `verified_in` evidence pointers. `bin/adr accept --auto` accepts only when strict lint and quality checks pass; `--auto-mode assist` reports eligibility without mutating.
+- **Local ADR doctor (task 22).** New `bin/adr-doctor` runs strict lint plus generated-index freshness checks, then reports shipped-but-still-Proposed ADRs, old Proposed ADRs, Accepted ADRs whose evidence files changed after acceptance, and missing named gates. Material drift triggers a local `bin/adr-audit --root ...` pass and includes the audit summary in the output.
+- **Agent-facing governance instructions.** `AGENTS.md`, `CLAUDE.md`, `agents/adr-generator.md`, and `skills/adr/SKILL.md` now point agents at Backlog.md, strict lint, `adr-doctor`, and generated indexes instead of hand-editing ADR indexes.
+
+### Changed
+
+- **`bin/adr-index` consolidates the v0.31 and v0.32 index flows.** The command now preserves the ADR-004 compact context index for `docs/adr/ADR-INDEX.md` and also supports the local README index needed by lifecycle and doctor tooling. Both modes exclude generated `ADR-INDEX.md` from ADR discovery.
+- **Release metadata moved to 0.32.0.** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `templates/adr-kit-guide.md`, `templates/githooks/pre-commit`, `templates/cc-settings/guardian-hook-entry.json`, and this repo's dogfood `.githooks/pre-commit` are stamped together so Claude Code's plugin update flow and copied-artifact staleness checks see the same version.
+
 ## [0.31.0] - 2026-07-05
 
 ### Added

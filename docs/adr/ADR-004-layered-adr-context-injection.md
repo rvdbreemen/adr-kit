@@ -1,3 +1,15 @@
+---
+id: "ADR-004"
+title: "Layered ADR Context Injection for Agent Work"
+status: "Accepted"
+date: "2026-07-05"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+---
 # ADR-004 Layered ADR Context Injection for Agent Work
 
 ## Status

@@ -133,6 +133,20 @@ def test_check_mode_reports_needed_migration_without_writing(tmp_path):
     assert payload["files"][0]["changed"] is True
 
 
+def test_directory_migration_ignores_generated_adr_index(tmp_path):
+    adr = tmp_path / "ADR-001-local-memory-recall.md"
+    adr.write_text(_legacy_adr(), encoding="utf-8")
+    generated = tmp_path / "ADR-INDEX.md"
+    generated.write_text("# ADR Index\n\nGenerated artifact.\n", encoding="utf-8")
+
+    result = _run_migrate("--check", "--format", "json", str(tmp_path))
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["total"] == 1
+    assert payload["files"][0]["file"].endswith("ADR-001-local-memory-recall.md")
+
+
 def test_lint_schema_gate_fails_missing_frontmatter(tmp_path):
     adr = tmp_path / "ADR-001-local-memory-recall.md"
     adr.write_text(_legacy_adr(), encoding="utf-8")
