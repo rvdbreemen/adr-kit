@@ -18,6 +18,15 @@ jobs:
       - name: Validate marketplace.json syntax
         run: jq empty .claude-plugin/marketplace.json
 
+      - name: Validate native Codex and Copilot JSON syntax
+        run: |
+          jq empty .agents/plugins/marketplace.json
+          jq empty codex/.codex-plugin/plugin.json
+          jq empty codex/.mcp.json
+          jq empty .github/plugin/marketplace.json
+          jq empty copilot/plugin.json
+          jq empty copilot/.mcp.json
+
       - name: Setup Node.js for ajv-cli
         uses: actions/setup-node@v4
         with:
@@ -37,6 +46,14 @@ jobs:
           required_files=(
             ".claude-plugin/plugin.json"
             ".claude-plugin/marketplace.json"
+            ".agents/plugins/marketplace.json"
+            "codex/.codex-plugin/plugin.json"
+            "codex/.mcp.json"
+            "copilot/plugin.json"
+            "copilot/.mcp.json"
+            ".github/plugin/marketplace.json"
+            "scripts/install-agent-envs.py"
+            "scripts/sync-agent-plugins.py"
             "schemas/plugin.json.schema.json"
             "schemas/marketplace.json.schema.json"
             "schemas/adr-kit-config.schema.json"
@@ -95,11 +112,32 @@ jobs:
             exit 1
           fi
 
+      - name: Verify every client manifest uses the release version
+        run: |
+          expected=$(jq -r '.version' .claude-plugin/plugin.json)
+          test "$(jq -r '.version' codex/.codex-plugin/plugin.json)" = "$expected"
+          test "$(jq -r '.version' copilot/plugin.json)" = "$expected"
+          test "$(jq -r '.plugins[0].version' .github/plugin/marketplace.json)" = "$expected"
+          test "$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)" = "$expected"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify generated client payloads and integration tests
+        run: |
+          python scripts/sync-agent-plugins.py --check
+          python -m pip install pytest
+          python -m pytest tests/test_agent_installer.py tests/test_adr_mcp.py tests/test_bump_version.py tests/test_python_check.py
+
       - name: Run markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v17
         with:
           globs: |
             skills/**/*.md
+            codex/skills/**/*.md
+            copilot/skills/**/*.md
             agents/**/*.md
             instructions/**/*.md
             examples/**/*.md

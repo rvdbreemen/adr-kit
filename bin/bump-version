@@ -8,20 +8,25 @@ Usage: bin/bump-version <new-version>
 What it does:
   1. Validates semver format of the argument
   2. Updates .claude-plugin/plugin.json "version" field
-  3. Updates .claude-plugin/marketplace.json plugin "version" field
+  3. Updates codex/.codex-plugin/plugin.json "version" field
+  4. Updates copilot/plugin.json "version" field
+  5. Updates .github/plugin/marketplace.json plugin "version" field
+  6. Updates .claude-plugin/marketplace.json plugin "version" field
      (the field the Claude Code plugin update system compares against; a bump
      that misses it ships to the repo but is never picked up by clients)
-  4. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>"
+  7. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>"
      and inserts a fresh "## [Unreleased]" block above it
-  5. Updates the wrapper-version stamps in the copied-artifact templates
+  8. Updates the wrapper-version stamps in the copied-artifact templates
      (templates/githooks/pre-commit, templates/cc-settings/
      guardian-hook-entry.json); adr-guardian compares these stamps against
      the plugin version to detect stale copied wrappers (task-15)
-  6. Prints what changed; does NOT commit or tag (do that yourself)
+  9. Prints what changed; does NOT commit or tag (do that yourself)
 
 After running:
   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json \
-      CHANGELOG.md templates/githooks/pre-commit \
+      codex/.codex-plugin/plugin.json copilot/plugin.json \
+      .github/plugin/marketplace.json CHANGELOG.md \
+      templates/githooks/pre-commit \
       templates/cc-settings/guardian-hook-entry.json
   git commit -m "chore(release): v<version>"
   git tag v<version>
@@ -46,6 +51,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
+CODEX_PLUGIN_JSON = REPO_ROOT / "codex" / ".codex-plugin" / "plugin.json"
+COPILOT_PLUGIN_JSON = REPO_ROOT / "copilot" / "plugin.json"
+COPILOT_MARKETPLACE_JSON = REPO_ROOT / ".github" / "plugin" / "marketplace.json"
 MARKETPLACE_JSON = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 PRECOMMIT_TEMPLATE = REPO_ROOT / "templates" / "githooks" / "pre-commit"
@@ -84,7 +92,14 @@ def main(argv: list) -> int:
     if not SEMVER_RE.match(new_version):
         _fail(f"version must be semver (e.g. 0.16.0), got: {new_version}")
 
-    for required in (PLUGIN_JSON, MARKETPLACE_JSON, CHANGELOG):
+    for required in (
+        PLUGIN_JSON,
+        CODEX_PLUGIN_JSON,
+        COPILOT_PLUGIN_JSON,
+        COPILOT_MARKETPLACE_JSON,
+        MARKETPLACE_JSON,
+        CHANGELOG,
+    ):
         if not required.is_file():
             _fail(f"{required} not found")
 
@@ -98,7 +113,33 @@ def main(argv: list) -> int:
     _write_json(PLUGIN_JSON, plugin)
     print(f"  + .claude-plugin/plugin.json -> {new_version}")
 
-    # 2. marketplace.json: bump the entry whose name matches plugin.json's
+    # 2. Codex plugin manifest. It is a separate client distribution, but both
+    #    native plugins ship under one adr-kit release version.
+    codex_plugin = _read_json(CODEX_PLUGIN_JSON)
+    codex_plugin["version"] = new_version
+    _write_json(CODEX_PLUGIN_JSON, codex_plugin)
+    print(f"  + codex/.codex-plugin/plugin.json -> {new_version}")
+
+    # 3. Standalone GitHub Copilot CLI plugin manifest.
+    copilot_plugin = _read_json(COPILOT_PLUGIN_JSON)
+    copilot_plugin["version"] = new_version
+    _write_json(COPILOT_PLUGIN_JSON, copilot_plugin)
+    print(f"  + copilot/plugin.json -> {new_version}")
+
+    copilot_marketplace = _read_json(COPILOT_MARKETPLACE_JSON)
+    copilot_matched = [
+        p
+        for p in copilot_marketplace.get("plugins", [])
+        if p.get("name") == copilot_plugin.get("name")
+    ]
+    if not copilot_matched:
+        _fail("no adr-kit entry in Copilot marketplace")
+    for entry in copilot_matched:
+        entry["version"] = new_version
+    _write_json(COPILOT_MARKETPLACE_JSON, copilot_marketplace)
+    print(f"  + .github/plugin/marketplace.json -> {new_version}")
+
+    # 4. Claude marketplace.json: bump the entry whose name matches plugin.json's
     #    name; error out if no such entry exists so a silent miss cannot ship.
     plugin_name = plugin.get("name")
     marketplace = _read_json(MARKETPLACE_JSON)
@@ -115,7 +156,7 @@ def main(argv: list) -> int:
     _write_json(MARKETPLACE_JSON, marketplace)
     print(f"  + .claude-plugin/marketplace.json ({plugin_name}) -> {new_version}")
 
-    # 3. CHANGELOG.md: first "## [Unreleased]" becomes the release heading,
+    # 5. CHANGELOG.md: first "## [Unreleased]" becomes the release heading,
     #    with a fresh empty Unreleased block above it.
     changelog = CHANGELOG.read_text(encoding="utf-8")
     if "## [Unreleased]" not in changelog:
@@ -132,7 +173,7 @@ def main(argv: list) -> int:
         CHANGELOG.write_text(changelog, encoding="utf-8", newline="\n")
         print(f"  + CHANGELOG.md: [Unreleased] -> [{new_version}] - {today}")
 
-    # 4. Wrapper-version stamps in the copied-artifact templates (task-15).
+    # 6. Wrapper-version stamps in the copied-artifact templates (task-15).
     #    Keeping the stamps in lockstep with the release means a fresh install
     #    is never reported stale by adr-guardian. Missing files or stamps are
     #    tolerated (older checkouts); the lockstep tests in
@@ -187,7 +228,8 @@ def main(argv: list) -> int:
     print("Done. Verify the changes, then:")
     print(
         "  git add .claude-plugin/plugin.json .claude-plugin/marketplace.json"
-        " CHANGELOG.md templates/githooks/pre-commit"
+        " codex/.codex-plugin/plugin.json copilot/plugin.json CHANGELOG.md"
+        " templates/githooks/pre-commit"
         " templates/cc-settings/guardian-hook-entry.json"
     )
     print(f'  git commit -m "chore(release): v{new_version}"')

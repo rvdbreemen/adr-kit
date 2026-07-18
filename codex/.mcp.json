@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "adr-kit": {
+      "cwd": ".",
+      "command": "python",
+      "args": [
+        "./bin/adr-mcp"
+      ]
+    }
+  }
+}

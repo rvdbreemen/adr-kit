@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # adr-kit pre-commit hook (template; copied to project's .githooks/pre-commit by /adr-kit:install-hooks).
 #
-# Resolves the latest installed adr-kit version dynamically so plugin upgrades
-# don't require re-running install-hooks. Degrades gracefully when the plugin
-# cache is missing — the hook never blocks a commit because of tooling drift.
+# Resolves the latest installed adr-kit version from the native Claude Code,
+# Codex, or Copilot CLI plugin caches so upgrades don't require re-running
+# install-hooks. Degrades gracefully when every cache is missing — the hook
+# never blocks a commit because of tooling drift.
 #
 # As of v0.17.0 the per-commit LLM pass (Claude Sonnet) is OPT-IN (off by default).
 # ADRs with `"llm_judge": true` are evaluated via `claude -p` ONLY when opted in.
@@ -47,7 +48,7 @@ set -e
 # freezes at install time. adr-guardian compares this stamp against the
 # installed plugin version and nudges /adr-kit:upgrade when the wrapper lags.
 # Maintained by bin/bump-version; do not edit by hand.
-ADR_KIT_WRAPPER_VERSION="0.32.0"
+ADR_KIT_WRAPPER_VERSION="0.33.0"
 
 if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   echo "[adr-kit] hook disabled for this commit (ADR_KIT_HOOK_DISABLE=1)" >&2
@@ -76,28 +77,57 @@ if [ -z "$_PYTHON3" ]; then
   exit 0
 fi
 
-ADR_KIT_BASE="${HOME}/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit"
 ADR_JUDGE=""
 ADR_SUGGEST=""
-if [ -d "$ADR_KIT_BASE" ]; then
-  # Pick the highest installed version (SemVer sort over directory names).
-  # Use a bash array + nullglob so filenames with spaces/odd chars don't break us
-  # and so an empty glob doesn't expand to the literal pattern.
-  shopt -s nullglob
-  _candidates=("$ADR_KIT_BASE"/*/bin/adr-judge)
-  _suggest_candidates=("$ADR_KIT_BASE"/*/bin/adr-suggest)
-  shopt -u nullglob
-  if [ ${#_candidates[@]} -gt 0 ]; then
-    ADR_JUDGE=$(printf '%s\n' "${_candidates[@]}" | sort -V | tail -1)
-  fi
-  if [ ${#_suggest_candidates[@]} -gt 0 ]; then
-    ADR_SUGGEST=$(printf '%s\n' "${_suggest_candidates[@]}" | sort -V | tail -1)
-  fi
+_plugin_roots=()
+shopt -s nullglob
+_plugin_roots+=(
+  "${HOME}/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit"/*
+  "${CODEX_HOME:-${HOME}/.codex}/plugins/cache/rvdbreemen-adr-kit-codex/adr-kit"/*
+)
+shopt -u nullglob
+_copilot_root="${COPILOT_HOME:-${HOME}/.copilot}/installed-plugins/rvdbreemen-adr-kit-copilot/adr-kit"
+if [ -d "$_copilot_root" ]; then
+  _plugin_roots+=("$_copilot_root")
 fi
 
-if [ -z "$ADR_JUDGE" ] || [ ! -x "$ADR_JUDGE" ]; then
+# Select the highest manifest version, independently of which client owns the
+# cache. Python is already required by the engines and keeps JSON parsing
+# robust without jq or shell regexes.
+_best_version="0.0.0"
+for _plugin_root in "${_plugin_roots[@]}"; do
+  [ -f "$_plugin_root/bin/adr-judge" ] || continue
+  _manifest=""
+  for _candidate_manifest in \
+    "$_plugin_root/.claude-plugin/plugin.json" \
+    "$_plugin_root/.codex-plugin/plugin.json" \
+    "$_plugin_root/plugin.json"; do
+    if [ -f "$_candidate_manifest" ]; then
+      _manifest="$_candidate_manifest"
+      break
+    fi
+  done
+  [ -n "$_manifest" ] || continue
+  _candidate_version=$(
+    "$_PYTHON3" -c \
+      'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("version", "0.0.0"))' \
+      "$_manifest" 2>/dev/null
+  ) || _candidate_version="0.0.0"
+  _newest=$(printf '%s\n%s\n' "$_best_version" "$_candidate_version" | sort -V | tail -1)
+  if [ "$_newest" = "$_candidate_version" ]; then
+    _best_version="$_candidate_version"
+    ADR_JUDGE="$_plugin_root/bin/adr-judge"
+    if [ -f "$_plugin_root/bin/adr-suggest" ]; then
+      ADR_SUGGEST="$_plugin_root/bin/adr-suggest"
+    else
+      ADR_SUGGEST=""
+    fi
+  fi
+done
+
+if [ -z "$ADR_JUDGE" ] || [ ! -f "$ADR_JUDGE" ]; then
   echo "[adr-kit] adr-judge binary not found in plugin cache; skipping pre-commit ADR check." >&2
-  echo "[adr-kit] Re-install with /adr-kit:install-hooks in a Claude Code session." >&2
+  echo "[adr-kit] Re-install ADR Kit for Claude Code, Codex, or Copilot CLI." >&2
   exit 0
 fi
 

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ADR Enforcement Block Schema (v0.14.0+)",
+  "type": "object",
+  "properties": {
+    "forbid_pattern": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string", "minLength": 1 },
+          "path_glob": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      }
+    },
+    "forbid_import": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string", "minLength": 1 },
+          "path_glob": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      }
+    },
+    "require_pattern": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string", "minLength": 1 },
+          "path_glob": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      }
+    },
+    "llm_judge": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

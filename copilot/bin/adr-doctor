@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+"""adr-doctor: local ADR health check for agents and CI."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import date, datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from adr_schema import parse_frontmatter, split_frontmatter
+
+
+ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
+MATERIAL_DRIFT_TYPES = {"accepted_evidence_changed", "missing_gate"}
+
+
+def _run_json(command: List[str]) -> tuple[int, Dict]:
+    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        payload = json.loads(result.stdout) if result.stdout.strip() else {}
+    except json.JSONDecodeError:
+        payload = {"_stdout": result.stdout, "_stderr": result.stderr}
+    return result.returncode, payload
+
+
+def load_config(adr_dir: Path, explicit: Optional[str]) -> Dict:
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit))
+    candidates.extend([adr_dir / ".adr-kit.json", adr_dir.parent.parent / ".adr-kit.json"])
+    for path in candidates:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return {}
+
+
+def discover_files(adr_dir: Path) -> List[Path]:
+    return sorted(adr_dir.glob("ADR-*.md"), key=lambda p: p.name.lower()) if adr_dir.is_dir() else []
+
+
+def load_records(adr_dir: Path) -> List[Dict]:
+    records = []
+    for path in discover_files(adr_dir):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        raw, _body = split_frontmatter(text)
+        if raw is None:
+            continue
+        data = parse_frontmatter(raw)
+        records.append({"path": path, "data": data})
+    return records
+
+
+def _pointer_parts(pointer: str) -> tuple[Optional[Path], Optional[str]]:
+    if pointer.startswith("commit:"):
+        return None, None
+    path_part = pointer
+    symbol = None
+    if ":" in pointer and not re.match(r"^[A-Za-z]:[\\/]", pointer):
+        path_part, symbol = pointer.split(":", 1)
+    return Path(path_part), symbol.strip() if symbol else None
+
+
+def pointer_resolves(pointer: str, repo_root: Path) -> bool:
+    if pointer.startswith("commit:"):
+        commit = pointer.split(":", 1)[1].strip()
+        if not commit:
+            return False
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "cat-file", "-e", f"{commit}^{{commit}}"],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+    rel_path, symbol = _pointer_parts(pointer)
+    if rel_path is None:
+        return False
+    path = repo_root / rel_path
+    if not path.is_file():
+        return False
+    if symbol is None:
+        return True
+    return symbol in path.read_text(encoding="utf-8", errors="ignore")
+
+
+def pointer_changed_after(pointer: str, repo_root: Path, accepted_on: date) -> bool:
+    rel_path, _symbol = _pointer_parts(pointer)
+    if rel_path is None:
+        return False
+    path = repo_root / rel_path
+    if not path.is_file():
+        return False
+    changed_on = datetime.fromtimestamp(os.path.getmtime(path)).date()
+    return changed_on > accepted_on
+
+
+def staleness_findings(records: List[Dict], repo_root: Path, stale_days: int) -> List[Dict]:
+    today = date.today()
+    findings: List[Dict] = []
+    for record in records:
+        data = record["data"]
+        adr_id = data.get("id", record["path"].stem)
+        status = data.get("status")
+        date_str = data.get("date")
+        adr_date = None
+        if date_str:
+            try:
+                adr_date = date.fromisoformat(date_str)
+            except ValueError:
+                adr_date = None
+        verified = data.get("verified_in", [])
+
+        if status == "Proposed":
+            if verified and all(pointer_resolves(pointer, repo_root) for pointer in verified):
+                findings.append({
+                    "type": "shipped_but_proposed",
+                    "adr_id": adr_id,
+                    "file": record["path"].name,
+                    "message": "Proposed ADR has resolving verified_in evidence",
+                })
+            if adr_date is not None and (today - adr_date).days > stale_days:
+                findings.append({
+                    "type": "old_proposed",
+                    "adr_id": adr_id,
+                    "file": record["path"].name,
+                    "message": f"Proposed ADR is older than {stale_days} days",
+                })
+
+        if status == "Accepted" and adr_date is not None and verified:
+            changed = [
+                pointer for pointer in verified
+                if pointer_changed_after(pointer, repo_root, adr_date)
+            ]
+            if changed:
+                findings.append({
+                    "type": "accepted_evidence_changed",
+                    "adr_id": adr_id,
+                    "file": record["path"].name,
+                    "message": "Accepted ADR evidence changed after acceptance",
+                    "pointers": changed,
+                })
+    return findings
+
+
+def gate_findings_from_lint(lint_payload: Dict) -> List[Dict]:
+    findings = []
+    for item in lint_payload.get("files", []):
+        for finding in item.get("findings", []):
+            if finding.get("gate") == "consistency" and "gate " in finding.get("summary", ""):
+                findings.append({
+                    "type": "missing_gate",
+                    "adr_id": f"ADR-{int(item.get('adr_num', 0)):03d}",
+                    "file": item.get("file"),
+                    "message": finding["summary"],
+                })
+    return findings
+
+
+def run_audit(repo_root: Path, audit_script: Path) -> Dict:
+    result = subprocess.run(
+        [sys.executable, str(audit_script), "--root", str(repo_root)],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        payload = json.loads(result.stdout) if result.stdout.strip() else {}
+    except json.JSONDecodeError:
+        payload = {"_stdout": result.stdout, "_stderr": result.stderr}
+    return {
+        "triggered": True,
+        "exit_code": result.returncode,
+        "candidate_count": int(payload.get("candidate_count", 0) or 0),
+        "candidates": payload.get("candidates", []),
+        "error": result.stderr.strip() if result.returncode != 0 else None,
+    }
+
+
+def run_doctor(args) -> Dict:
+    adr_dir = Path(args.adr_dir)
+    repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd().resolve()
+    cfg = load_config(adr_dir, args.config)
+    stale_days = args.stale_days
+    if stale_days is None:
+        stale_days = int(cfg.get("doctor", {}).get("proposed_stale_days", 30))
+
+    bin_dir = Path(__file__).resolve().parent
+    index_script = bin_dir / "adr-index"
+    lint_script = bin_dir / "adr-lint"
+    audit_script = bin_dir / "adr-audit"
+
+    if args.fix_index:
+        subprocess.run([sys.executable, str(index_script), str(adr_dir)], capture_output=True, text=True)
+
+    index_code, index_payload = _run_json(
+        [sys.executable, str(index_script), "--check", "--format", "json", str(adr_dir)]
+    )
+    lint_code, lint_payload = _run_json(
+        [
+            sys.executable,
+            str(lint_script),
+            "--strict",
+            "--format",
+            "json",
+            "--repo-root",
+            str(repo_root),
+            str(adr_dir),
+        ]
+    )
+    records = load_records(adr_dir)
+    findings = staleness_findings(records, repo_root, stale_days)
+    findings.extend(gate_findings_from_lint(lint_payload))
+    material_drift = [
+        finding for finding in findings
+        if finding.get("type") in MATERIAL_DRIFT_TYPES
+    ]
+    audit_payload = {
+        "triggered": False,
+        "exit_code": None,
+        "candidate_count": 0,
+        "candidates": [],
+        "reason": None,
+    }
+    if material_drift:
+        audit_payload = run_audit(repo_root, audit_script)
+        audit_payload["reason"] = "material_drift"
+
+    return {
+        "adr_dir": str(adr_dir),
+        "repo_root": str(repo_root),
+        "summary": {
+            "index_ok": index_code == 0,
+            "lint_ok": lint_code == 0,
+            "findings": len(findings),
+        },
+        "index": index_payload.get("summary", {}),
+        "lint": lint_payload.get("summary", {}),
+        "findings": findings,
+        "audit": audit_payload,
+        "exit_code": 1 if index_code != 0 or lint_code != 0 or findings else 0,
+    }
+
+
+def render_text(payload: Dict) -> str:
+    lines = [
+        f"adr-doctor: {payload['adr_dir']}",
+        f"index_ok={payload['summary']['index_ok']} lint_ok={payload['summary']['lint_ok']} findings={payload['summary']['findings']}",
+    ]
+    for finding in payload["findings"]:
+        lines.append(f"  {finding['type']}: {finding['adr_id']} {finding['message']}")
+    audit = payload.get("audit", {})
+    if audit.get("triggered"):
+        lines.append(
+            f"audit_triggered=True reason={audit.get('reason')} candidates={audit.get('candidate_count', 0)}"
+        )
+    return "\n".join(lines)
+
+
+def main(argv: List[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="adr-doctor", description="Run local ADR health checks.")
+    parser.add_argument("adr_dir", nargs="?", default="docs/adr")
+    parser.add_argument("--repo-root", default=None)
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--stale-days", type=int, default=None)
+    parser.add_argument("--fix-index", action="store_true", help="regenerate index before checking")
+    parser.add_argument("--format", choices=["text", "json"], default="text")
+    args = parser.parse_args(argv)
+
+    payload = run_doctor(args)
+    if args.format == "json":
+        print(json.dumps(payload, indent=2))
+    else:
+        print(render_text(payload))
+    return int(payload["exit_code"])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

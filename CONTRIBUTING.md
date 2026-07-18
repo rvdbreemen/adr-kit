@@ -18,6 +18,16 @@ claude --plugin-dir /path/to/your/adr-kit
 
 `--plugin-dir` makes edits in your clone visible immediately on `/reload-plugins`. No publish, no install.
 
+For Codex and the standalone Copilot CLI:
+
+```bash
+python scripts/sync-agent-plugins.py --check
+python scripts/install-agent-envs.py --dry-run
+```
+
+Use a temporary `CODEX_HOME` or `COPILOT_HOME` for isolated install smoke tests.
+Never point either client at the Claude plugin cache.
+
 ## How to add a skill
 
 1. Create `skills/<name>/SKILL.md` with frontmatter:
@@ -49,10 +59,12 @@ claude --plugin-dir /path/to/your/adr-kit
 
 Release steps:
 
-1. Bump the `version` field in `.claude-plugin/plugin.json`.
+1. Run `bin/bump-version X.Y.Z`; it stamps the Claude, Codex, and Copilot
+   manifests and their marketplace entries together.
 2. Move the `## [Unreleased]` section in `CHANGELOG.md` to a new `## [X.Y.Z] - YYYY-MM-DD` section, and add a fresh empty `## [Unreleased]` at the top.
 3. Commit the changes (`chore(release): vX.Y.Z (...)`).
-4. Tag with the new convention: `git tag -a adr-kit--vX.Y.Z -m "..."`.
+4. Tag with the repository's published convention:
+   `git tag -a vX.Y.Z -m "..."`.
 5. `git push` and `git push --tags`.
 6. Create a GitHub Release on the new tag with notes summarised from the CHANGELOG.
 
@@ -70,6 +82,8 @@ CI is enforced by `.github/workflows/validate.yml` on every push and pull reques
 
 - `jq empty` on `plugin.json` and `marketplace.json` (syntax check).
 - Schema validation (ajv-cli, draft-07): both manifests are validated against `schemas/plugin.json.schema.json` and `schemas/marketplace.json.schema.json` respectively. The schemas reject the field-type bugs that surfaced post-install in v0.7.1 and v0.7.2 (missing marketplace manifest; `repository` declared as object instead of string).
+- The generated-payload and integration-test gate checks both `codex/` and
+  `copilot/`. Run the official Codex plugin validator locally before release.
 - Presence check on the required-files set.
 - `plugin.json` version must match the top entry of `CHANGELOG.md`.
 - `markdownlint` on skills, agents, instructions, and examples.
