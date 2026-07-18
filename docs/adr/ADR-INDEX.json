@@ -147,6 +147,54 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-008",
+      "title": "Resolve the Enforcement Engine from a Version-Ranked Root Set Including the Checkout",
+      "path": "ADR-008-resolve-the-enforcement-engine-from-a-version-ranked-root-set-including-the-checkout.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-18",
+      "decision_summary": "Chosen option: add the checkout as another candidate root, ranked by manifest version like every other root, because...",
+      "scope": {
+        "path_globs": [
+          "templates/githooks/pre-commit"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_packaging_contract.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-009",
+      "title": "Bound Heuristic Gates to Findings an Author Can Act On",
+      "path": "ADR-009-bound-heuristic-gates-to-findings-an-author-can-act-on.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-18",
+      "decision_summary": "Chosen option: bound the gate to the region and vocabulary where a finding is actionable, because it restores the gat...",
+      "scope": {
+        "path_globs": [
+          "bin/adr-lint"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_lint_clarity.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -237,6 +285,42 @@
     {
       "source": "ADR-007",
       "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-008",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-008",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-008",
+      "target": "ADR-006",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-009",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-009",
+      "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-009",
+      "target": "ADR-007",
       "type": "related",
       "resolved": true
     }
