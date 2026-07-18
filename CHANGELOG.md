@@ -4,6 +4,25 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-07-18
+
+### Added
+
+- **Separate native Codex plugin.** A self-contained `codex/` distribution now ships a validated `.codex-plugin/plugin.json`, 14 Codex-native skills, and the four-tool key-free MCP server. Codex workflows are invoked as namespaced skills such as `$adr-kit:context`, not Claude Code slash commands.
+- **Detected-client installer.** `scripts/install-agent-envs.py` verifies real Claude Code, Codex, and standalone GitHub Copilot CLI executables from their version output, installs every detected client through its native plugin API, supports explicit selection and dry runs, and performs post-install plugin/MCP validation.
+- **Separate standalone Copilot CLI plugin.** The `copilot/` distribution and `.github/plugin/marketplace.json` install 14 skills plus the MCP server without reusing the Claude or Codex manifest.
+- **Generated client payload gate.** `scripts/sync-agent-plugins.py --check` keeps Codex and Copilot engine/schema/template payloads byte-identical to the canonical source and fails CI on drift.
+
+### Changed
+
+- **MCP calls can select a workspace per request.** All four tools accept optional `project_root` and `adr_dir` arguments, so plugin-hosted MCP processes operate on the active project instead of their install cache.
+- **Release versioning covers all client manifests.** `bin/bump-version` now stamps Claude, Codex, and Copilot manifests plus both marketplace versions in one release operation.
+
+### Fixed
+
+- **Codex commands are no longer documented as `.codex/skills` copies.** The README and installation guide now describe the actual Codex plugin and namespaced skill invocation contract.
+- **Installed hooks resolve every native client cache.** The shared pre-commit wrapper selects the newest ADR Kit engine across Claude Code, Codex, and Copilot CLI installs instead of depending on the Claude cache alone.
+
 ## [0.32.0] - 2026-07-07
 
 ### Added

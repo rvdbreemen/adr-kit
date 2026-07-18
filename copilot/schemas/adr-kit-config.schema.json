@@ -1,0 +1,314 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/rvdbreemen/adr-kit/schemas/adr-kit-config.schema.json",
+  "title": "adr-kit project policy (.adr-kit.json)",
+  "description": "Schema for the project-level policy file at docs/adr/.adr-kit.json (introduced in adr-kit v0.9.0). Field semantics are documented in the README Configuration section and the lint skill body. Top-level keys starting with '_' (e.g. '_comment', '_note') are silently allowed for embedding annotations and are not subject to validation.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "strict_from": {
+      "type": "string",
+      "description": "First ADR identifier (inclusive) on which all gates are enforced strictly. ADRs with a numerically lower number are linted in advisory mode for the gates that opt in via 'severity'. Format must match the canonical ADR-NNN pattern with three-digit zero-padded number.",
+      "pattern": "^ADR-\\d{3}$"
+    },
+    "ignore": {
+      "type": "array",
+      "description": "List of ADR identifiers (ADR-NNN) or full filenames to skip entirely. Skipped ADRs appear in the aggregate as SKIPPED but produce no per-gate output.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "severity": {
+      "type": "object",
+      "description": "Per-gate severity. Default for completeness, evidence, clarity is 'advisory_before_strict_from' when strict_from is set, 'always_strict' otherwise. Defaults for audit and consistency are 'always_strict' regardless: invalid status chains, filename / heading mismatches, and duplicate numbers are real bugs at any age.",
+      "additionalProperties": false,
+      "properties": {
+        "completeness": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "audit": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "evidence": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "clarity": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "consistency": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "policy": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        },
+        "quality": {
+          "type": "string",
+          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "description": "Configuration for the policy gate (Enforcement block validation), introduced in adr-kit v0.14.0.",
+      "additionalProperties": false,
+      "properties": {
+        "strict_mode": {
+          "type": "boolean",
+          "description": "When true, schema validation failures are treated as FAIL regardless of severity config. Default true.",
+          "default": true
+        },
+        "regex_compile_checks": {
+          "type": "boolean",
+          "description": "When true, all pattern fields in Enforcement blocks are compiled and syntax errors are reported as FAIL. Default true.",
+          "default": true
+        },
+        "pattern_warnings": {
+          "type": "boolean",
+          "description": "When true, anti-pattern advisories (excessive wildcards, broad path_globs) are emitted. Default true.",
+          "default": true
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "description": "Override the canonical seven required sections with a project-specific list. Useful for projects whose template legitimately differs from the toolkit's default.",
+      "additionalProperties": true,
+      "properties": {
+        "required_sections": {
+          "type": "array",
+          "description": "Required top-level headings, in the order they must appear. Each entry is the exact heading text including the '## ' prefix.",
+          "items": {
+            "type": "string",
+            "pattern": "^##\\s+\\S"
+          },
+          "minItems": 1
+        },
+        "profile": {
+          "type": "string",
+          "enum": ["canonical", "madr", "nygard"],
+          "description": "Declared source template profile of this project's existing ADR set (introduced in adr-kit v0.21.0). Purely informational: adr-audit uses it to annotate template_profile findings, and /adr-kit:migrate can use it as a hint for which mapping pattern (MADR mapping, Nygard lift) applies. Lint behaviour is unchanged: validation always targets the canonical seven sections or template.required_sections. The canonical template remains the storage format; 'madr' and 'nygard' describe an import format, not an alternative lint target."
+        }
+      }
+    },
+    "judge": {
+      "type": "object",
+      "description": "Per-project policy for bin/adr-judge (introduced in adr-kit v0.12.0). Controls how Enforcement blocks are evaluated against a staged git diff at commit time. v0.13.0 added the llm_* knobs; v0.17.0 made the per-commit LLM pass opt-in (see llm_enabled).",
+      "additionalProperties": false,
+      "properties": {
+        "skip_files": {
+          "type": "array",
+          "description": "Glob patterns for files to exclude from judging. Matches relative to the repo root. Common entries: 'tests/**', 'docs/**', 'vendor/**'. ADR-level path_globs still take precedence; this is a project-wide pre-filter.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "advisory_only": {
+          "type": "boolean",
+          "description": "When true, all violations from declarative rules are downgraded to advisory (the hook prints them but exits 0). Intended for early adoption phases where teams want visibility without blocking commits. Default false.",
+          "default": false
+        },
+        "max_diff_bytes": {
+          "type": "integer",
+          "description": "Diffs larger than this size (in bytes) are skipped with a warning. Protects against pathological commits (e.g. generated-file dumps). Default 1048576 (1 MiB). Set 0 to disable the cap.",
+          "minimum": 0,
+          "default": 1048576
+        },
+        "llm_enabled": {
+          "type": "boolean",
+          "description": "User-facing master switch for the per-commit LLM pass. When true, bin/adr-judge runs the Claude LLM judge for llm_judge:true ADRs at commit time. Default false (opt-in). Set interactively by /adr-kit:init, or by hand. The pre-commit hook no longer hard-codes --llm (changed in v0.17.0); per-commit LLM is governed by this flag (or judge.llm_default, or ADR_KIT_LLM=1 for a single commit).",
+          "default": false
+        },
+        "llm_default": {
+          "type": "boolean",
+          "description": "Legacy/CI-oriented equivalent of llm_enabled. When true, bin/adr-judge runs the LLM pass even without --llm on the command line. Useful when invoking the runner outside the pre-commit hook (e.g. CI). The hook template no longer hard-codes --llm as of v0.17.0; prefer llm_enabled for the per-commit master switch. Default false.",
+          "default": false
+        },
+        "llm_model": {
+          "type": "string",
+          "description": "Model identifier passed to `claude -p --model`. Default 'claude-sonnet-4-6'. Switch to 'claude-haiku-4-5' for higher commit throughput at lower cost, or to a current Sonnet/Opus tag if a newer release is preferred. Ignored when llm_cmd is set.",
+          "default": "claude-sonnet-4-6"
+        },
+        "llm_cmd": {
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "string" }
+          ],
+          "description": "Override the entire LLM invocation. Accepts either a tokenised array (e.g. ['claude','-p','--model','...']) or a single shell-quoted string that the runner shlex-splits. Useful for non-Claude-Code installs (e.g. an Anthropic SDK wrapper script) or for tests."
+        },
+        "llm_timeout_seconds": {
+          "type": "integer",
+          "description": "Per-call timeout for the LLM pass in seconds. Default 120. Increase if your ADR set is large enough that one batch call routinely exceeds this.",
+          "minimum": 1,
+          "default": 120
+        },
+        "pre_commit_timeout_ms": {
+          "type": "integer",
+          "description": "Performance budget in milliseconds for the non-blocking pre-commit perf WARN (TASK-712 performance-bounded hooks; surfaced in bin/adr-judge --profile). When the pre-commit pass runs longer than this and warn_on_exceed is true, a non-blocking WARN is printed; the commit is never blocked by this budget. Distinct from llm_timeout_seconds, which is the hard per-call LLM call timeout. Default 5000.",
+          "minimum": 0,
+          "default": 5000
+        },
+        "pre_push_timeout_ms": {
+          "type": "integer",
+          "description": "Performance budget in milliseconds for the non-blocking pre-push perf WARN (TASK-712). Same WARN-only semantics as pre_commit_timeout_ms, applied to the pre-push hook's longer-running pass. Default 15000.",
+          "minimum": 0,
+          "default": 15000
+        },
+        "llm_timeout_ms": {
+          "type": "integer",
+          "description": "Performance budget in milliseconds attributed to the LLM phase in the bin/adr-judge --profile budget report (TASK-712). Advisory WARN budget for the LLM portion of a pass; distinct from llm_timeout_seconds, which is the hard per-call LLM timeout that actually aborts the call. Default 30000.",
+          "minimum": 0,
+          "default": 30000
+        },
+        "warn_on_exceed": {
+          "type": "boolean",
+          "description": "When true, emit a non-blocking WARN whenever a phase exceeds its *_timeout_ms performance budget (TASK-712). Advisory only; never blocks the commit or push. Default true.",
+          "default": true
+        }
+      }
+    },
+    "suggest": {
+      "type": "object",
+      "description": "Per-project policy for bin/adr-suggest (introduced in adr-kit v0.16.0). adr-suggest is the advisory counterpart to adr-judge: it runs an LLM pass over the staged diff to detect whether the change introduces a NEW architectural decision not yet covered by an ADR, and prints a non-blocking suggestion. It NEVER blocks a commit. All keys are optional; an absent block means defaults, and llm_cmd / llm_model fall back to the judge.* equivalents.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When true, the pre-commit hook runs the adr-suggest pass. Default false (opt-in as of v0.17.0); enable per-project here or per-commit with ADR_KIT_SUGGEST=1. Honored by bin/adr-suggest directly (prior versions documented but did not read this flag).",
+          "default": false
+        },
+        "llm_model": {
+          "type": "string",
+          "description": "Model identifier passed to `claude -p --model` for the suggestion pass. Defaults to judge.llm_model, then 'claude-sonnet-4-6'. Ignored when llm_cmd is set.",
+          "default": "claude-sonnet-4-6"
+        },
+        "llm_cmd": {
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "string" }
+          ],
+          "description": "Override the entire LLM invocation for the suggestion pass. Accepts a tokenised array or a single shell-quoted string. Repo-tracked values are validated against the same Claude-CLI allowlist as judge.llm_cmd. Falls back to judge.llm_cmd when absent."
+        },
+        "llm_timeout_seconds": {
+          "type": "integer",
+          "description": "Per-call timeout for the suggestion LLM pass in seconds. Defaults to judge.llm_timeout_seconds, then 120.",
+          "minimum": 1,
+          "default": 120
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "Configuration for bin/adr-context semantic ranking",
+      "properties": {
+        "weights": {
+          "type": "object",
+          "description": "Scoring signal weights (must sum to 1.0)",
+          "properties": {
+            "exact_keyword": {"type": "number", "minimum": 0, "maximum": 1},
+            "domain_tag": {"type": "number", "minimum": 0, "maximum": 1},
+            "related_decisions": {"type": "number", "minimum": 0, "maximum": 1},
+            "acceptance_status": {"type": "number", "minimum": 0, "maximum": 1},
+            "recency": {"type": "number", "minimum": 0, "maximum": 1}
+          },
+          "additionalProperties": false
+        },
+        "default_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
+        "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.1}
+      },
+      "additionalProperties": false
+    },
+    "retirement": {
+      "type": "object",
+      "description": "Configuration for bin/adr-retire retirement detection",
+      "properties": {
+        "threshold_days": {"type": "integer", "minimum": 1, "default": 90},
+        "check_tech_removal": {"type": "boolean", "default": true},
+        "check_supersession": {"type": "boolean", "default": true},
+        "check_policy_mismatch": {"type": "boolean", "default": true}
+      },
+      "additionalProperties": false
+    },
+    "watch": {
+      "type": "object",
+      "description": "Configuration for bin/adr-watch (in-flight ADR guidance via the PostToolUse hook), introduced in adr-kit v0.21. adr-watch prints at most three compact one-line nudges naming the Accepted ADRs that likely apply to a just-edited file. It is deterministic (no LLM, no network), advisory only, and always exits 0.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, adr-watch never emits a nudge and the PostToolUse hook is effectively a no-op for this project. Default true: detection is free and deterministic.",
+          "default": true
+        },
+        "cooldown_hours": {
+          "type": "number",
+          "description": "Minimum hours before the same ADR+file pair is nudged again. Prevents repeat nudges while iterating on one file within a session. Default 4. Set 0 to disable the cooldown entirely.",
+          "minimum": 0,
+          "default": 4
+        }
+      }
+    },
+    "inject": {
+      "type": "object",
+      "description": "Configuration for the bin/adr-watch edit-tier injector (PreToolUse hook), introduced in adr-kit v0.31 (ADR-004). Before an Edit/Write, it injects the top-ranked governing Accepted ADR's Decision text so the agent honours the decision before writing. Deterministic (no LLM, no network), advisory only, always exits 0.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, the PreToolUse injector never emits context and the hook is a no-op for this project. Default true.",
+          "default": true
+        },
+        "max_tokens": {
+          "type": "integer",
+          "description": "Approximate upper bound on injected Decision text, in tokens (coarse chars/token estimate). The single top-ranked ADR's Decision is truncated to this budget so context is not flooded. Default 400. Set 0 to disable truncation.",
+          "minimum": 0,
+          "default": 400
+        },
+        "cooldown_hours": {
+          "type": "number",
+          "description": "Minimum hours before the same ADR+file pair is injected again. Independent of the watch cooldown. Default 4. Set 0 to disable.",
+          "minimum": 0,
+          "default": 4
+        }
+      }
+    },
+    "guardian": {
+      "type": "object",
+      "description": "Configuration for the ADR Guardian (bin/adr-guardian + /adr-kit:guardian skill), introduced in adr-kit v0.18.0. The guardian is a periodic ADR-set health detector that injects a staleness nudge at Claude Code SessionStart when a health tier is due. Detection is free (no LLM) and default-on. The LLM tier (adr-suggest + audit) always asks before spending unless llm_autorun is explicitly set true.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, the guardian detector is disabled entirely and no nudge is ever emitted. Default true. The guardian's detection (cheap tier) is free; disabling it only makes sense for projects that run a CI-based sweep instead.",
+          "default": true
+        },
+        "drift_stale_days": {
+          "type": "number",
+          "description": "Number of days after which the cheap tier (drift + retire + lint) is considered stale and triggers a nudge. Default 1 (daily). Fractional values are accepted (e.g. 0.5 for a 12-hour cadence).",
+          "minimum": 0,
+          "default": 1
+        },
+        "llm_stale_days": {
+          "type": "number",
+          "description": "Number of days after which the LLM tier (adr-suggest missing-ADR detection + full audit) is considered stale and triggers a nudge. Default 14 (bi-weekly). The LLM tier costs money; keep this at 14 or higher to avoid frequent spend.",
+          "minimum": 0,
+          "default": 14
+        },
+        "nudge_cooldown_hours": {
+          "type": "number",
+          "description": "Minimum hours between successive nudges at SessionStart. Prevents repeated nags within a single work day when sessions are opened frequently. Default 24 (once per day at most).",
+          "minimum": 0,
+          "default": 24
+        },
+        "llm_autorun": {
+          "type": "boolean",
+          "description": "When false (default), the /adr-kit:guardian skill always asks the user to confirm cost before running the LLM tier (adr-suggest + full audit). Set true only if you want the LLM tier to run without an interactive confirmation — consistent with ADR-001's opt-in posture, this defaults to false. The cheap tier (drift + retire + lint) is always free and unaffected by this flag.",
+          "default": false
+        }
+      }
+    }
+  }
+}

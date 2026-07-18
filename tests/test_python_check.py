@@ -211,14 +211,34 @@ def test_hook_template_bash_syntax():
     if BASH is None:
         pytest.skip("bash not available")
     hook_path = REPO_ROOT / "templates" / "githooks" / "pre-commit"
-    hook = hook_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    # Pass bytes so Windows does not translate LF to CRLF on stdin. In
+    # particular, WSL bash otherwise receives tokens such as ``do\r`` even
+    # though the repository hook itself has canonical LF line endings.
+    hook = hook_path.read_bytes().replace(b"\r\n", b"\n")
     result = subprocess.run(
         [BASH, "-n"],
         input=hook,
         capture_output=True,
-        text=True,
         timeout=10,
     )
+    stderr = result.stderr.decode("utf-8", errors="replace")
     assert result.returncode == 0, (
-        f"bash -n syntax check failed:\n{result.stderr}"
+        f"bash -n syntax check failed:\n{stderr}"
     )
+
+
+def test_hook_resolves_all_native_plugin_caches():
+    """The shared wrapper must not depend on Claude's cache alone."""
+    hook = (REPO_ROOT / "templates" / "githooks" / "pre-commit").read_text(
+        encoding="utf-8"
+    )
+    assert ".claude/plugins/cache/rvdbreemen-adr-kit/adr-kit" in hook
+    assert (
+        ".codex}/plugins/cache/rvdbreemen-adr-kit-codex/adr-kit" in hook
+    )
+    assert (
+        ".copilot}/installed-plugins/rvdbreemen-adr-kit-copilot/adr-kit"
+        in hook
+    )
+    assert ".codex-plugin/plugin.json" in hook
+    assert '_plugin_root/plugin.json"' in hook

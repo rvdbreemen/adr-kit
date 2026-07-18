@@ -1,0 +1,412 @@
+#!/usr/bin/env python3
+"""adr: local lifecycle commands for adr-kit ADRs."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from datetime import date
+from pathlib import Path
+from typing import Dict, List, Tuple
+
+from adr_schema import (
+    migrate_text,
+    parse_frontmatter,
+    render_frontmatter,
+    split_frontmatter,
+)
+
+
+STATUS_RE = re.compile(
+    r"(^##\s+Status(?!\s+History)\s*$\n+)([^\n]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
+HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+class AdrLifecycleError(Exception):
+    """Raised on lifecycle command input or mutation errors."""
+
+
+def normalize_adr_id(value: str) -> str:
+    match = re.search(r"(\d{1,4})", value)
+    if not match:
+        raise AdrLifecycleError(f"invalid ADR id: {value}")
+    return f"ADR-{int(match.group(1)):03d}"
+
+
+def find_adr_file(adr_dir: Path, adr_id: str) -> Path:
+    num = int(re.search(r"\d+", adr_id).group(0))
+    matches = sorted(adr_dir.glob(f"ADR-{num:03d}-*.md"))
+    if len(matches) != 1:
+        raise AdrLifecycleError(
+            f"expected one file for {adr_id} in {adr_dir}, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def load_adr(path: Path) -> Tuple[Dict, str]:
+    text = path.read_text(encoding="utf-8")
+    migrated, _changed, issues = migrate_text(text, path)
+    if issues:
+        raise AdrLifecycleError(f"{path}: cannot normalize frontmatter: {issues}")
+    raw_frontmatter, body = split_frontmatter(migrated)
+    if raw_frontmatter is None:
+        raise AdrLifecycleError(f"{path}: frontmatter normalization failed")
+    return parse_frontmatter(raw_frontmatter), body
+
+
+def write_adr(path: Path, data: Dict, body: str) -> None:
+    path.write_text(render_frontmatter(data) + body, encoding="utf-8")
+
+
+def set_status_line(body: str, status_line: str) -> str:
+    if STATUS_RE.search(body):
+        return STATUS_RE.sub(rf"\g<1>{status_line}", body, count=1)
+    return f"\n## Status\n\n{status_line}\n\n{body}"
+
+
+def history_entry(status: str, changed_by: str, reason: str, changed_via: str, when: str) -> str:
+    return (
+        f"  - date: {when}\n"
+        f"    status: {status}\n"
+        f"    changed_by: {changed_by}\n"
+        f"    reason: {reason}\n"
+        f"    changed_via: {changed_via}\n"
+    )
+
+
+def append_status_history(
+    body: str,
+    status: str,
+    changed_by: str,
+    reason: str,
+    changed_via: str,
+    when: str,
+) -> str:
+    entry = history_entry(status, changed_by, reason, changed_via, when)
+    start = HISTORY_START_RE.search(body)
+    if start:
+        closing = body.find("```", start.end())
+        if closing != -1:
+            return body[:closing] + entry + body[closing:]
+
+    section = (
+        "\n## Status History\n\n"
+        "```yaml\n"
+        "status_history:\n"
+        f"{entry}"
+        "```\n"
+    )
+    match = STATUS_RE.search(body)
+    if match:
+        insert_at = body.find("\n", match.end())
+        if insert_at == -1:
+            insert_at = match.end()
+        return body[:insert_at] + section + body[insert_at:]
+    return body + section
+
+
+def mutate_status(
+    path: Path,
+    status: str,
+    status_line: str,
+    when: str,
+    changed_by: str,
+    reason: str,
+    changed_via: str,
+) -> None:
+    data, body = load_adr(path)
+    data["status"] = status
+    data["date"] = when
+    if status != "Superseded":
+        data["superseded_by"] = None
+    body = set_status_line(body, status_line)
+    body = append_status_history(body, status, changed_by, reason, changed_via, when)
+    write_adr(path, data, body)
+
+
+def run_index(adr_dir: Path) -> None:
+    script = Path(__file__).resolve().with_name("adr-index")
+    result = subprocess.run(
+        [sys.executable, str(script), str(adr_dir)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise AdrLifecycleError(result.stderr or result.stdout)
+
+
+def load_config(adr_dir: Path, explicit: str | None = None) -> Dict:
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit))
+    candidates.extend([adr_dir / ".adr-kit.json", adr_dir.parent.parent / ".adr-kit.json"])
+    for path in candidates:
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise AdrLifecycleError(f"malformed config {path}: {exc}") from exc
+    return {}
+
+
+def _auto_accept_config(args, adr_dir: Path) -> Tuple[str, float]:
+    cfg = load_config(adr_dir, getattr(args, "config", None))
+    auto_cfg = cfg.get("lifecycle", {}).get("auto_accept", {})
+    mode = args.auto_mode or auto_cfg.get("mode", "auto")
+    if mode not in {"auto", "assist"}:
+        raise AdrLifecycleError("auto_accept mode must be 'auto' or 'assist'")
+    threshold = (
+        args.quality_threshold
+        if args.quality_threshold is not None
+        else float(auto_cfg.get("quality_threshold", 0.70))
+    )
+    return mode, threshold
+
+
+def _run_json_tool(command: List[str]) -> Tuple[int, Dict]:
+    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        payload = json.loads(result.stdout) if result.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise AdrLifecycleError(
+            f"tool returned non-JSON output: {' '.join(command)}: {exc}"
+        ) from exc
+    return result.returncode, payload
+
+
+def _assert_auto_accept_eligible(path: Path, args, threshold: float) -> Dict:
+    data, _body = load_adr(path)
+    if data.get("documents_shipped") is not True:
+        raise AdrLifecycleError("auto accept requires documents_shipped:true")
+    if not data.get("verified_in"):
+        raise AdrLifecycleError("auto accept requires at least one verified_in pointer")
+
+    root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd().resolve()
+    lint_script = Path(__file__).resolve().with_name("adr-lint")
+    lint_code, lint_payload = _run_json_tool(
+        [
+            sys.executable,
+            str(lint_script),
+            "--strict",
+            "--format",
+            "json",
+            "--repo-root",
+            str(root),
+            str(path),
+        ]
+    )
+    if lint_code != 0:
+        raise AdrLifecycleError(
+            "auto accept blocked: strict lint failed: "
+            + json.dumps(lint_payload.get("summary", {}), sort_keys=True)
+        )
+
+    quality_script = Path(__file__).resolve().with_name("adr-quality")
+    _quality_code, quality_payload = _run_json_tool(
+        [sys.executable, str(quality_script), "--format", "json", str(path)]
+    )
+    overall = float(quality_payload.get("overall", 0.0))
+    if overall < threshold:
+        raise AdrLifecycleError(
+            f"auto accept blocked: quality {overall:.2f} below threshold {threshold:.2f}"
+        )
+    return {"quality": overall, "threshold": threshold, "lint": lint_payload.get("summary", {})}
+
+
+def command_document(args) -> List[str]:
+    adr_dir = Path(args.adr_dir)
+    adr_id = normalize_adr_id(args.adr)
+    path = find_adr_file(adr_dir, adr_id)
+    if not args.verified_in:
+        raise AdrLifecycleError("document requires at least one --verified-in pointer")
+    data, body = load_adr(path)
+    data["documents_shipped"] = True
+    data["verified_in"] = args.verified_in
+    body = append_status_history(
+        body,
+        data["status"],
+        args.changed_by,
+        args.reason or "Documented already-shipped behavior",
+        "adr-kit lifecycle",
+        args.date,
+    )
+    write_adr(path, data, body)
+    run_index(adr_dir)
+    return [f"documented shipped behavior: {path.name}"]
+
+
+def command_auto_accept(args) -> List[str]:
+    adr_dir = Path(args.adr_dir)
+    adr_id = normalize_adr_id(args.adr)
+    path = find_adr_file(adr_dir, adr_id)
+    mode, threshold = _auto_accept_config(args, adr_dir)
+    eligibility = _assert_auto_accept_eligible(path, args, threshold)
+    if mode == "assist" and not args.confirm:
+        return [
+            f"assist: {path.name} is eligible for auto accept "
+            f"(quality={eligibility['quality']:.2f}, threshold={threshold:.2f}); "
+            "rerun with --confirm to mutate"
+        ]
+    mutate_status(
+        path,
+        "Accepted",
+        f"Accepted, {args.date}.",
+        args.date,
+        args.changed_by,
+        args.reason or "Auto-accepted already-shipped ADR with verified evidence",
+        "adr-kit lifecycle",
+    )
+    run_index(adr_dir)
+    return [f"auto-accepted: {path.name}"]
+
+
+def command_set_status(args, status: str, status_line: str, default_reason: str) -> List[str]:
+    adr_dir = Path(args.adr_dir)
+    adr_id = normalize_adr_id(args.adr)
+    path = find_adr_file(adr_dir, adr_id)
+    mutate_status(
+        path,
+        status,
+        status_line,
+        args.date,
+        args.changed_by,
+        args.reason or default_reason,
+        "adr-kit lifecycle",
+    )
+    run_index(adr_dir)
+    return [f"{status.lower()}: {path.name}"]
+
+
+def command_supersede(args) -> List[str]:
+    adr_dir = Path(args.adr_dir)
+    old_id = normalize_adr_id(args.old)
+    new_id = normalize_adr_id(args.by)
+    old_path = find_adr_file(adr_dir, old_id)
+    new_path = find_adr_file(adr_dir, new_id)
+
+    old_data, old_body = load_adr(old_path)
+    old_data["status"] = "Superseded"
+    old_data["date"] = args.date
+    old_data["superseded_by"] = new_id
+    old_body = set_status_line(old_body, f"Superseded by {new_id}, {args.date}.")
+    old_body = append_status_history(
+        old_body,
+        "Superseded",
+        args.changed_by,
+        args.reason or f"Superseded by {new_id}",
+        "adr-kit lifecycle",
+        args.date,
+    )
+    write_adr(old_path, old_data, old_body)
+
+    new_data, new_body = load_adr(new_path)
+    supersedes = list(new_data.get("supersedes", []))
+    if old_id not in supersedes:
+        supersedes.append(old_id)
+    new_data["supersedes"] = sorted(supersedes)
+    new_body = append_status_history(
+        new_body,
+        new_data["status"],
+        args.changed_by,
+        args.reason or f"Supersedes {old_id}",
+        "adr-kit lifecycle",
+        args.date,
+    )
+    write_adr(new_path, new_data, new_body)
+
+    run_index(adr_dir)
+    return [f"superseded: {old_path.name} -> {new_id}", f"updated successor: {new_path.name}"]
+
+
+def add_common_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--adr-dir", default="docs/adr", help="ADR directory")
+    parser.add_argument("--date", default=date.today().isoformat(), help="transition date")
+    parser.add_argument("--changed-by", default="adr-kit", help="status history actor")
+    parser.add_argument("--reason", default=None, help="status history reason")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="adr", description="adr-kit lifecycle commands")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    propose = sub.add_parser("propose", help="mark an ADR Proposed")
+    propose.add_argument("adr")
+    add_common_args(propose)
+
+    accept = sub.add_parser("accept", help="mark an ADR Accepted")
+    accept.add_argument("adr")
+    add_common_args(accept)
+    accept.add_argument("--auto", action="store_true", help="require after-the-fact evidence checks before accepting")
+    accept.add_argument("--auto-mode", choices=["auto", "assist"], default=None, help="override lifecycle.auto_accept.mode")
+    accept.add_argument("--confirm", action="store_true", help="mutate in assist mode after eligibility is shown")
+    accept.add_argument("--quality-threshold", type=float, default=None, help="minimum adr-quality score")
+    accept.add_argument("--config", default=None, help="config path")
+    accept.add_argument("--repo-root", default=None, help="consuming repo root for verified_in/gate checks")
+
+    reject = sub.add_parser("reject", help="mark an ADR Rejected")
+    reject.add_argument("adr")
+    add_common_args(reject)
+
+    supersede = sub.add_parser("supersede", help="supersede an ADR by another ADR")
+    supersede.add_argument("old")
+    supersede.add_argument("--by", required=True, help="successor ADR id")
+    add_common_args(supersede)
+
+    document = sub.add_parser("document", help="mark an ADR as documenting shipped behavior")
+    document.add_argument("adr")
+    document.add_argument("--verified-in", action="append", required=True, help="local evidence pointer")
+    add_common_args(document)
+
+    return parser
+
+
+def main(argv: List[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "propose":
+            lines = command_set_status(
+                args,
+                "Proposed",
+                f"Proposed, {args.date}.",
+                "Marked Proposed",
+            )
+        elif args.command == "accept":
+            if args.auto:
+                lines = command_auto_accept(args)
+            else:
+                lines = command_set_status(
+                    args,
+                    "Accepted",
+                    f"Accepted, {args.date}.",
+                    "Accepted decision",
+                )
+        elif args.command == "reject":
+            lines = command_set_status(
+                args,
+                "Rejected",
+                f"Rejected, {args.date}.",
+                "Rejected decision",
+            )
+        elif args.command == "supersede":
+            lines = command_supersede(args)
+        elif args.command == "document":
+            lines = command_document(args)
+        else:
+            parser.error(f"unknown command {args.command}")
+            return 2
+    except AdrLifecycleError as exc:
+        print(f"adr: {exc}", file=sys.stderr)
+        return 2
+    for line in lines:
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

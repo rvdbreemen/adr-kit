@@ -1,0 +1,482 @@
+#!/usr/bin/env python3
+"""adr-index: generate ADR indexes for context injection and local README navigation.
+
+Two modes intentionally share one command:
+
+Context mode, used by ADR-004 and CI:
+  adr-index
+  adr-index --adr-dir docs/adr -o docs/adr/ADR-INDEX.md
+  adr-index --adr-dir docs/adr --format json
+
+README mode, used by lifecycle and doctor tooling:
+  adr-index docs/adr/
+  adr-index --check docs/adr/
+  adr-index --check --format json docs/adr/
+
+The context index is a compact one-row-per-ADR map imported by CLAUDE.md. The
+README index owns only the sentinel-delimited block in docs/adr/README.md and
+preserves all human prose outside it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from adr_schema import infer_frontmatter, parse_frontmatter, split_frontmatter
+
+
+BEGIN = "<!-- adr-kit-index:begin -->"
+END = "<!-- adr-kit-index:end -->"
+
+ENFORCEMENT_BLOCK_RE = re.compile(
+    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+STATUS_HEADING_RE = re.compile(
+    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
+)
+STATUS_LINE_RE = re.compile(
+    r"^\s*Status\s*:\s*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
+)
+STATUS_BOLD_INLINE_RE = re.compile(
+    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
+    re.IGNORECASE | re.MULTILINE,
+)
+TITLE_RE = re.compile(r"^#\s+ADR-\d+[:\s]\s*(.+)$", re.MULTILINE)
+DECISION_SECTION_RE = re.compile(
+    r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
+)
+ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
+
+DECISION_ONELINE_MAX = 120
+
+
+def _ensure_utf8_streams() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        buffer = getattr(stream, "buffer", None)
+        if buffer is None:
+            continue
+        try:
+            setattr(
+                sys,
+                stream_name,
+                io.TextIOWrapper(buffer, encoding="utf-8", newline="\n"),
+            )
+        except (AttributeError, ValueError):
+            pass
+
+
+def adr_status(text: str) -> Optional[str]:
+    """Return the ADR status word, recognising the same forms as adr-watch."""
+    match = STATUS_HEADING_RE.search(text)
+    if match:
+        word = re.match(r"\s*([A-Za-z]+)", match.group(1))
+        return word.group(1) if word else None
+    match = STATUS_BOLD_INLINE_RE.search(text)
+    if match:
+        return match.group(1) or match.group(2)
+    match = STATUS_LINE_RE.search(text)
+    if match:
+        return match.group(1)
+    return None
+
+
+def enforcement_globs(text: str) -> List[str]:
+    """Return all path_glob strings from the ADR's Enforcement block."""
+    match = ENFORCEMENT_BLOCK_RE.search(text)
+    if not match:
+        return []
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+
+    globs: List[str] = []
+    for kind in ("forbid_pattern", "forbid_import", "require_pattern"):
+        rules = data.get(kind)
+        if not isinstance(rules, list):
+            continue
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            glob = rule.get("path_glob")
+            globs.append(glob if isinstance(glob, str) and glob else "**")
+
+    seen: Dict[str, None] = {}
+    for glob in globs:
+        seen.setdefault(glob, None)
+    return list(seen.keys())
+
+
+def decision_oneline(text: str) -> str:
+    """One-line summary of the Decision section: first meaningful sentence."""
+    match = DECISION_SECTION_RE.search(text)
+    if not match:
+        return ""
+    for raw_line in match.group(1).splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", "```", "<!--", "-->")):
+            continue
+        line = re.sub(r"^([-*]|\d+\.)\s+", "", line).lstrip("*").strip()
+        if not line:
+            continue
+        sentence = re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0].strip()
+        summary = sentence if sentence else line
+        if len(summary) > DECISION_ONELINE_MAX:
+            summary = summary[: DECISION_ONELINE_MAX - 3].rstrip() + "..."
+        return summary
+    return ""
+
+
+def discover_files(adr_dir: Path) -> List[Path]:
+    if not adr_dir.is_dir():
+        return []
+    return sorted(
+        (path for path in adr_dir.glob("ADR-*.md") if ADR_FILENAME_RE.match(path.name)),
+        key=lambda path: path.name.lower(),
+    )
+
+
+def load_index(adr_dir: Path) -> List[Dict]:
+    """Load every ADR in adr_dir as a context-index row. One read per file."""
+    rows: List[Dict] = []
+    for adr_file in discover_files(adr_dir):
+        try:
+            text = adr_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        id_match = ADR_FILENAME_RE.match(adr_file.name)
+        adr_num = int(id_match.group(1)) if id_match else 0
+        adr_id = f"ADR-{adr_num:03d}" if id_match else adr_file.stem
+        title_match = TITLE_RE.search(text)
+        title = title_match.group(1).strip() if title_match else adr_file.stem
+        rows.append(
+            {
+                "num": adr_num,
+                "adr_id": adr_id,
+                "title": title,
+                "status": adr_status(text) or "Unknown",
+                "scope": enforcement_globs(text),
+                "decision": decision_oneline(text),
+                "path": adr_file.name,
+            }
+        )
+    rows.sort(key=lambda row: (row["num"], row["adr_id"]))
+    return rows
+
+
+def _escape_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def render_markdown(rows: List[Dict]) -> str:
+    lines = [
+        "<!-- Generated by bin/adr-index. Do not edit by hand; regenerate with: bin/adr-index -o docs/adr/ADR-INDEX.md -->",
+        "",
+        "# ADR Index",
+        "",
+        "One row per Architecture Decision Record. Scope is the Enforcement "
+        "`path_glob` set that governs where the decision applies; only "
+        "`Accepted` ADRs are injected at edit time (ADR-004).",
+        "",
+        "| ADR | Status | Scope | Decision |",
+        "| --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        scope = ", ".join(f"`{glob}`" for glob in row["scope"]) if row["scope"] else "-"
+        decision = _escape_cell(row["decision"]) or "-"
+        lines.append(
+            f"| {row['adr_id']} | {row['status']} | {scope} | {decision} |"
+        )
+    if not rows:
+        lines.append("| _(none)_ | | | |")
+    return "\n".join(lines) + "\n"
+
+
+def render_context_json(rows: List[Dict]) -> str:
+    payload = [
+        {
+            "adr_id": row["adr_id"],
+            "status": row["status"],
+            "scope": row["scope"],
+            "decision": row["decision"],
+            "path": row["path"],
+        }
+        for row in rows
+    ]
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
+
+def _find_adr_dir(explicit: Optional[str]) -> Optional[Path]:
+    if explicit:
+        path = Path(explicit)
+        return path if path.is_dir() else None
+    for candidate in (Path("docs/adr"), Path("adr"), Path(".")):
+        if candidate.is_dir() and discover_files(candidate):
+            return candidate
+    return None
+
+
+def _readme_record(path: Path) -> Dict:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    raw_frontmatter, body = split_frontmatter(text)
+    data = parse_frontmatter(raw_frontmatter) if raw_frontmatter is not None else {}
+    inferred = infer_frontmatter(body, path)
+    merged = dict(inferred)
+    merged.update(data)
+    return {
+        "id": merged.get("id", inferred["id"]),
+        "title": merged.get("title", inferred["title"]),
+        "status": merged.get("status", inferred["status"]),
+        "date": merged.get("date", inferred["date"]),
+        "supersedes": merged.get("supersedes", []),
+        "superseded_by": merged.get("superseded_by"),
+        "file": path.name,
+    }
+
+
+def load_readme_records(adr_dir: Path) -> Tuple[List[Dict], List[str]]:
+    records = [_readme_record(path) for path in discover_files(adr_dir)]
+    grouped: Dict[str, List[str]] = {}
+    for record in records:
+        grouped.setdefault(record["id"], []).append(record["file"])
+    duplicate_issues = [
+        f"{adr_id} appears in multiple files: {', '.join(files)}"
+        for adr_id, files in sorted(grouped.items())
+        if len(files) > 1
+    ]
+    records.sort(key=lambda row: int(re.search(r"\d+", row["id"]).group(0)))
+    return records, duplicate_issues
+
+
+def _supersession_note(record: Dict) -> str:
+    notes: List[str] = []
+    if record.get("superseded_by"):
+        notes.append(f"Superseded by {record['superseded_by']}")
+    supersedes = record.get("supersedes") or []
+    if supersedes:
+        notes.append("Supersedes " + ", ".join(supersedes))
+    return "; ".join(notes) if notes else "-"
+
+
+def render_generated_readme_block(records: List[Dict], issues: List[str]) -> str:
+    status_counts: Dict[str, int] = {}
+    for record in records:
+        status_counts[record["status"]] = status_counts.get(record["status"], 0) + 1
+
+    lines = [
+        BEGIN,
+        "## ADR Index",
+        "",
+        "Generated by `bin/adr-index`. Do not edit between the sentinels.",
+        "",
+        "### Summary",
+        "",
+        "| Metric | Count |",
+        "| --- | ---: |",
+        f"| Total ADRs | {len(records)} |",
+    ]
+    for status, count in sorted(status_counts.items()):
+        lines.append(f"| {status} | {count} |")
+    lines.extend(
+        [
+            f"| Duplicate IDs | {len(issues)} |",
+            "",
+            "### Decisions",
+            "",
+            "| ADR | Title | Status | Date | Supersession | File |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for record in records:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_cell(record["id"]),
+                    _escape_cell(record["title"]),
+                    _escape_cell(record["status"]),
+                    _escape_cell(record["date"] or "-"),
+                    _escape_cell(_supersession_note(record)),
+                    _escape_cell(record["file"]),
+                ]
+            )
+            + " |"
+        )
+    if issues:
+        lines.extend(["", "### Index Issues", ""])
+        lines.extend(f"- {issue}" for issue in issues)
+    lines.append(END)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def default_readme(block: str) -> str:
+    return "\n".join(
+        [
+            "# Architecture Decision Records",
+            "",
+            "This README contains the generated local ADR index.",
+            "",
+            block.rstrip(),
+            "",
+        ]
+    )
+
+
+def update_readme(existing: Optional[str], block: str) -> str:
+    if existing is None:
+        return default_readme(block)
+    if BEGIN in existing and END in existing:
+        before, rest = existing.split(BEGIN, 1)
+        _old, after = rest.split(END, 1)
+        return before.rstrip() + "\n\n" + block.rstrip() + after
+    return existing.rstrip() + "\n\n" + block.rstrip() + "\n"
+
+
+def build_readme_payload(adr_dir: Path, readme: Path) -> Dict:
+    records, issues = load_readme_records(adr_dir)
+    block = render_generated_readme_block(records, issues)
+    existing = readme.read_text(encoding="utf-8") if readme.exists() else None
+    desired = update_readme(existing, block)
+    changed = existing != desired
+    return {
+        "adr_dir": str(adr_dir),
+        "readme": str(readme),
+        "summary": {
+            "total": len(records),
+            "duplicates": len(issues),
+            "changed": changed,
+        },
+        "issues": issues,
+        "records": records,
+        "desired": desired,
+    }
+
+
+def render_readme_text(payload: Dict, check: bool) -> str:
+    summary = payload["summary"]
+    lines = [
+        f"adr-index {'check' if check else 'write'}: {payload['readme']}",
+        f"ADRs: {summary['total']}; duplicates: {summary['duplicates']}; changed: {summary['changed']}",
+    ]
+    for issue in payload["issues"]:
+        lines.append(f"  issue: {issue}")
+    return "\n".join(lines)
+
+
+def _should_use_context_mode(args: argparse.Namespace) -> bool:
+    if args.output or args.adr_dir_opt:
+        return True
+    if args.check or args.readme:
+        return False
+    return args.adr_dir_arg is None
+
+
+def _run_context_mode(args: argparse.Namespace) -> int:
+    fmt = args.format or "md"
+    if fmt not in {"md", "json"}:
+        sys.stderr.write("adr-index: context mode supports --format md|json\n")
+        return 2
+    adr_dir = _find_adr_dir(args.adr_dir_opt or args.adr_dir_arg)
+    rows = load_index(adr_dir) if adr_dir is not None else []
+    text = render_context_json(rows) if fmt == "json" else render_markdown(rows)
+
+    if args.output:
+        try:
+            Path(args.output).write_text(text, encoding="utf-8")
+        except OSError as exc:
+            sys.stderr.write(f"adr-index: cannot write {args.output}: {exc}\n")
+            return 0
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def _run_readme_mode(args: argparse.Namespace) -> int:
+    fmt = args.format or "text"
+    if fmt not in {"text", "json"}:
+        sys.stderr.write("adr-index: README mode supports --format text|json\n")
+        return 2
+
+    adr_dir = Path(args.adr_dir_arg or args.adr_dir_opt or "docs/adr")
+    readme = Path(args.readme) if args.readme else adr_dir / "README.md"
+    payload = build_readme_payload(adr_dir, readme)
+    desired = payload.pop("desired")
+
+    if fmt == "json":
+        print(json.dumps(payload, indent=2))
+    else:
+        print(render_readme_text(payload, args.check))
+
+    if payload["issues"]:
+        return 1
+    if args.check:
+        return 1 if payload["summary"]["changed"] else 0
+
+    readme.parent.mkdir(parents=True, exist_ok=True)
+    readme.write_text(desired, encoding="utf-8")
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    _ensure_utf8_streams()
+    parser = argparse.ArgumentParser(
+        prog="adr-index",
+        description="Generate compact ADR context indexes and docs/adr README indexes.",
+    )
+    parser.add_argument(
+        "adr_dir_arg",
+        nargs="?",
+        help="ADR directory. Positional form selects README mode unless -o/--adr-dir is used.",
+    )
+    parser.add_argument(
+        "--adr-dir",
+        dest="adr_dir_opt",
+        default=None,
+        help="Directory holding ADR-*.md for context mode.",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("md", "text", "json"),
+        default=None,
+        help="Output format. Context: md/json. README: text/json.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Context mode output path, usually docs/adr/ADR-INDEX.md.",
+    )
+    parser.add_argument(
+        "--readme",
+        default=None,
+        help="README path for README mode (default: <adr_dir>/README.md).",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="README mode: exit 1 if README is stale or duplicate ADR ids exist.",
+    )
+    args = parser.parse_args(argv)
+
+    if _should_use_context_mode(args):
+        return _run_context_mode(args)
+    return _run_readme_mode(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""adr-judge-precommit — thin wrapper for the pre-commit framework.
+
+The pre-commit framework (https://pre-commit.com) invokes hooks with a list
+of staged filenames.  bin/adr-judge, however, needs the *diff* piped on
+stdin — it does not accept filenames.  This wrapper bridges the gap:
+
+  1. Reads the staged diff via ``git diff --cached --unified=0``.
+  2. Pipes it to the sibling ``bin/adr-judge --diff - --adr-dir docs/adr/``
+     (path resolved relative to this script, so the invocation is
+     repository-root-independent).
+  3. Propagates the exit code from adr-judge verbatim.
+
+Exit codes (mirroring bin/adr-judge):
+  0  no violations
+  1  at least one Enforcement violation
+  2  config or input error
+
+Usage (via pre-commit framework — do not invoke directly):
+  See .pre-commit-hooks.yaml in the adr-kit repository.
+
+Usage (direct smoke-test, cwd = a git repository):
+  python bin/adr-judge-precommit
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+# Resolve bin/adr-judge relative to *this* script so the wrapper works
+# regardless of where the pre-commit framework places it on PATH.
+_SELF = Path(__file__).resolve()
+_ADR_JUDGE = _SELF.parent / "adr-judge"
+
+if not _ADR_JUDGE.exists():
+    print(
+        f"[adr-judge-precommit] ERROR: sibling binary not found: {_ADR_JUDGE}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
+def main() -> int:
+    # Step 1: capture the staged diff.
+    diff_proc = subprocess.run(
+        ["git", "diff", "--cached", "--unified=0"],
+        capture_output=True,
+    )
+    if diff_proc.returncode != 0:
+        print(
+            "[adr-judge-precommit] ERROR: 'git diff --cached' failed.",
+            file=sys.stderr,
+        )
+        print(diff_proc.stderr.decode(errors="replace"), file=sys.stderr)
+        return 2
+
+    staged_diff = diff_proc.stdout  # bytes
+
+    # Step 2: pipe the diff into adr-judge.
+    judge_proc = subprocess.run(
+        [
+            sys.executable,
+            str(_ADR_JUDGE),
+            "--diff", "-",
+            "--adr-dir", "docs/adr/",
+        ],
+        input=staged_diff,
+    )
+    return judge_proc.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

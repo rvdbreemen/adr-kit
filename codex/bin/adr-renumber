@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""adr-renumber: safely renumber one ADR and update all cross-references.
+
+Built for the merge-collision workflow: two parallel branches both claim
+ADR-043, CI fails on the duplicate-number check in adr-lint, and one of the
+two files must move to a free number. This tool renames the file, rewrites
+the heading, and updates every whole-token reference to the old id across
+all ADRs in the directory: Related Decisions entries, "Superseded by" and
+"Amended by" status strings, Status History mentions, and plain ADR-NNN
+references.
+
+Safety properties:
+  - Dry-run by default: prints the full plan (file rename plus every rewrite
+    with file:line) and changes nothing. --apply executes the plan.
+  - Whole-token matching only: renumbering ADR-043 never touches ADR-0430.
+  - Refuses (exit 2) when the target number is already taken or the source
+    does not exist.
+  - All regexes are linear: no nested or lazy quantifiers (see the
+    0.19.1/0.19.2 ReDoS history in CHANGELOG.md).
+
+Exit codes:
+  0  success (plan printed, or --apply completed)
+  2  input error (source missing, target taken, ambiguous source, bad id)
+
+Usage:
+  adr-renumber ADR-043                       # dry-run, target = next free number
+  adr-renumber ADR-043 --to ADR-051          # dry-run with explicit target
+  adr-renumber ADR-043 --to ADR-051 --apply  # execute
+  adr-renumber docs/adr/ADR-043-foo.md --to ADR-051   # disambiguate duplicates
+  adr-renumber ADR-043 --adr-dir docs/decisions
+
+Deterministic, stdlib-only, Python 3.9+.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
+ADR_ID_RE = re.compile(r"(?i)^ADR-(\d{1,4})$")
+
+
+class RenumberError(Exception):
+    """Raised on input errors; maps to exit code 2."""
+
+
+def parse_adr_id(raw: str) -> int:
+    """Return the integer number of an ADR-NNN id, or raise RenumberError."""
+    m = ADR_ID_RE.match(raw.strip())
+    if not m:
+        raise RenumberError(f"{raw!r} does not match ADR-NNN (e.g. ADR-043)")
+    return int(m.group(1))
+
+
+def discover_adrs(adr_dir: Path) -> List[Path]:
+    """Return sorted ADR markdown files in adr_dir (non-recursive)."""
+    if not adr_dir.is_dir():
+        raise RenumberError(f"ADR directory not found: {adr_dir}")
+    return sorted(
+        (p for p in adr_dir.glob("*.md") if ADR_FILENAME_RE.match(p.name)),
+        key=lambda p: p.name.lower(),
+    )
+
+
+def numbers_in_use(files: List[Path]) -> Dict[int, List[Path]]:
+    """Map ADR number -> list of files carrying that number."""
+    grouped: Dict[int, List[Path]] = {}
+    for fp in files:
+        m = ADR_FILENAME_RE.match(fp.name)
+        if m:
+            grouped.setdefault(int(m.group(1)), []).append(fp)
+    return grouped
+
+
+def next_free_number(in_use: Dict[int, List[Path]]) -> int:
+    """Return max(used) + 1. Gaps are not reused: a gap usually means a
+    retired or reserved number, and reusing it would resurrect stale
+    references."""
+    return (max(in_use) + 1) if in_use else 1
+
+
+def token_pattern(num: int) -> "re.Pattern[str]":
+    """Whole-token pattern for every common spelling of an ADR id.
+
+    Matches ADR-43, ADR-043, ADR-0043 (whichever spellings differ), but
+    never ADR-0430: a digit may not follow the number. \\b before 'ADR'
+    rejects mid-word hits. Pure alternation of literals: linear time.
+    """
+    spellings = sorted({str(num), f"{num:03d}", f"{num:04d}"}, key=len, reverse=True)
+    alt = "|".join(spellings)
+    return re.compile(rf"\bADR-(?:{alt})(?!\d)")
+
+
+def renamed_filename(name: str, new_num: int) -> str:
+    """Replace the leading ADR-NNN- of a filename with the new number."""
+    m = ADR_FILENAME_RE.match(name)
+    if not m:
+        raise RenumberError(f"{name!r} is not an ADR filename (ADR-NNN-...)")
+    return f"ADR-{new_num:03d}-" + name[m.end():]
+
+
+def find_source(source_arg: str, adr_dir: Path, files: List[Path]) -> Tuple[Path, int]:
+    """Resolve the source argument (ADR-NNN id or file path) to one file."""
+    candidate = Path(source_arg)
+    if candidate.suffix.lower() == ".md":
+        if not candidate.is_file():
+            candidate = adr_dir / candidate.name
+        if not candidate.is_file():
+            raise RenumberError(f"source file not found: {source_arg}")
+        m = ADR_FILENAME_RE.match(candidate.name)
+        if not m:
+            raise RenumberError(
+                f"{candidate.name!r} is not an ADR filename (ADR-NNN-...)"
+            )
+        return candidate, int(m.group(1))
+
+    num = parse_adr_id(source_arg)
+    matches = [
+        fp for fp in files
+        if (m := ADR_FILENAME_RE.match(fp.name)) and int(m.group(1)) == num
+    ]
+    if not matches:
+        raise RenumberError(f"no ADR with number {num:03d} found in {adr_dir}")
+    if len(matches) > 1:
+        names = ", ".join(fp.name for fp in matches)
+        raise RenumberError(
+            f"ADR-{num:03d} is ambiguous ({names}); "
+            f"pass the file path of the one to renumber"
+        )
+    return matches[0], num
+
+
+def build_plan(
+    files: List[Path], source: Path, old_num: int, new_num: int
+) -> List[Tuple[Path, int, str, str]]:
+    """Return rewrite entries: (file, 1-based line, old line, new line)."""
+    pat = token_pattern(old_num)
+    new_id = f"ADR-{new_num:03d}"
+    plan: List[Tuple[Path, int, str, str]] = []
+    for fp in files:
+        text = fp.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            new_line, n = pat.subn(new_id, line)
+            if n:
+                plan.append((fp, lineno, line, new_line))
+    return plan
+
+
+def apply_plan(
+    files: List[Path], source: Path, old_num: int, new_num: int
+) -> Path:
+    """Rewrite references in every file, then rename the source. Returns the
+    new source path."""
+    pat = token_pattern(old_num)
+    new_id = f"ADR-{new_num:03d}"
+    for fp in files:
+        text = fp.read_text(encoding="utf-8")
+        new_text, n = pat.subn(new_id, text)
+        if n:
+            fp.write_text(new_text, encoding="utf-8")
+    new_path = source.with_name(renamed_filename(source.name, new_num))
+    source.rename(new_path)
+    return new_path
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="adr-renumber",
+        description=(
+            "Renumber one ADR and update all cross-references. "
+            "Dry-run by default; pass --apply to execute."
+        ),
+    )
+    parser.add_argument(
+        "source",
+        help="ADR id (ADR-043) or file path of the ADR to renumber",
+    )
+    parser.add_argument(
+        "--to", metavar="ADR-NNN", default=None,
+        help="Target id (default: next free number, max in use + 1)",
+    )
+    parser.add_argument(
+        "--adr-dir", metavar="DIR", default="docs/adr",
+        help="ADR directory (default: docs/adr)",
+    )
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="Execute the plan (default is dry-run)",
+    )
+    parser.add_argument(
+        "--version", action="version", version="adr-renumber 0.1.0",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        adr_dir = Path(args.adr_dir)
+        files = discover_adrs(adr_dir)
+        source, old_num = find_source(args.source, adr_dir, files)
+        in_use = numbers_in_use(files)
+
+        if args.to is not None:
+            new_num = parse_adr_id(args.to)
+        else:
+            new_num = next_free_number(in_use)
+
+        if new_num == old_num:
+            raise RenumberError(
+                f"target ADR-{new_num:03d} equals the source number"
+            )
+        if new_num in in_use:
+            taken_by = ", ".join(fp.name for fp in in_use[new_num])
+            raise RenumberError(
+                f"target ADR-{new_num:03d} is already taken by {taken_by}"
+            )
+    except RenumberError as e:
+        print(f"adr-renumber: {e}", file=sys.stderr)
+        return 2
+
+    old_id = f"ADR-{old_num:03d}"
+    new_id = f"ADR-{new_num:03d}"
+    new_name = renamed_filename(source.name, new_num)
+
+    print(f"Plan: renumber {old_id} -> {new_id}")
+    print(f"  rename: {source} -> {source.with_name(new_name)}")
+    if len(in_use.get(old_num, [])) > 1:
+        others = ", ".join(
+            fp.name for fp in in_use[old_num] if fp != source
+        )
+        print(
+            f"  warning: {old_id} is duplicated (also: {others}); "
+            f"rewritten references may belong to either file. Review the plan."
+        )
+
+    plan = build_plan(files, source, old_num, new_num)
+    for fp, lineno, old_line, new_line in plan:
+        print(f"  {fp}:{lineno}: {old_line.strip()}")
+        print(f"    -> {new_line.strip()}")
+    print(f"  {len(plan)} line(s) to rewrite across {len(files)} ADR file(s).")
+
+    if not args.apply:
+        print("Dry run: no changes made. Re-run with --apply to execute.")
+        return 0
+
+    new_path = apply_plan(files, source, old_num, new_num)
+    print(f"Applied: {len(plan)} line(s) rewritten; renamed to {new_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,34 @@
+{
+  "name": "adr-kit",
+  "version": "0.33.0",
+  "description": "Native ADR governance for Codex: decision authoring, deterministic checks, lifecycle workflows, and a key-free MCP server.",
+  "author": {
+    "name": "Robert van den Breemen",
+    "url": "https://github.com/rvdbreemen"
+  },
+  "homepage": "https://github.com/rvdbreemen/adr-kit",
+  "repository": "https://github.com/rvdbreemen/adr-kit",
+  "license": "MIT",
+  "keywords": [
+    "adr",
+    "architecture",
+    "governance",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "ADR Kit",
+    "shortDescription": "Architecture decisions Codex can follow",
+    "longDescription": "Author, find, validate, enforce, supersede, and retire Architecture Decision Records with deterministic local tooling.",
+    "developerName": "Robert van den Breemen",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write",
+      "MCP"
+    ],
+    "websiteURL": "https://github.com/rvdbreemen/adr-kit",
+    "defaultPrompt": "Use ADR Kit to find the decisions governing this task before changing code."
+  }
+}

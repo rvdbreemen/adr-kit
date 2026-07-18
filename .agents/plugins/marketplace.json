@@ -1,0 +1,20 @@
+{
+  "name": "rvdbreemen-adr-kit-codex",
+  "interface": {
+    "displayName": "ADR Kit for Codex"
+  },
+  "plugins": [
+    {
+      "name": "adr-kit",
+      "source": {
+        "source": "local",
+        "path": "./codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

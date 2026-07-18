@@ -26,6 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BUMP_VERSION = REPO_ROOT / "bin" / "bump-version"
 
 PLUGIN = {"name": "adr-kit", "version": "0.30.0", "description": "x"}
+CODEX_PLUGIN = {"name": "adr-kit", "version": "0.30.0", "description": "x"}
+COPILOT_PLUGIN = {"name": "adr-kit", "version": "0.30.0", "description": "x"}
 MARKETPLACE = {"plugins": [{"name": "adr-kit", "version": "0.30.0"}]}
 CHANGELOG = (
     "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- thing.\n\n"
@@ -49,11 +51,23 @@ def _make_tree(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "bin").mkdir(parents=True)
     (root / ".claude-plugin").mkdir()
+    (root / "codex" / ".codex-plugin").mkdir(parents=True)
+    (root / "copilot").mkdir()
+    (root / ".github" / "plugin").mkdir(parents=True)
     (root / "templates" / "githooks").mkdir(parents=True)
     (root / "templates" / "cc-settings").mkdir(parents=True)
     shutil.copy(str(BUMP_VERSION), str(root / "bin" / "bump-version"))
     (root / ".claude-plugin" / "plugin.json").write_text(
         json.dumps(PLUGIN, indent=2) + "\n", encoding="utf-8"
+    )
+    (root / "codex" / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps(CODEX_PLUGIN, indent=2) + "\n", encoding="utf-8"
+    )
+    (root / "copilot" / "plugin.json").write_text(
+        json.dumps(COPILOT_PLUGIN, indent=2) + "\n", encoding="utf-8"
+    )
+    (root / ".github" / "plugin" / "marketplace.json").write_text(
+        json.dumps(MARKETPLACE, indent=2) + "\n", encoding="utf-8"
     )
     (root / ".claude-plugin" / "marketplace.json").write_text(
         json.dumps(MARKETPLACE, indent=2) + "\n", encoding="utf-8"
@@ -81,12 +95,22 @@ def _run(root: Path, *args: str) -> "subprocess.CompletedProcess":
     )
 
 
-def test_bump_updates_all_five_files(tmp_path):
+def test_bump_updates_both_client_manifests_and_release_artifacts(tmp_path):
     root = _make_tree(tmp_path)
     proc = _run(root, "0.31.0")
     assert proc.returncode == 0, proc.stderr
     plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["version"] == "0.31.0"
+    codex_plugin = json.loads(
+        (root / "codex" / ".codex-plugin" / "plugin.json").read_text()
+    )
+    assert codex_plugin["version"] == "0.31.0"
+    copilot_plugin = json.loads((root / "copilot" / "plugin.json").read_text())
+    assert copilot_plugin["version"] == "0.31.0"
+    copilot_marketplace = json.loads(
+        (root / ".github" / "plugin" / "marketplace.json").read_text()
+    )
+    assert copilot_marketplace["plugins"][0]["version"] == "0.31.0"
     marketplace = json.loads(
         (root / ".claude-plugin" / "marketplace.json").read_text()
     )

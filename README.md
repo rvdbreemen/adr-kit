@@ -7,7 +7,7 @@
 
 `adr-kit` turns Architecture Decision Records from passive documentation into active guardrails. Your agent gets the relevant decisions injected while it codes, every commit is checked against the accepted decisions, and a guardian watches for decisions that go stale. One toolkit covers the whole lifecycle: capture, enforce, maintain, retire.
 
-Works as a Claude Code plugin and as plain files for Cursor, GitHub Copilot, OpenAI Codex CLI, Claude Cowork, and any agent that supports the [Agent Skills](https://agentskills.io/) format. The engines are dependency-free Python 3.9+ (stdlib only, no build step, no API key required for any default path).
+Ships native, separate plugins for Claude Code, OpenAI Codex, and the standalone GitHub Copilot CLI, plus portable files for Cursor, Claude Cowork, and any agent that supports the [Agent Skills](https://agentskills.io/) format. The engines are dependency-free Python 3.9+ (stdlib only, no build step, no API key required for any default path).
 
 > **Pre-1.0**: functional and in daily use, but conventions may still evolve before v1.0.0. Pin a tag if you need stability across upgrades.
 
@@ -27,7 +27,22 @@ And because decisions age, a periodic guardian flags drift between code and deci
 
 ## Install
 
-### Claude Code (recommended): four commands
+### Install every detected CLI
+
+From a cloned checkout:
+
+```bash
+python scripts/install-agent-envs.py --detect-only
+python scripts/install-agent-envs.py
+```
+
+The installer verifies real executable and version output for `claude`, `codex`,
+and the standalone `copilot` CLI. It installs ADR Kit through every detected
+client's native plugin API, then validates the plugin and MCP registration.
+Use `--clients codex,copilot`, `--dry-run`, or `--source /path/to/adr-kit` for
+explicit and automated installs.
+
+### Claude Code
 
 ```
 /plugin marketplace add rvdbreemen/adr-kit
@@ -42,17 +57,43 @@ That is the whole setup. From the next session on, your agent knows the decision
 
 Prefer a lighter start? `/adr-kit:setup` writes only the `CLAUDE.md` stub and guide, skipping the audit and the hook; you can add those later with `/adr-kit:init` or `/adr-kit:install-hooks`.
 
-### OpenAI Codex CLI, Cursor, GitHub Copilot, Claude Cowork, others
+The Claude integration remains rooted in `.claude-plugin/`, the original
+`skills/`, and the existing three hooks.
 
-The same skill, agent, and instruction files install as plain files; only the directory layout differs per tool. [INSTALL.md](INSTALL.md) documents every path and ships a one-shot script (`scripts/install-adr-kit.sh` style) that lays the files down for all four tool families at once. Quick orientation:
+### OpenAI Codex
 
-| Tool | Target layout |
-|---|---|
-| OpenAI Codex CLI | `.codex/skills/`, `.codex/agents/`, `.codex/instructions/` (or paste into `AGENTS.md`) |
-| Cursor | `.cursor/skills/`, `.cursor/rules/*.mdc` |
-| GitHub Copilot | `.github/skills/`, `.github/agents/`, `.github/instructions/` |
-| Claude Cowork | shares the `.claude/` convention with Claude Code |
-| Anything else | file-based config dir, or paste `SKILL.md` into the system prompt |
+```bash
+codex plugin marketplace add rvdbreemen/adr-kit
+codex plugin add adr-kit@rvdbreemen-adr-kit-codex
+codex mcp list
+```
+
+Codex does not use Claude's `/adr-kit:...` slash-command syntax. ADR Kit
+workflows appear as namespaced skills: open `/skills`, or invoke
+`$adr-kit:context`, `$adr-kit:judge`, `$adr-kit:lint`, and the other skills.
+The separate `codex/` distribution contains all 14 workflows and the key-free
+four-tool MCP server. See the official [Codex skills](https://learn.chatgpt.com/docs/build-skills)
+and [plugin](https://learn.chatgpt.com/docs/build-plugins) contracts.
+
+### Standalone GitHub Copilot CLI
+
+```bash
+copilot plugin marketplace add rvdbreemen/adr-kit
+copilot plugin install adr-kit@rvdbreemen-adr-kit-copilot
+copilot plugin list
+copilot mcp list
+copilot skill list
+```
+
+This targets `@github/copilot` invoked as `copilot`, not `gh copilot` or VS
+Code agent mode. The separate `copilot/` distribution follows GitHub's
+[Copilot plugin contract](https://docs.github.com/en/copilot/concepts/agents/about-plugins)
+and installs 14 skills plus the same key-free MCP server.
+
+### Cursor, Claude Cowork, and other agents
+
+[INSTALL.md](INSTALL.md) documents the native plugin layouts and portable
+fallbacks.
 
 On top of the file install, every tool that speaks MCP (Cursor, Cline, Windsurf, Copilot, Codex) can connect to the bundled [MCP server](#mcp-server-binadr-mcp) for the enforcement and context tools; see below.
 
@@ -347,7 +388,10 @@ If your team is happy with a plain template and the discipline lives in your cul
 
 ```
 adr-kit/
-├── skills/            # 14 slash-command skills (adr, init, judge, guardian, context, review, ...)
+├── skills/            # 14 Claude Code skills (unchanged native integration)
+├── codex/             # separate Codex plugin, 14 skills, MCP, packaged engines
+├── copilot/           # separate standalone Copilot CLI plugin
+├── scripts/           # detected-client installer and payload sync check
 ├── agents/            # adr-generator subagent
 ├── bin/               # 15 stdlib-only Python CLIs (judge, lint, guardian, context, mcp, watch, ...)
 ├── templates/         # ADR template, project guide, pre-commit hook, CI workflows, validators

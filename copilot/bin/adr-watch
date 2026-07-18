@@ -1,0 +1,725 @@
+#!/usr/bin/env python3
+"""adr-watch: in-flight ADR guidance for just-edited files (v0.21+).
+
+The PostToolUse counterpart to the SessionStart guardian and the pre-commit
+judge. Given one or more file paths that were just edited, it prints at most
+three compact one-line nudges naming the Accepted ADRs that likely apply:
+
+  [adr-watch] ADR-007 (no direct DB calls outside repository layer) may apply to src/db/foo.py
+
+Two invocation modes:
+
+  adr-watch <path> [<path> ...]
+      Plain CLI mode. Prints nudges as plain text lines, one per nudge.
+
+  adr-watch --hook
+      PostToolUse hook mode. Reads the Claude Code PostToolUse JSON payload
+      from stdin ({"tool_name": ..., "tool_input": {"file_path": ...}}),
+      extracts the edited path, and emits the nudges wrapped in the
+      hookSpecificOutput JSON envelope (additionalContext) when running
+      under Claude Code, or as plain text otherwise.
+
+Design invariants (same posture as bin/adr-guardian):
+  - ALWAYS exits 0. Advisory only; never blocks an edit.
+  - Self-guard: silent exit 0 when there is no docs/adr/ with ADRs.
+  - No LLM, no network, stdlib only. Deterministic.
+  - Target <100ms for 50 ADRs: each ADR file is read exactly once and all
+    regexes are precompiled at module level. All regexes are linear-time
+    (no nested lazy quantifiers; see the v0.19.1/v0.19.2 ReDoS history).
+  - Per-session cooldown: the same ADR+file pair is not nudged again within
+    watch.cooldown_hours (default 4). State lives under the "watch" key of
+    docs/adr/.adr-kit-state.json, written atomically via os.replace.
+    Missing or corrupt state is tolerated (treated as empty).
+
+Matching signals:
+  1. Enforcement path_glob match: the edited path matches a path_glob of any
+     rule in the ADR's ## Enforcement block. Strongest signal (score 1.0).
+  2. Keyword relevance (adr-context style): fraction of keywords derived
+     from the edited path (directory names, file stem) that appear in the
+     ADR title + Decision section. Scaled to at most 0.8 so a glob hit
+     always outranks a keyword-only hit.
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+MAX_NUDGES = 3
+DEFAULT_COOLDOWN_HOURS = 4.0
+KEYWORD_SCORE_THRESHOLD = 0.5  # at least half the path keywords must hit
+KEYWORD_SCORE_SCALE = 0.8      # keyword-only hits never outrank a glob hit
+
+# Edit-tier injector (ADR-004): inject the governing ADR's Decision text
+# *before* an Edit/Write, bounded to a token budget, on the PreToolUse hook.
+DEFAULT_INJECT_MAX_TOKENS = 400
+DEFAULT_INJECT_COOLDOWN_HOURS = 4.0
+_CHARS_PER_TOKEN = 4  # coarse estimate, matches the OpenWolf prose heuristic
+
+# ---------------------------------------------------------------------------
+# Precompiled regexes (all linear-time; reused from adr-judge / adr-context)
+# ---------------------------------------------------------------------------
+
+# Same pattern as adr-judge ENFORCEMENT_BLOCK_RE (post-ReDoS-fix form).
+ENFORCEMENT_BLOCK_RE = re.compile(
+    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+STATUS_HEADING_RE = re.compile(
+    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
+)
+STATUS_LINE_RE = re.compile(
+    r"^\s*Status\s*:\s*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
+)
+STATUS_BOLD_INLINE_RE = re.compile(
+    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
+    re.IGNORECASE | re.MULTILINE,
+)
+TITLE_RE = re.compile(r"^#\s+ADR-\d+[:\s]\s*(.+)$", re.MULTILINE)
+DECISION_SECTION_RE = re.compile(
+    r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
+)
+ADR_FILENAME_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
+WORD_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+
+_GLOB_PATTERN_CACHE: Dict[str, re.Pattern] = {}
+
+
+# ---------------------------------------------------------------------------
+# UTF-8 stream setup (mirrors adr-guardian._ensure_utf8_streams)
+# ---------------------------------------------------------------------------
+
+def _ensure_utf8_streams() -> None:
+    """Force stdout/stderr to UTF-8 on Windows where the console may default to cp1252."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, io.UnsupportedOperation):
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Glob translation (same semantics as bin/adr-judge glob_to_regex)
+# ---------------------------------------------------------------------------
+
+def glob_to_regex(glob: str) -> re.Pattern:
+    """Translate a shell-style glob (with ** and {a,b}) to an anchored regex."""
+    cached = _GLOB_PATTERN_CACHE.get(glob)
+    if cached is not None:
+        return cached
+    out: List[str] = []
+    i = 0
+    while i < len(glob):
+        c = glob[i]
+        if c == "*":
+            if i + 1 < len(glob) and glob[i + 1] == "*":
+                if i + 2 < len(glob) and glob[i + 2] == "/":
+                    out.append("(?:.*/)?")
+                    i += 3
+                else:
+                    out.append(".*")
+                    i += 2
+            else:
+                out.append("[^/]*")
+                i += 1
+        elif c == "?":
+            out.append("[^/]")
+            i += 1
+        elif c == "{":
+            close = glob.find("}", i + 1)
+            if close == -1 or "{" in glob[i + 1:close]:
+                out.append(re.escape(c))
+                i += 1
+            else:
+                inner = glob[i + 1:close]
+                alts = inner.split(",")
+                alt_patterns = [
+                    glob_to_regex(a).pattern.lstrip("^").rstrip("$") if a else ""
+                    for a in alts
+                ]
+                out.append("(?:" + "|".join(alt_patterns) + ")")
+                i = close + 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    compiled = re.compile("^" + "".join(out) + "$")
+    _GLOB_PATTERN_CACHE[glob] = compiled
+    return compiled
+
+
+# ---------------------------------------------------------------------------
+# Project / ADR-dir discovery (same posture as adr-guardian)
+# ---------------------------------------------------------------------------
+
+def _project_root() -> Path:
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    if project_dir:
+        return Path(project_dir)
+    return Path.cwd()
+
+
+def _find_adr_dir() -> Optional[Path]:
+    """Return docs/adr/ with at least one ADR-*.md, or None (self-guard)."""
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    candidates = []
+    if project_dir:
+        candidates.append(Path(project_dir) / "docs" / "adr")
+    candidates.append(Path.cwd() / "docs" / "adr")
+
+    for adr_dir in candidates:
+        if adr_dir.is_dir():
+            try:
+                has_adrs = any(True for _ in adr_dir.glob("ADR-*.md"))
+            except OSError:
+                continue
+            if has_adrs:
+                return adr_dir
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Config (watch block of .adr-kit.json)
+# ---------------------------------------------------------------------------
+
+def _load_config(config_path: Path) -> Dict:
+    if not config_path.exists():
+        return {}
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def watch_config(cfg: Dict) -> Dict:
+    """Return the watch sub-block with defaults filled in."""
+    defaults = {
+        "enabled": True,
+        "cooldown_hours": DEFAULT_COOLDOWN_HOURS,
+    }
+    watch = cfg.get("watch")
+    if not isinstance(watch, dict):
+        watch = {}
+    return {**defaults, **watch}
+
+
+def inject_config(cfg: Dict) -> Dict:
+    """Return the inject sub-block with defaults filled in (ADR-004)."""
+    defaults = {
+        "enabled": True,
+        "max_tokens": DEFAULT_INJECT_MAX_TOKENS,
+        "cooldown_hours": DEFAULT_INJECT_COOLDOWN_HOURS,
+    }
+    inject = cfg.get("inject")
+    if not isinstance(inject, dict):
+        inject = {}
+    return {**defaults, **inject}
+
+
+# ---------------------------------------------------------------------------
+# State (cooldown bookkeeping under the "watch" key of .adr-kit-state.json)
+# ---------------------------------------------------------------------------
+
+def _load_state(state_path: Path) -> Dict:
+    """Read .adr-kit-state.json. Returns {} when missing or invalid."""
+    if not state_path.exists():
+        return {}
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_state(state_path: Path, state: Dict) -> None:
+    """Write .adr-kit-state.json atomically via os.replace. Failure is non-fatal."""
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, state_path)
+    except OSError:
+        pass
+
+
+def _now_utc() -> datetime:
+    return datetime.now(tz=timezone.utc)
+
+
+def _parse_iso(s: Optional[str]) -> Optional[datetime]:
+    if not s or not isinstance(s, str):
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _section_nudges(state: Dict, section: str) -> Dict[str, str]:
+    """Return the nudges map ("ADR-NNN|path" -> ISO timestamp) for a section."""
+    block = state.get(section)
+    if not isinstance(block, dict):
+        return {}
+    nudges = block.get("nudges")
+    if not isinstance(nudges, dict):
+        return {}
+    return {k: v for k, v in nudges.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _watch_nudges(state: Dict) -> Dict[str, str]:
+    """Return the watch.nudges map ("ADR-NNN|path" -> ISO timestamp)."""
+    return _section_nudges(state, "watch")
+
+
+def _within_cooldown(nudges: Dict[str, str], key: str, cooldown_hours: float,
+                     now: datetime) -> bool:
+    ts = _parse_iso(nudges.get(key))
+    if ts is None:
+        return False
+    elapsed_h = (now - ts).total_seconds() / 3600.0
+    return elapsed_h < cooldown_hours
+
+
+def _prune_nudges(nudges: Dict[str, str], cooldown_hours: float,
+                  now: datetime) -> Dict[str, str]:
+    """Drop entries older than the cooldown window so state stays small."""
+    kept: Dict[str, str] = {}
+    for key, raw in nudges.items():
+        ts = _parse_iso(raw)
+        if ts is None:
+            continue
+        if (now - ts).total_seconds() / 3600.0 < cooldown_hours:
+            kept[key] = raw
+    return kept
+
+
+# ---------------------------------------------------------------------------
+# ADR loading (one read per file)
+# ---------------------------------------------------------------------------
+
+def _adr_status(text: str) -> Optional[str]:
+    """Return the ADR status word, recognising the same forms as adr-judge."""
+    m = STATUS_HEADING_RE.search(text)
+    if m:
+        wm = re.match(r"\s*([A-Za-z]+)", m.group(1))
+        return wm.group(1) if wm else None
+    m = STATUS_BOLD_INLINE_RE.search(text)
+    if m:
+        return m.group(1) or m.group(2)
+    m = STATUS_LINE_RE.search(text)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _parse_enforcement_globs(text: str) -> List[str]:
+    """Return all path_glob strings from the ADR's Enforcement block.
+
+    Tolerant: malformed JSON or unexpected shapes yield an empty list.
+    A rule without a path_glob applies everywhere; we represent that as "**".
+    """
+    m = ENFORCEMENT_BLOCK_RE.search(text)
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    globs: List[str] = []
+    for kind in ("forbid_pattern", "forbid_import", "require_pattern"):
+        rules = data.get(kind)
+        if not isinstance(rules, list):
+            continue
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            glob = rule.get("path_glob")
+            if isinstance(glob, str) and glob:
+                globs.append(glob)
+            else:
+                # Rule with no path_glob applies to every file.
+                globs.append("**")
+    return globs
+
+
+def load_adrs(adr_dir: Path) -> List[Dict]:
+    """Load Accepted ADRs from adr_dir. Each file is read exactly once."""
+    adrs: List[Dict] = []
+    for adr_file in sorted(adr_dir.glob("ADR-*.md")):
+        try:
+            text = adr_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        status = _adr_status(text)
+        if not status or status.lower() != "accepted":
+            continue
+
+        id_match = ADR_FILENAME_RE.search(adr_file.name)
+        adr_id = f"ADR-{int(id_match.group(1)):03d}" if id_match else adr_file.stem
+
+        title_match = TITLE_RE.search(text)
+        title = title_match.group(1).strip() if title_match else adr_file.stem
+
+        decision_match = DECISION_SECTION_RE.search(text)
+        decision_text = decision_match.group(1) if decision_match else ""
+
+        adrs.append({
+            "adr_id": adr_id,
+            "title": title,
+            "search_text": f"{title} {decision_text}".lower(),
+            "decision": decision_text.strip(),
+            "globs": _parse_enforcement_globs(text),
+        })
+    return adrs
+
+
+# ---------------------------------------------------------------------------
+# Path normalisation and keyword extraction
+# ---------------------------------------------------------------------------
+
+def normalize_path(raw: str, project_root: Path) -> str:
+    """Return a forward-slash path relative to the project root when possible."""
+    cleaned = raw.strip().replace("\\", "/")
+    p = Path(cleaned)
+    if p.is_absolute():
+        try:
+            rel = p.resolve().relative_to(project_root.resolve())
+            return rel.as_posix()
+        except (ValueError, OSError):
+            return p.as_posix()
+    return Path(cleaned).as_posix()
+
+
+def path_keywords(rel_path: str) -> List[str]:
+    """Extract keywords from a path: directory names + file stem fragments.
+
+    Mirrors adr-context.extract_keywords: lowercase, split on non-alphanumeric,
+    keep words of 3+ characters. The file extension is dropped (it is rarely
+    an architectural keyword).
+    """
+    p = Path(rel_path)
+    parts = list(p.parts[:-1]) + [p.stem]
+    words: List[str] = []
+    for part in parts:
+        words.extend(WORD_SPLIT_RE.split(part.lower()))
+    return sorted({w for w in words if len(w) >= 3})
+
+
+# ---------------------------------------------------------------------------
+# Matching
+# ---------------------------------------------------------------------------
+
+def match_adrs(rel_path: str, adrs: List[Dict]) -> List[Dict]:
+    """Score every ADR against one edited path. Returns hits sorted by score.
+
+    Score 1.0:                Enforcement path_glob matches the path.
+    Score <= 0.8 (scaled):    keyword fraction of path words found in the
+                              ADR title + Decision text, when at least
+                              KEYWORD_SCORE_THRESHOLD of the words hit.
+    """
+    keywords = path_keywords(rel_path)
+    hits: List[Dict] = []
+    for adr in adrs:
+        score = 0.0
+        for glob in adr["globs"]:
+            try:
+                if glob_to_regex(glob).match(rel_path):
+                    score = 1.0
+                    break
+            except re.error:
+                continue
+        if score == 0.0 and keywords:
+            found = sum(1 for kw in keywords if kw in adr["search_text"])
+            fraction = found / len(keywords)
+            if fraction >= KEYWORD_SCORE_THRESHOLD:
+                score = round(KEYWORD_SCORE_SCALE * fraction, 4)
+        if score > 0.0:
+            hits.append({"adr_id": adr["adr_id"], "title": adr["title"], "score": score})
+    hits.sort(key=lambda h: (-h["score"], h["adr_id"]))
+    return hits
+
+
+# ---------------------------------------------------------------------------
+# Core run
+# ---------------------------------------------------------------------------
+
+def run_watch(paths: List[str], adr_dir: Path, now: Optional[datetime] = None) -> List[str]:
+    """Compute nudge lines for the given edited paths and update cooldown state.
+
+    Returns the list of nudge lines (possibly empty). Never raises.
+    """
+    if now is None:
+        now = _now_utc()
+
+    cfg = _load_config(adr_dir / ".adr-kit.json")
+    wcfg = watch_config(cfg)
+    if not wcfg.get("enabled", True):
+        return []
+    try:
+        cooldown_hours = float(wcfg.get("cooldown_hours", DEFAULT_COOLDOWN_HOURS))
+    except (TypeError, ValueError):
+        cooldown_hours = DEFAULT_COOLDOWN_HOURS
+
+    state_path = adr_dir / ".adr-kit-state.json"
+    state = _load_state(state_path)
+    nudges = _watch_nudges(state)
+
+    adrs = load_adrs(adr_dir)
+    if not adrs:
+        return []
+
+    project_root = _project_root()
+    lines: List[str] = []
+    emitted_keys: List[str] = []
+
+    for raw_path in paths:
+        if len(lines) >= MAX_NUDGES:
+            break
+        rel_path = normalize_path(raw_path, project_root)
+        if not rel_path:
+            continue
+        for hit in match_adrs(rel_path, adrs):
+            if len(lines) >= MAX_NUDGES:
+                break
+            key = f"{hit['adr_id']}|{rel_path}"
+            if key in emitted_keys:
+                continue
+            if cooldown_hours > 0 and _within_cooldown(nudges, key, cooldown_hours, now):
+                continue
+            lines.append(
+                f"[adr-watch] {hit['adr_id']} ({hit['title']}) may apply to {rel_path}"
+            )
+            emitted_keys.append(key)
+
+    if emitted_keys:
+        pruned = _prune_nudges(nudges, max(cooldown_hours, DEFAULT_COOLDOWN_HOURS), now)
+        for key in emitted_keys:
+            pruned[key] = now.isoformat()
+        watch_state = state.get("watch")
+        if not isinstance(watch_state, dict):
+            watch_state = {}
+        watch_state["nudges"] = pruned
+        state["watch"] = watch_state
+        _save_state(state_path, state)
+
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# Edit-tier injector (ADR-004): inject the governing ADR's Decision text
+# *before* an Edit/Write, bounded to a token budget, on the PreToolUse hook.
+# ---------------------------------------------------------------------------
+
+def _bound_decision(decision: str, max_tokens: int) -> str:
+    """Truncate decision text to a token budget (coarse chars/token estimate)."""
+    if max_tokens <= 0 or not decision:
+        return decision.strip()
+    max_chars = max_tokens * _CHARS_PER_TOKEN
+    if len(decision) <= max_chars:
+        return decision.strip()
+    cut = decision[:max_chars]
+    # Prefer to break on the last paragraph or sentence boundary in-budget.
+    for sep in ("\n\n", ". ", "\n"):
+        idx = cut.rfind(sep)
+        if idx >= max_chars // 2:
+            cut = cut[: idx + (1 if sep == ". " else 0)]
+            break
+    return cut.strip() + " […]"
+
+
+def run_inject(paths: List[str], adr_dir: Path,
+               now: Optional[datetime] = None) -> Optional[str]:
+    """Return injectable context for the top governing ADR of an about-to-edit
+    path, or None when nothing applies. Updates the inject cooldown state.
+
+    Never raises. Injects only the single highest-scored Accepted ADR, so the
+    agent sees the governing decision before it writes, without flooding
+    context.
+    """
+    if now is None:
+        now = _now_utc()
+
+    cfg = _load_config(adr_dir / ".adr-kit.json")
+    icfg = inject_config(cfg)
+    if not icfg.get("enabled", True):
+        return None
+    try:
+        max_tokens = int(icfg.get("max_tokens", DEFAULT_INJECT_MAX_TOKENS))
+    except (TypeError, ValueError):
+        max_tokens = DEFAULT_INJECT_MAX_TOKENS
+    try:
+        cooldown_hours = float(icfg.get("cooldown_hours", DEFAULT_INJECT_COOLDOWN_HOURS))
+    except (TypeError, ValueError):
+        cooldown_hours = DEFAULT_INJECT_COOLDOWN_HOURS
+
+    adrs = load_adrs(adr_dir)
+    if not adrs:
+        return None
+    decisions = {a["adr_id"]: a.get("decision", "") for a in adrs}
+
+    state_path = adr_dir / ".adr-kit-state.json"
+    state = _load_state(state_path)
+    nudges = _section_nudges(state, "inject")
+    project_root = _project_root()
+
+    for raw_path in paths:
+        rel_path = normalize_path(raw_path, project_root)
+        if not rel_path:
+            continue
+        hits = match_adrs(rel_path, adrs)
+        if not hits:
+            continue
+        top = hits[0]
+        key = f"{top['adr_id']}|{rel_path}"
+        if cooldown_hours > 0 and _within_cooldown(nudges, key, cooldown_hours, now):
+            continue
+        decision = _bound_decision(decisions.get(top["adr_id"], ""), max_tokens)
+        if not decision:
+            continue
+
+        pruned = _prune_nudges(nudges, max(cooldown_hours, DEFAULT_INJECT_COOLDOWN_HOURS), now)
+        pruned[key] = now.isoformat()
+        inject_state = state.get("inject")
+        if not isinstance(inject_state, dict):
+            inject_state = {}
+        inject_state["nudges"] = pruned
+        state["inject"] = inject_state
+        _save_state(state_path, state)
+
+        return (
+            f"[adr-inject] {top['adr_id']} ({top['title']}) governs {rel_path}. "
+            f"Honour its decision before editing:\n{decision}"
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Output envelopes
+# ---------------------------------------------------------------------------
+
+def _emit_hook_output(text: str, event: str = "PostToolUse") -> None:
+    """Emit text in a Claude Code hookSpecificOutput envelope for `event`.
+
+    Mirrors adr-guardian._emit_context: Claude Code gets the nested
+    hookSpecificOutput form; anything else gets plain text.
+    """
+    if os.environ.get("CLAUDE_PLUGIN_ROOT") and not os.environ.get("COPILOT_CLI"):
+        payload = {
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "additionalContext": text,
+            }
+        }
+        sys.stdout.write(json.dumps(payload) + "\n")
+    else:
+        sys.stdout.write(text + "\n")
+    sys.stdout.flush()
+
+
+def _paths_from_hook_payload(raw: str) -> List[str]:
+    """Extract edited file path(s) from a PostToolUse JSON payload string."""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return []
+    for key in ("file_path", "notebook_path", "path"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            return [value]
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    _ensure_utf8_streams()
+    parser = argparse.ArgumentParser(
+        prog="adr-watch",
+        description=(
+            "In-flight ADR guidance: print compact nudges naming the Accepted ADRs "
+            "that likely apply to just-edited files. Advisory only; always exits 0."
+        ),
+    )
+    parser.add_argument("paths", nargs="*",
+                        help="File path(s) that were just edited (or about to be, "
+                             "with --pre-edit).")
+    parser.add_argument("--hook", action="store_true",
+                        help="PostToolUse hook mode: read the tool payload JSON "
+                             "from stdin and emit a hookSpecificOutput envelope.")
+    parser.add_argument("--pre-edit", action="store_true",
+                        help="PreToolUse edit-tier mode (ADR-004): inject the "
+                             "governing ADR's Decision text before the edit. Reads "
+                             "the tool payload JSON from stdin like --hook.")
+    args = parser.parse_args()
+
+    # Self-guard: no ADR dir means nothing to say, anywhere.
+    adr_dir = _find_adr_dir()
+    if adr_dir is None:
+        return 0
+
+    hook_mode = args.hook or args.pre_edit
+    if hook_mode:
+        try:
+            raw = sys.stdin.read()
+        except OSError:
+            return 0
+        paths = _paths_from_hook_payload(raw)
+    else:
+        paths = list(args.paths)
+
+    if not paths:
+        return 0
+
+    if args.pre_edit:
+        context = run_inject(paths, adr_dir)
+        if not context:
+            return 0
+        _emit_hook_output(context, event="PreToolUse")
+        return 0
+
+    lines = run_watch(paths, adr_dir)
+    if not lines:
+        return 0
+
+    if args.hook:
+        _emit_hook_output("\n".join(lines))
+    else:
+        for line in lines:
+            sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(0)
+    except Exception:
+        # Advisory tool: never propagate an error to the hook layer.
+        sys.exit(0)

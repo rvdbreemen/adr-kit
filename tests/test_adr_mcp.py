@@ -9,6 +9,7 @@ tests deadlock-free without threads.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -167,6 +168,30 @@ def test_initialize_handshake(project: Path):
     assert result["serverInfo"]["version"].count(".") == 2
 
 
+@pytest.mark.parametrize(
+    "manifest_relative",
+    [Path(".codex-plugin/plugin.json"), Path("plugin.json")],
+)
+def test_packaged_client_manifest_version_fallbacks(
+    tmp_path: Path, manifest_relative: Path
+):
+    package = tmp_path / "package"
+    (package / "bin").mkdir(parents=True)
+    shutil.copy2(ADR_MCP, package / "bin" / "adr-mcp")
+    manifest = package / manifest_relative
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text('{"version": "9.8.7"}', encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(package / "bin" / "adr-mcp"), "--root", str(tmp_path)],
+        input=json.dumps(INITIALIZE) + "\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    response = json.loads(proc.stdout)
+    assert response["result"]["serverInfo"]["version"] == "9.8.7"
+
+
 def test_initialize_echoes_client_protocol_version(project: Path):
     init = dict(INITIALIZE)
     init["params"] = dict(INITIALIZE["params"], protocolVersion="2024-11-05")
@@ -210,6 +235,21 @@ def test_adr_status_returns_parseable_json(project: Path):
     status = json.loads(tool_text(resp))
     assert status["summary"]["total"] == 1
     assert status["summary"]["by_status"]["accepted"] == 1
+
+
+def test_tool_call_can_override_plugin_cache_root(project: Path, tmp_path: Path):
+    plugin_cache = tmp_path / "plugin-cache"
+    plugin_cache.mkdir()
+    responses, _, _ = run_session(
+        plugin_cache,
+        [
+            INITIALIZE,
+            INITIALIZED,
+            call("adr_status", {"project_root": str(project)}, 15),
+        ],
+    )
+    status = json.loads(tool_text(responses[15]))
+    assert status["summary"]["total"] == 1
 
 
 def test_adr_judge_flags_violating_diff(project: Path):

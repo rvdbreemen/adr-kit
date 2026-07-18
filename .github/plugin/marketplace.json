@@ -1,0 +1,17 @@
+{
+  "name": "rvdbreemen-adr-kit-copilot",
+  "owner": {
+    "name": "Robert van den Breemen"
+  },
+  "metadata": {
+    "description": "ADR Kit plugin for the standalone GitHub Copilot CLI"
+  },
+  "plugins": [
+    {
+      "name": "adr-kit",
+      "source": "copilot",
+      "version": "0.33.0",
+      "description": "Architecture decision workflows and a key-free MCP server for GitHub Copilot CLI"
+    }
+  ]
+}
