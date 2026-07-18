@@ -41,6 +41,9 @@ jobs:
       - name: Validate marketplace.json against schema
         run: ajv validate -s schemas/marketplace.json.schema.json -d .claude-plugin/marketplace.json --spec=draft7 -c ajv-formats
 
+      - name: Validate generated ADR graph against schema
+        run: ajv validate -s schemas/adr-index.schema.json -d docs/adr/ADR-INDEX.json --spec=draft2020 -c ajv-formats
+
       - name: Verify required files exist
         run: |
           required_files=(
@@ -57,6 +60,7 @@ jobs:
             "schemas/plugin.json.schema.json"
             "schemas/marketplace.json.schema.json"
             "schemas/adr-kit-config.schema.json"
+            "schemas/adr-index.schema.json"
             "schemas/adr-enforcement.schema.json"
             "skills/adr/SKILL.md"
             "skills/setup/SKILL.md"
@@ -75,6 +79,8 @@ jobs:
             "templates/adr-kit-guide.md"
             "templates/githooks/pre-commit"
             "bin/adr-lint"
+            "bin/adr-index"
+            "bin/adr_catalog.py"
             "bin/adr-judge"
             "bin/adr-audit"
             "bin/adr-retire"
@@ -86,6 +92,7 @@ jobs:
             "tests/test_adr_retire.py"
             "examples/ADR-template.md"
             "examples/.adr-kit.sample.json"
+            "docs/adr/ADR-INDEX.json"
             "examples/ADR-sample-003-grandfathered-legacy.md"
             "README.md"
             "INSTALL.md"

@@ -395,7 +395,8 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 - Add the implementation date in the Status line: `Accepted. Date: YYYY-MM-DD.`
 - Append the matching `Accepted` transition to `## Status History`; never rewrite an earlier entry.
 - Add a `## Related Decisions` entry to any other ADR that newly relates.
-- Refresh the generated index with `bin/adr-index docs/adr/`.
+- Refresh the generated README, compact Markdown index, and JSON graph with
+  `bin/adr-index docs/adr/`.
 - Run `bin/adr-doctor --fix-index docs/adr/` or `bin/adr-lint --strict docs/adr/` before treating the ADR set as clean.
 
 ### 4. When superseding an ADR
@@ -404,7 +405,8 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 - Reference the original in `## Related Decisions`: "Supersedes ADR-XXX (Title)".
 - Update the old ADR's Status line to `Superseded by ADR-YYY` and append that transition to `## Status History`.
 - Do NOT modify the old ADR's decision text or reasoning. Immutability is the rule.
-- Refresh `docs/adr/README.md` through `bin/adr-index docs/adr/` so both sides appear in the generated index.
+- Refresh all generated index views through `bin/adr-index docs/adr/` so both
+  sides appear in `README.md`, `ADR-INDEX.md`, and `ADR-INDEX.json`.
 
 ### 5. When amending an ADR (lighter alternative to supersession)
 
@@ -566,7 +568,7 @@ Maintain `docs/adr/README.md` as the navigation hub. Required sections:
 8. **Superseding ADRs**: how to handle changes.
 9. **Resources**: links to ADR best practices and external references.
 
-The ADR list inside the `<!-- adr-kit-index:begin -->` / `<!-- adr-kit-index:end -->` block is generated. Do not hand-edit that block. Run `bin/adr-index docs/adr/` after ADR mutations, use `bin/adr-index --check docs/adr/` in CI, and use `bin/adr-doctor --fix-index docs/adr/` when an agent starts or finishes ADR work.
+The ADR list inside the `<!-- adr-kit-index:begin -->` / `<!-- adr-kit-index:end -->` block, `ADR-INDEX.md`, and `ADR-INDEX.json` are generated from the same semantic records. Do not hand-edit them. Run `bin/adr-index docs/adr/` after ADR mutations, use `bin/adr-index --check docs/adr/` in CI, and use `bin/adr-doctor --fix-index docs/adr/` when an agent starts or finishes ADR work. Agents may explore the JSON graph to shortlist ADRs, but must read the linked Markdown record before applying a constraint.
 
 When adding a new ADR:
 
@@ -647,7 +649,8 @@ Creating a new ADR? Check these:
 - No decision maker attribution
 - Missing constraints that drove the decision
 - Modifying accepted ADRs instead of superseding
-- Hand-editing the generated README index instead of running `bin/adr-index`
+- Hand-editing a generated README, Markdown, or JSON index instead of running
+  `bin/adr-index`
 - Using jargon without defining it
 - Being superficial: not digging into the "why" behind constraints
 - Hiding negative consequences

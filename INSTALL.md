@@ -212,6 +212,13 @@ invoke `adr_context` against a scratch project or run the context skill once to
 prove that the configured Python command and packaged engine can actually
 start.
 
+After project initialization, run `python bin/adr-index docs/adr` in the
+project. This generates the compact `ADR-INDEX.md`, the versioned
+`ADR-INDEX.json` metadata and relationship graph, and the README index from the
+same ADR sources. Agents may explore the JSON graph to shortlist decisions, but
+must open the linked Markdown ADR before enforcing or citing it. Verify all
+three generated views with `python bin/adr-index --check docs/adr`.
+
 ### Known portability limitations
 
 - Generated payload drift checks normalize CRLF and LF before comparison, so

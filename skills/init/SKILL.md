@@ -178,7 +178,7 @@ The stub:
 ## ADR Kit
 
 This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architectural decisions live as ADRs in `docs/adr/`. Full guide: @.claude/adr-kit-guide.md
-Decision index: @docs/adr/ADR-INDEX.md (compact one-row-per-ADR map; regenerate with `bin/adr-index -o docs/adr/ADR-INDEX.md`).
+Decision indexes: @docs/adr/ADR-INDEX.md is the compact session map; `docs/adr/ADR-INDEX.json` is the agent metadata and relationship graph. Regenerate both with `bin/adr-index docs/adr`; open source Markdown ADRs before applying constraints.
 
 Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
 Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time (free). The Claude LLM pass for `llm_judge: true` ADRs is opt-in (enable in `docs/adr/.adr-kit.json`, or review in-session via `/adr-kit:judge`).

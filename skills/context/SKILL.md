@@ -1,6 +1,6 @@
 ---
 name: context
-description: Loads the Architecture Decision Records most relevant to a task before you implement it, so existing decisions are considered without burning context on the whole ADR set. Give it a topic (e.g. "mqtt discovery", "heap allocation", "caching") and it returns the 3-5 most relevant ADRs as readable context: title, one-line decision, file path, and relevance score. Accepted ADRs rank higher, but Proposed records can also appear in v0.33.0, so verify status in the source file. Read-only and safe to call from parallel subagents.
+description: Loads the Architecture Decision Records most relevant to a task before you implement it, so existing decisions are considered without burning context on the whole ADR set. Give it a topic (e.g. "mqtt discovery", "heap allocation", "caching") and it returns the 3-5 most relevant ADRs with lifecycle metadata, source path, decision summary, scope, declared links, and explainable relevance signals. Read-only and safe to call from parallel subagents.
 argument-hint: "[topic or task description; e.g. \"mqtt discovery\"]"
 license: MIT
 allowed-tools: [Read, Bash]
@@ -18,8 +18,11 @@ edits ADRs or code, so it is safe to call from parallel subagents.
 1. Take the topic from the argument. If none was given, ask the user for a short
    topic or task description (one phrase is enough).
 
-2. Run the bundled deterministic ranker from the project root. Request JSON so
-   you get the relevance signals, and keep the default limit of 5:
+2. If `docs/adr/ADR-INDEX.json` exists, treat it as the generated machine
+   catalog for filtering and relationship exploration. Never treat it as the
+   decision authority or edit it by hand; the source Markdown ADR remains
+   authoritative. Run the bundled deterministic ranker from the project root to
+   calculate query-specific relevance, and keep the default limit of 5:
 
    ```bash
    python <adr-kit-plugin-path>/bin/adr-context --format json --limit 5 "<topic>"
@@ -29,6 +32,8 @@ edits ADRs or code, so it is safe to call from parallel subagents.
      `docs/adr/`.
    - Use `--min-score <0-1>` to tighten or loosen the relevance cutoff
      (default `0.1`).
+   - If the JSON graph is missing or stale, continue with the ranker and report
+     `python bin/adr-index docs/adr` as the deterministic repair command.
 
 3. **If the result is an empty list (`[]`)**: tell the user plainly —
    *"No ADRs match '<topic>'; all existing ADRs may apply, or none constrain
@@ -38,9 +43,10 @@ edits ADRs or code, so it is safe to call from parallel subagents.
    readable context, not just a filename:
 
    - **`ADR-NNN — <title>`** (relevance: `<score>`)
-   - one-line summary of its semantic decision (`## Decision Outcome` for
-     MADR, `## Decision` for Nygard/canonical; paraphrase rather than dumping)
-   - file path, so the user can open the full record
+   - returned status and format;
+   - returned decision summary and matched scope;
+   - declared related ADR ids when they explain the match;
+   - file path, then `Read` that source ADR before stating a binding constraint.
 
    Order by relevance (highest first), most relevant ADR last in your message so
    it stays closest to the work that follows.

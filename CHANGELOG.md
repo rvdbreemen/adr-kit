@@ -6,6 +6,9 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Documentation
 
+- Added an agent-first ADR discovery contract: inspect the generated JSON graph
+  or call `adr-context`, use metadata and links to shortlist records, then open
+  the authoritative Markdown ADR before applying a constraint.
 - Added a prominent, client-neutral `INSTALL-AGENT.md` runbook so coding
   agents can detect, preview, install, initialize, and validate ADR Kit without
   reading the full README. Native Claude Code, Codex, and Copilot paths fall
@@ -16,6 +19,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **Versioned JSON ADR graph (TASK-30 / ADR-007).**
+  `bin/adr-index docs/adr` now generates `ADR-INDEX.json` alongside the compact
+  Markdown and README views. The timestamp-free graph exposes format-neutral
+  lifecycle metadata, bounded decision summaries, enforcement scope, evidence
+  pointers, and sorted typed relationship edges under
+  `schemas/adr-index.schema.json`.
+- **Actionable context results.** `bin/adr-context --format json` retains its
+  existing ranking fields and adds source path, lifecycle status, body format,
+  decision summary, scope, declared links, and invariant metadata.
 - **Three-platform installer contract (TASK-29).**
   `scripts/install-agent-envs.py` now validates its full source and Python
   3.10+ child runtime before client mutations, prepares a persistent
@@ -50,6 +62,9 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Changed
 
+- Index, context, and relationship tools now share one stdlib, format-aware ADR
+  catalog loader. `adr-index --check` checks all three generated views and CI
+  validates the JSON graph against its versioned schema.
 - Lint, quality, index, context, judge, related, retirement, suggestion,
   audit, lifecycle, and edit-time injection consume semantic roles across all
   supported profiles. Unknown and ambiguous hybrid records fail strict lint

@@ -77,7 +77,12 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
 "$ADR_KIT/bin/adr-context" --format json --limit 5 "$TASK_DESCRIPTION"
 ```
 
-Review the returned ADRs. If an existing ADR already covers the decision, suggest amending or superseding it instead of creating a new one. Include relevant ADR IDs in the "## Related Decisions" section of the new ADR.
+Use `docs/adr/ADR-INDEX.json` as the compact metadata and relationship catalog
+when it exists. Review the ranker's returned paths, statuses, scopes, and links,
+then open the source Markdown ADRs before applying a constraint. If an existing
+ADR already covers the decision, suggest amending or superseding it instead of
+creating a new one. Include relevant ADR IDs in the "## Related Decisions"
+section of the new ADR.
 
 ## Local Doctor Check (v0.31.0+)
 
@@ -159,7 +164,9 @@ Propose the block to the user with a clear rationale ("Declarative: the rule map
 
 ### Step 4: Write the file
 
-Use the template below. Save it to `docs/adr/ADR-XXX-kebab-case-title.md`. After writing, regenerate the generated index instead of hand-editing the sentinel-owned block:
+Use the template below. Save it to `docs/adr/ADR-XXX-kebab-case-title.md`. After
+writing, regenerate `README.md`, `ADR-INDEX.md`, and `ADR-INDEX.json` together
+instead of hand-editing any generated view:
 
 ```bash
 ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)

@@ -69,6 +69,25 @@ def test_readme_prominently_links_the_agent_install_runbook():
     assert matches[0] < 30
 
 
+def test_agent_docs_explain_json_graph_discovery_before_source_reading():
+    readme = README.read_text(encoding="utf-8")
+    install = AGENT_INSTALL.read_text(encoding="utf-8")
+    context_skill = (REPO_ROOT / "skills" / "context" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert readme.index("ADR-INDEX.json") < readme.index("## Why")
+    for text in (readme, install, context_skill):
+        assert "ADR-INDEX.json" in text
+        assert "adr-context" in text
+        assert "Markdown" in text
+    assert "Never hand-edit" in readme
+    assert "must never be hand-edited" in install
+    assert "Never treat it as the decision authority" in re.sub(
+        r"\s+", " ", context_skill
+    )
+
+
 def test_agent_install_runbook_covers_native_and_portable_paths():
     text = AGENT_INSTALL.read_text(encoding="utf-8")
     required = [

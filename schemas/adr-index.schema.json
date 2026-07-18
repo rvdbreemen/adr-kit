@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rvdbreemen/adr-kit/schemas/adr-index.schema.json",
+  "title": "ADR Kit generated graph index",
+  "description": "Versioned machine-readable projection of Markdown ADR metadata and declared relationships.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "adrs",
+    "relationships"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "adrs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/adr"
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relationship"
+      }
+    }
+  },
+  "$defs": {
+    "adrId": {
+      "type": "string",
+      "pattern": "^ADR-[0-9]{3,4}$"
+    },
+    "nullableAdrId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/adrId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "adr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "path",
+        "format",
+        "status",
+        "date",
+        "decision_summary",
+        "scope",
+        "metadata"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/adrId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source Markdown path relative to ADR-INDEX.json."
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "madr",
+            "nygard",
+            "canonical",
+            "hybrid",
+            "unknown"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Proposed",
+            "Accepted",
+            "Deprecated",
+            "Superseded",
+            "Amended",
+            "Rejected",
+            "Unknown"
+          ]
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "decision_summary": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path_globs"
+          ],
+          "properties": {
+            "path_globs": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "binding",
+            "gate",
+            "documents_shipped",
+            "verified_in",
+            "supersedes",
+            "superseded_by"
+          ],
+          "properties": {
+            "binding": {
+              "type": "boolean"
+            },
+            "gate": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "documents_shipped": {
+              "type": "boolean"
+            },
+            "verified_in": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "supersedes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/adrId"
+              }
+            },
+            "superseded_by": {
+              "$ref": "#/$defs/nullableAdrId"
+            }
+          }
+        }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "target",
+        "type",
+        "resolved"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/adrId"
+        },
+        "target": {
+          "$ref": "#/$defs/adrId"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "related",
+            "supersedes",
+            "superseded-by",
+            "amended-by"
+          ]
+        },
+        "resolved": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

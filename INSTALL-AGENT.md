@@ -24,6 +24,21 @@ custom profile from an arbitrary template filename or generate a replacement
 when a catalog template reports `available: false`; repair or reinstall ADR Kit
 first.
 
+After initialization, agents should use the generated machine index before
+opening the whole ADR set:
+
+```bash
+python <absolute-adr-kit-checkout>/bin/adr-index <absolute-target-project>/docs/adr
+python <absolute-adr-kit-checkout>/bin/adr-index --check <absolute-target-project>/docs/adr
+python <absolute-adr-kit-checkout>/bin/adr-context --format json --adr-dir <absolute-target-project>/docs/adr "<current task>"
+```
+
+`docs/adr/ADR-INDEX.json` is a versioned node-and-edge catalog with lifecycle
+metadata, decision summaries, enforcement scope, and declared ADR links.
+Agents use it to shortlist records and then read the linked Markdown ADRs;
+Markdown remains authoritative. `ADR-INDEX.md`, `ADR-INDEX.json`, and the
+generated README block must never be hand-edited.
+
 ## Safety and prerequisites
 
 - Work from a pinned release tag or a reviewed checkout.
@@ -222,7 +237,7 @@ python <absolute-adr-kit-checkout>/bin/adr profiles --format json
 python <absolute-adr-kit-checkout>/bin/adr-context --adr-dir <absolute-target-project>/docs/adr --format json "current task"
 python <absolute-adr-kit-checkout>/bin/adr-migrate --plan <absolute-target-project>/docs/adr
 python <absolute-adr-kit-checkout>/bin/adr-lint --strict <absolute-target-project>/docs/adr
-python <absolute-adr-kit-checkout>/bin/adr-index <absolute-target-project>/docs/adr --check
+python <absolute-adr-kit-checkout>/bin/adr-index --check <absolute-target-project>/docs/adr
 python <absolute-adr-kit-checkout>/bin/adr-doctor <absolute-target-project>/docs/adr
 ```
 

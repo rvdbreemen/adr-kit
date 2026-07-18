@@ -290,6 +290,19 @@ def test_lint_index_context_and_judge_read_every_profile(tmp_path):
     rows = json.loads(index.stdout)
     assert len(rows) == 3
     assert all(row["decision"] for row in rows)
+    assert {row["format"] for row in rows} == set(SUPPORTED_PROFILES)
+
+    graph_result = run(
+        str(BIN / "adr-index"),
+        "--adr-dir",
+        str(adr_dir),
+        "--format",
+        "graph",
+    )
+    graph = json.loads(graph_result.stdout)
+    assert graph["schema_version"] == 1
+    assert {node["format"] for node in graph["adrs"]} == set(SUPPORTED_PROFILES)
+    assert all(node["decision_summary"] for node in graph["adrs"])
 
     context = run(
         str(BIN / "adr-context"),

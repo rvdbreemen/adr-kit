@@ -6,9 +6,10 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 
 | ADR | Status | Scope | Decision |
 | --- | --- | --- | --- |
-| ADR-001 | Accepted | - | Make the per-commit LLM pass opt-in, add a concurrency guard, and ask |
-| ADR-002 | Accepted | - | Implement the ADR Guardian as a dumb SessionStart detector plus in-session smart |
+| ADR-001 | Accepted | - | Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init: |
+| ADR-002 | Accepted | - | Implement the ADR Guardian as a dumb SessionStart detector plus in-session smart sweep, with two-tier cadence and no... |
 | ADR-003 | Superseded | - | Keep the canonical seven-section template as the only storage format. |
-| ADR-004 | Accepted | - | Adopt a layered ADR context injection model with three fail-open injection tiers |
-| ADR-005 | Accepted | `schemas/adr-kit-config.schema.json` | Chosen option: **support selectable `madr`, `nygard`, and `canonical` body |
-| ADR-006 | Proposed | - | Chosen option: **prepare a persistent platform-local marketplace from validated |
+| ADR-004 | Accepted | - | Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo... |
+| ADR-005 | Accepted | `schemas/adr-kit-config.schema.json` | Chosen option: support selectable madr, nygard, and canonical body profiles through one semantic format registry, and... |
+| ADR-006 | Proposed | - | Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository... |
+| ADR-007 | Proposed | `docs/adr/ADR-INDEX.json` | Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be... |
