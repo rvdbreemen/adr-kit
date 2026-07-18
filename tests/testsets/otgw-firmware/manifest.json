@@ -1,0 +1,883 @@
+{
+  "schema_version": 1,
+  "corpus": "otgw-firmware-adrs",
+  "captured_on": "2026-07-18",
+  "license": "GPL-3.0-only",
+  "source": {
+    "repository_url": "https://github.com/rvdbreemen/OTGW-firmware.git",
+    "revision": "9eaf9618bd7931ac30270b393e8d12b923458e4b",
+    "adr_tree_revision": "b7b7ad71b69b85e4b0c6080148627293dd51695c",
+    "path": "docs/adr",
+    "numbered_adrs_clean": true
+  },
+  "baseline": {
+    "file_count": 169,
+    "total_bytes": 1946079,
+    "migration_plan": {
+      "format_counts": {
+        "canonical": 85,
+        "nygard": 11,
+        "unknown": 73
+      },
+      "action_counts": {
+        "deterministic-preview": 81,
+        "guided-migration": 88
+      },
+      "deterministic": 81,
+      "guided": 88,
+      "notices": 169
+    },
+    "metadata_dry_run": {
+      "exit_code": 2,
+      "changed": 154,
+      "failed": 15
+    }
+  },
+  "files": [
+    {
+      "path": "adrs/ADR-001-esp8266-platform-selection.md",
+      "bytes": 5079,
+      "sha256": "d3136c4dee971525eb1791766c1b9e55dcb3f245234911cecf40be8f82ec4c0d"
+    },
+    {
+      "path": "adrs/ADR-002-modular-ino-architecture.md",
+      "bytes": 6846,
+      "sha256": "511c9dce9da9c11f05707fc0dc8e067b206ea11dfaa2e84338dd7490e84f6e32"
+    },
+    {
+      "path": "adrs/ADR-003-http-only-no-https.md",
+      "bytes": 6249,
+      "sha256": "88af019771a2291aa51df322c208521632d31e50b96c23585ee41a6d57a09ab6"
+    },
+    {
+      "path": "adrs/ADR-004-static-buffer-allocation.md",
+      "bytes": 8354,
+      "sha256": "d03a0938601d32b886389546c45c740c2ddc13ce723693e4db2100be8e60103b"
+    },
+    {
+      "path": "adrs/ADR-005-websocket-real-time-streaming.md",
+      "bytes": 8012,
+      "sha256": "674427c522096c0b5f5866078cd6b0e6584c5dab831750344a443ee7ca7fab1f"
+    },
+    {
+      "path": "adrs/ADR-006-mqtt-integration-pattern.md",
+      "bytes": 12786,
+      "sha256": "51f7fd45d978e1c1b86ec7162042d262ff210be6067576845806b1496cacbaee"
+    },
+    {
+      "path": "adrs/ADR-007-timer-based-task-scheduling.md",
+      "bytes": 8525,
+      "sha256": "8c7f5e88396f7c6191b835e2c805117cf64a19681855aa54dfdc3ff14ad38920"
+    },
+    {
+      "path": "adrs/ADR-008-littlefs-configuration-persistence.md",
+      "bytes": 9726,
+      "sha256": "ebd6fa42db92f7e22b678d824e6688517e1cc4b1655efabe4ad10d4ed7c36280"
+    },
+    {
+      "path": "adrs/ADR-009-progmem-string-literals.md",
+      "bytes": 8348,
+      "sha256": "4574f0f002e82772381c2f38dde262eec9e548ccd84c5048beb7c40de43c1cc1"
+    },
+    {
+      "path": "adrs/ADR-010-multiple-concurrent-network-services.md",
+      "bytes": 10128,
+      "sha256": "d090ee5df3935322e239cdf679087c0f27eab19d817e8c6303ef44b197ed8d4c"
+    },
+    {
+      "path": "adrs/ADR-011-external-hardware-watchdog.md",
+      "bytes": 14561,
+      "sha256": "7d3a40cf388d90553dc469e7854eb2ba349fe5a87ffb6025520d5f294179575c"
+    },
+    {
+      "path": "adrs/ADR-012-pic-firmware-upgrade-via-web.md",
+      "bytes": 9016,
+      "sha256": "77d2ae279ce4e2533489e05ae2b4f872dba1a2f1c66ead32a3f40ba8618e2d7b"
+    },
+    {
+      "path": "adrs/ADR-013-arduino-framework-over-esp-idf.md",
+      "bytes": 7527,
+      "sha256": "87481a94d62fc4c0cd2bb04f08dc81b8cc06f7005b3153ef007fc57969a9c2da"
+    },
+    {
+      "path": "adrs/ADR-014-dual-build-system.md",
+      "bytes": 7986,
+      "sha256": "4ec0ac65c4f692e265071e82bf8d09332fdab3668b1c66812151b066569ec338"
+    },
+    {
+      "path": "adrs/ADR-015-ntp-acetime-time-management.md",
+      "bytes": 9973,
+      "sha256": "116994c604cd2e934226db39ac3e9489367a58ab41417eaca83722b3b0dde61d"
+    },
+    {
+      "path": "adrs/ADR-016-opentherm-command-queue.md",
+      "bytes": 11169,
+      "sha256": "36ac95fde2725052c7749271b914b6537f5923443eed3736cd80da7f2997b384"
+    },
+    {
+      "path": "adrs/ADR-017-wifimanager-initial-configuration.md",
+      "bytes": 10001,
+      "sha256": "a1bf9d0b015ffa7e50094cd675679b09a72eed52530b1818da58dcf141b8b397"
+    },
+    {
+      "path": "adrs/ADR-018-arduinojson-data-interchange.md",
+      "bytes": 10996,
+      "sha256": "bb36b982f1301aed5cfde926890233af99208530908962a7b4116e301fe85046"
+    },
+    {
+      "path": "adrs/ADR-019-rest-api-versioning-strategy.md",
+      "bytes": 10281,
+      "sha256": "ffbe6cadb47fa5028907ce82371dc358dbbebfeaa43bf21731bbadc88a3b8d11"
+    },
+    {
+      "path": "adrs/ADR-020-dallas-ds18b20-sensor-integration.md",
+      "bytes": 16157,
+      "sha256": "1325ae6dea1b4317753efcf729a78cb6ebd2f918ddb40bcf4470b47e8ce779e5"
+    },
+    {
+      "path": "adrs/ADR-021-s0-pulse-counter-interrupt-architecture.md",
+      "bytes": 12002,
+      "sha256": "b17bb4fb6ac4a231563765d30f18b49117ae8f6445e950b914f0d72cb82ec7ec"
+    },
+    {
+      "path": "adrs/ADR-022-gpio-output-bit-flag-control.md",
+      "bytes": 10046,
+      "sha256": "06c4c25922a785bf5bc0f71fe93af3bf3cbbfcc86d913cf494ed9cb5939e3892"
+    },
+    {
+      "path": "adrs/ADR-023-filesystem-explorer-http-api.md",
+      "bytes": 15006,
+      "sha256": "fddef63001fd94ac02fca1da388bf085314d4406aacd5ea219ba840d0ace0b84"
+    },
+    {
+      "path": "adrs/ADR-024-debug-telnet-command-console.md",
+      "bytes": 14729,
+      "sha256": "2e6ab3fd012f25ed8aab716c65121ede7c2bf962381a78ff27a6f21600ff6088"
+    },
+    {
+      "path": "adrs/ADR-025-safari-websocket-connection-management.md",
+      "bytes": 9695,
+      "sha256": "e371a80124fcef0560a96d6657c24e25e685b9af6028df17378d02a31fc30802"
+    },
+    {
+      "path": "adrs/ADR-026-conditional-javascript-cache-busting.md",
+      "bytes": 12662,
+      "sha256": "0e996b73ed9cee80afe447a9a22be26a9f7e77fed5074a542ba867c9faec4043"
+    },
+    {
+      "path": "adrs/ADR-027-version-mismatch-warning-system.md",
+      "bytes": 12762,
+      "sha256": "d4470898249253954a067df9a7c0a225c087928db5e0ec116ad7d160e469b7e6"
+    },
+    {
+      "path": "adrs/ADR-028-file-streaming-over-loading.md",
+      "bytes": 11249,
+      "sha256": "29f8a2df3c272b34113140bc00db13828666d51ae5b173fd5a32aac9a97d46a0"
+    },
+    {
+      "path": "adrs/ADR-029-simple-xhr-ota-flash.md",
+      "bytes": 30776,
+      "sha256": "2b5887caadef97d5b0cc10954e0d1323a11fe7035ed5547ac9c848fa9c5099d5"
+    },
+    {
+      "path": "adrs/ADR-030-heap-memory-monitoring-emergency-recovery.md",
+      "bytes": 13813,
+      "sha256": "892ed20c71e292ad7c80ec72f02536aabec4930a37e3df887b696e465b6235d4"
+    },
+    {
+      "path": "adrs/ADR-031-two-microcontroller-coordination-architecture.md",
+      "bytes": 15226,
+      "sha256": "1139e162e4c404dc89f0060c9ca4f5b562473647f1759fa80ec9c16023c2b986"
+    },
+    {
+      "path": "adrs/ADR-032-no-authentication-local-network-security.md",
+      "bytes": 14591,
+      "sha256": "0f1ab3e052bc1876983c8733713fdbf9cdf881edc7ee30b1f2d6319ca298f3ff"
+    },
+    {
+      "path": "adrs/ADR-033-dallas-sensor-custom-labels-graph-visualization.md",
+      "bytes": 9417,
+      "sha256": "08f5a3fb6a090b3fb2027a88d876b2f3a1d6dfb4ce6524c429c252a6aed9e254"
+    },
+    {
+      "path": "adrs/ADR-034-non-blocking-modal-dialogs.md",
+      "bytes": 11676,
+      "sha256": "900fb55a1c1f9c6d47bf80c4d3f30a258cfacd196af35ba0c3d99e6b7c4b420b"
+    },
+    {
+      "path": "adrs/ADR-035-restful-api-compliance-strategy.md",
+      "bytes": 7366,
+      "sha256": "109392577f79b179298c8509e3ff555b53c5d64c21606f993d5eba6434f283cf"
+    },
+    {
+      "path": "adrs/ADR-036-boot-sequence-ordering.md",
+      "bytes": 9011,
+      "sha256": "2646e7feab3f9eef1bb1e02e2346f634b2436a151b794eeb29cd8107c5d798ea"
+    },
+    {
+      "path": "adrs/ADR-037-gateway-mode-detection.md",
+      "bytes": 7239,
+      "sha256": "40d7c22f2c248135c4f6fefebe46175e72bc7d34290c8168cd95dd82e932e416"
+    },
+    {
+      "path": "adrs/ADR-038-opentherm-data-flow-pipeline.md",
+      "bytes": 10561,
+      "sha256": "06a02e95d0802ec40aa4f99451de0631ec37a146a892bd92de141f18c92a0b4a"
+    },
+    {
+      "path": "adrs/ADR-039-otgraph-real-time-charting.md",
+      "bytes": 9096,
+      "sha256": "23a2f19d952bce55ac455224ef99f555b25e96d20c64ccda887b52a2be33b0c1"
+    },
+    {
+      "path": "adrs/ADR-040-mqtt-source-specific-topics.md",
+      "bytes": 8395,
+      "sha256": "982dca46f0b41f563ae3ff6e2b570d2df048c26a3b5918ed4d4eddbe41682af4"
+    },
+    {
+      "path": "adrs/ADR-041-jit-ha-discovery.md",
+      "bytes": 11426,
+      "sha256": "a1683c759bfb4206e3d0062585c6bbfd941be51b1c632c387a119802c61fff93"
+    },
+    {
+      "path": "adrs/ADR-042-streaming-json-no-arduinojson.md",
+      "bytes": 8169,
+      "sha256": "524f148ccd98844cd3627a2506a757e9b7b069400906b1b8e8d036c224693218"
+    },
+    {
+      "path": "adrs/ADR-043-reset-pattern-wifi-recovery.md",
+      "bytes": 3808,
+      "sha256": "ab0ea35ab77c79b07846b0c91dd97a2852c9dffbb290434b165b881dee918cce"
+    },
+    {
+      "path": "adrs/ADR-044-global-state-header-definition-pattern.md",
+      "bytes": 6363,
+      "sha256": "0a0ab31a0a66369710c86e301b08c24387bc632f54a6719332011ea0d5882b53"
+    },
+    {
+      "path": "adrs/ADR-045-ps1-print-summary-parsing.md",
+      "bytes": 8049,
+      "sha256": "7070717837170f7c84c7ed6949875804db3d2a1c8544c2467283973b9e05933d"
+    },
+    {
+      "path": "adrs/ADR-046-ps1-summary-translation-shared-publish-helpers.md",
+      "bytes": 5771,
+      "sha256": "930d705320a9ef6801b80c67edc5a178da430337e692876288b74f9003e5c7f3"
+    },
+    {
+      "path": "adrs/ADR-047-nonblocking-wifi-reconnect.md",
+      "bytes": 7374,
+      "sha256": "5416c489ea8552ed3e2835c0b6139d3a7448509ae2378bafa459008d59f4c579"
+    },
+    {
+      "path": "adrs/ADR-048-nonblocking-webhook-state-machine.md",
+      "bytes": 7252,
+      "sha256": "5bf036616a10640884cc27aa99b51d7496ebca1efc033dcb3c9059935a58f751"
+    },
+    {
+      "path": "adrs/ADR-049-string-prohibition-protocol-paths.md",
+      "bytes": 3800,
+      "sha256": "34089b67a590df58648232896698e637493faf65b87fe4dd657ccd7001c93819"
+    },
+    {
+      "path": "adrs/ADR-050-centralized-api-route-dispatch.md",
+      "bytes": 4888,
+      "sha256": "ff72781eea544db5b012bf44360b9fd5e7b5899740e914b20262f0cc2d881e06"
+    },
+    {
+      "path": "adrs/ADR-051-dual-encapsulating-structs.md",
+      "bytes": 5600,
+      "sha256": "18fcfaea39ead09bf20119c3e241e6d5bf9c18b1670801ac8d0dfa237b071619"
+    },
+    {
+      "path": "adrs/ADR-052-mqtt-publish-eligibility-contract.md",
+      "bytes": 9414,
+      "sha256": "28b8c7100cee653251eb5acb0c707f890b67c921dee345f707c566ca3e018ed2"
+    },
+    {
+      "path": "adrs/ADR-053-large-feature-buffer-static-allocation.md",
+      "bytes": 15721,
+      "sha256": "3a84cecead098f7b308481c55e618ed0ca6ccbaab9336acdcf0986f426a4538b"
+    },
+    {
+      "path": "adrs/ADR-054-optional-http-basic-auth.md",
+      "bytes": 6272,
+      "sha256": "385fba0de088bf471acfa74e52c5d728a14cbecdba263e4b593f9f9257bf37f9"
+    },
+    {
+      "path": "adrs/ADR-055-webhook-outbound-http-integration.md",
+      "bytes": 7852,
+      "sha256": "4331bcee4ef5b8f735d92424177d738120797717a18c596697d273742792495c"
+    },
+    {
+      "path": "adrs/ADR-056-protected-admin-endpoint-security-and-secret-handling-contract.md",
+      "bytes": 9172,
+      "sha256": "6e3d2b0f43adff17b6623a858828482a6a552796229ed0ba6d0ea455b85606da"
+    },
+    {
+      "path": "adrs/ADR-057-webhook-delivery-retry-and-protected-test-endpoint-policy.md",
+      "bytes": 8287,
+      "sha256": "7d87d7a7756e27571d530098bdaf8913d1e971a15893bce714c8baf1ccf0f785"
+    },
+    {
+      "path": "adrs/ADR-058-nonblocking-pic-command-response.md",
+      "bytes": 4274,
+      "sha256": "6631e2b3101d73a0f168d4552023cfe7ee9bfdbc7a151ea2b49ab86fe5f0fd6b"
+    },
+    {
+      "path": "adrs/ADR-059-ser2net-queue-awareness.md",
+      "bytes": 5082,
+      "sha256": "24ef0995da165ab6e027bba997dc007bea75b686f30ddd4207a0d199fa55bcf2"
+    },
+    {
+      "path": "adrs/ADR-060-pic-availability-guard-pattern.md",
+      "bytes": 7554,
+      "sha256": "b0fed4c136cfab2f8e7409e299b79d88070725a0062604bb58c1d5c29b81c3fe"
+    },
+    {
+      "path": "adrs/ADR-061-unified-esp8266-esp32-platform-abstraction.md",
+      "bytes": 5863,
+      "sha256": "5d824468c23ef8c4d7359a5638b0dccb8f03f32f3a34b558ac73bdac22e8e06b"
+    },
+    {
+      "path": "adrs/ADR-062-retained-discovery-verification.md",
+      "bytes": 10444,
+      "sha256": "b2706396969fae154eaca9554c2e4dc816b9a47a2a73bef6ac3e0bed82d708c0"
+    },
+    {
+      "path": "adrs/ADR-063-otgw32-hardware-support.md",
+      "bytes": 6920,
+      "sha256": "c8051f93622a5d69798100f130ba37f9cebb73d2b07b4ce7fc58f1e6497578f2"
+    },
+    {
+      "path": "adrs/ADR-064-ot-direct-operating-mode-architecture.md",
+      "bytes": 5648,
+      "sha256": "37d20c6afca48a4eedbc4441644992353afbaf7cd395346903014e198cb8291c"
+    },
+    {
+      "path": "adrs/ADR-065-otgw-pic-mqtt-subtree.md",
+      "bytes": 9478,
+      "sha256": "4dc2a07adaedb3f80cb8bc27f6c9685c0f994a8e503d0fdd82e9a28695f40922"
+    },
+    {
+      "path": "adrs/ADR-066-thermostat-auto-detection-master-mode.md",
+      "bytes": 6115,
+      "sha256": "8d459d7ab255d7b9ac04fbe4bae005bcdb0b7cdeeed479c33317785068de0bed"
+    },
+    {
+      "path": "adrs/ADR-067-ssd1306ascii-oled-library.md",
+      "bytes": 6120,
+      "sha256": "8f5be86a6f8fc64050fd43770f5f126a4d53617475741f0e14d47595563f026d"
+    },
+    {
+      "path": "adrs/ADR-068-ot-direct-schedule-tuning-constants.md",
+      "bytes": 10231,
+      "sha256": "c7dd82ed04cb6a3ccc94022f2bbcb7e61c59f05022e16575a96001148dcc10f8"
+    },
+    {
+      "path": "adrs/ADR-069-sat-pid-v3-implementation.md",
+      "bytes": 9183,
+      "sha256": "bca41e645ff60fe33ba87e9741447248e719326b75ec6864f0294459ed3065cd"
+    },
+    {
+      "path": "adrs/ADR-070-sat-memory-allocation-strategy.md",
+      "bytes": 7211,
+      "sha256": "89e48bc0b0da1fcac55f2b13f8ee4b2d27ea8ac474cece9e3b09869d060e97bf"
+    },
+    {
+      "path": "adrs/ADR-071-sat-heating-curve-algorithm.md",
+      "bytes": 9230,
+      "sha256": "bc09fe1a9fd055a98f29e74713f8a9575c7f62dfa752fbc6b625f2d8ff78096c"
+    },
+    {
+      "path": "adrs/ADR-072-sat-platform-compatibility-layer.md",
+      "bytes": 8126,
+      "sha256": "78d00c0633232bdafec17d422b6391d47f720cc01a4e6580f22d918bc3851694"
+    },
+    {
+      "path": "adrs/ADR-073-sat-mqtt-topic-structure.md",
+      "bytes": 10674,
+      "sha256": "c4b333254581b3a15a4415529e6464afb0a4dab31398bbbb5fa72e870ed38122"
+    },
+    {
+      "path": "adrs/ADR-074-adr-audit-sat-integration-phase.md",
+      "bytes": 6983,
+      "sha256": "88a396d3a9c455e78f804bee6329ebdcaba1fb41dfe558377fc30fe2d210b1ec"
+    },
+    {
+      "path": "adrs/ADR-075-wifi-reconnect-timeout-tuning.md",
+      "bytes": 2819,
+      "sha256": "b67217634500c1ef85a6063a3085ed94ee8e6699911638f94e18a9a4ccb478f4"
+    },
+    {
+      "path": "adrs/ADR-076-sat-opv-calibration.md",
+      "bytes": 7268,
+      "sha256": "78e72f9c1fb2c170ba2d7093e75b2f307a9aeda9b6f226f912dcd69fb00f9d26"
+    },
+    {
+      "path": "adrs/ADR-077-streaming-mqtt-ha-discovery-architecture.md",
+      "bytes": 11299,
+      "sha256": "e03c0e95184b874d21c84c5a800063bce0ee59675bb8354c5156a3fb81d68449"
+    },
+    {
+      "path": "adrs/ADR-078-mqtt-subcommand-dispatch-tables.md",
+      "bytes": 7144,
+      "sha256": "202dbdaefdae46fff9cf3ff2153161b065236daf5f99abf68e95834f2fb974aa"
+    },
+    {
+      "path": "adrs/ADR-079-per-component-state-settings-headers.md",
+      "bytes": 9055,
+      "sha256": "b891152267f6d6994bb115098212b914e7e50efc51fc03e447fd3c0cdad529a2"
+    },
+    {
+      "path": "adrs/ADR-080-binding-adr-rules-must-have-a-ci-gate.md",
+      "bytes": 9299,
+      "sha256": "ef13e3e71b3c43cff97313f29f8846647a67589ab7175e9337b9abae22d2d360"
+    },
+    {
+      "path": "adrs/ADR-081-types-merge-into-stuff-when-both-exist.md",
+      "bytes": 8580,
+      "sha256": "ba599de2ba7097b73f44a65849cb4fa7a0dbe05f4ad6eb9441f5f8dc5f82e85e"
+    },
+    {
+      "path": "adrs/ADR-082-esp8266-arduino-core-2.7.4-lts-pin.md",
+      "bytes": 9599,
+      "sha256": "9b0b181ef3ae1597df023e7383bf7bdd2d4025ad63ab6067a7b72dce81d51afe"
+    },
+    {
+      "path": "adrs/ADR-083-platformio-as-primary-build-system.md",
+      "bytes": 8427,
+      "sha256": "dfa19fd7a76f01a2e688bfde6eee3480f9f75e14bbf49b3aa8dd6ccf7214b6e5"
+    },
+    {
+      "path": "adrs/ADR-084-generic-ot-bus-state-topics.md",
+      "bytes": 13257,
+      "sha256": "86f5de99546df88ae8b2fc3cb4c3954e4060f80749a578614c3bb1ad475a2365"
+    },
+    {
+      "path": "adrs/ADR-085-sat-smart-autotune-thermostat-integration.md",
+      "bytes": 6740,
+      "sha256": "a2bdad7b637b764c3a1523dc6877c89929618871850de719e1400bf60191e5d7"
+    },
+    {
+      "path": "adrs/ADR-086-time-boundary-single-caller-contract.md",
+      "bytes": 8322,
+      "sha256": "62fb039bf98fd8798169c1096090fa87c3e06c027559e430e848cb909511bbac"
+    },
+    {
+      "path": "adrs/ADR-087-frame-bridge-pattern.md",
+      "bytes": 4880,
+      "sha256": "c02a67e1f9074bc27501a744afb94be6db0514c07df9b717307fb3fadb374a96"
+    },
+    {
+      "path": "adrs/ADR-088-mqtt-status-burst-windowing-and-cooldown.md",
+      "bytes": 11207,
+      "sha256": "65a165f9087c755a8c1b51f56f8c3d469c9c645fe305c09e0565420a0c9b8dc5"
+    },
+    {
+      "path": "adrs/ADR-089-heap-tier-machine-contract.md",
+      "bytes": 13904,
+      "sha256": "b8f6abf0efa3a95f18a6b182fac18c0949113fdce33548ac3fde4fd80a2a6eac"
+    },
+    {
+      "path": "adrs/ADR-090-re-entrancy-guard-pattern-shared-scratch-buffers.md",
+      "bytes": 11900,
+      "sha256": "d80819014d49d5153ff2c05a4dfdc0827a094ebe7f30905463e8e77f0b5d21ca"
+    },
+    {
+      "path": "adrs/ADR-091-design-system-class-drift-gated-by-evaluate-py.md",
+      "bytes": 3996,
+      "sha256": "f8e490ec3154c69888f6bc45c476daf116f62086fe69f69929baa99d85732cfa"
+    },
+    {
+      "path": "adrs/ADR-092-adopt-nimble-arduino-over-bluedroid-for-sat-ble-scanner.md",
+      "bytes": 8311,
+      "sha256": "9db07d1a870ce68e32d78ee42ca6f3db926eba7ad97753979299c54663c3c949"
+    },
+    {
+      "path": "adrs/ADR-093-ha-discovery-retained-config-orphan-cleanup.md",
+      "bytes": 11723,
+      "sha256": "edfc4bda17527d649265440cd7965e22661c7fe714ef3924d3ec4ee48d05528c"
+    },
+    {
+      "path": "adrs/ADR-094-ha-discovery-state-reconciliation-on-ota-upgrade.md",
+      "bytes": 28656,
+      "sha256": "8656cdcd209713423b5497bbb57ac3b57c7db166d7146f05e70b70b761a84ed3"
+    },
+    {
+      "path": "adrs/ADR-095-bseparatesources-mutually-exclusive-base-and-source-variants.md",
+      "bytes": 23321,
+      "sha256": "d899e8a9d619448c7043f127a9ec35e1a8855e9decb6b76e578ec2158d12d2aa"
+    },
+    {
+      "path": "adrs/ADR-096-mqtt-source-topic-worldview-semantics.md",
+      "bytes": 27317,
+      "sha256": "884bd5fbadc82942bc1fd8a0dbf1eab15727b1a9c260b035236c2713e7ae7e58"
+    },
+    {
+      "path": "adrs/ADR-097-mqtt-publish-gating-by-source-and-slave-echo.md",
+      "bytes": 15779,
+      "sha256": "c87491bc66c8c4c932816c7869625803362e821a786d50219bb3298ff8bb7025"
+    },
+    {
+      "path": "adrs/ADR-098-mqtt-discovery-topic-sibling-suffix-shape.md",
+      "bytes": 13963,
+      "sha256": "17d3056e061f84860d4825aee1ea2ff5ad166ff087c7443be5d21fc5ee6ffb93"
+    },
+    {
+      "path": "adrs/ADR-099-ha-discovery-friendly-name-format.md",
+      "bytes": 9839,
+      "sha256": "6eccfb9241f5995b309426ea6e55b4e4ec93f9666c3b99c981a5095f7f98ac40"
+    },
+    {
+      "path": "adrs/ADR-100-jit-ha-discovery-smart-reconnect.md",
+      "bytes": 6213,
+      "sha256": "c59759cf108c62f689660fe48795ce73d81b65ebc70d3c987506f65a0872d25d"
+    },
+    {
+      "path": "adrs/ADR-101-flat-per-value-mqtt-topics-over-aggregated-json-payloads.md",
+      "bytes": 9544,
+      "sha256": "34fae373dc21728ef139d650242e54e30225312ab85bdacece3b2d0642b74f6b"
+    },
+    {
+      "path": "adrs/ADR-102-ha-availability-reflects-mqtt-link-not-ot-bus.md",
+      "bytes": 7919,
+      "sha256": "8e50f11da3db9c88a058ddc617fef193fb7f7e92260c9264988b5e78829a46cd"
+    },
+    {
+      "path": "adrs/ADR-103-mqtt-source-topic-proxy-answer-routing.md",
+      "bytes": 12853,
+      "sha256": "3d87a21c008270272194925d0eb0d2ef4adc542e78b2e58d2c02799e735350a8"
+    },
+    {
+      "path": "adrs/ADR-104-mqtt-status-fanout-drop-global-rate-gate.md",
+      "bytes": 18247,
+      "sha256": "6af48aa5707e5d588b0b3c26c0fb0408f036cb12581484ef3aca58c127b00297"
+    },
+    {
+      "path": "adrs/ADR-105-mqtt-ha-core-capability-flag-aliases.md",
+      "bytes": 34140,
+      "sha256": "6cf186b0767c0d90086312ea3104e565f65a7332173cf0d40a4a047b68b517a8"
+    },
+    {
+      "path": "adrs/ADR-106-mqtt-topic-naming-mode-new-default-legacy-toggle.md",
+      "bytes": 24675,
+      "sha256": "92f013a855c4e0039220a2d8c9795b29ff220c7bc4ad70c6c09a3ea8c34779b7"
+    },
+    {
+      "path": "adrs/ADR-107-emergency-heap-recovery-actions.md",
+      "bytes": 10439,
+      "sha256": "b1855b9ec4ac879ea338ad0bad10c47cdb2d425b46a1b17ed720d7ab2f0f6d32"
+    },
+    {
+      "path": "adrs/ADR-108-mqtt-connect-socket-timeout-as-accepted-sync-blocker.md",
+      "bytes": 8149,
+      "sha256": "43483ba037021163bfcdadc4a57d8fd5c22f8dd65d61abb400d9b63d288b3c4b"
+    },
+    {
+      "path": "adrs/ADR-109-esp32-rest-response-coalescing-buffer.md",
+      "bytes": 4959,
+      "sha256": "e89dd36a459d24e04f56ccde56b0e2afd7865366f197efe6c2424c6feb8fd1f5"
+    },
+    {
+      "path": "adrs/ADR-110-sat-pv-surplus-setpoint-boost.md",
+      "bytes": 10635,
+      "sha256": "3e50690aeb28eee590638e5a1ced17d582c96e8b20a3291a4d1bb1883f0977c4"
+    },
+    {
+      "path": "adrs/ADR-111-sat-mqtt-publish-on-change-and-jittered-heartbeat.md",
+      "bytes": 18294,
+      "sha256": "69d60239a9ab6f30de1a92bbba2edf0cabd859a344cca191e4d480eab9c78be5"
+    },
+    {
+      "path": "adrs/ADR-112-pure-jit-mqtt-discovery.md",
+      "bytes": 6748,
+      "sha256": "9203eec5e70f39a6355f0373c8f6a16f1df672f2c44f300aacc7458a7799d0ea"
+    },
+    {
+      "path": "adrs/ADR-113-hardware-type-codepath-selection-contract.md",
+      "bytes": 8483,
+      "sha256": "587abbd411dc52f3d10f9aa274859d758e59de096ebb80831158a0c9dd9961ec"
+    },
+    {
+      "path": "adrs/ADR-114-oled-runtime-detection-decoupled-from-board-flag.md",
+      "bytes": 7083,
+      "sha256": "15bcfd27a5785dc023dc13ce61516afc5d172d122975679e85c944f92695af6e"
+    },
+    {
+      "path": "adrs/ADR-115-per-board-constants-in-boards-h.md",
+      "bytes": 7721,
+      "sha256": "fb3c450304bdb308a5efde799d995ac39ad07d90688a4691e1bce7993ec0a37f"
+    },
+    {
+      "path": "adrs/ADR-116-mqtt-on-change-publishing-default.md",
+      "bytes": 11330,
+      "sha256": "fb53cb17acaba5c4f955c97ad8492c686c58e9338d85066192329da5531b6613"
+    },
+    {
+      "path": "adrs/ADR-117-sat-simulation-contract.md",
+      "bytes": 12146,
+      "sha256": "39796d92576b6afca54046c4474c795104f16ddf51ac50495b29125904928619"
+    },
+    {
+      "path": "adrs/ADR-118-surface-gateway-overrides-as-distinct-override-state.md",
+      "bytes": 11921,
+      "sha256": "88de2d6396db472c53428f9e6747aeeb11c90f1d51ddef52b0f325b605ef1784"
+    },
+    {
+      "path": "adrs/ADR-119-mqtt-source-topic-sibling-suffix-shape.md",
+      "bytes": 14640,
+      "sha256": "e2792b21fa3ba5796c87c77b07c9ae811a863c33d4186118798c7d25c669d7af"
+    },
+    {
+      "path": "adrs/ADR-120-platform-abstraction-promoted-to-library.md",
+      "bytes": 8099,
+      "sha256": "852ee6a9ee22d2ae5ddd954322e088554d974390a1887517b48f976e0e35d5ba"
+    },
+    {
+      "path": "adrs/ADR-121-per-consumer-heap-gating-websocket-vs-mqtt.md",
+      "bytes": 11960,
+      "sha256": "27499fb8c9069b72260a6af64be3800d657ca3b9a104e547d98b8f94b30c4d5e"
+    },
+    {
+      "path": "adrs/ADR-122-ha-discovery-five-device-topology.md",
+      "bytes": 22814,
+      "sha256": "d4ef2ef3a6e635c449003ad5e8974e43164fed732dbd70c31cb21ebb0495da13"
+    },
+    {
+      "path": "adrs/ADR-123-2-0-0-concurrency-model-async-modernization.md",
+      "bytes": 14705,
+      "sha256": "3518cac97ed81d3aaf77558dbab6bb531daa810fd7f91cdf7c031c4d9e5eee50"
+    },
+    {
+      "path": "adrs/ADR-124-ha-discovery-seven-device-topology.md",
+      "bytes": 15541,
+      "sha256": "a3eb4a4a2404e996c750533f835fe04530c4c1ab53977147945e86c2326842db"
+    },
+    {
+      "path": "adrs/ADR-125-combo-esp32-pic-otdirect-board-boot-detection.md",
+      "bytes": 11542,
+      "sha256": "c7ef3ec09bca08b55e3f406e7c86607d83551692df08a2d21fd0757e9147c1fb"
+    },
+    {
+      "path": "adrs/ADR-126-fixed-esp32-classic-build-supersedes-combo-runtime-detection.md",
+      "bytes": 6681,
+      "sha256": "986840bdb8031387930ebc02f55f5837eb669690b990d2cb2e1c48d14d36dc10"
+    },
+    {
+      "path": "adrs/ADR-127-combo-esp32-s3-single-binary-revived-runtime-boot-detection.md",
+      "bytes": 14666,
+      "sha256": "b336de46933cc8865879b4c06e1b6f7bdafbfd50aa90af1c99111082febf7268"
+    },
+    {
+      "path": "adrs/ADR-128-drop-esp8266-support-from-2-0-0.md",
+      "bytes": 8045,
+      "sha256": "6b16a96bf833656f6b3d173b4f902591968eca78789707dbdd0fa4290740ecab"
+    },
+    {
+      "path": "adrs/ADR-129-ot-frame-queue-and-state-mutex-foundation.md",
+      "bytes": 15983,
+      "sha256": "4d6800559e4fc1373c3008b1f867756ad4777e7b707b3cd97c70aba5fde9fc93"
+    },
+    {
+      "path": "adrs/ADR-130-pic-uart-dedicated-task-sole-serial-owner.md",
+      "bytes": 23112,
+      "sha256": "04a5e7dd5b1f22144c8e4c722696cacac5a9edf26400760eafe83a9617811534"
+    },
+    {
+      "path": "adrs/ADR-131-mqtt-engine-espmqttclient-async.md",
+      "bytes": 21392,
+      "sha256": "d216f3c072b7be9a5d1f1043e3f97e0269b70789b737861a3a65d0c1f5e6331b"
+    },
+    {
+      "path": "adrs/ADR-132-async-web-server-and-imperative-push-bridge.md",
+      "bytes": 19496,
+      "sha256": "5f1201fba9495836719f6a23b5a87f3f53a76d9efb0ba9e386c78fe4946c29d5"
+    },
+    {
+      "path": "adrs/ADR-133-websocket-live-log-on-asyncwebsocket-port-80.md",
+      "bytes": 21006,
+      "sha256": "da1179e9054c23d02133359315962d722ba43dbd3e6abeb84426c5504cc570e7"
+    },
+    {
+      "path": "adrs/ADR-134-async-ota-upload-handler-on-asyncwebserver.md",
+      "bytes": 24886,
+      "sha256": "f1e3525d7580b00b38eff9a06bd976d57acaeb6535384d0b8d19cc096b3a53ec"
+    },
+    {
+      "path": "adrs/ADR-135-twdt-primary-watchdog-external-0x26-optional-secondary.md",
+      "bytes": 17712,
+      "sha256": "ee2705b6747c339aabec8260c8165cbe0a92d8485ff71dfe35bd2cfe0eb714d9"
+    },
+    {
+      "path": "adrs/ADR-136-retire-simplify-wifi-webhook-pic-state-machines.md",
+      "bytes": 16527,
+      "sha256": "940cb806ccb34933dd3f12ed42dd899b7ac840031535e6bb3b5bba1dc3953aa1"
+    },
+    {
+      "path": "adrs/ADR-137-defer-outbound-http-from-async-handlers.md",
+      "bytes": 18116,
+      "sha256": "849c2553a140627c84af2550009263d0a5701d65cb6387e3977c493df3241501"
+    },
+    {
+      "path": "adrs/ADR-138-pic-uart-control-method-park-and-tx-ordering.md",
+      "bytes": 20012,
+      "sha256": "9c91929f04c0a80c91c4adad5edcb0d4f1bc1eee2e9b5602e96f83809f949f84"
+    },
+    {
+      "path": "adrs/ADR-139-etag-cache-busting-standard-and-asynctcp-task-config.md",
+      "bytes": 25574,
+      "sha256": "d2b8e77eea3aa1fa94216fbb041a066f07e03e2d8e7fa93494f7293730091f5e"
+    },
+    {
+      "path": "adrs/ADR-140-single-device-ha-topology-entity-category-clustering.md",
+      "bytes": 16303,
+      "sha256": "b7f0c9ea1bed40e368893bed7a73f3dcdef148bdc34e2d0d86673993131f8ac2"
+    },
+    {
+      "path": "adrs/ADR-141-adopt-arduinojson-v7-esp32s3.md",
+      "bytes": 8701,
+      "sha256": "0a353fdc6ed896dc1772860e119353b4d18ecd7dc6ef928b507e8ce13d5d3d32"
+    },
+    {
+      "path": "adrs/ADR-142-ha-discovery-mark-unavailable-unsupported-msgids.md",
+      "bytes": 24318,
+      "sha256": "13d02f26ad0d31fd21de90fc06e6dfdd88a7b180b44118c0ab5e86b2c59c5098"
+    },
+    {
+      "path": "adrs/ADR-143-async-telnet-ser2net-transport-asynctcp.md",
+      "bytes": 9061,
+      "sha256": "bb583dc1769a6b4d791f39694b0d4d5518a19b8dc877a5373067e57d510c0719"
+    },
+    {
+      "path": "adrs/ADR-144-asynctcp-task-core-affinity-move-to-core-0.md",
+      "bytes": 20463,
+      "sha256": "59cdffee5bba5a5fd8a0a805c1dbd6f5f9e3cd148ac6207f383448b66ba4bb8f"
+    },
+    {
+      "path": "adrs/ADR-145-chunked-pull-json-response-streaming.md",
+      "bytes": 13692,
+      "sha256": "0de9daa9a563ce936c33d0870bee8cec5901b32a3bd53708aff13b78ae5f4fc1"
+    },
+    {
+      "path": "adrs/ADR-146-revert-adr141-streaming-jsonemit-rest-esp32s3.md",
+      "bytes": 20921,
+      "sha256": "4774f90ce75457c836ad59a853c68d8a1254645b461cb6eb55eaae503112b9a5"
+    },
+    {
+      "path": "adrs/ADR-147-esp32s3-platform-limits-concurrent-webui-static-serving.md",
+      "bytes": 17554,
+      "sha256": "a11b2ddda833973074949220136be5ae90d39200529b390819929225e5445a81"
+    },
+    {
+      "path": "adrs/ADR-148-ble-sensors-as-ha-child-devices-via-device.md",
+      "bytes": 14741,
+      "sha256": "14402d86b9395182c8dfe1128c3b9a24a0c39ed38b09dd89e70876265504c6bb"
+    },
+    {
+      "path": "adrs/ADR-149-accept-lwip-tcp-pcb-connection-ceiling-esp32s3.md",
+      "bytes": 14932,
+      "sha256": "b4a068ff1c5003b071b5222590319bbdca262363de7cdec1d1bc2869e358182f"
+    },
+    {
+      "path": "adrs/ADR-150-sat-per-heating-system-cold-setpoint-boiler-off-cutoff.md",
+      "bytes": 10077,
+      "sha256": "a9c694db413edf4522a9a66cb9e1a9d961bc157875243b448f8d01d1f3f184be"
+    },
+    {
+      "path": "adrs/ADR-151-ble-hybrid-passive-continuous-with-on-demand-active-burst.md",
+      "bytes": 6961,
+      "sha256": "b12ac85f7f4a90641a72d19b40452d7b5b3d53e2ca8b945b052158ce2d3edaa7"
+    },
+    {
+      "path": "adrs/ADR-152-coexisting-v2-web-ui-device-wide-default-setting.md",
+      "bytes": 7479,
+      "sha256": "c4f6ebf275be93b98ae11e9c47521d9d90630f1aa28b4b82f6dee24d8c3747a2"
+    },
+    {
+      "path": "adrs/ADR-153-sat-ble-mibeacon-plaintext-defer-encrypted.md",
+      "bytes": 7104,
+      "sha256": "aabd367e04cb77ec9a5e7aa0db98a615d3bee5ac3c8ba8333f8f2145804713bf"
+    },
+    {
+      "path": "adrs/ADR-154-mibeacon-encrypted-aesccm-per-slot-bindkey.md",
+      "bytes": 7665,
+      "sha256": "b2fa0666eba0153ebc09d0e4163ecb8c5174a744671530742779b6d67519be12"
+    },
+    {
+      "path": "adrs/ADR-155-v2-webui-connectivity-two-link-ot-bus.md",
+      "bytes": 9369,
+      "sha256": "b1619efd34be6d59146d73cf1d009b4b57e079c0a4ae8a17edcd17d9f4e6ce3d"
+    },
+    {
+      "path": "adrs/ADR-156-ha-climate-heat-cool-from-ot-status-bits.md",
+      "bytes": 16473,
+      "sha256": "9d099508a8745a2060b75817a67e7945304e722924517d907de1c5941414c7cb"
+    },
+    {
+      "path": "adrs/ADR-157-sat-heating-source-manual-config-auto-detect-is-non-control-hint.md",
+      "bytes": 9106,
+      "sha256": "f2592de2b24f36128737a8ea3dee516d6e11b7f4ed523fd06bb41292e51498e0"
+    },
+    {
+      "path": "adrs/ADR-158-combo-s3-mini-pro-classic-variant-boot-detection.md",
+      "bytes": 10284,
+      "sha256": "659d5bf6c7889c8f671ffc904c104b4b284a3b477dcb91549bfe7fa228af8f93"
+    },
+    {
+      "path": "adrs/ADR-159-symmetric-0x26-watchdog-presence-gating.md",
+      "bytes": 15240,
+      "sha256": "8363b7d6e706d75bd0341d0c3657877c666ad7d1a1a70523e8cbf6cda7196e88"
+    },
+    {
+      "path": "adrs/ADR-160-combo-auto-board-detect-per-boot-no-persist.md",
+      "bytes": 12994,
+      "sha256": "7790a58cc76e9023d27030603f5c5ff42eb0938e22f330e61d746708732cb7ec"
+    },
+    {
+      "path": "adrs/ADR-161-ble-roster-rest-endpoint-write-only-secret.md",
+      "bytes": 16747,
+      "sha256": "330d0dfd4cadb1335671afa2f96a86a9fad501106ae27124feb5f0d61c84063d"
+    },
+    {
+      "path": "adrs/ADR-162-sat-force-boiler-test-hook.md",
+      "bytes": 10794,
+      "sha256": "37907134cd06e0565308e535494e08476e6a94ccf684c27a026b110a8332ed38"
+    },
+    {
+      "path": "adrs/ADR-163-web-asset-cache-control-no-cache-amends-adr139.md",
+      "bytes": 7491,
+      "sha256": "b2e4eef096a8aaac8d3a38f2d292463e1b1c9132d03945393060323ec67d5857"
+    },
+    {
+      "path": "adrs/ADR-164-combo-auto-board-detect-persist-once-supersedes-adr160.md",
+      "bytes": 6708,
+      "sha256": "2c635ef9b38d392b0a0a20eff0a281683df91085dcea637fcf3647469fd43055"
+    },
+    {
+      "path": "adrs/ADR-165-optimal-request-parallelism-esp32s3-webui-rest.md",
+      "bytes": 21096,
+      "sha256": "1f1a106c9dfe46fb539ef0cfa4527fcefbc136d50f9ff68c0f2c64e346d8edd8"
+    },
+    {
+      "path": "adrs/ADR-166-single-app-slot-ota-policy.md",
+      "bytes": 9225,
+      "sha256": "79a65b790ae2e7e0ef96ee4b6f4fdac8ee07056d1ae9f26db2185cbfa9283d7e"
+    },
+    {
+      "path": "adrs/ADR-167-esp32s3-heap-tier-gating-removal-supersedes-adr089-adr121.md",
+      "bytes": 13741,
+      "sha256": "efca82743bfda3906cd59a1c50e16de27abc8211e86c36bce6a03203a4b7683d"
+    },
+    {
+      "path": "adrs/ADR-168-pic-serial-native-uart0-and-idf-console-mute.md",
+      "bytes": 9368,
+      "sha256": "6b6d02cb0227775dd32559d736141ca5047541bc8d3eb7aba63ff6ca07c88138"
+    },
+    {
+      "path": "adrs/ADR-169-psram-aware-ble-default-with-no-psram-consent-gate.md",
+      "bytes": 11466,
+      "sha256": "d13f6846e1170f808966f500e47a7b03383a9ccc28975f5cc4b49d6057338a1a"
+    }
+  ]
+}
