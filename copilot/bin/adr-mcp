@@ -290,6 +290,7 @@ def tool_adr_judge(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict
         "--diff", "-",
         "--adr-dir", str(adr_dir),
         "--repo-root", str(root),
+        "--snapshot", "diff",
         "--json",
     ]
     # Never run the LLM pass from the MCP server: key-free by design.

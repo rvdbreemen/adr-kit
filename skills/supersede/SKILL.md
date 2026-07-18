@@ -1,6 +1,6 @@
 ---
 name: supersede
-description: Guided supersession of an existing Architecture Decision Record. Shows the target's dependency graph first, drafts the superseding ADR via the adr-generator subagent (Status Proposed, back-linked), and only after explicit user approval flips the old ADR's Status line to "Superseded by ADR-M", appends status_history entries on both sides, and wires Related Decisions both ways. Verifies the chain with bin/adr-related and bin/adr-lint. The skill must inspect and refuse an existing supersession pointer before calling the v0.33.0 lifecycle CLI.
+description: Guided supersession of an existing Architecture Decision Record. Shows the target's dependency graph first, drafts and accepts the successor after explicit approval, then uses the transactional lifecycle CLI to update both records and generated indexes. Verifies the chain with bin/adr-related and bin/adr-lint.
 argument-hint: "[ADR id to supersede; e.g. \"ADR-007\"]"
 license: MIT
 disable-model-invocation: true
@@ -67,34 +67,27 @@ Show the draft to the user. **Never auto-accept it.** The user reviews and
 may iterate; the new ADR is only flipped to `Accepted` (by the user or on
 their explicit instruction) before the old one is touched.
 
-## Step 3 - Flip the old ADR (only after approval)
+## Step 3 - Supersede transactionally (only after approval)
 
 Only after the user has approved the new ADR-NEW:
 
-1. On the OLD ADR, exactly two edits and nothing else:
-   - Change its `## Status` line to: `Superseded by ADR-NEW, YYYY-MM-DD.`
-   - Append one entry to its `status_history` YAML block:
+1. Ensure ADR-NEW is Accepted through `python "$ADR_KIT/bin/adr" accept
+   ADR-NEW --adr-dir docs/adr`. Acceptance is blocked unless all verification
+   gates pass.
+2. Run the only supported reciprocal mutation:
 
-     ```yaml
-       - date: YYYY-MM-DD
-         status: Superseded
-         changed_by: <user>
-         reason: Superseded by ADR-NEW (<new title>)
-         changed_via: adr-kit /adr-kit:supersede
-     ```
+   ```bash
+   python "$ADR_KIT/bin/adr" supersede ADR-OLD --by ADR-NEW \
+     --adr-dir docs/adr --changed-by "<user>" \
+     --reason "Superseded by ADR-NEW (<new title>)"
+   ```
 
-   Do NOT touch Context, Decision, Alternatives, Consequences, References,
-   or Enforcement of the old ADR. Do not edit earlier status_history entries.
-
-2. Wire Related Decisions both ways:
-   - New ADR already carries `Supersedes ADR-OLD` (from Step 2).
-   - Add to the OLD ADR's `## Related Decisions`? No: the old ADR is
-     immutable beyond the two edits above. The back-pointer lives in its
-     Status line (`Superseded by ADR-NEW`), which bin/adr-related reads as a
-     `superseded-by` outbound edge. That is the wiring.
-   - If inbound ADRs from Step 1 reference the OLD decision in their
-     `## Related Decisions`, list them for the user and offer to add a note
-     pointing at ADR-NEW. Apply only the entries the user approves.
+   The command rejects illegal or conflicting chains before mutation. It
+   atomically updates both ADRs and all generated index views, and restores
+   their original bytes if any write or index refresh fails. Never reproduce
+   these edits manually.
+3. If inbound ADRs from Step 1 reference the old decision, list them and offer
+   a note pointing at ADR-NEW. Apply only entries the user approves.
 
 ## Step 4 - Verify the chain
 
@@ -119,7 +112,7 @@ until clean. Report the final state to the user.
 ## Boundaries
 
 - **Immutability.** The only allowed edits to the old ADR are the Status line
-  flip and the appended status_history entry. Everything else is read-only.
+  flip and appended status history performed by the lifecycle command.
 - **Conflict guard.** An existing `Superseded by` pointing at a different ADR
   is a stop-the-line conflict. Surface it; never overwrite.
 - **No auto-accept.** The new ADR starts as Proposed and a human approves it.

@@ -243,10 +243,19 @@ def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
     assert not (prepared / ".git").exists()
     assert not (prepared / "backlog").exists()
     installer.validate_prepared_mcp(prepared, str(Path(sys.executable).resolve()))
+    installer.validate_prepared_hooks(prepared)
 
     if os.name != "nt":
-        mode = (prepared / ".claude-plugin" / "hooks" / "run-hook.cmd").stat().st_mode
-        assert mode & stat.S_IXUSR
+        entrypoints = [
+            prepared / ".claude-plugin" / "hooks" / "run-hook.cmd",
+            *[
+                path
+                for prefix in ("bin", "codex/bin", "copilot/bin")
+                for path in (prepared / prefix).iterdir()
+                if path.is_file() and path.suffix != ".py"
+            ],
+        ]
+        assert all(path.stat().st_mode & stat.S_IXUSR for path in entrypoints)
 
     second = installer.prepare_install_source(
         ROOT,

@@ -315,6 +315,7 @@ def test_json_results_include_actionable_catalog_metadata(tmp_path):
         "title",
         "path",
         "status",
+        "is_accepted",
         "format",
         "decision_summary",
         "scope",
@@ -325,6 +326,7 @@ def test_json_results_include_actionable_catalog_metadata(tmp_path):
     } <= set(item)
     assert item["path"].endswith("ADR-001-jwt-authentication.md")
     assert item["status"] == "Accepted"
+    assert item["is_accepted"] is True
     assert item["format"] in {"canonical", "nygard", "madr"}
     assert item["decision_summary"].startswith("We use JWT tokens")
     assert item["related_ids"] == ["ADR-002"]
@@ -348,7 +350,44 @@ def test_text_output_format(tmp_path):
     lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
     assert lines, "Expected at least one output line"
     assert "ADR-042" in lines[0]
+    assert "status: Accepted" in lines[0]
+    assert "binding context" in lines[0]
     assert "relevance:" in lines[0]
+
+
+def test_proposed_result_is_explicitly_non_binding(tmp_path):
+    _write_adr(
+        tmp_path,
+        43,
+        "Candidate Session Cache",
+        status="Proposed",
+        decision="A candidate Redis session cache is under consideration.",
+    )
+
+    json_result = _run_cli(
+        "--format",
+        "json",
+        "--adr-dir",
+        str(tmp_path),
+        "--min-score",
+        "0.0",
+        "candidate session cache",
+    )
+    item = json.loads(json_result.stdout)[0]
+    assert item["status"] == "Proposed"
+    assert item["is_accepted"] is False
+
+    text_result = _run_cli(
+        "--format",
+        "text",
+        "--adr-dir",
+        str(tmp_path),
+        "--min-score",
+        "0.0",
+        "candidate session cache",
+    )
+    assert "status: Proposed" in text_result.stdout
+    assert "non-binding context" in text_result.stdout
 
 
 def test_min_score_filter(tmp_path):

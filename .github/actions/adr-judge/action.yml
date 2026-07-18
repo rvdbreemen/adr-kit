@@ -81,4 +81,6 @@ runs:
         git diff --unified=0 "origin/${BASE_REF}...HEAD" \
           | python "$JUDGE" \
               --diff - \
-              --adr-dir "${{ inputs.adr-dir }}"
+              --adr-dir "${{ inputs.adr-dir }}" \
+              --repo-root "$GITHUB_WORKSPACE" \
+              --snapshot worktree

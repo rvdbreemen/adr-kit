@@ -27,25 +27,22 @@ Design invariants (match spec §3 / §12):
 
 Multi-session safety (task-9):
   - .adr-kit-state.json is per-machine ADVISORY data, not a ledger. Concurrent
-    Claude Code sessions may stamp at the same time; last-writer-wins is the
-    accepted and documented semantics. The worst case is a slightly stale
-    timestamp, which self-heals on the next sweep.
+    sessions may stamp at the same time; a cross-process lock serializes each
+    complete read-modify-write transaction so unrelated updates are preserved.
   - Writes are atomic: state is written to a unique temp file in the same
     directory, then moved into place with os.replace (atomic on both POSIX and
     NTFS). A reader can never observe a partial file.
   - Corrupt or partial state files are tolerated on read: they are treated as
     empty state, one warning line goes to stderr, and the next stamp overwrites
     the file with valid JSON. The guardian never crashes on a bad state file.
-  - Best-effort advisory locking (fcntl on POSIX, msvcrt on Windows) narrows
-    the read-modify-write race during stamp. It is non-blocking and optional:
-    when the lock cannot be taken, the write proceeds anyway (atomic replace
-    still guarantees file integrity).
+  - Blocking advisory locking uses fcntl on POSIX and msvcrt on Windows.
+    Failure to acquire the lock skips the advisory update instead of writing
+    unlocked and risking lost state.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
 import re
@@ -54,6 +51,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 import io
 from typing import Dict, List, Optional, Tuple
+
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_state import load_state, update_state
 
 
 # ---------------------------------------------------------------------------
@@ -103,113 +106,20 @@ def _load_state(state_path: Path) -> Dict:
     single warning line is written to stderr. The file itself is left in place;
     the next stamp overwrites it with valid JSON (last-writer-wins).
     """
-    if not state_path.exists():
-        return json.loads(json.dumps(DEFAULT_STATE))
-    try:
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            sys.stderr.write(
-                f"[adr-guardian] warning: state file {state_path} is not a JSON object;"
-                " treating as empty state\n"
-            )
-            return json.loads(json.dumps(DEFAULT_STATE))
-        return data
-    except (json.JSONDecodeError, OSError) as exc:
-        sys.stderr.write(
-            f"[adr-guardian] warning: state file {state_path} unreadable or corrupt"
-            f" ({exc.__class__.__name__}); treating as empty state\n"
-        )
-        return json.loads(json.dumps(DEFAULT_STATE))
+    return load_state(
+        state_path,
+        lambda: json.loads(json.dumps(DEFAULT_STATE)),
+        lambda message: sys.stderr.write(f"[adr-guardian] warning: {message}\n"),
+    )
 
 
-@contextlib.contextmanager
-def _state_lock(state_path: Path):
-    """Best-effort, non-blocking advisory lock around a state write.
-
-    Uses fcntl.flock on POSIX and msvcrt.locking on Windows, both guarded by
-    try/except ImportError so the script stays stdlib-only and portable. When
-    the lock cannot be acquired (held by a concurrent session, or no locking
-    primitive available), the write proceeds anyway: os.replace keeps the file
-    atomic and last-writer-wins is the documented semantics. The .lock file is
-    intentionally left in place (deleting it would reintroduce a race).
-    """
-    lock_path = state_path.parent / (state_path.name + ".lock")
-    fh = None
-    locked = False
-    try:
-        try:
-            fh = open(lock_path, "a+b")
-        except OSError:
-            fh = None
-        if fh is not None:
-            try:
-                import fcntl
-
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                locked = True
-            except ImportError:
-                try:
-                    import msvcrt
-
-                    fh.seek(0)
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-                    locked = True
-                except (ImportError, OSError):
-                    pass
-            except OSError:
-                pass
-        yield
-    finally:
-        if fh is not None:
-            if locked:
-                try:
-                    import fcntl
-
-                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-                except ImportError:
-                    try:
-                        import msvcrt
-
-                        fh.seek(0)
-                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                    except (ImportError, OSError):
-                        pass
-                except OSError:
-                    pass
-            try:
-                fh.close()
-            except OSError:
-                pass
-
-
-def _save_state(state_path: Path, state: Dict) -> None:
-    """Write .adr-kit-state.json atomically (multi-session safe).
-
-    Strategy: serialize to a unique temp file in the SAME directory (so the
-    rename never crosses filesystems), then os.replace it over the state file.
-    os.replace is atomic on both POSIX and Windows, so concurrent readers see
-    either the old or the new file, never a partial one. A unique per-process
-    temp name avoids two sessions clobbering each other's temp file. The
-    surrounding best-effort lock narrows (but does not eliminate) the
-    read-modify-write window; last-writer-wins is acceptable for this advisory,
-    per-machine state.
-    """
-    try:
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        return
-    tmp = state_path.parent / f"{state_path.name}.{os.getpid()}.tmp"
-    with _state_lock(state_path):
-        try:
-            tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-            os.replace(str(tmp), str(state_path))
-        except OSError:
-            # Non-fatal: if we can't write state, the next session just sees
-            # stale state. Clean up the temp file if it was left behind.
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
+def _update_state(state_path: Path, mutation):
+    return update_state(
+        state_path,
+        lambda: json.loads(json.dumps(DEFAULT_STATE)),
+        mutation,
+        lambda message: sys.stderr.write(f"[adr-guardian] warning: {message}\n"),
+    )
 
 
 def _load_config(config_path: Path) -> Dict:
@@ -736,7 +646,6 @@ def cmd_check(args: argparse.Namespace) -> int:
     state_path = adr_dir / ".adr-kit-state.json"
     config_path = adr_dir / ".adr-kit.json"
 
-    state = _load_state(state_path)
     cfg = _load_config(config_path)
     gcfg = _guardian_config(cfg)
 
@@ -744,35 +653,39 @@ def cmd_check(args: argparse.Namespace) -> int:
     if not gcfg.get("enabled", True):
         return 0
 
-    now = _now_utc()
-    cheap_due, llm_due = _compute_due_tiers(state, gcfg, now)
-
     # Copied-artifact staleness (task-15): pure file reads, never subprocesses.
     # A stale wrapper counts as a due item so it surfaces even when both
     # sweep tiers are fresh; it rides the same nudge cooldown as the tiers.
     artifact_lines = _stale_artifact_lines(_artifact_report(adr_dir.parent.parent))
-
-    if not cheap_due and not llm_due and not artifact_lines:
-        return 0
-
-    # Throttle: if we nudged within nudge_cooldown_hours, stay silent.
-    if _is_throttled(state, gcfg):
-        return 0
-
+    now = _now_utc()
     adr_count = _count_adrs(adr_dir)
-    block = _format_guardian_block(cheap_due, llm_due, state, adr_count, now)
-    if artifact_lines:
-        block_lines = block.split("\n")
-        head = block_lines[0]
-        due_count = (1 if cheap_due else 0) + (1 if llm_due else 0) + len(artifact_lines)
-        head = f"[adr-guardian] ADR health — {due_count} item(s) due"
-        block = "\n".join([head] + block_lines[1:-1] + artifact_lines + [block_lines[-1]])
 
-    _emit_context(block)
+    def check_and_stamp_nudge(state):
+        cheap_due, llm_due = _compute_due_tiers(state, gcfg, now)
+        if not cheap_due and not llm_due and not artifact_lines:
+            return False, False
+        if _is_throttled(state, gcfg):
+            return False, False
 
-    # Write last_nudged so repeated session-starts don't nag.
-    state["last_nudged"] = now.isoformat()
-    _save_state(state_path, state)
+        block = _format_guardian_block(
+            cheap_due, llm_due, state, adr_count, now
+        )
+        if artifact_lines:
+            block_lines = block.split("\n")
+            due_count = (
+                (1 if cheap_due else 0)
+                + (1 if llm_due else 0)
+                + len(artifact_lines)
+            )
+            head = f"[adr-guardian] ADR health — {due_count} item(s) due"
+            block = "\n".join(
+                [head] + block_lines[1:-1] + artifact_lines + [block_lines[-1]]
+            )
+        _emit_context(block)
+        state["last_nudged"] = now.isoformat()
+        return True, True
+
+    _update_state(state_path, check_and_stamp_nudge)
 
     return 0
 
@@ -798,41 +711,40 @@ def cmd_stamp(args: argparse.Namespace) -> int:
         if args.state_dir:
             state_path = Path(args.state_dir) / ".adr-kit-state.json"
 
-    state = _load_state(state_path)
     now_iso = _now_utc().isoformat()
-
-    if tier == "cheap":
-        cheap = dict(state.get("cheap_tier") or {})
-        cheap["last_run"] = now_iso
-        if args.violations is not None:
-            cheap["drift_violations"] = args.violations
-        if args.retire is not None:
-            cheap["retire_candidates"] = args.retire
-        if args.lint is not None:
-            cheap["lint"] = args.lint
-        state["cheap_tier"] = cheap
-        # Update retire_seen if retire candidates changed.
-        if args.retire_seen is not None:
-            try:
-                seen_list = json.loads(args.retire_seen)
-                if isinstance(seen_list, list):
-                    state["retire_seen"] = seen_list
-            except json.JSONDecodeError:
-                pass
-    elif tier == "llm":
-        llm = dict(state.get("llm_tier") or {})
-        llm["last_run"] = now_iso
-        if args.suggest is not None:
-            llm["suggest_hits"] = args.suggest
-        if args.audit is not None:
-            llm["audit_findings"] = args.audit
-        state["llm_tier"] = llm
-
-    # Append-only trend history (capped at TREND_MAX_ENTRIES, oldest dropped).
     total_adrs = _count_adrs(adr_dir) if adr_dir is not None else None
-    _append_trend_entry(state, tier, now_iso, total_adrs, args.coverage)
 
-    _save_state(state_path, state)
+    def stamp_state(state):
+        if tier == "cheap":
+            cheap = dict(state.get("cheap_tier") or {})
+            cheap["last_run"] = now_iso
+            if args.violations is not None:
+                cheap["drift_violations"] = args.violations
+            if args.retire is not None:
+                cheap["retire_candidates"] = args.retire
+            if args.lint is not None:
+                cheap["lint"] = args.lint
+            state["cheap_tier"] = cheap
+            if args.retire_seen is not None:
+                try:
+                    seen_list = json.loads(args.retire_seen)
+                    if isinstance(seen_list, list):
+                        state["retire_seen"] = seen_list
+                except json.JSONDecodeError:
+                    pass
+        elif tier == "llm":
+            llm = dict(state.get("llm_tier") or {})
+            llm["last_run"] = now_iso
+            if args.suggest is not None:
+                llm["suggest_hits"] = args.suggest
+            if args.audit is not None:
+                llm["audit_findings"] = args.audit
+            state["llm_tier"] = llm
+
+        _append_trend_entry(state, tier, now_iso, total_adrs, args.coverage)
+        return True, None
+
+    _update_state(state_path, stamp_state)
     return 0
 
 

@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
@@ -38,6 +40,14 @@ STATUS_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE | re.MULTILINE)
+LEGAL_TRANSITIONS = {
+    "Proposed": {"Proposed", "Accepted", "Rejected"},
+    "Accepted": {"Accepted", "Superseded"},
+    "Rejected": {"Rejected"},
+    "Deprecated": {"Deprecated", "Superseded"},
+    "Amended": {"Amended", "Superseded"},
+    "Superseded": {"Superseded"},
+}
 
 
 class AdrLifecycleError(Exception):
@@ -72,8 +82,79 @@ def load_adr(path: Path) -> Tuple[Dict, str]:
     return parse_frontmatter(raw_frontmatter), body
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write one file through a unique same-directory temporary and replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
 def write_adr(path: Path, data: Dict, body: str) -> None:
-    path.write_text(render_frontmatter(data) + body, encoding="utf-8")
+    _atomic_write_text(path, render_frontmatter(data) + body)
+
+
+def _snapshot_files(paths: List[Path]) -> Dict[Path, Optional[bytes]]:
+    return {
+        path: path.read_bytes() if path.exists() else None
+        for path in dict.fromkeys(paths)
+    }
+
+
+def _restore_snapshot(snapshot: Dict[Path, Optional[bytes]]) -> None:
+    errors = []
+    for path, content in snapshot.items():
+        try:
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                _atomic_write_text(path, content.decode("utf-8"))
+        except BaseException as exc:  # pragma: no cover - catastrophic filesystem failure
+            errors.append(f"{path}: {exc}")
+    if errors:
+        raise AdrLifecycleError("snapshot restore failed: " + "; ".join(errors))
+
+
+def _write_transaction(changes: List[Tuple[Path, str]]) -> None:
+    """Apply multiple atomic replacements and restore originals on any failure."""
+    originals = _snapshot_files([path for path, _ in changes])
+    try:
+        for path, text in changes:
+            _atomic_write_text(path, text)
+    except BaseException as exc:
+        try:
+            _restore_snapshot(originals)
+        except AdrLifecycleError as rollback_exc:
+            raise AdrLifecycleError(
+                f"transaction failed ({exc}); rollback also failed: {rollback_exc}"
+            ) from exc
+        raise AdrLifecycleError(f"transaction failed and was rolled back: {exc}") from exc
+
+
+def assert_legal_transition(current: str, target: str) -> None:
+    legal = LEGAL_TRANSITIONS.get(current)
+    if legal is None or target not in legal:
+        allowed = ", ".join(sorted(legal or set())) or "none"
+        raise AdrLifecycleError(
+            f"illegal lifecycle transition {current} -> {target}; allowed: {allowed}"
+        )
 
 
 def set_status_line(body: str, status_line: str) -> str:
@@ -131,15 +212,16 @@ def mutate_status(
     changed_by: str,
     reason: str,
     changed_via: str,
-) -> None:
+) -> str:
     data, body = load_adr(path)
+    assert_legal_transition(str(data.get("status")), status)
     data["status"] = status
     data["date"] = when
     if status != "Superseded":
         data["superseded_by"] = None
     body = set_status_line(body, status_line)
     body = append_status_history(body, status, changed_by, reason, changed_via, when)
-    write_adr(path, data, body)
+    return render_frontmatter(data) + body
 
 
 def run_index(adr_dir: Path) -> None:
@@ -151,6 +233,36 @@ def run_index(adr_dir: Path) -> None:
     )
     if result.returncode != 0:
         raise AdrLifecycleError(result.stderr or result.stdout)
+
+
+def _commit_lifecycle_changes(
+    adr_dir: Path,
+    changes: List[Tuple[Path, str]],
+) -> None:
+    """Commit ADR and generated-index changes as one recoverable operation."""
+    snapshot = _snapshot_files(
+        [path for path, _ in changes]
+        + [
+            adr_dir / "README.md",
+            adr_dir / "ADR-INDEX.md",
+            adr_dir / "ADR-INDEX.json",
+        ]
+    )
+    try:
+        _write_transaction(changes)
+        run_index(adr_dir)
+    except BaseException as exc:
+        try:
+            _restore_snapshot(snapshot)
+        except AdrLifecycleError as rollback_exc:
+            raise AdrLifecycleError(
+                f"lifecycle transaction failed ({exc}); rollback also failed: "
+                f"{rollback_exc}"
+            ) from exc
+        raise AdrLifecycleError(
+            "lifecycle transaction failed; ADRs and generated indexes were "
+            f"rolled back: {exc}"
+        ) from exc
 
 
 def load_config(adr_dir: Path, explicit: str | None = None) -> Dict:
@@ -202,8 +314,7 @@ def command_new(args) -> List[str]:
     body = body.replace("Short Imperative Title", args.title)
     body = body.replace("YYYY-MM-DD", args.date)
     body = body.replace("user@example.com", args.changed_by)
-    destination.write_text(body, encoding="utf-8")
-    run_index(adr_dir)
+    _commit_lifecycle_changes(adr_dir, [(destination, body)])
     return [f"created: {destination} ({profile})"]
 
 
@@ -277,26 +388,8 @@ def _assert_auto_accept_eligible(path: Path, args, threshold: float) -> Dict:
     if not data.get("verified_in"):
         raise AdrLifecycleError("auto accept requires at least one verified_in pointer")
 
+    lint_summary = _assert_acceptance_gates(path, args)
     root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd().resolve()
-    lint_script = Path(__file__).resolve().with_name("adr-lint")
-    lint_code, lint_payload = _run_json_tool(
-        [
-            sys.executable,
-            str(lint_script),
-            "--strict",
-            "--format",
-            "json",
-            "--repo-root",
-            str(root),
-            str(path),
-        ]
-    )
-    if lint_code != 0:
-        raise AdrLifecycleError(
-            "auto accept blocked: strict lint failed: "
-            + json.dumps(lint_payload.get("summary", {}), sort_keys=True)
-        )
-
     quality_script = Path(__file__).resolve().with_name("adr-quality")
     _quality_code, quality_payload = _run_json_tool(
         [sys.executable, str(quality_script), "--format", "json", str(path)]
@@ -306,7 +399,33 @@ def _assert_auto_accept_eligible(path: Path, args, threshold: float) -> Dict:
         raise AdrLifecycleError(
             f"auto accept blocked: quality {overall:.2f} below threshold {threshold:.2f}"
         )
-    return {"quality": overall, "threshold": threshold, "lint": lint_payload.get("summary", {})}
+    return {"quality": overall, "threshold": threshold, "lint": lint_summary}
+
+
+def _assert_acceptance_gates(path: Path, args) -> Dict:
+    """Require deterministic versions of all four named gates before acceptance."""
+    root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd().resolve()
+    lint_script = Path(__file__).resolve().with_name("adr-lint")
+    lint_code, lint_payload = _run_json_tool(
+        [
+            sys.executable,
+            str(lint_script),
+            "--strict",
+            "--format",
+            "json",
+            "--gates",
+            "schema,completeness,audit,evidence,clarity,consistency,policy",
+            "--repo-root",
+            str(root),
+            str(path),
+        ]
+    )
+    if lint_code != 0:
+        raise AdrLifecycleError(
+            "acceptance blocked: strict lint failed: "
+            + json.dumps(lint_payload.get("summary", {}), sort_keys=True)
+        )
+    return lint_payload.get("summary", {})
 
 
 def command_document(args) -> List[str]:
@@ -326,8 +445,10 @@ def command_document(args) -> List[str]:
         "adr-kit lifecycle",
         args.date,
     )
-    write_adr(path, data, body)
-    run_index(adr_dir)
+    _commit_lifecycle_changes(
+        adr_dir,
+        [(path, render_frontmatter(data) + body)],
+    )
     return [f"documented shipped behavior: {path.name}"]
 
 
@@ -343,7 +464,7 @@ def command_auto_accept(args) -> List[str]:
             f"(quality={eligibility['quality']:.2f}, threshold={threshold:.2f}); "
             "rerun with --confirm to mutate"
         ]
-    mutate_status(
+    changed = mutate_status(
         path,
         "Accepted",
         f"Accepted, {args.date}.",
@@ -352,15 +473,33 @@ def command_auto_accept(args) -> List[str]:
         args.reason or "Auto-accepted already-shipped ADR with verified evidence",
         "adr-kit lifecycle",
     )
-    run_index(adr_dir)
+    _commit_lifecycle_changes(adr_dir, [(path, changed)])
     return [f"auto-accepted: {path.name}"]
+
+
+def command_accept(args) -> List[str]:
+    adr_dir = Path(args.adr_dir)
+    adr_id = normalize_adr_id(args.adr)
+    path = find_adr_file(adr_dir, adr_id)
+    _assert_acceptance_gates(path, args)
+    changed = mutate_status(
+        path,
+        "Accepted",
+        f"Accepted, {args.date}.",
+        args.date,
+        args.changed_by,
+        args.reason or "Accepted decision after all four verification gates passed",
+        "adr-kit lifecycle",
+    )
+    _commit_lifecycle_changes(adr_dir, [(path, changed)])
+    return [f"accepted: {path.name}"]
 
 
 def command_set_status(args, status: str, status_line: str, default_reason: str) -> List[str]:
     adr_dir = Path(args.adr_dir)
     adr_id = normalize_adr_id(args.adr)
     path = find_adr_file(adr_dir, adr_id)
-    mutate_status(
+    changed = mutate_status(
         path,
         status,
         status_line,
@@ -369,7 +508,7 @@ def command_set_status(args, status: str, status_line: str, default_reason: str)
         args.reason or default_reason,
         "adr-kit lifecycle",
     )
-    run_index(adr_dir)
+    _commit_lifecycle_changes(adr_dir, [(path, changed)])
     return [f"{status.lower()}: {path.name}"]
 
 
@@ -379,17 +518,36 @@ def command_supersede(args) -> List[str]:
     new_id = normalize_adr_id(args.by)
     old_path = find_adr_file(adr_dir, old_id)
     new_path = find_adr_file(adr_dir, new_id)
+    if old_id == new_id:
+        raise AdrLifecycleError("an ADR cannot supersede itself")
 
     old_data, old_body = load_adr(old_path)
     new_data, new_body = load_adr(new_path)
-    if old_data.get("status") != "Accepted":
-        raise AdrLifecycleError(f"{old_id} must be Accepted before supersession")
+    assert_legal_transition(str(old_data.get("status")), "Superseded")
     if old_data.get("superseded_by") not in (None, new_id):
         raise AdrLifecycleError(
             f"{old_id} already has superseded_by={old_data.get('superseded_by')}"
         )
     if new_data.get("status") not in {"Proposed", "Accepted"}:
         raise AdrLifecycleError(f"{new_id} must be Proposed or Accepted")
+    if new_data.get("superseded_by") is not None:
+        raise AdrLifecycleError(
+            f"{new_id} is itself superseded by {new_data.get('superseded_by')}"
+        )
+    existing_targets = set(new_data.get("supersedes", []))
+    if existing_targets - {old_id}:
+        raise AdrLifecycleError(
+            f"{new_id} already supersedes {', '.join(sorted(existing_targets))}"
+        )
+    for candidate in sorted(adr_dir.glob("ADR-*.md")):
+        if candidate in {old_path, new_path}:
+            continue
+        candidate_data, _candidate_body = load_adr(candidate)
+        if old_id in candidate_data.get("supersedes", []):
+            raise AdrLifecycleError(
+                f"{old_id} already has competing successor "
+                f"{candidate_data.get('id', candidate.name)}"
+            )
 
     old_data["status"] = "Superseded"
     old_data["date"] = args.date
@@ -415,13 +573,11 @@ def command_supersede(args) -> List[str]:
         "adr-kit lifecycle",
         args.date,
     )
-    # Both records are fully validated before either write. The successor is
-    # written first so a failed old-record write never leaves an unlinked old
-    # pointer.
-    write_adr(new_path, new_data, new_body)
-    write_adr(old_path, old_data, old_body)
-
-    run_index(adr_dir)
+    changes = [
+        (new_path, render_frontmatter(new_data) + new_body),
+        (old_path, render_frontmatter(old_data) + old_body),
+    ]
+    _commit_lifecycle_changes(adr_dir, changes)
     return [f"superseded: {old_path.name} -> {new_id}", f"updated successor: {new_path.name}"]
 
 
@@ -503,12 +659,7 @@ def main(argv: List[str] | None = None) -> int:
             if args.auto:
                 lines = command_auto_accept(args)
             else:
-                lines = command_set_status(
-                    args,
-                    "Accepted",
-                    f"Accepted, {args.date}.",
-                    "Accepted decision",
-                )
+                lines = command_accept(args)
         elif args.command == "reject":
             lines = command_set_status(
                 args,

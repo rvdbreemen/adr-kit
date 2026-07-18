@@ -484,29 +484,68 @@ def gate_evidence(text: str) -> Optional[List[Tuple[int, str]]]:
     return hits if len(hits) >= 3 else None
 
 
+# Acronyms that carry no explanatory value in an ADR: either universal
+# technical vocabulary or terms this toolkit defines everywhere else. Demanding
+# an inline expansion for these produces noise, not clarity.
+CLARITY_ACRONYM_ALLOWLIST = frozenset({
+    "ADR", "API", "CLI", "CSV", "HTML", "HTTP", "HTTPS", "JSON", "MADR",
+    "MCP", "PR", "REST", "RFC", "SDK", "SQL", "TASK", "TOML", "URI", "URL",
+    "UTC", "UUID", "XML", "YAML",
+})
+
+
 def gate_clarity(text: str) -> Optional[List[Tuple[int, str]]]:
     """Heuristic: ALL-CAPS acronyms (3 to 5 letters) without inline expansion.
 
     Conservative: only flag when 3+ distinct acronyms appear without an
-    obvious '(<expansion>)' nearby. Off by default; opt in with --gates.
+    obvious expansion. Off by default; opt in with --gates.
+
+    An acronym counts as expanded when it is written either as
+    'ACRONYM (expansion)' or as 'expansion (ACRONYM)'; both are normal
+    technical prose. Allowlisted acronyms and YAML frontmatter are ignored,
+    because frontmatter is metadata where an inline expansion cannot be
+    written at all.
     """
     acro_re = re.compile(r"\b[A-Z]{3,5}\b")
     seen_with_expansion: Set[str] = set()
     flagged: List[Tuple[int, str]] = []
-    for i, ln in enumerate(text.splitlines()):
+    for i, ln in enumerate(_strip_frontmatter_lines(text)):
+        if ln is None:  # frontmatter line: keeps numbering, skips analysis
+            continue
         for m in acro_re.finditer(ln):
             acro = m.group(0)
-            # Look for '(...)' immediately after.
+            if acro in CLARITY_ACRONYM_ALLOWLIST:
+                continue
+            # 'ACRONYM (expansion)' — a '(' immediately after the acronym.
             tail = ln[m.end():m.end() + 100]
-            if re.match(r"\s*\(", tail):
+            # 'expansion (ACRONYM)' — the acronym parenthesised after words.
+            head = ln[max(0, m.start() - 100):m.start()]
+            if re.match(r"\s*\(", tail) or re.search(r"\w\s+\($", head):
                 seen_with_expansion.add(acro)
                 continue
             if acro in seen_with_expansion:
                 continue
             flagged.append((i + 1, acro))
     if len({a for _, a in flagged}) >= 3:
-        return flagged[:5]
+        return flagged
     return None
+
+
+def _strip_frontmatter_lines(text: str) -> List[Optional[str]]:
+    """Return the lines of ``text`` with YAML frontmatter blanked to None.
+
+    Line positions are preserved so reported line numbers stay accurate.
+    """
+    lines: List[Optional[str]] = list(text.splitlines())
+    if not lines or lines[0].strip() != "---":
+        return lines
+    for i in range(1, len(lines)):
+        line = lines[i]
+        lines[i] = None
+        if line is not None and line.strip() == "---":
+            break
+    lines[0] = None
+    return lines
 
 
 def _status_line(text: str) -> Optional[str]:
@@ -1146,7 +1185,9 @@ def lint_file(
             )
             findings.append({
                 "gate": "clarity", "level": level,
-                "details": [{"line": l, "acronym": a} for l, a in hits],
+                # Details are capped for readability; the summary counts every
+                # distinct acronym so the reported number matches the gate.
+                "details": [{"line": l, "acronym": a} for l, a in hits[:5]],
                 "summary": f"{len({a for _, a in hits})} acronym(s) without inline expansion",
             })
 

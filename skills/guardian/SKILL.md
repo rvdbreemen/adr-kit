@@ -54,6 +54,8 @@ Run only when cheap tier is due or explicitly requested.
 git diff HEAD~5 HEAD --unified=0 | "$ADR_KIT/bin/adr-judge" \
     --diff - \
     --adr-dir docs/adr/ \
+    --repo-root "$(git rev-parse --show-toplevel)" \
+    --snapshot worktree \
     --json > /tmp/guardian-drift.json 2>&1
 DRIFT_EXIT=$?
 ```
@@ -150,6 +152,8 @@ Read `/tmp/guardian-suggest.json`.
 git diff HEAD~10 HEAD --unified=0 | "$ADR_KIT/bin/adr-judge" \
     --diff - \
     --adr-dir docs/adr/ \
+    --repo-root "$(git rev-parse --show-toplevel)" \
+    --snapshot worktree \
     --llm \
     --json > /tmp/guardian-audit.json 2>&1
 ```

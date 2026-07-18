@@ -120,6 +120,10 @@ Python interpreter running the installer. On macOS and Linux it also restores
 executable modes for packaged Unix entry points. Re-running with the same
 release and interpreter is idempotent.
 
+Release archives also record those Unix executable modes for manual installs;
+the prepared path restores them defensively and remains preferred because it
+also resolves `python` versus `python3` deterministically.
+
 Prepared marketplace roots are platform-native:
 
 - Windows: `%LOCALAPPDATA%\adr-kit\marketplaces`
@@ -159,9 +163,9 @@ visibility alone does not prove that the configured Python command or packaged
 engine starts.
 
 The installer already performs a packaged MCP initialize/tools-list handshake
-with the selected interpreter before client mutation. If that preflight fails,
-stop: do not hand-edit an installed manifest or continue with a partial
-marketplace.
+with the selected interpreter and a platform-shell SessionStart hook smoke
+before client mutation. If that preflight fails, stop: do not hand-edit an
+installed manifest or continue with a partial marketplace.
 
 ## 6. Initialize the project
 

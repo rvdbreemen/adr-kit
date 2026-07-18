@@ -48,7 +48,7 @@ set -e
 # freezes at install time. adr-guardian compares this stamp against the
 # installed plugin version and nudges /adr-kit:upgrade when the wrapper lags.
 # Maintained by bin/bump-version; do not edit by hand.
-ADR_KIT_WRAPPER_VERSION="0.33.0"
+ADR_KIT_WRAPPER_VERSION="0.34.0"
 
 if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   echo "[adr-kit] hook disabled for this commit (ADR_KIT_HOOK_DISABLE=1)" >&2
@@ -89,6 +89,16 @@ shopt -u nullglob
 _copilot_root="${COPILOT_HOME:-${HOME}/.copilot}/installed-plugins/rvdbreemen-adr-kit-copilot/adr-kit"
 if [ -d "$_copilot_root" ]; then
   _plugin_roots+=("$_copilot_root")
+fi
+
+# A checkout of ADR Kit itself is a candidate too, so the repository is judged
+# by the engine it currently ships rather than by an older installed release.
+# It competes on manifest version like any other root, so an installed plugin
+# still wins when the checkout is behind.
+_self_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$_self_root" ] && [ -f "$_self_root/bin/adr-judge" ] &&
+   [ -f "$_self_root/.claude-plugin/plugin.json" ]; then
+  _plugin_roots+=("$_self_root")
 fi
 
 # Select the highest manifest version, independently of which client owns the
@@ -177,8 +187,14 @@ _ms_now() {
 _LLM_FLAG=""
 [ "${ADR_KIT_LLM:-0}" = "1" ] && _LLM_FLAG="--llm"
 _T0=$(_ms_now)
-ADR_OUT=$(git diff --cached --unified=0 | ADR_KIT_NO_LLM="${_NO_LLM_OVERRIDE:-0}" "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" $_LLM_FLAG 2>&1)
+# `set -e` is lifted around the judge call. Without this, a non-zero exit from
+# the command substitution would abort the hook immediately, so every line
+# below -- including the violation report -- would never run and the commit
+# would be blocked with no explanation at all.
+set +e
+ADR_OUT=$(git diff --cached --unified=0 | ADR_KIT_NO_LLM="${_NO_LLM_OVERRIDE:-0}" "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --repo-root "$ROOT" --snapshot staged $_LLM_FLAG 2>&1)
 ADR_EXIT=$?
+set -e
 _T1=$(_ms_now)
 # Suppress per-ADR llm_judge advisory lines: they repeat once per ADR with llm_judge:true
 # and become very noisy on projects with many ADRs. Violations and the summary line
@@ -188,6 +204,13 @@ printf '%s\n' "$ADR_OUT" | grep -avE "^  ADVISORY |^[[:space:]]+ADR has llm_judg
 _ELAPSED=$(( _T1 - _T0 ))
 if [ "$_ELAPSED" -gt 5000 ] 2>/dev/null; then
   echo "[adr-kit] WARN: pre-commit hook took ${_ELAPSED}ms (threshold: 5000ms). Consider ADR_KIT_NO_LLM=1 for faster commits." >&2
+fi
+# Exit 2 means the judge could not run at all (bad config, engine mismatch).
+# Name that explicitly: a blocked commit with only tool output is hard to read.
+if [ "$ADR_EXIT" -eq 2 ]; then
+  echo "[adr-kit] adr-judge could not run (exit 2: config or runtime error)." >&2
+  echo "[adr-kit] Engine: $ADR_JUDGE (manifest version $_best_version)." >&2
+  echo "[adr-kit] Commit with ADR_KIT_HOOK_DISABLE=1 to bypass this check." >&2
 fi
 [ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"
 

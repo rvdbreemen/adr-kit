@@ -104,3 +104,22 @@ the real source profile has been established.
 
 These paths may recommend a command. They must never run the recommended write
 command automatically.
+
+## Real-world OTGW validation corpus
+
+ADR Kit includes a frozen copy of the 169 numbered ADRs from
+[`rvdbreemen/OTGW-firmware`](https://github.com/rvdbreemen/OTGW-firmware) under
+`tests/testsets/otgw-firmware/`. The corpus exercises mixed canonical, Nygard,
+and unclassified records that accumulated in a production repository. Its
+manifest pins the source revision, ADR tree revision, byte count, SHA-256 hash,
+detected-format baseline, and migration baseline for every fixture.
+
+The tests verify that discovery and dry-run migration do not modify the frozen
+files. They apply deterministic migrations only to temporary copies, verify
+MADR conversion is idempotent, and exercise indexing, context search,
+relationships, and tolerant lint across the full corpus. Expected lint or
+guided-migration findings are validation data, not permission to rewrite the
+upstream repository.
+
+See `tests/testsets/otgw-firmware/README.md` for provenance, licensing, and the
+reviewed refresh procedure.

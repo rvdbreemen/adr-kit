@@ -8,6 +8,7 @@ These tests do NOT require the pre-commit CLI to be installed.  They smoke-
 test the wrapper's git-diff-to-adr-judge pipe directly.
 """
 
+import locale
 import subprocess
 import sys
 import textwrap
@@ -64,6 +65,32 @@ Do not use Foo anywhere in src/.
 ```
 """
 
+REQUIRE_ADR = """\
+# ADR-001 Required Marker
+
+## Status
+
+Accepted, 2026-04-25.
+
+## Decision
+
+Every changed Python source file carries the required marker.
+
+## Enforcement
+
+```json
+{
+  "require_pattern": [
+    {
+      "pattern": "^REQUIRED = True$",
+      "path_glob": "src/**/*.py",
+      "message": "Required marker is missing."
+    }
+  ]
+}
+```
+"""
+
 
 def _init_git_repo(path: Path) -> None:
     """Create a minimal git repository at path."""
@@ -101,9 +128,26 @@ def _run_wrapper(repo_root: Path) -> subprocess.CompletedProcess:
     )
     # Decode with errors="replace" so Windows ANSI / non-UTF-8 bytes don't
     # cause UnicodeDecodeError in test output.
-    result.stdout = result.stdout.decode("utf-8", errors="replace")
-    result.stderr = result.stderr.decode("utf-8", errors="replace")
+    console_encoding = locale.getpreferredencoding(False)
+    result.stdout = result.stdout.decode(console_encoding, errors="replace")
+    result.stderr = result.stderr.decode(console_encoding, errors="replace")
     return result
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+
+def _use_require_adr(repo: Path) -> None:
+    (repo / "docs" / "adr" / "ADR-001-no-foo.md").write_text(
+        textwrap.dedent(REQUIRE_ADR),
+        encoding="utf-8",
+    )
 
 
 def test_wrapper_exit_1_on_violation(tmp_path):
@@ -163,3 +207,81 @@ def test_wrapper_resolves_adr_judge_sibling():
         f"bin/adr-judge not found at expected sibling path: {adr_judge_sibling}\n"
         "The wrapper's sibling-resolution will fail at runtime."
     )
+
+
+def test_require_pattern_ignores_unstaged_token(tmp_path):
+    """An unstaged required token cannot make the staged snapshot pass."""
+    repo = _make_project(tmp_path)
+    _use_require_adr(repo)
+    target = repo / "src" / "policy.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    _git(repo, "add", "src/policy.py")
+    _git(repo, "commit", "-m", "baseline")
+
+    target.write_text("value = 2\n", encoding="utf-8")
+    _git(repo, "add", "src/policy.py")
+    target.write_text("value = 2\nREQUIRED = True\n", encoding="utf-8")
+
+    result = _run_wrapper(repo)
+
+    assert result.returncode == 1
+    assert "Required marker is missing." in result.stderr
+
+
+def test_require_pattern_ignores_unstaged_removal(tmp_path):
+    """An unstaged removal cannot make a compliant staged snapshot fail."""
+    repo = _make_project(tmp_path)
+    _use_require_adr(repo)
+    target = repo / "src" / "policy.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    _git(repo, "add", "src/policy.py")
+    _git(repo, "commit", "-m", "baseline")
+
+    target.write_text("value = 2\nREQUIRED = True\n", encoding="utf-8")
+    _git(repo, "add", "src/policy.py")
+    target.write_text("value = 2\n", encoding="utf-8")
+
+    result = _run_wrapper(repo)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_require_pattern_handles_staged_rename(tmp_path):
+    repo = _make_project(tmp_path)
+    _use_require_adr(repo)
+    old = repo / "src" / "old.py"
+    old.write_text("REQUIRED = True\n", encoding="utf-8")
+    _git(repo, "add", "src/old.py")
+    _git(repo, "commit", "-m", "baseline")
+    _git(repo, "mv", "src/old.py", "src/new.py")
+
+    result = _run_wrapper(repo)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_require_pattern_fails_closed_on_staged_delete(tmp_path):
+    repo = _make_project(tmp_path)
+    _use_require_adr(repo)
+    target = repo / "src" / "policy.py"
+    target.write_text("REQUIRED = True\n", encoding="utf-8")
+    _git(repo, "add", "src/policy.py")
+    _git(repo, "commit", "-m", "baseline")
+    _git(repo, "rm", "src/policy.py")
+
+    result = _run_wrapper(repo)
+
+    assert result.returncode == 1
+    assert "absent in the selected snapshot" in result.stderr
+
+
+def test_git_quoted_unicode_path_matches_scope(tmp_path):
+    repo = _make_project(tmp_path)
+    target = repo / "src" / "é.py"
+    target.write_text("value = Foo()\n", encoding="utf-8")
+    _git(repo, "add", "src/é.py")
+
+    result = _run_wrapper(repo)
+
+    assert result.returncode == 1
+    assert "src/é.py" in result.stderr

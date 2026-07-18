@@ -119,7 +119,8 @@ the same source and use update/no-op paths.
 
 Re-running the installer is idempotent. Post-install validation checks native
 registration and MCP listing, while prepared-source validation starts
-`adr-mcp` and completes MCP initialize plus tools/list before any client is
+`adr-mcp`, completes MCP initialize plus tools/list, and executes the packaged
+Claude SessionStart wrapper through the platform shell before any client is
 changed. Failure of one selected client is reported after the installer
 continues with the others. Client-native marketplace operations are not
 transactional, so a failed client may need its normal plugin install command
@@ -223,9 +224,12 @@ three generated views with `python bin/adr-index --check docs/adr`.
 
 - Generated payload drift checks normalize CRLF and LF before comparison, so
   the same generated content is stable across Windows and Unix checkouts.
-- The automatic installer restores Unix executable modes and embeds the exact
-  Python runtime. Manual Git marketplace installation still depends on the
-  archive's executable modes and static `python` command.
+- Release archives record executable Unix modes for every directly invoked
+  hook and engine, and CI exercises the manual archive contract on macOS and
+  Linux. The automatic installer restores those modes defensively and embeds
+  the exact Python runtime. A manual native Codex or Copilot install still uses
+  the static interpreter from its checked-out `.mcp.json`; use the automatic
+  installer on `python3`-only hosts.
 - If the embedded Python executable is moved or removed, rerun the automatic
   installer with the replacement interpreter.
 - Native marketplace mutations are isolated per client but are not one atomic

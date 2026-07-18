@@ -11,5 +11,5 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-003 | Superseded | - | Keep the canonical seven-section template as the only storage format. |
 | ADR-004 | Accepted | - | Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo... |
 | ADR-005 | Accepted | `schemas/adr-kit-config.schema.json` | Chosen option: support selectable madr, nygard, and canonical body profiles through one semantic format registry, and... |
-| ADR-006 | Proposed | - | Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository... |
-| ADR-007 | Proposed | `docs/adr/ADR-INDEX.json` | Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be... |
+| ADR-006 | Accepted | - | Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository... |
+| ADR-007 | Accepted | `docs/adr/ADR-INDEX.json` | Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be... |

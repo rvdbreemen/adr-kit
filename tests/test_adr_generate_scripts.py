@@ -6,6 +6,7 @@ test_adr_judge.py.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import stat
 import subprocess
@@ -268,8 +269,13 @@ def test_shell_script_contains_pattern(tmp_path):
 
     _run_generator("--lang", "shell", adr_dir=adr_dir, output_dir=output_dir)
     content = (output_dir / "ADR-001" / "validate.sh").read_text(encoding="utf-8")
-    assert r"\bFoo\b" in content
-    assert "Do not use Foo." in content
+    python_content = (output_dir / "ADR-001" / "validate.py").read_text(
+        encoding="utf-8"
+    )
+    assert "validate.py" in content
+    assert "python3" in content
+    assert r"\\bFoo\\b" in python_content
+    assert "Do not use Foo." in python_content
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +324,12 @@ def test_lang_flag_shell_only(tmp_path):
 
     adr_out = output_dir / "ADR-001"
     assert (adr_out / "validate.sh").exists()
-    assert not (adr_out / "validate.py").exists()
+    assert (adr_out / "validate.py").exists()
+    capabilities = json.loads(
+        (adr_out / "capabilities.json").read_text(encoding="utf-8")
+    )
+    assert capabilities["shell_mode"] == "python-launcher"
+    assert capabilities["regex_engine"] == "python-re-isolated-subprocess"
 
 
 def test_lang_flag_python_only(tmp_path):
@@ -368,14 +379,21 @@ def test_no_enforcement_no_script(tmp_path):
 # Tests: ADR with only llm_judge (no forbid rules) → no script
 # ---------------------------------------------------------------------------
 
-def test_llm_judge_only_no_script(tmp_path):
+def test_llm_judge_only_is_rejected_with_capability_metadata(tmp_path):
     adr_dir = tmp_path / "docs" / "adr"
     output_dir = tmp_path / ".generated"
     _write_adr(adr_dir, "ADR-004-llm-only.md", ADR_WITH_LLM_JUDGE_ONLY)
 
     result = _run_generator(adr_dir=adr_dir, output_dir=output_dir)
-    assert result.returncode == 0, result.stderr
-    assert not (output_dir / "ADR-004").exists()
+    assert result.returncode == 2
+    adr_out = output_dir / "ADR-004"
+    capabilities = json.loads(
+        (adr_out / "capabilities.json").read_text(encoding="utf-8")
+    )
+    assert capabilities["status"] == "unsupported"
+    assert capabilities["unsupported"] == ["llm_judge"]
+    assert not (adr_out / "validate.py").exists()
+    assert not (adr_out / "validate.sh").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -405,9 +423,95 @@ def test_forbid_import_generates_script(tmp_path):
 
     result = _run_generator("--lang", "shell", adr_dir=adr_dir, output_dir=output_dir)
     assert result.returncode == 0, result.stderr
-    content = (output_dir / "ADR-002" / "validate.sh").read_text(encoding="utf-8")
+    content = (output_dir / "ADR-002" / "validate.py").read_text(encoding="utf-8")
     assert "import bar" in content
     assert "Do not import bar." in content
+
+
+def test_require_pattern_is_preserved_and_enforced(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    output_dir = tmp_path / ".generated"
+    required = SIMPLE_ADR.replace(
+        '"forbid_pattern": [\n'
+        '        {"pattern": "\\\\bFoo\\\\b", "message": "Do not use Foo."}\n'
+        "      ]",
+        '"require_pattern": [\n'
+        '        {"pattern": "^LICENSE:", "message": "License marker required."}\n'
+        "      ]",
+    )
+    _write_adr(adr_dir, "ADR-001-required.md", required)
+
+    generated = _run_generator(
+        "--lang", "python", adr_dir=adr_dir, output_dir=output_dir
+    )
+    assert generated.returncode == 0, generated.stderr
+    validator = output_dir / "ADR-001" / "validate.py"
+
+    missing = subprocess.run(
+        [sys.executable, str(validator)],
+        input="value = 1\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    present = subprocess.run(
+        [sys.executable, str(validator)],
+        input="LICENSE: MIT\nvalue = 1\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert missing.returncode == 1
+    assert "License marker required." in missing.stderr
+    assert present.returncode == 0
+
+
+def test_path_scoped_rule_is_rejected_instead_of_silently_broadened(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    output_dir = tmp_path / ".generated"
+    scoped = SIMPLE_ADR.replace(
+        '"message": "Do not use Foo."',
+        '"message": "Do not use Foo.", "path_glob": "src/**/*.py"',
+    )
+    _write_adr(adr_dir, "ADR-001-scoped.md", scoped)
+
+    result = _run_generator(
+        "--lang", "python", adr_dir=adr_dir, output_dir=output_dir
+    )
+
+    assert result.returncode == 2
+    capabilities = json.loads(
+        (output_dir / "ADR-001" / "capabilities.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert capabilities["status"] == "unsupported"
+    assert capabilities["unsupported"] == ["forbid_pattern[0].path_glob"]
+    assert not (output_dir / "ADR-001" / "validate.py").exists()
+
+
+def test_generated_python_kills_catastrophic_regex(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    output_dir = tmp_path / ".generated"
+    catastrophic = SIMPLE_ADR.replace(r"\\bFoo\\b", "(a+)+$")
+    _write_adr(adr_dir, "ADR-001-catastrophic.md", catastrophic)
+    generated = _run_generator(
+        "--lang", "python", adr_dir=adr_dir, output_dir=output_dir
+    )
+    assert generated.returncode == 0, generated.stderr
+
+    result = subprocess.run(
+        [sys.executable, str(output_dir / "ADR-001" / "validate.py")],
+        input=("a" * 30) + "!\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=4,
+    )
+
+    assert result.returncode == 2
+    assert "could not be evaluated safely" in result.stderr
+    assert "wall-clock budget" in result.stderr
 
 
 # ---------------------------------------------------------------------------

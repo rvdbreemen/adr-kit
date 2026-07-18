@@ -1,13 +1,13 @@
 """Tests for bin/adr-guardian multi-session-safe state handling (task-9).
 
 Invariants under test:
-  - _save_state is atomic: a simulated interruption (temp file written but
+  - atomic_save_state is atomic: a simulated interruption (temp file written but
     never moved into place) leaves the previous state file valid.
   - _load_state tolerates a corrupt/partial state file: treats it as empty
     state, logs one stderr warning, never raises; the next stamp overwrites
     the file with valid JSON.
-  - Two interleaved stamp-style read-modify-write cycles end with exactly one
-    valid winner (last-writer-wins), never a corrupt file.
+  - State read-modify-write updates preserve unrelated keys through one shared
+    transaction contract.
   - The CI-cron sweep workflow files exist and have the required structure
     (cheap tier only, report-only, no LLM, no extra secrets). PyYAML is not
     stdlib, so this is a string-level structural check, consistent with the
@@ -29,6 +29,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "bin"))
+from adr_state import atomic_save_state, update_state
+
 ADR_GUARDIAN = REPO_ROOT / "bin" / "adr-guardian"
 WORKFLOW_SELF = REPO_ROOT / ".github" / "workflows" / "adr-guardian-audit.yml"
 WORKFLOW_TEMPLATE = REPO_ROOT / "templates" / "github-workflows" / "adr-guardian-audit.yml"
@@ -70,7 +73,7 @@ class TestAtomicWrite:
     def test_save_state_produces_valid_json(self, guardian, tmp_path):
         state_path = tmp_path / ".adr-kit-state.json"
         state = {"cheap_tier": {"last_run": "2026-06-01T00:00:00+00:00"}}
-        guardian._save_state(state_path, state)
+        atomic_save_state(state_path, state)
         on_disk = json.loads(state_path.read_text(encoding="utf-8"))
         assert on_disk == state
 
@@ -79,7 +82,7 @@ class TestAtomicWrite:
         os.replace: the stray temp file must not affect the state file."""
         state_path = tmp_path / ".adr-kit-state.json"
         original = {"cheap_tier": {"last_run": "2026-06-01T00:00:00+00:00"}}
-        guardian._save_state(state_path, original)
+        atomic_save_state(state_path, original)
 
         # Simulated interruption: temp file written, replace never happened.
         stray_tmp = tmp_path / f"{state_path.name}.99999.tmp"
@@ -91,13 +94,13 @@ class TestAtomicWrite:
 
         # A later save still works and the stray temp file stays out of the way.
         updated = {"cheap_tier": {"last_run": "2026-06-02T00:00:00+00:00"}}
-        guardian._save_state(state_path, updated)
+        atomic_save_state(state_path, updated)
         assert json.loads(state_path.read_text(encoding="utf-8")) == updated
 
     def test_no_leftover_tmp_after_successful_save(self, guardian, tmp_path):
         state_path = tmp_path / ".adr-kit-state.json"
-        guardian._save_state(state_path, {"k": 1})
-        leftovers = list(tmp_path.glob(f"{state_path.name}.*.tmp"))
+        atomic_save_state(state_path, {"k": 1})
+        leftovers = list(tmp_path.glob(".*.tmp"))
         assert leftovers == []
 
 
@@ -156,40 +159,37 @@ class TestCorruptState:
 
 
 # ---------------------------------------------------------------------------
-# Interleaved stamps (last-writer-wins)
+# Transactional state updates
 # ---------------------------------------------------------------------------
 
 class TestInterleavedStamps:
-    def test_two_interleaved_writers_one_valid_winner(self, guardian, tmp_path):
-        """Simulate two sessions doing read-modify-write with full overlap:
-        both read the same base state, then write in sequence. The file must
-        end up as valid JSON equal to the LAST writer's state."""
+    def test_separate_transactions_preserve_unrelated_updates(self, guardian, tmp_path):
         state_path = tmp_path / ".adr-kit-state.json"
         base = json.loads(json.dumps(guardian.DEFAULT_STATE))
-        guardian._save_state(state_path, base)
+        atomic_save_state(state_path, base)
 
-        session_a = guardian._load_state(state_path)
-        session_b = guardian._load_state(state_path)
+        def update_cheap(state):
+            state["cheap_tier"]["last_run"] = "2026-06-10T10:00:00+00:00"
+            state["cheap_tier"]["drift_violations"] = 1
+            return True, None
 
-        session_a["cheap_tier"]["last_run"] = "2026-06-10T10:00:00+00:00"
-        session_a["cheap_tier"]["drift_violations"] = 1
-        session_b["cheap_tier"]["last_run"] = "2026-06-10T10:00:05+00:00"
-        session_b["cheap_tier"]["drift_violations"] = 7
+        def update_watch(state):
+            state["watch"] = {"nudges": {"ADR-001|src/a.py": "2026-06-10"}}
+            return True, None
 
-        guardian._save_state(state_path, session_a)
-        guardian._save_state(state_path, session_b)
-
+        update_state(
+            state_path,
+            lambda: json.loads(json.dumps(guardian.DEFAULT_STATE)),
+            update_cheap,
+        )
+        update_state(
+            state_path,
+            lambda: json.loads(json.dumps(guardian.DEFAULT_STATE)),
+            update_watch,
+        )
         on_disk = json.loads(state_path.read_text(encoding="utf-8"))
-        assert on_disk == session_b  # last writer wins, file never corrupt
-
-    def test_state_lock_is_best_effort_and_reentrant_safe(self, guardian, tmp_path):
-        """Holding the lock in one context must not block or crash a second
-        writer (non-blocking, best-effort semantics)."""
-        state_path = tmp_path / ".adr-kit-state.json"
-        with guardian._state_lock(state_path):
-            # A concurrent save while the lock is held still succeeds.
-            guardian._save_state(state_path, {"k": "concurrent"})
-        assert json.loads(state_path.read_text(encoding="utf-8")) == {"k": "concurrent"}
+        assert on_disk["cheap_tier"]["drift_violations"] == 1
+        assert "ADR-001|src/a.py" in on_disk["watch"]["nudges"]
 
 
 # ---------------------------------------------------------------------------

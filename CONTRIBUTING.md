@@ -114,6 +114,28 @@ python -m pytest
 
 PRs that break CI will not be merged.
 
+### OTGW migration corpus
+
+`tests/testsets/otgw-firmware/` is a byte-preserved, GPL-3.0-only validation
+corpus from the adjacent `OTGW-firmware` repository. It is test data only and
+is isolated from ADR Kit's MIT-licensed runtime payload. Run its focused tests
+after changing format detection, migration, lint, indexing, context, or
+relationship behavior:
+
+```bash
+python -m pytest tests/test_otgw_corpus.py -q
+```
+
+Refresh it only from a reviewed, clean numbered-ADR source set:
+
+```bash
+python scripts/refresh-otgw-corpus.py --source ../OTGW-firmware
+```
+
+Review the source revisions, file count, format counts, migration outcomes, and
+hash changes in `tests/testsets/otgw-firmware/manifest.json` before accepting a
+refresh. The script refuses to snapshot modified or untracked numbered ADRs.
+
 ## Pre-release smoke test
 
 Schema validation catches manifest field-type bugs but does not exercise the actual install path. Before tagging a new release, run this manual checklist in a fresh Claude Code session against your local clone. The whole sequence takes about 3 minutes.

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +27,18 @@ def _load_schema_module():
 
 
 SCHEMA = _load_schema_module()
+
+
+def _load_lifecycle_module():
+    import importlib.machinery
+
+    loader = importlib.machinery.SourceFileLoader("adr_lifecycle", str(ADR))
+    spec = importlib.util.spec_from_loader("adr_lifecycle", loader)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["adr_lifecycle"] = mod
+    loader.exec_module(mod)
+    return mod
 
 
 def _body(num: int, title: str, status: str = "Proposed") -> str:
@@ -175,4 +188,108 @@ def test_supersede_updates_both_files_reciprocally_and_refreshes_index(tmp_path)
     readme = (adr_dir / "README.md").read_text(encoding="utf-8")
     assert "Superseded by ADR-164" in readme
     assert "Supersedes ADR-160" in readme
+
+
+@pytest.mark.parametrize("command", ["propose", "reject"])
+def test_accepted_adr_rejects_illegal_transitions_without_mutation(tmp_path, command):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "Binding Decision", status="Accepted")
+    before = path.read_bytes()
+
+    result = _run_adr(command, "1", "--adr-dir", str(adr_dir))
+
+    assert result.returncode == 2
+    assert "illegal lifecycle transition" in result.stderr
+    assert path.read_bytes() == before
+
+
+def test_acceptance_gates_block_incomplete_record_without_mutation(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "Incomplete Candidate")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "## Alternatives Considered\n\n"
+            "- Manual edits: rejected because they drift.\n"
+            "- Hosted workflow: rejected because adr-kit must remain local.\n\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+
+    result = _run_adr("accept", "1", "--adr-dir", str(adr_dir))
+
+    assert result.returncode == 2
+    assert "acceptance blocked" in result.stderr
+    assert path.read_bytes() == before
+
+
+def test_two_file_write_failure_rolls_back_first_replacement(tmp_path, monkeypatch):
+    lifecycle = _load_lifecycle_module()
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text("first-original", encoding="utf-8")
+    second.write_text("second-original", encoding="utf-8")
+    real_atomic_write = lifecycle._atomic_write_text
+    calls = 0
+
+    def fail_second_write(path, text):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected second-write failure")
+        real_atomic_write(path, text)
+
+    monkeypatch.setattr(lifecycle, "_atomic_write_text", fail_second_write)
+
+    with pytest.raises(lifecycle.AdrLifecycleError, match="rolled back"):
+        lifecycle._write_transaction(
+            [(first, "first-new"), (second, "second-new")]
+        )
+
+    assert first.read_text(encoding="utf-8") == "first-original"
+    assert second.read_text(encoding="utf-8") == "second-original"
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_index_failure_rolls_back_both_supersession_records_and_indexes(
+    tmp_path,
+    monkeypatch,
+):
+    lifecycle = _load_lifecycle_module()
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    old_path = _write_adr(adr_dir, 1, "Old Binding", status="Accepted")
+    new_path = _write_adr(adr_dir, 2, "New Binding", status="Accepted")
+    readme = adr_dir / "README.md"
+    readme.write_text("original readme", encoding="utf-8")
+    before = {
+        old_path: old_path.read_bytes(),
+        new_path: new_path.read_bytes(),
+        readme: readme.read_bytes(),
+    }
+
+    def fail_after_partial_index(target):
+        (target / "README.md").write_text("partial index", encoding="utf-8")
+        (target / "ADR-INDEX.md").write_text("partial index", encoding="utf-8")
+        raise lifecycle.AdrLifecycleError("injected index failure")
+
+    monkeypatch.setattr(lifecycle, "run_index", fail_after_partial_index)
+    args = SimpleNamespace(
+        adr_dir=str(adr_dir),
+        old="1",
+        by="2",
+        date="2026-07-18",
+        changed_by="test",
+        reason=None,
+    )
+
+    with pytest.raises(lifecycle.AdrLifecycleError, match="rolled back"):
+        lifecycle.command_supersede(args)
+
+    assert {path: path.read_bytes() for path in before} == before
+    assert not (adr_dir / "ADR-INDEX.md").exists()
+    assert not (adr_dir / "ADR-INDEX.json").exists()
 

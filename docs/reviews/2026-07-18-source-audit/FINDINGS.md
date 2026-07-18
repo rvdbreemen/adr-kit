@@ -5,6 +5,10 @@ Commit reviewed: `68c13eba384c8302fa46c7981bdf8277f1be0d0e`
 Branch: `main` at `origin/main`  
 Backlog: TASK-25
 
+Remediation: TASK-25, TASK-26, TASK-29, and TASK-32
+Current disposition: all actionable findings closed; F-20's Codex wrapper
+notation retained as a tested compatibility choice.
+
 ## Executive summary
 
 At the reviewed v0.33.0 commit, the repository had a strong deterministic,
@@ -13,9 +17,10 @@ passed strict lint, both generated ADR indexes were current, manifests agreed
 on v0.33.0, and the focused core, packaging, MCP, and performance tests were
 mostly healthy.
 
-The audit nevertheless found five release-blocking enforcement defects, one
+The baseline audit found five release-blocking enforcement defects, one
 release-blocking Unix packaging defect, and one P1 authoring-template defect
-that is now fixed. The most important conclusion is that v0.33.0 must not be
+that was subsequently fixed. The most important baseline conclusion was that
+v0.33.0 must not be
 represented as a fail-closed security boundary:
 
 - repository-authored regular expressions can hang the judge indefinitely;
@@ -30,7 +35,16 @@ enforcement behavior were fixed as part of TASK-25. TASK-26 subsequently
 introduced selectable profiles, fixed newline-stable payload comparison and
 the Python 3.10 source floor, added a Windows/Unix compatibility matrix, and
 partially hardened supersession preflight. The remaining source behavior
-findings should be split into focused implementation tasks.
+findings were split into focused implementation tasks.
+
+TASK-32 closes the remaining implementation findings. Runtime configuration is
+schema-validated; oversized inputs fail closed; regexes run in a bounded,
+killable worker; Git paths and snapshots are exact; lifecycle, release, and
+shared-state changes are transaction-safe; generated validators preserve their
+declared subset or reject unsupported rules; context authority is explicit;
+and manual plus prepared packaging contracts are covered across Windows,
+macOS, and Linux. ADR Kit remains a development guardrail rather than a
+sandbox or substitute for branch protection.
 
 ## Review method
 
@@ -59,26 +73,26 @@ finding disappear. Later TASK-26 remediation is called out explicitly below.
 
 | ID | Priority | Area | Status |
 | --- | --- | --- | --- |
-| F-01 | P1 | Regex timeout cannot stop catastrophic backtracking | Open |
-| F-02 | P1 | Config type coercion silently weakens enforcement or enables LLM use | Open |
-| F-03 | P1 | Diffs over 1 MiB skip all enforcement with exit 0 | Open |
-| F-04 | P1 | Git-quoted paths bypass scoped rules | Open |
-| F-05 | P1 | `require_pattern` reads the working tree, not the staged snapshot | Open |
-| F-06 | P1 | Claude hooks and direct skill entry points are not executable on Unix | Automatic path fixed in TASK-29; manual path open |
+| F-01 | P1 | Regex timeout cannot stop catastrophic backtracking | Fixed in TASK-32 |
+| F-02 | P1 | Config type coercion silently weakens enforcement or enables LLM use | Fixed in TASK-32 |
+| F-03 | P1 | Diffs over 1 MiB skip all enforcement with exit 0 | Fixed in TASK-32 |
+| F-04 | P1 | Git-quoted paths bypass scoped rules | Fixed in TASK-32 |
+| F-05 | P1 | `require_pattern` reads the working tree, not the staged snapshot | Fixed in TASK-32 |
+| F-06 | P1 | Claude hooks and direct skill entry points are not executable on Unix | Fixed in TASK-29/TASK-32 |
 | F-07 | P1 | Canonical authoring templates were invalid/incomplete | Fixed in TASK-25/TASK-26 |
-| F-08 | P2 | Lifecycle transitions and supersession writes are unsafe | Partially fixed in TASK-26 |
-| F-09 | P2 | Context results can hide Proposed lifecycle state | Open |
-| F-10 | P2 | Generated validators do not preserve Enforcement semantics | Open |
+| F-08 | P2 | Lifecycle transitions and supersession writes are unsafe | Fixed in TASK-32 |
+| F-09 | P2 | Context results can hide Proposed lifecycle state | Fixed in TASK-32 |
+| F-10 | P2 | Generated validators do not preserve Enforcement semantics | Fixed in TASK-32 |
 | F-11 | P2 | Advertised Python 3.9 floor was false | Fixed in TASK-25/TASK-26 |
 | F-12 | P2 | Generated-payload check is newline-unstable on Windows | Fixed in TASK-26 |
 | F-13 | P2 | Native MCP assumes an unversioned `python` command | Fixed in TASK-29 automatic installer |
-| F-14 | P2 | Installer validation and failure isolation are incomplete | Mostly fixed in TASK-29 |
-| F-15 | P2 | Release helper can leave a partially bumped or incompletely staged tree | Open |
-| F-16 | P2 | Guardian/watcher state rewrites are not transactionally isolated | Open |
+| F-14 | P2 | Installer validation and failure isolation are incomplete | Fixed in TASK-29/TASK-32 |
+| F-15 | P2 | Release helper can leave a partially bumped or incompletely staged tree | Fixed in TASK-32 |
+| F-16 | P2 | Guardian/watcher state rewrites are not transactionally isolated | Fixed in TASK-32 |
 | F-17 | P2 | Skill invocation metadata contradicted the README safety claim | Docs reconciled |
 | F-18 | P2 | Public security, roadmap, install, and release docs were stale | Fixed in TASK-25 |
-| F-19 | P3 | CI misses minimum-Python, Windows, example, and full generated-index coverage | Platform matrix fixed in TASK-26/TASK-29; other gaps open |
-| F-20 | P3 | Public metadata and dogfood stub had visible version/integration drift | Mostly fixed |
+| F-19 | P3 | CI misses minimum-Python, Windows, example, and full generated-index coverage | Fixed in TASK-26/TASK-29/TASK-32 |
+| F-20 | P3 | Public metadata and dogfood integration drift | Fixed; compatible Codex wrapper retained |
 
 ## P1 findings
 
@@ -102,6 +116,11 @@ Recommendation: evaluate patterns in a killable subprocess with an input and
 wall-clock budget, or constrain the supported regex language. Apply the same
 policy to generated validators and add catastrophic-pattern regression tests.
 
+Resolution (TASK-32): `adr-judge` and generated validators use a persistent,
+killable subprocess with wall-clock, pattern-length, and input-size budgets.
+Timeout, worker failure, and budget exhaustion are enforcement failures.
+Catastrophic-pattern regressions cover both runtime surfaces.
+
 ### F-02: config type coercion weakens enforcement or enables paid passes
 
 Evidence:
@@ -122,6 +141,11 @@ Recommendation: validate runtime config before use, reject wrong types with
 exit 2, bound numeric values, and use explicit boolean parsing. Test JSON
 strings, negative sizes, nulls, and unknown keys.
 
+Resolution (TASK-32): `adr_config.py` validates runtime configuration against
+the shipped schema subset before judge or suggest use it. Wrong types, bounds,
+patterns, and unknown non-annotation keys exit 2; booleans are never coerced
+through Python truthiness.
+
 ### F-03: oversized diffs skip all enforcement
 
 Evidence: `bin/adr-judge:1689-1695` prints a skip message and returns success
@@ -135,6 +159,9 @@ Recommendation: fail closed with a distinct actionable error, or stream/batch
 the deterministic pass. An explicit, audited override is safer than a silent
 success.
 
+Resolution (TASK-32): the limit is measured as exact UTF-8 bytes and an
+oversized diff exits 2 with an actionable fail-closed error.
+
 ### F-04: Git-quoted paths bypass scoped rules
 
 Evidence:
@@ -147,6 +174,10 @@ Recommendation: parse Git's quoted-path format, or request a machine-readable
 diff/name stream with a fixed quoting configuration. Add non-ASCII, whitespace,
 tab, quote, rename, and delete fixtures.
 
+Resolution (TASK-32): the diff parser decodes Git C-quoted paths, including
+octal UTF-8 and escaped tabs, quotes, and slashes. Rename, delete, whitespace,
+and non-ASCII fixtures enforce normal scoped-rule matching.
+
 ### F-05: `require_pattern` uses the working tree instead of the index
 
 Evidence: `bin/adr-judge:680-746` reads `repo_root / path` even when the caller
@@ -158,6 +189,11 @@ staged commit.
 
 Recommendation: reconstruct post-diff content or read the staged blob through
 Git. Tests must separate index and working-tree content.
+
+Resolution (TASK-32): `adr-judge` has explicit `diff`, `staged`, and `worktree`
+snapshot modes. Pre-commit reads index blobs, the action reads the checkout,
+and incomplete modified post-images in generic diff mode fail closed. Partial
+staging tests cover required-token additions and removals in both directions.
 
 ### F-06: Unix entry points are not executable
 
@@ -183,6 +219,13 @@ polyglot Claude hook and packaged `bin/` entry points on Unix, and tests that
 prepared payload on macOS and Linux CI. A manual Git marketplace install still
 depends on executable modes recorded by the release archive; use the automatic
 installer when portability must be guaranteed.
+
+Resolution (TASK-32): every directly invoked root and packaged entry point is
+recorded as mode `100755`; generated/runtime paths are LF-stable; Git archive
+tests verify manual-install modes; and macOS/Linux jobs execute the packaged
+contracts. The automatic installer still restores modes defensively. A
+Windows smoke also caught and removed a Unicode character that broke the
+polyglot batch parser.
 
 Reference: [Claude Code hooks](https://code.claude.com/docs/en/hooks).
 
@@ -234,7 +277,14 @@ false conflict-guard claim.
 TASK-26 now preloads and validates both records, rejects a successor that
 already claims another target, rejects an existing conflicting
 `superseded_by`, and writes the successor before the predecessor. Legal
-transition enforcement and a transactional two-file rollback remain open.
+transition enforcement and a transactional two-file rollback remained for
+TASK-32.
+
+Resolution (TASK-32): one transition graph rejects illegal lifecycle changes;
+acceptance runs every named deterministic gate before mutation; supersession
+rejects self-links, competing/conflicting successors, and incoherent state.
+All ADR and generated-index replacements share a rollback boundary, with
+injected write and index failures proving byte-identical restoration.
 
 ### F-09: context results can hide Proposed status
 
@@ -253,6 +303,10 @@ Recommendation: either filter to Accepted by default with an explicit
 `--include-proposed`, or return status and make clients render it prominently.
 TASK-25 corrected the public description to match current behavior.
 
+Resolution (TASK-32): retrieval remains broad, but every result now carries
+`status` and `is_accepted`. Text output labels Accepted records as binding and
+all other lifecycle states as non-binding; JSON/text regressions cover both.
+
 ### F-10: generated validators are only a semantic subset
 
 Evidence:
@@ -267,6 +321,12 @@ Recommendation: define the supported subset explicitly in output metadata, or
 compile every Enforcement rule with parity tests against `adr-judge`. TASK-25
 removed the README claim that generated validators compile complete
 Enforcement semantics.
+
+Resolution (TASK-32): generated Python and shell launchers enforce unscoped
+`forbid_pattern`, `forbid_import`, and `require_pattern` through the bounded
+regex worker. `path_glob` and `llm_judge` are declared unsupported in versioned
+capability metadata and make generation fail with exit 2 instead of being
+silently dropped.
 
 ### F-11: Python 3.9 support was not real
 
@@ -345,6 +405,13 @@ smoke test. Client-native marketplace mutations remain non-transactional; the
 installer reports the failed client and preserves successful installations so
 the user can rerun only the normal command for that client.
 
+Resolution (TASK-32): prepared-source validation now executes the packaged
+Claude SessionStart wrapper through the platform shell in addition to the real
+MCP initialize/tools-list exchange. Manual and automatic packaging contracts
+are tested on all three operating systems. Native client APIs remain
+individually non-transactional by their own design; failures are isolated,
+reported per client, and recover through the idempotent normal rerun path.
+
 ### F-15: release helper can leave a partial tree
 
 Evidence:
@@ -356,11 +423,16 @@ Evidence:
 - Its final staging hint omits files it changed, including the guide,
   pre-commit wrapper, and one marketplace.
 - Prior CONTRIBUTING steps repeated changelog work already performed by the
-  helper and omitted payload regeneration.
+helper and omitted payload regeneration.
 
 Recommendation: preflight everything, compute changes in memory, then apply
 atomically. Test rollback and the complete changed-file set. TASK-25 rewrote
 the contributor release sequence around current behavior.
+
+Resolution (TASK-32): `bump-version` validates all ten targets and computes
+every edit before its first write, uses unique same-directory atomic
+replacements, restores every original on injected failure, updates current
+changelog comparison links, and prints the complete staging set.
 
 ### F-16: shared state writes are not transactionally isolated
 
@@ -371,6 +443,12 @@ health updates.
 
 Recommendation: lock the full read-modify-write cycle and use unique temporary
 files plus atomic replacement.
+
+Resolution (TASK-32): guardian and watcher share `adr_state.py`. Blocking
+`fcntl`/`msvcrt` locking covers the complete read-modify-write transaction;
+unique same-directory temporaries are flushed, fsynced, and atomically
+replaced. Lock/write failure skips advisory state instead of writing unlocked.
+Concurrent integration tests preserve all eight trend and cooldown updates.
 
 ### F-17: skill invocation metadata contradicted the README
 
@@ -411,13 +489,19 @@ both generated-index checks.
 
 TASK-26 added Python 3.10/3.12 jobs on Windows and Ubuntu plus profile,
 installer, newline, and documentation contract tests. Packaged Unix direct
-execution, native MCP startup, and complete packaging-contract coverage remain
-open.
+execution, native MCP startup, and complete packaging-contract coverage
+remained for later remediation.
 
 TASK-29 extends the matrix to macOS, exercises prepared Unix executable modes,
 and completes a real packaged MCP initialize/tools-list handshake. Manual Git
-marketplace executable modes and complete generated-document coverage remain
-open.
+marketplace executable modes and complete generated-document coverage remained
+for TASK-32.
+
+Resolution (TASK-32): CI now checks manual Git archive modes, direct Unix
+execution, the Windows polyglot wrapper, automatically prepared entry points,
+the packaged Claude hook, public JSON examples, generated client payloads, and
+README/Markdown/JSON ADR index freshness. These checks run alongside Python
+3.10/3.12 on Windows, macOS, and Ubuntu.
 
 ### F-20: public metadata and dogfood integration drift
 
@@ -430,13 +514,21 @@ separate mechanical cleanup.
 The Codex `.mcp.json` also uses a legacy camel-case wrapper. Codex 0.144.6 still
 loads it, so this is a future-compatibility note rather than a current outage.
 
+Resolution (TASK-32): the complete historical changelog link set was rebuilt,
+future release bumps update comparison links, version-pinned behavioral claims
+were removed, the dogfood and agent guidance were resynchronized, and public
+metadata now describes current multi-format governance. The `mcpServers`
+wrapper remains intentionally unchanged because it is the validated native
+manifest contract used by the packaged initialize/tools-list smoke test; this
+is an accepted compatibility choice, not an open defect.
+
 ## ADR enforcement and discovery result
 
 ### Enforcement
 
-No branch diff existed relative to `origin/main`, so there was no feature diff
-to judge. The repository itself conforms to the four Accepted dogfood ADRs at
-the documentation/architecture level:
+At the baseline commit no branch diff existed relative to `origin/main`, so
+there was no feature diff to judge. The repository conformed to the four
+Accepted dogfood ADRs at the documentation/architecture level:
 
 - local and deterministic default paths;
 - no default model spend;
@@ -444,8 +536,9 @@ the documentation/architecture level:
 - one shared semantic contract across selectable MADR, Nygard, and canonical
   ADR body profiles (superseding the baseline canonical-only decision).
 
-F-02 and F-03 weaken ADR-001/ADR-004's runtime guarantees and should be treated
-as implementation defects against those decisions.
+F-02 and F-03 were implementation defects against ADR-001/ADR-004's runtime
+guarantees. TASK-32 restores those fail-closed guarantees and adds regressions
+at the judge, hook, generated-validator, and MCP boundaries.
 
 ### Discovery
 
@@ -502,14 +595,33 @@ Post-TASK-29 cross-platform installer verification:
 - GitHub Actions compatibility matrix configured for Python 3.10/3.12 on
   Windows, macOS, and Ubuntu; hosted results follow when the branch is pushed.
 
+Post-TASK-32 remediation verification:
+
+- full suite on Windows/Python 3.12: 635 passed, 4 skipped;
+- focused guardian, watcher, and state transaction suite: 89 passed;
+- focused lifecycle, auto-accept, context, and profile suite: 62 passed;
+- focused release, documentation, and packaging suite: 24 passed, 1
+  platform-specific skip;
+- copied OTGW-firmware corpus: 169 ADRs with manifest-integrity, discovery,
+  deterministic migration-preview, lint, and context checks; 5 passed;
+- strict ADR lint: all seven dogfood ADRs passed with zero advisories;
+- judge review of the complete tracked worktree diff: zero violations and zero
+  advisories;
+- generated client payload check: synchronized;
+- README, Markdown, and JSON graph index check: all current;
+- `git diff --check`: clean after report normalization;
+- CI matrix configured to repeat Python 3.10/3.12, manual/archive packaging,
+  prepared installer, packaged MCP, Claude hook, and public-example checks on
+  Windows, macOS, and Ubuntu.
+
 These results are a point-in-time handoff, not a permanent green baseline.
 
-## Recommended implementation order
+## Remediation order completed
 
-1. F-02 and F-03: remove deterministic enforcement bypasses.
-2. F-01: make regex evaluation killable and bounded.
-3. F-04 and F-05: make diff/path/index semantics exact.
-4. F-06 and F-13: restore cross-platform plugin execution.
-5. F-08: make lifecycle changes legal, conflict-safe, and atomic.
-6. F-12 and F-19: build the portability matrix that prevents recurrence.
-7. F-09, F-10, F-14, F-15, and F-16: align secondary workflows and tooling.
+1. F-02/F-03: deterministic enforcement bypasses removed.
+2. F-01/F-10: regex execution bounded and generated validators aligned.
+3. F-04/F-05: Git path and snapshot semantics made exact.
+4. F-08/F-09: lifecycle transactions and context authority made explicit.
+5. F-15/F-16: release and shared-state writes made transaction-safe.
+6. F-06/F-14/F-19/F-20: packaging, CI, runtime smoke, and metadata gaps
+   closed.

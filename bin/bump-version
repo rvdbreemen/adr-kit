@@ -44,8 +44,10 @@ bin in this repo.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -59,10 +61,12 @@ CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 PRECOMMIT_TEMPLATE = REPO_ROOT / "templates" / "githooks" / "pre-commit"
 GUARDIAN_ENTRY = REPO_ROOT / "templates" / "cc-settings" / "guardian-hook-entry.json"
 GUIDE_TEMPLATE = REPO_ROOT / "templates" / "adr-kit-guide.md"
+OWN_WRAPPER = REPO_ROOT / ".githooks" / "pre-commit"
 
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 WRAPPER_STAMP_RE = re.compile(r'^ADR_KIT_WRAPPER_VERSION="[^"]*"$', re.MULTILINE)
 GUIDE_STAMP_RE = re.compile(r"^<!-- adr-kit-guide v[0-9.]+ -->")
+UNRELEASED_LINK_RE = re.compile(r"^\[Unreleased\]:\s+.*$", re.MULTILINE)
 
 
 def _fail(msg: str) -> "NoReturn":
@@ -77,8 +81,92 @@ def _read_json(path: Path) -> dict:
         _fail(f"{path}: {exc}")
 
 
-def _write_json(path: Path, data: dict) -> None:
-    path.write_bytes((json.dumps(data, indent=2) + "\n").encode("utf-8"))
+def _json_bytes(data: dict) -> bytes:
+    return (json.dumps(data, indent=2) + "\n").encode("utf-8")
+
+
+def _atomic_write_bytes(path: Path, content: bytes) -> None:
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def _apply_transaction(changes: dict[Path, bytes]) -> None:
+    originals = {path: path.read_bytes() for path in changes}
+    try:
+        for path, content in changes.items():
+            _atomic_write_bytes(path, content)
+    except BaseException as exc:
+        rollback_errors = []
+        for path, content in originals.items():
+            try:
+                _atomic_write_bytes(path, content)
+            except BaseException as rollback_exc:  # pragma: no cover - catastrophic
+                rollback_errors.append(f"{path}: {rollback_exc}")
+        if rollback_errors:
+            _fail(
+                f"release write failed ({exc}); rollback also failed: "
+                + "; ".join(rollback_errors)
+            )
+        _fail(f"release write failed; all targets were rolled back: {exc}")
+
+
+def _require_version_manifest(path: Path) -> dict:
+    data = _read_json(path)
+    if not isinstance(data, dict) or not isinstance(data.get("version"), str):
+        _fail(f"{path}: expected an object with a string version field")
+    return data
+
+
+def _matching_marketplace_entries(path: Path, plugin_name: str) -> tuple[dict, list]:
+    data = _read_json(path)
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    if not isinstance(plugins, list):
+        _fail(f"{path}: expected a plugins array")
+    matched = [
+        entry
+        for entry in plugins
+        if isinstance(entry, dict) and entry.get("name") == plugin_name
+    ]
+    if not matched:
+        _fail(f"no plugin named {plugin_name!r} in {path}")
+    if any(not isinstance(entry.get("version"), str) for entry in matched):
+        _fail(f"{path}: matching plugin entries require string version fields")
+    return data, matched
+
+
+def _update_changelog_links(changelog: str, current: str, new: str) -> str:
+    unreleased = (
+        "[Unreleased]: "
+        f"https://github.com/rvdbreemen/adr-kit/compare/v{new}...HEAD"
+    )
+    release = (
+        f"[{new}]: "
+        "https://github.com/rvdbreemen/adr-kit/compare/"
+        f"v{current}...v{new}"
+    )
+    if UNRELEASED_LINK_RE.search(changelog):
+        return UNRELEASED_LINK_RE.sub(
+            unreleased + "\n" + release,
+            changelog,
+            count=1,
+        )
+    return changelog.rstrip() + "\n\n" + unreleased + "\n" + release + "\n"
 
 
 def main(argv: list) -> int:
@@ -92,147 +180,110 @@ def main(argv: list) -> int:
     if not SEMVER_RE.match(new_version):
         _fail(f"version must be semver (e.g. 0.16.0), got: {new_version}")
 
-    for required in (
+    required_paths = (
         PLUGIN_JSON,
         CODEX_PLUGIN_JSON,
         COPILOT_PLUGIN_JSON,
         COPILOT_MARKETPLACE_JSON,
         MARKETPLACE_JSON,
         CHANGELOG,
-    ):
+        PRECOMMIT_TEMPLATE,
+        GUARDIAN_ENTRY,
+        GUIDE_TEMPLATE,
+        OWN_WRAPPER,
+    )
+    for required in required_paths:
         if not required.is_file():
             _fail(f"{required} not found")
 
-    plugin = _read_json(PLUGIN_JSON)
+    # Preflight and compute every edit before the first write.
+    plugin = _require_version_manifest(PLUGIN_JSON)
+    codex_plugin = _require_version_manifest(CODEX_PLUGIN_JSON)
+    copilot_plugin = _require_version_manifest(COPILOT_PLUGIN_JSON)
+    plugin_name = plugin.get("name")
+    if not isinstance(plugin_name, str) or not plugin_name:
+        _fail(f"{PLUGIN_JSON}: expected a non-empty string name")
+    if codex_plugin.get("name") != plugin_name or copilot_plugin.get("name") != plugin_name:
+        _fail("all client manifests must use the same plugin name")
+
+    copilot_marketplace, copilot_matched = _matching_marketplace_entries(
+        COPILOT_MARKETPLACE_JSON, plugin_name
+    )
+    marketplace, matched = _matching_marketplace_entries(
+        MARKETPLACE_JSON, plugin_name
+    )
+
+    changelog = CHANGELOG.read_text(encoding="utf-8")
+    if "## [Unreleased]" not in changelog:
+        _fail("CHANGELOG.md has no '## [Unreleased]' section")
+    precommit = PRECOMMIT_TEMPLATE.read_text(encoding="utf-8")
+    own_wrapper = OWN_WRAPPER.read_text(encoding="utf-8")
+    if not WRAPPER_STAMP_RE.search(precommit):
+        _fail(f"{PRECOMMIT_TEMPLATE}: wrapper version stamp not found")
+    if not WRAPPER_STAMP_RE.search(own_wrapper):
+        _fail(f"{OWN_WRAPPER}: wrapper version stamp not found")
+    guardian_entry = _read_json(GUARDIAN_ENTRY)
+    if not isinstance(guardian_entry, dict) or not isinstance(
+        guardian_entry.get("_wrapper_version"), str
+    ):
+        _fail(f"{GUARDIAN_ENTRY}: _wrapper_version string not found")
+    guide = GUIDE_TEMPLATE.read_text(encoding="utf-8")
+    if not GUIDE_STAMP_RE.match(guide):
+        _fail(f"{GUIDE_TEMPLATE}: guide version stamp not found")
+
     current = plugin.get("version", "?")
     today = date.today().isoformat()
     print(f"Bumping adr-kit: {current} -> {new_version} (date: {today})")
 
-    # 1. plugin.json
     plugin["version"] = new_version
-    _write_json(PLUGIN_JSON, plugin)
-    print(f"  + .claude-plugin/plugin.json -> {new_version}")
-
-    # 2. Codex plugin manifest. It is a separate client distribution, but both
-    #    native plugins ship under one adr-kit release version.
-    codex_plugin = _read_json(CODEX_PLUGIN_JSON)
     codex_plugin["version"] = new_version
-    _write_json(CODEX_PLUGIN_JSON, codex_plugin)
-    print(f"  + codex/.codex-plugin/plugin.json -> {new_version}")
-
-    # 3. Standalone GitHub Copilot CLI plugin manifest.
-    copilot_plugin = _read_json(COPILOT_PLUGIN_JSON)
     copilot_plugin["version"] = new_version
-    _write_json(COPILOT_PLUGIN_JSON, copilot_plugin)
-    print(f"  + copilot/plugin.json -> {new_version}")
-
-    copilot_marketplace = _read_json(COPILOT_MARKETPLACE_JSON)
-    copilot_matched = [
-        p
-        for p in copilot_marketplace.get("plugins", [])
-        if p.get("name") == copilot_plugin.get("name")
-    ]
-    if not copilot_matched:
-        _fail("no adr-kit entry in Copilot marketplace")
     for entry in copilot_matched:
         entry["version"] = new_version
-    _write_json(COPILOT_MARKETPLACE_JSON, copilot_marketplace)
-    print(f"  + .github/plugin/marketplace.json -> {new_version}")
-
-    # 4. Claude marketplace.json: bump the entry whose name matches plugin.json's
-    #    name; error out if no such entry exists so a silent miss cannot ship.
-    plugin_name = plugin.get("name")
-    marketplace = _read_json(MARKETPLACE_JSON)
-    matched = [
-        p for p in marketplace.get("plugins", []) if p.get("name") == plugin_name
-    ]
-    if not matched:
-        _fail(
-            f"no plugin named {plugin_name!r} in {MARKETPLACE_JSON};"
-            " cannot bump marketplace version"
-        )
     for entry in matched:
         entry["version"] = new_version
-    _write_json(MARKETPLACE_JSON, marketplace)
-    print(f"  + .claude-plugin/marketplace.json ({plugin_name}) -> {new_version}")
+    changelog = changelog.replace(
+        "## [Unreleased]",
+        f"## [Unreleased]\n\n## [{new_version}] - {today}",
+        1,
+    )
+    changelog = _update_changelog_links(changelog, current, new_version)
+    precommit = WRAPPER_STAMP_RE.sub(
+        f'ADR_KIT_WRAPPER_VERSION="{new_version}"', precommit, count=1
+    )
+    own_wrapper = WRAPPER_STAMP_RE.sub(
+        f'ADR_KIT_WRAPPER_VERSION="{new_version}"', own_wrapper, count=1
+    )
+    guardian_entry["_wrapper_version"] = new_version
+    guide = GUIDE_STAMP_RE.sub(
+        f"<!-- adr-kit-guide v{new_version} -->", guide, count=1
+    )
 
-    # 5. CHANGELOG.md: first "## [Unreleased]" becomes the release heading,
-    #    with a fresh empty Unreleased block above it.
-    changelog = CHANGELOG.read_text(encoding="utf-8")
-    if "## [Unreleased]" not in changelog:
-        sys.stderr.write(
-            "WARNING: no '## [Unreleased]' section found in CHANGELOG.md;"
-            " skipping CHANGELOG update\n"
-        )
-    else:
-        changelog = changelog.replace(
-            "## [Unreleased]",
-            f"## [Unreleased]\n\n## [{new_version}] - {today}",
-            1,
-        )
-        CHANGELOG.write_bytes(changelog.replace("\r\n", "\n").encode("utf-8"))
-        print(f"  + CHANGELOG.md: [Unreleased] -> [{new_version}] - {today}")
+    changes = {
+        PLUGIN_JSON: _json_bytes(plugin),
+        CODEX_PLUGIN_JSON: _json_bytes(codex_plugin),
+        COPILOT_PLUGIN_JSON: _json_bytes(copilot_plugin),
+        COPILOT_MARKETPLACE_JSON: _json_bytes(copilot_marketplace),
+        MARKETPLACE_JSON: _json_bytes(marketplace),
+        CHANGELOG: changelog.replace("\r\n", "\n").encode("utf-8"),
+        PRECOMMIT_TEMPLATE: precommit.replace("\r\n", "\n").encode("utf-8"),
+        GUARDIAN_ENTRY: _json_bytes(guardian_entry),
+        GUIDE_TEMPLATE: guide.replace("\r\n", "\n").encode("utf-8"),
+        OWN_WRAPPER: own_wrapper.replace("\r\n", "\n").encode("utf-8"),
+    }
+    _apply_transaction(changes)
 
-    # 6. Wrapper-version stamps in the copied-artifact templates (task-15).
-    #    Keeping the stamps in lockstep with the release means a fresh install
-    #    is never reported stale by adr-guardian. Missing files or stamps are
-    #    tolerated (older checkouts); the lockstep tests in
-    #    tests/test_adr_guardian_artifacts.py catch a missed stamp on HEAD.
-    try:
-        content = PRECOMMIT_TEMPLATE.read_text(encoding="utf-8")
-        if WRAPPER_STAMP_RE.search(content):
-            content = WRAPPER_STAMP_RE.sub(
-                f'ADR_KIT_WRAPPER_VERSION="{new_version}"', content, count=1
-            )
-            PRECOMMIT_TEMPLATE.write_bytes(
-                content.replace("\r\n", "\n").encode("utf-8")
-            )
-            print(f"  + templates/githooks/pre-commit wrapper stamp -> {new_version}")
-    except OSError:
-        pass
-    try:
-        entry_data = json.loads(GUARDIAN_ENTRY.read_text(encoding="utf-8"))
-        if isinstance(entry_data, dict) and "_wrapper_version" in entry_data:
-            entry_data["_wrapper_version"] = new_version
-            _write_json(GUARDIAN_ENTRY, entry_data)
-            print(
-                "  + templates/cc-settings/guardian-hook-entry.json stamp"
-                f" -> {new_version}"
-            )
-    except (OSError, json.JSONDecodeError):
-        pass
-    try:
-        guide = GUIDE_TEMPLATE.read_text(encoding="utf-8")
-        if GUIDE_STAMP_RE.match(guide):
-            guide = GUIDE_STAMP_RE.sub(
-                f"<!-- adr-kit-guide v{new_version} -->", guide, count=1
-            )
-            GUIDE_TEMPLATE.write_bytes(guide.replace("\r\n", "\n").encode("utf-8"))
-            print(f"  + templates/adr-kit-guide.md version line -> {new_version}")
-    except OSError:
-        pass
-    # This repo dogfoods its own pre-commit wrapper at .githooks/pre-commit;
-    # without this it would lag the plugin version by one release forever and
-    # the guardian would flag the kit's own repo as stale.
-    own_wrapper = REPO_ROOT / ".githooks" / "pre-commit"
-    try:
-        content = own_wrapper.read_text(encoding="utf-8")
-        if WRAPPER_STAMP_RE.search(content):
-            content = WRAPPER_STAMP_RE.sub(
-                f'ADR_KIT_WRAPPER_VERSION="{new_version}"', content, count=1
-            )
-            own_wrapper.write_bytes(content.replace("\r\n", "\n").encode("utf-8"))
-            print(f"  + .githooks/pre-commit wrapper stamp -> {new_version}")
-    except OSError:
-        pass
+    for path in changes:
+        print(f"  + {path.relative_to(REPO_ROOT).as_posix()} -> {new_version}")
 
     print()
     print("Done. Verify the changes, then:")
     print(
         "  git add .claude-plugin/plugin.json .claude-plugin/marketplace.json"
         " codex/.codex-plugin/plugin.json copilot/plugin.json CHANGELOG.md"
-        " templates/githooks/pre-commit"
+        " .github/plugin/marketplace.json templates/githooks/pre-commit"
         " templates/cc-settings/guardian-hook-entry.json"
+        " templates/adr-kit-guide.md .githooks/pre-commit"
     )
     print(f'  git commit -m "chore(release): v{new_version}"')
     print(f"  git tag v{new_version}")

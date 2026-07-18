@@ -4,7 +4,10 @@
   "title": "adr-kit project policy (.adr-kit.json)",
   "description": "Schema for the project-level policy file at docs/adr/.adr-kit.json (introduced in adr-kit v0.9.0). Field semantics are documented in the README Configuration section and the lint skill body. Top-level keys starting with '_' (e.g. '_comment', '_note') are silently allowed for embedding annotations and are not subject to validation.",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
+  "patternProperties": {
+    "^_": {}
+  },
   "properties": {
     "strict_from": {
       "type": "string",
@@ -115,7 +118,7 @@
         },
         "max_diff_bytes": {
           "type": "integer",
-          "description": "Diffs larger than this size (in bytes) are skipped with a warning. Protects against pathological commits (e.g. generated-file dumps). Default 1048576 (1 MiB). Set 0 to disable the cap.",
+          "description": "Diffs larger than this size (in UTF-8 bytes) fail closed with an actionable configuration error because deterministic enforcement did not run. Protects against pathological commits without creating a success bypass. Default 1048576 (1 MiB). Set 0 to disable the cap explicitly.",
           "minimum": 0,
           "default": 1048576
         },

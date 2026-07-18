@@ -1,7 +1,7 @@
 ---
 id: "ADR-007"
 title: "JSON ADR Graph Index for Agent Retrieval"
-status: "Proposed"
+status: "Accepted"
 date: "2026-07-18"
 binding: false
 gate: null
@@ -18,7 +18,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-07-18.
+Accepted, 2026-07-18.
 
 ## Status History
 
@@ -29,6 +29,11 @@ status_history:
     changed_by: Codex
     reason: Initial proposal
     changed_via: adr-kit
+  - date: 2026-07-18
+    status: Accepted
+    changed_by: Robert van den Breemen
+    reason: Human approval for the v0.34.0 release; ADR-INDEX.json ships as a generated artifact
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement

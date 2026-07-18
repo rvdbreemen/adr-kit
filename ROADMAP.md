@@ -5,14 +5,15 @@ It exists to make contribution and prioritisation decisions predictable.
 
 ## Status
 
-`adr-kit` is at v0.33.0 and remains pre-1.0. The Claude, Codex, and standalone
+`adr-kit` is at v0.34.0 and remains pre-1.0. The Claude, Codex, and standalone
 Copilot distributions, 14 workflows, local ADR lifecycle, deterministic
 enforcement, context injection, guardian, MCP server, and generated indexes are
 all shipped. File layout and conventions may still change before v1.0.0.
 
 The [2026-07-18 source audit](docs/reviews/2026-07-18-source-audit/FINDINGS.md)
-is the current engineering baseline. Its high-severity enforcement and
-portability findings take priority over new surface area.
+is the current engineering baseline. All implementation findings are closed
+or explicitly accepted with a tested compatibility rationale; regression
+coverage remains part of the release gate.
 
 If a breaking change becomes necessary before v1.0.0, it will land as a minor
 version, be called out in the changelog, and include a tested migration note.
@@ -32,29 +33,28 @@ change without a deprecation window. Current release criteria are:
 - Confirm the four verification gates have blocked at least one real-world PR.
 - Publish and test the v0.x to v1.0 migration path on a non-trivial ADR set.
 
-**Field check (2026-07-18, v0.33.0 plus unreleased work):** all five dogfood
-ADRs pass strict lint, both generated ADR indexes are current, and 558 tests
-are collected. The payload sync gate is newline-stable across CRLF and LF
-checkouts. An isolated
-performance threshold can still be noisy under concurrent load.
-High-severity source findings remain open, so v1.0 criteria are not met.
+**Field check (2026-07-18, v0.34.0):** all dogfood ADRs
+pass strict lint; the README, Markdown, and JSON graph indexes are current;
+payload sync is newline-stable; and the supported Python/OS matrix covers
+manual packaging, prepared installation, MCP startup, lifecycle rollback,
+bounded enforcement, and concurrent state updates. The external field-time
+and unrelated-installation criteria remain open, so v1.0 criteria are not met.
 
 ## Planned work (signals, not commitments)
 
-Priority is shaped by user evidence and the source audit:
+Priority is shaped by user evidence:
 
-- Harden `adr-judge`: isolate regex evaluation, validate runtime config types,
-  fail safely on oversized diffs, decode Git-quoted paths, and evaluate
-  `require_pattern` against the staged/post-diff snapshot.
-- Make lifecycle updates transactional and enforce legal status/supersession
-  transitions before either ADR is written.
-- Align context ranking and generated validators with their documented
-  lifecycle and Enforcement semantics.
+- Accumulate the field evidence required for v1.0 readiness.
 - Finish the external ADR tooling catalog contribution and repository
   automation follow-ups already tracked in Backlog.
+- Keep migration and compatibility checks current as client plugin APIs evolve.
 
 ## Recently landed
 
+- **TASK-32:** source-audit closure: bounded regex workers, schema-validated
+  runtime config, exact Git snapshot semantics, rollback-safe lifecycle and
+  release mutations, cross-process state transactions, executable release
+  modes, and expanded packaging/documentation CI.
 - **TASK-29:** the automatic installer now prepares a persistent
   platform-local marketplace with its validated Python runtime embedded,
   restores Unix entry-point modes, isolates client failures, completes a real
@@ -64,6 +64,10 @@ Priority is shaped by user evidence and the source audit:
   canonical profile are selectable through one semantic registry. Profile
   migration is dry-run capable and idempotent, and all native client payloads
   share the same templates and engines.
+- **v0.34.0:** selectable MADR/Nygard/canonical formats, versioned JSON ADR
+  graph index, three-platform native installer with a real MCP handshake, and
+  the closed source-audit hardening set (bounded regex, fail-closed judge
+  config, exact staged Git semantics, transactional lifecycle and state).
 - **v0.33.0:** separate native Codex and standalone Copilot distributions,
   detected-client installer, generated payload gate, and workspace-aware MCP.
 - **v0.32.0:** canonical frontmatter, strict local governance, generated README

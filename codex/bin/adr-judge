@@ -45,8 +45,8 @@ import shlex
 import shutil
 import subprocess
 import sys
-import threading
 import time
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -56,6 +56,8 @@ if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
 from adr_format import section_text
+from adr_config import ConfigValidationError, load_project_config
+from adr_regex import RegexEvaluationError, bounded_regex_search
 
 # Default LLM invocation. Overridable via --llm-cmd, ADR_KIT_LLM_CMD env, or
 # .adr-kit.json's judge.llm_cmd. Tests inject a fake binary here.
@@ -113,33 +115,10 @@ def _get_enforcement_validator():
 
 def _safe_regex_search(
     pattern: re.Pattern, text: str, timeout_s: float = 1.0
-) -> Optional[re.Match]:
-    """Run pattern.search(text) with a per-call wall-clock timeout.
-
-    Python's `re` engine is backtracking and has no native interrupt; the
-    practical mitigation is to run it on a daemon thread and abandon if it
-    takes too long. The thread keeps consuming CPU until it returns (you
-    can't kill a Python thread mid-regex), but at least the *caller* gets
-    control back so a single ReDoS-prone pattern can't wedge the whole
-    pre-commit hook.
-    """
-    result: List[Optional[re.Match]] = [None]
-    error: List[Optional[BaseException]] = [None]
-
-    def _run() -> None:
-        try:
-            result[0] = pattern.search(text)
-        except BaseException as exc:  # pragma: no cover - defensive
-            error[0] = exc
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout_s)
-    if t.is_alive():
-        raise TimeoutError(f"Regex timed out after {timeout_s}s")
-    if error[0] is not None:
-        raise error[0]
-    return result[0]
+) -> bool:
+    """Run policy regex in a killable subprocess with deterministic budgets."""
+    del timeout_s  # The shared evaluator owns the audited fixed timeout.
+    return bounded_regex_search(pattern.pattern, text, pattern.flags)
 
 
 def _split_cmd(cmd_str: str) -> List[str]:
@@ -494,30 +473,111 @@ def enforcement_config_finding(adr_id: str, issues: List[str]) -> Dict:
     }
 
 
-def parse_diff(text: str) -> Dict[str, List[Tuple[int, str]]]:
+@dataclass
+class DiffFile:
+    """One post-diff file plus the added lines needed by forbid rules."""
+
+    path: str
+    old_path: Optional[str]
+    added: List[Tuple[int, str]]
+    is_new: bool = False
+    deleted: bool = False
+
+
+def _decode_git_quoted_path(raw: str) -> str:
+    """Decode Git's core.quotePath C-style path representation."""
+    value = raw.strip()
+    if not value.startswith('"'):
+        return value.split("\t", 1)[0]
+    data = bytearray()
+    index = 1
+    escapes = {
+        "a": 7,
+        "b": 8,
+        "t": 9,
+        "n": 10,
+        "v": 11,
+        "f": 12,
+        "r": 13,
+        '"': 34,
+        "\\": 92,
+    }
+    while index < len(value):
+        char = value[index]
+        if char == '"':
+            break
+        if char != "\\":
+            data.extend(char.encode("utf-8"))
+            index += 1
+            continue
+        index += 1
+        if index >= len(value):
+            raise JudgeError("unterminated escape in Git-quoted path")
+        escaped = value[index]
+        if escaped in escapes:
+            data.append(escapes[escaped])
+            index += 1
+            continue
+        if escaped in "01234567":
+            end = index
+            while end < len(value) and end < index + 3 and value[end] in "01234567":
+                end += 1
+            data.append(int(value[index:end], 8))
+            index = end
+            continue
+        data.extend(escaped.encode("utf-8"))
+        index += 1
+    else:
+        raise JudgeError("unterminated Git-quoted path")
+    return data.decode("utf-8", errors="surrogateescape")
+
+
+def _diff_path(raw: str, prefix: str) -> Optional[str]:
+    decoded = _decode_git_quoted_path(raw)
+    if decoded == "/dev/null":
+        return None
+    return decoded[len(prefix) :] if decoded.startswith(prefix) else decoded
+
+
+def parse_diff(text: str) -> Dict[str, DiffFile]:
     """Extract (lineno, content) tuples per added line, keyed by post-diff path.
 
     Skips deleted files (+++ /dev/null) and binary diffs. Tracks the new-file
     line counter via the @@ hunk header so reporting can cite file:line.
     """
-    files: Dict[str, List[Tuple[int, str]]] = {}
-    current: Optional[str] = None
+    files: Dict[str, DiffFile] = {}
+    current: Optional[DiffFile] = None
+    old_path: Optional[str] = None
     lineno = 0
     for line in text.splitlines():
-        if line.startswith("+++ "):
-            target = line[4:].strip()
-            if target == "/dev/null" or target.startswith("/dev/null"):
-                current = None
+        if line.startswith("--- "):
+            old_path = _diff_path(line[4:], "a/")
+        elif line.startswith("+++ "):
+            new_path = _diff_path(line[4:], "b/")
+            if new_path is None:
+                if old_path is None:
+                    current = None
+                    continue
+                current = DiffFile(
+                    path=old_path,
+                    old_path=old_path,
+                    added=[],
+                    deleted=True,
+                )
             else:
-                # Strip leading "b/" if present (git default)
-                current = target[2:] if target.startswith("b/") else target
-                files.setdefault(current, [])
+                current = DiffFile(
+                    path=new_path,
+                    old_path=old_path,
+                    added=[],
+                    is_new=old_path is None,
+                )
+            files[current.path] = current
         elif line.startswith("@@ "):
             m = HUNK_HEADER_RE.match(line)
             if m:
                 lineno = int(m.group(1))
         elif current and line.startswith("+") and not line.startswith("+++"):
-            files[current].append((lineno, line[1:]))
+            current.added.append((lineno, line[1:]))
             lineno += 1
         elif line.startswith(" "):
             lineno += 1
@@ -610,10 +670,11 @@ def any_skip_match(path: str, skip_globs: List[str]) -> bool:
 def apply_rules_to_diff(
     adr_id: str,
     enforcement: Dict,
-    diff_files: Dict[str, List[Tuple[int, str]]],
+    diff_files: Dict[str, DiffFile],
     repo_root: Path,
     skip_files: List[str],
     llm_mode_active: bool = False,
+    snapshot_mode: str = "diff",
 ) -> List[Dict]:
     """Apply one ADR's Enforcement block to the parsed diff. Returns findings.
 
@@ -636,15 +697,15 @@ def apply_rules_to_diff(
                     f"{adr_id}: invalid regex in {kind} rule ({pattern!r}): {e}"
                 )
             timed_out = False
-            for path, added in diff_files.items():
+            for path, diff_file in diff_files.items():
                 if any_skip_match(path, skip_files):
                     continue
                 if not path_matches(path, path_glob):
                     continue
-                for lineno, content in added:
+                for lineno, content in diff_file.added:
                     try:
                         match = _safe_regex_search(regex, content)
-                    except TimeoutError:
+                    except RegexEvaluationError:
                         timed_out = True
                         break
                     if match:
@@ -672,10 +733,11 @@ def apply_rules_to_diff(
                         "line": None,
                         "snippet": None,
                         "message": (
-                            f"Pattern {pattern!r} regex timed out — possible ReDoS. "
-                            f"Check the pattern."
+                            f"Pattern {pattern!r} could not be evaluated within "
+                            "the isolated regex safety budget. Enforcement failed "
+                            "closed; simplify the pattern or reduce its input scope."
                         ),
-                        "severity": "advisory",
+                        "severity": "violation",
                     }
                 )
 
@@ -690,33 +752,39 @@ def apply_rules_to_diff(
                 f"{adr_id}: invalid regex in require_pattern rule ({pattern!r}): {e}"
             )
         req_timed_out = False
-        for path in diff_files:
+        for path, diff_file in diff_files.items():
             if any_skip_match(path, skip_files):
                 continue
             if not path_matches(path, path_glob):
                 continue
-            # SEC-LOW: reject paths containing .. before constructing file_path,
-            # then double-check the resolved path is still inside repo_root.
-            # Absolute paths in diff headers would otherwise be honoured by
-            # pathlib (Path('/a') / Path('/b') == Path('/b')) and escape the
-            # repo sandbox.
-            if ".." in Path(path).parts:
+            state, content = read_snapshot_content(
+                diff_file, repo_root, snapshot_mode
+            )
+            if state != "present":
+                detail = (
+                    "the file is absent in the selected snapshot"
+                    if state == "missing"
+                    else "the explicit diff does not contain a complete post-image"
+                )
+                findings.append(
+                    {
+                        "adr": adr_id,
+                        "rule": "require_pattern",
+                        "pattern": pattern,
+                        "path": path,
+                        "line": None,
+                        "snippet": None,
+                        "message": (
+                            f"{message} ({detail}; enforcement failed closed)"
+                        ),
+                        "severity": "violation",
+                    }
+                )
                 continue
-            file_path = repo_root / path
-            try:
-                file_path.resolve().relative_to(repo_root.resolve())
-            except ValueError:
-                # path escapes repo_root — skip this file.
-                continue
-            if not file_path.is_file():
-                continue
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
+            assert content is not None
             try:
                 match = _safe_regex_search(regex, content)
-            except TimeoutError:
+            except RegexEvaluationError:
                 req_timed_out = True
                 break
             if not match:
@@ -742,10 +810,11 @@ def apply_rules_to_diff(
                     "line": None,
                     "snippet": None,
                     "message": (
-                        f"Pattern {pattern!r} regex timed out — possible ReDoS. "
-                        f"Check the pattern."
+                        f"Pattern {pattern!r} could not be evaluated within the "
+                        "isolated regex safety budget. Enforcement failed closed; "
+                        "simplify the pattern or reduce its input scope."
                     ),
-                    "severity": "advisory",
+                    "severity": "violation",
                 }
             )
 
@@ -774,6 +843,55 @@ def apply_rules_to_diff(
         # else: handled by run_llm_batch — produces "violation" or nothing per ADR.
 
     return findings
+
+
+def _safe_repo_path(repo_root: Path, path: str) -> Optional[Path]:
+    candidate = Path(path)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    file_path = repo_root / candidate
+    try:
+        file_path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return None
+    return file_path
+
+
+def read_snapshot_content(
+    diff_file: DiffFile,
+    repo_root: Path,
+    snapshot_mode: str,
+) -> Tuple[str, Optional[str]]:
+    """Return (present|missing|unknown, content) for one post-diff file."""
+    safe_path = _safe_repo_path(repo_root, diff_file.path)
+    if safe_path is None:
+        return "unknown", None
+    if diff_file.deleted:
+        return "missing", None
+    if snapshot_mode == "staged":
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "show", f":{diff_file.path}"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return "present", result.stdout.decode("utf-8", errors="replace")
+        return "missing", None
+    if snapshot_mode == "worktree":
+        if not safe_path.is_file():
+            return "missing", None
+        try:
+            return "present", safe_path.read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError:
+            return "unknown", None
+    if diff_file.is_new:
+        content = "\n".join(line for _, line in diff_file.added)
+        if diff_file.added:
+            content += "\n"
+        return "present", content
+    return "unknown", None
 
 
 # ---------- LLM judge pass (v0.13.0+) ----------
@@ -1408,13 +1526,18 @@ class ProfileCollector:
 
 
 def load_config(path: Optional[Path]) -> Dict:
-    """Read .adr-kit.json (if present). Returns {} when missing."""
-    if path is None or not path.exists():
+    """Read and schema-validate .adr-kit.json; return defaults when missing."""
+    if path is None:
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        raise JudgeError(f"{path}: invalid JSON ({e.msg} at line {e.lineno})")
+        schema_path = (
+            Path(__file__).resolve().parent.parent
+            / "schemas"
+            / "adr-kit-config.schema.json"
+        )
+        return load_project_config(path, schema_path)
+    except ConfigValidationError as exc:
+        raise JudgeError(str(exc)) from exc
 
 
 def adr_id_from_filename(name: str) -> Optional[str]:
@@ -1539,6 +1662,15 @@ def main() -> int:
         default=None,
         help="Repo root for resolving file paths in require_pattern rules. "
         "Default: current working directory.",
+    )
+    p.add_argument(
+        "--snapshot",
+        choices=("diff", "staged", "worktree"),
+        default="diff",
+        help="Post-image source for require_pattern: 'staged' reads the Git "
+        "index, 'worktree' reads the checked-out branch, and 'diff' reconstructs "
+        "new files but fails closed for incomplete modified-file patches. "
+        "Default: diff.",
     )
     p.add_argument(
         "--llm",
@@ -1700,14 +1832,16 @@ def main() -> int:
             dry_run_target = f"ADR-{int(m_target.group(1)):03d}"
 
         diff_text = read_diff(args.diff)
-        # PERF-LOW: char count is always <= UTF-8 byte count, so this is a
-        # cheap upper bound that avoids encoding the whole diff just to bail.
-        if max_diff_bytes and len(diff_text) > max_diff_bytes:
+        diff_bytes = len(diff_text.encode("utf-8", errors="replace"))
+        if max_diff_bytes and diff_bytes > max_diff_bytes:
             print(
-                f"[adr-judge] diff exceeds max_diff_bytes={max_diff_bytes}; skipping",
+                f"[adr-judge] ERROR: diff is {diff_bytes} bytes and exceeds "
+                f"judge.max_diff_bytes={max_diff_bytes}; enforcement was not "
+                "performed. Split the staged change or set an explicit larger "
+                "non-negative project limit.",
                 file=sys.stderr,
             )
-            return 0
+            return 2
         diff_files = parse_diff(diff_text)
 
         adrs = collect_adrs(adr_dir, dry_run_target=dry_run_target)
@@ -1754,8 +1888,13 @@ def main() -> int:
             profiler.start()
             all_findings.extend(
                 apply_rules_to_diff(
-                    adr_id, enforcement, diff_files, repo_root, skip_files,
+                    adr_id,
+                    enforcement,
+                    diff_files,
+                    repo_root,
+                    skip_files,
                     llm_mode_active=llm_mode_active,
+                    snapshot_mode=args.snapshot,
                 )
             )
             profiler.stop_declarative()

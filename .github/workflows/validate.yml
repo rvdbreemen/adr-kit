@@ -135,8 +135,9 @@ jobs:
       - name: Verify generated client payloads and integration tests
         run: |
           python scripts/sync-agent-plugins.py --check
+          python bin/adr-index --check docs/adr
           python -m pip install pytest
-          python -m pytest tests/test_agent_installer.py tests/test_adr_mcp.py tests/test_bump_version.py tests/test_python_check.py
+          python -m pytest tests/test_agent_installer.py tests/test_adr_mcp.py tests/test_bump_version.py tests/test_python_check.py tests/test_documentation_contracts.py tests/test_packaging_contract.py
 
       - name: Run markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v17
@@ -175,3 +176,4 @@ jobs:
           tests/test_python_compatibility.py
           tests/test_selectable_formats.py
           tests/test_agent_installer.py
+          tests/test_packaging_contract.py

@@ -663,6 +663,45 @@ def validate_prepared_mcp(source: Path, python_executable: str) -> None:
     print("Prepared MCP runtime: PASS (initialize + tools/list)")
 
 
+def validate_prepared_hooks(source: Path) -> None:
+    """Execute the packaged Claude hook wrapper through the platform shell."""
+    wrapper = source / ".claude-plugin" / "hooks" / "run-hook.cmd"
+    if platform.system() == "Windows":
+        # Absolute path mirrors plugin.json and stays resolvable when
+        # NoDefaultCurrentDirectoryInExePath drops the cwd from the search path.
+        command = ["cmd.exe", "/d", "/c", str(wrapper), "session-start"]
+        working_directory = wrapper.parent
+    else:
+        command = ["sh", str(wrapper), "session-start"]
+        working_directory = source
+    env = dict(os.environ)
+    env["CLAUDE_PLUGIN_ROOT"] = str(source)
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(working_directory),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"packaged Claude hook could not start: {exc}") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(f"packaged Claude hook smoke test failed: {detail}")
+    if result.stdout.strip():
+        try:
+            json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "packaged Claude hook returned invalid hook JSON"
+            ) from exc
+    print("Prepared Claude hook runtime: PASS (SessionStart fail-open contract)")
+
+
 def validate_install(name: str, client: Client, runner: Runner = _run) -> None:
     if name == "claude":
         result = runner([client.executable, "plugin", "list", "--json"])
@@ -859,6 +898,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if not args.dry_run:
             validate_prepared_mcp(prepared_source, python_executable)
+            validate_prepared_hooks(prepared_source)
     except RuntimeError as exc:
         parser.error(str(exc))
 

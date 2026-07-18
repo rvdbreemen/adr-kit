@@ -1,7 +1,7 @@
 ---
 id: "ADR-006"
 title: "Prepare Platform-Local Marketplaces for Native Installs"
-status: "Proposed"
+status: "Accepted"
 date: "2026-07-18"
 binding: false
 gate: null
@@ -18,7 +18,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-07-18.
+Accepted, 2026-07-18.
 
 ## Status History
 
@@ -29,12 +29,18 @@ status_history:
     changed_by: Codex
     reason: TASK-29 introduces a three-platform native installer contract
     changed_via: adr-kit
+  - date: 2026-07-18
+    status: Accepted
+    changed_by: Robert van den Breemen
+    reason: Human approval for the v0.34.0 release; the three-platform installer ships this surface
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
 
 ADR Kit ships one marketplace repository with separate Claude Code, Codex, and
-GitHub Copilot CLI payloads. The Codex and Copilot MCP manifests historically
+GitHub Copilot CLI (command-line interface) payloads. The Codex and Copilot
+MCP (Model Context Protocol) manifests historically
 invoked a command named `python`. Windows commonly provides `python.exe`, while
 macOS and Linux installations may expose only `python3`. Static manifests
 cannot select the interpreter that actually launched the installer.
@@ -78,7 +84,8 @@ Copilot MCP commands, and restores executable entry-point modes on Unix. It
 then starts the prepared MCP server and completes `initialize` plus
 `tools/list` before changing a client marketplace.
 
-Each client remains installed through its native plugin API. A marketplace
+Each client remains installed through its native plugin API (application
+programming interface). A marketplace
 registered against another source is moved once to the stable prepared path.
 Later runs recognize that same source and take update or no-op paths.
 Detection and installation errors are isolated per client and summarized at
@@ -139,7 +146,8 @@ Confirm the decision with:
 
 * Good, because each launcher can use native interpreter discovery.
 * Bad, because a static MCP manifest must still choose the correct launcher,
-  and Windows batch, POSIX shell, executable-mode, and quoting behavior create
+  and Windows batch, POSIX (Portable Operating System Interface) shell,
+  executable-mode, and quoting behavior create
   multiple runtime contracts.
 
 ### Prepare a Platform-Local Marketplace

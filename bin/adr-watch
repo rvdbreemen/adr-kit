@@ -57,6 +57,7 @@ if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
 from adr_format import section_text
+from adr_state import load_state, update_state
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -242,26 +243,12 @@ def inject_config(cfg: Dict) -> Dict:
 
 def _load_state(state_path: Path) -> Dict:
     """Read .adr-kit-state.json. Returns {} when missing or invalid."""
-    if not state_path.exists():
-        return {}
-    try:
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return {}
-        return data
-    except (json.JSONDecodeError, OSError):
-        return {}
+    return load_state(state_path, dict)
 
 
-def _save_state(state_path: Path, state: Dict) -> None:
-    """Write .adr-kit-state.json atomically via os.replace. Failure is non-fatal."""
-    try:
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, state_path)
-    except OSError:
-        pass
+def _update_state(state_path: Path, mutation):
+    """Run a fail-open, locked state read-modify-write transaction."""
+    return update_state(state_path, dict, mutation)
 
 
 def _now_utc() -> datetime:
@@ -483,39 +470,45 @@ def run_watch(paths: List[str], adr_dir: Path, now: Optional[datetime] = None) -
     except (TypeError, ValueError):
         cooldown_hours = DEFAULT_COOLDOWN_HOURS
 
-    state_path = adr_dir / ".adr-kit-state.json"
-    state = _load_state(state_path)
-    nudges = _watch_nudges(state)
-
     adrs = load_adrs(adr_dir)
     if not adrs:
         return []
 
+    state_path = adr_dir / ".adr-kit-state.json"
     project_root = _project_root()
-    lines: List[str] = []
-    emitted_keys: List[str] = []
 
-    for raw_path in paths:
-        if len(lines) >= MAX_NUDGES:
-            break
-        rel_path = normalize_path(raw_path, project_root)
-        if not rel_path:
-            continue
-        for hit in match_adrs(rel_path, adrs):
+    def collect_and_stamp(state):
+        nudges = _watch_nudges(state)
+        lines: List[str] = []
+        emitted_keys: List[str] = []
+
+        for raw_path in paths:
             if len(lines) >= MAX_NUDGES:
                 break
-            key = f"{hit['adr_id']}|{rel_path}"
-            if key in emitted_keys:
+            rel_path = normalize_path(raw_path, project_root)
+            if not rel_path:
                 continue
-            if cooldown_hours > 0 and _within_cooldown(nudges, key, cooldown_hours, now):
-                continue
-            lines.append(
-                f"[adr-watch] {hit['adr_id']} ({hit['title']}) may apply to {rel_path}"
-            )
-            emitted_keys.append(key)
+            for hit in match_adrs(rel_path, adrs):
+                if len(lines) >= MAX_NUDGES:
+                    break
+                key = f"{hit['adr_id']}|{rel_path}"
+                if key in emitted_keys:
+                    continue
+                if cooldown_hours > 0 and _within_cooldown(
+                    nudges, key, cooldown_hours, now
+                ):
+                    continue
+                lines.append(
+                    f"[adr-watch] {hit['adr_id']} ({hit['title']}) "
+                    f"may apply to {rel_path}"
+                )
+                emitted_keys.append(key)
 
-    if emitted_keys:
-        pruned = _prune_nudges(nudges, max(cooldown_hours, DEFAULT_COOLDOWN_HOURS), now)
+        if not emitted_keys:
+            return False, lines
+        pruned = _prune_nudges(
+            nudges, max(cooldown_hours, DEFAULT_COOLDOWN_HOURS), now
+        )
         for key in emitted_keys:
             pruned[key] = now.isoformat()
         watch_state = state.get("watch")
@@ -523,9 +516,9 @@ def run_watch(paths: List[str], adr_dir: Path, now: Optional[datetime] = None) -
             watch_state = {}
         watch_state["nudges"] = pruned
         state["watch"] = watch_state
-        _save_state(state_path, state)
+        return True, lines
 
-    return lines
+    return _update_state(state_path, collect_and_stamp) or []
 
 
 # ---------------------------------------------------------------------------
@@ -581,39 +574,47 @@ def run_inject(paths: List[str], adr_dir: Path,
     decisions = {a["adr_id"]: a.get("decision", "") for a in adrs}
 
     state_path = adr_dir / ".adr-kit-state.json"
-    state = _load_state(state_path)
-    nudges = _section_nudges(state, "inject")
     project_root = _project_root()
 
-    for raw_path in paths:
-        rel_path = normalize_path(raw_path, project_root)
-        if not rel_path:
-            continue
-        hits = match_adrs(rel_path, adrs)
-        if not hits:
-            continue
-        top = hits[0]
-        key = f"{top['adr_id']}|{rel_path}"
-        if cooldown_hours > 0 and _within_cooldown(nudges, key, cooldown_hours, now):
-            continue
-        decision = _bound_decision(decisions.get(top["adr_id"], ""), max_tokens)
-        if not decision:
-            continue
+    def select_and_stamp(state):
+        nudges = _section_nudges(state, "inject")
+        for raw_path in paths:
+            rel_path = normalize_path(raw_path, project_root)
+            if not rel_path:
+                continue
+            hits = match_adrs(rel_path, adrs)
+            if not hits:
+                continue
+            top = hits[0]
+            key = f"{top['adr_id']}|{rel_path}"
+            if cooldown_hours > 0 and _within_cooldown(
+                nudges, key, cooldown_hours, now
+            ):
+                continue
+            decision = _bound_decision(
+                decisions.get(top["adr_id"], ""), max_tokens
+            )
+            if not decision:
+                continue
 
-        pruned = _prune_nudges(nudges, max(cooldown_hours, DEFAULT_INJECT_COOLDOWN_HOURS), now)
-        pruned[key] = now.isoformat()
-        inject_state = state.get("inject")
-        if not isinstance(inject_state, dict):
-            inject_state = {}
-        inject_state["nudges"] = pruned
-        state["inject"] = inject_state
-        _save_state(state_path, state)
+            pruned = _prune_nudges(
+                nudges,
+                max(cooldown_hours, DEFAULT_INJECT_COOLDOWN_HOURS),
+                now,
+            )
+            pruned[key] = now.isoformat()
+            inject_state = state.get("inject")
+            if not isinstance(inject_state, dict):
+                inject_state = {}
+            inject_state["nudges"] = pruned
+            state["inject"] = inject_state
+            return True, (
+                f"[adr-inject] {top['adr_id']} ({top['title']}) governs "
+                f"{rel_path}. Honour its decision before editing:\n{decision}"
+            )
+        return False, None
 
-        return (
-            f"[adr-inject] {top['adr_id']} ({top['title']}) governs {rel_path}. "
-            f"Honour its decision before editing:\n{decision}"
-        )
-    return None
+    return _update_state(state_path, select_and_stamp)
 
 
 # ---------------------------------------------------------------------------

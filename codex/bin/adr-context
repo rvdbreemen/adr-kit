@@ -351,6 +351,7 @@ def load_adr_context(
                     "title": metadata["title"],
                     "path": metadata["path"],
                     "status": metadata["status"],
+                    "is_accepted": metadata["status"].casefold() == "accepted",
                     "format": metadata["format"],
                     "decision_summary": metadata["decision_summary"],
                     "scope": metadata["scope"],
@@ -454,6 +455,7 @@ def main() -> None:
                 "title": r["title"],
                 "path": r["path"],
                 "status": r["status"],
+                "is_accepted": r["is_accepted"],
                 "format": r["format"],
                 "decision_summary": r["decision_summary"],
                 "scope": r["scope"],
@@ -467,9 +469,11 @@ def main() -> None:
         print(json.dumps(output, indent=2))
     else:
         for r in results:
+            authority = "binding context" if r["is_accepted"] else "non-binding context"
             print(
                 f"{r['adr_id']}: {r['title']} "
-                f"(relevance: {r['score']}, path: {r['path']})"
+                f"(status: {r['status']}; {authority}; "
+                f"relevance: {r['score']}; path: {r['path']})"
             )
 
 

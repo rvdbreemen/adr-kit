@@ -13,6 +13,8 @@ successor as Proposed and show it for approval. After approval, use:
 python <plugin-root>/bin/adr supersede <old-id> --by <new-id> --adr-dir docs/adr
 ```
 
-Verify both reciprocal links, append-only status history, and the generated
-index. Never rewrite the old Decision. Before invoking the CLI, inspect
-`superseded_by` yourself because v0.33.0 does not reject an existing pointer.
+The CLI rejects illegal transitions, existing or competing successor pointers,
+and incoherent reciprocal state before mutation. It updates both ADRs and all
+generated index views in one rollback-safe transaction. Verify the reciprocal
+links and append-only status history afterward. Never rewrite the old Decision
+or reproduce the lifecycle edits manually.

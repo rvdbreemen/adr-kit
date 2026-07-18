@@ -16,6 +16,40 @@ README = REPO_ROOT / "README.md"
 PROJECT_GUIDE = REPO_ROOT / "templates" / "adr-kit-guide.md"
 
 
+def test_public_json_examples_are_machine_parseable():
+    documents = [
+        README,
+        REPO_ROOT / "INSTALL.md",
+        AGENT_INSTALL,
+        PROJECT_GUIDE,
+        REPO_ROOT / "agents" / "adr-generator.md",
+        REPO_ROOT / "skills" / "install-hooks" / "SKILL.md",
+        REPO_ROOT / "skills" / "lint" / "SKILL.md",
+    ]
+    checked = 0
+    for path in documents:
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"```json\s*\n(.*?)```", text, re.DOTALL):
+            json.loads(match.group(1))
+            checked += 1
+    assert checked >= 10
+
+
+def test_every_generated_adr_index_surface_is_current():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "bin" / "adr-index"),
+            "--check",
+            str(REPO_ROOT / "docs" / "adr"),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_canonical_template_enforcement_example_is_valid_json():
     text = ADR_TEMPLATE.read_text(encoding="utf-8")
     match = re.search(r"## Enforcement.*?```json\s*(.*?)```", text, re.DOTALL)

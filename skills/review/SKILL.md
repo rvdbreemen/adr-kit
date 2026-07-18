@@ -55,6 +55,8 @@ No `gh`, no PR, or an empty log: fine, proceed with whatever intent text exists 
 "$ADR_KIT/bin/adr-judge" \
     --diff /tmp/adr-review-diff.patch \
     --adr-dir docs/adr/ \
+    --repo-root "$(git rev-parse --show-toplevel)" \
+    --snapshot worktree \
     --json > /tmp/adr-review-judge.json
 EXIT=$?
 ```

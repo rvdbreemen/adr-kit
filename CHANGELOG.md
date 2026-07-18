@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-07-18
+
 ### Documentation
 
 - Added an agent-first ADR discovery contract: inspect the generated JSON graph
@@ -71,6 +73,34 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   with an explicit migration path.
 - Generated client payload drift checks normalize CRLF and LF before
   comparison, keeping `--check` deterministic across Windows and Unix.
+- Directly invoked hooks and engine entry points now retain executable modes in
+  Git archives, and the Windows/macOS/Linux CI matrix checks both manual and
+  automatically prepared installation paths.
+
+### Fixed
+
+- Closed every actionable finding from the 2026-07-18 multi-perspective source
+  audit: bounded regex execution, schema-validated runtime configuration,
+  fail-closed diff limits, exact staged/worktree snapshots, decoded Git paths,
+  complete generated-validator semantics or explicit rejection, legal and
+  rollback-safe lifecycle changes, explicit context authority, transactional
+  release bumps, and cross-process guardian/watcher state updates.
+- Release preflight now validates and computes all ten versioned targets before
+  the first write, rolls every target back on failure, and prints the complete
+  staging set.
+- Public install, security, roadmap, supersession, validator, audit, and
+  changelog-link documentation now matches the shipped behavior.
+- The `clarity` gate no longer reports acronyms it cannot help with. It ignores
+  a documented allowlist of universal technical vocabulary (`ADR`, `JSON`,
+  `YAML`, `HTTP`, and similar), accepts the `expansion (ACRONYM)` word order in
+  addition to `ACRONYM (expansion)`, and skips YAML frontmatter, where an inline
+  expansion cannot be written. Previously any ADR whose title contained a common
+  acronym could never satisfy `bin/adr accept`, because acceptance runs the gate
+  set that includes `clarity`. Its finding summary also counted only the first
+  five hits; it now counts every distinct acronym.
+- The packaged Windows hook wrapper is now smoke-tested through its absolute
+  path, matching how `plugin.json` launches it. The previous bare-name
+  invocation failed on shells that set `NoDefaultCurrentDirectoryInExePath`.
 
 ## [0.33.0] - 2026-07-18
 
@@ -810,7 +840,43 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/adr-kit--v0.11.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.33.0...v0.34.0
+[0.33.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.32.0...v0.33.0
+[0.32.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.31.0...v0.32.0
+[0.31.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.30.5...v0.31.0
+[0.30.5]: https://github.com/rvdbreemen/adr-kit/compare/v0.30.4...v0.30.5
+[0.30.4]: https://github.com/rvdbreemen/adr-kit/compare/v0.30.3...v0.30.4
+[0.30.3]: https://github.com/rvdbreemen/adr-kit/compare/v0.30.2...v0.30.3
+[0.30.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.30.1...v0.30.2
+[0.30.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.30.0...v0.30.1
+[0.30.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.29.0...v0.30.0
+[0.29.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.28.0...v0.29.0
+[0.28.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.27.0...v0.28.0
+[0.27.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.25.0...v0.26.0
+[0.25.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.22.0...v0.23.0
+[0.22.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.19.2...v0.20.0
+[0.19.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.19.1...v0.19.2
+[0.19.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/rvdbreemen/adr-kit/compare/77fa59bc61f658dc6321872c9e5280dc721227d8...v0.17.0
+[0.16.0]: https://github.com/rvdbreemen/adr-kit/commit/77fa59bc61f658dc6321872c9e5280dc721227d8
+[0.15.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.13.3...v0.14.0
+[0.13.3]: https://github.com/rvdbreemen/adr-kit/compare/v0.13.2...v0.13.3
+[0.13.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.13.1...v0.13.2
+[0.13.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.12.2...v0.13.0
+[0.12.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.12.1...v0.12.2
+[0.12.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/rvdbreemen/adr-kit/compare/adr-kit--v0.11.0...v0.12.0
 [0.11.0]: https://github.com/rvdbreemen/adr-kit/compare/adr-kit--v0.10.1...adr-kit--v0.11.0
 [0.10.1]: https://github.com/rvdbreemen/adr-kit/compare/adr-kit--v0.10.0...adr-kit--v0.10.1
 [0.10.0]: https://github.com/rvdbreemen/adr-kit/compare/adr-kit--v0.9.0...adr-kit--v0.10.0

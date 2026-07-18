@@ -15,6 +15,7 @@ mutated.
 from __future__ import annotations
 
 import json
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,7 @@ def _make_tree(tmp_path: Path) -> Path:
     (root / ".github" / "plugin").mkdir(parents=True)
     (root / "templates" / "githooks").mkdir(parents=True)
     (root / "templates" / "cc-settings").mkdir(parents=True)
+    (root / ".githooks").mkdir()
     shutil.copy(str(BUMP_VERSION), str(root / "bin" / "bump-version"))
     (root / ".claude-plugin" / "plugin.json").write_text(
         json.dumps(PLUGIN, indent=2) + "\n", encoding="utf-8"
@@ -76,6 +78,7 @@ def _make_tree(tmp_path: Path) -> Path:
     (root / "templates" / "githooks" / "pre-commit").write_text(
         PRECOMMIT, encoding="utf-8"
     )
+    (root / ".githooks" / "pre-commit").write_text(PRECOMMIT, encoding="utf-8")
     (root / "templates" / "cc-settings" / "guardian-hook-entry.json").write_text(
         json.dumps(GUARDIAN_ENTRY, indent=2) + "\n", encoding="utf-8"
     )
@@ -118,6 +121,14 @@ def test_bump_updates_both_client_manifests_and_release_artifacts(tmp_path):
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## [Unreleased]\n\n## [0.31.0] - " in changelog
     assert "## [0.30.0] - 2026-06-12" in changelog
+    assert (
+        "[Unreleased]: "
+        "https://github.com/rvdbreemen/adr-kit/compare/v0.31.0...HEAD"
+    ) in changelog
+    assert (
+        "[0.31.0]: "
+        "https://github.com/rvdbreemen/adr-kit/compare/v0.30.0...v0.31.0"
+    ) in changelog
     precommit = (root / "templates" / "githooks" / "pre-commit").read_text()
     assert 'ADR_KIT_WRAPPER_VERSION="0.31.0"' in precommit
     entry = json.loads(
@@ -154,19 +165,25 @@ def test_missing_marketplace_entry_fails(tmp_path):
     assert "marketplace" in proc.stderr
 
 
-def test_missing_unreleased_warns_but_succeeds(tmp_path):
+def test_missing_unreleased_fails_preflight_without_mutation(tmp_path):
     root = _make_tree(tmp_path)
     (root / "CHANGELOG.md").write_text(
         "# Changelog\n\n## [0.30.0] - 2026-06-12\n", encoding="utf-8"
     )
+    before = {
+        path: path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
     proc = _run(root, "0.31.0")
-    assert proc.returncode == 0
-    assert "WARNING" in proc.stderr
+    assert proc.returncode == 1
+    assert "Unreleased" in proc.stderr
     plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin["version"] == "0.31.0"
+    assert plugin["version"] == "0.30.0"
+    assert {path: path.read_bytes() for path in before} == before
 
 
-def test_missing_stamps_tolerated(tmp_path):
+def test_missing_stamps_fail_preflight_without_mutation(tmp_path):
     root = _make_tree(tmp_path)
     (root / "templates" / "githooks" / "pre-commit").write_text(
         "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8"
@@ -174,11 +191,69 @@ def test_missing_stamps_tolerated(tmp_path):
     (root / "templates" / "cc-settings" / "guardian-hook-entry.json").write_text(
         "{not json", encoding="utf-8"
     )
+    before = (root / ".claude-plugin" / "plugin.json").read_bytes()
+    proc = _run(root, "0.31.0")
+    assert proc.returncode == 1
+    assert "stamp" in proc.stderr or "_wrapper_version" in proc.stderr
+    plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+    assert plugin["version"] == "0.30.0"
+    assert (root / ".claude-plugin" / "plugin.json").read_bytes() == before
+
+
+def test_injected_write_failure_rolls_back_every_target(tmp_path, monkeypatch):
+    root = _make_tree(tmp_path)
+    import importlib.machinery
+
+    script = root / "bin" / "bump-version"
+    loader = importlib.machinery.SourceFileLoader("bump_version_fixture", str(script))
+    spec = importlib.util.spec_from_loader("bump_version_fixture", loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    first = root / "first.txt"
+    second = root / "second.txt"
+    first.write_text("first-original", encoding="utf-8")
+    second.write_text("second-original", encoding="utf-8")
+    real_write = module._atomic_write_bytes
+    calls = 0
+
+    def fail_second(path, content):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected release write failure")
+        real_write(path, content)
+
+    monkeypatch.setattr(module, "_atomic_write_bytes", fail_second)
+
+    with pytest.raises(SystemExit):
+        module._apply_transaction(
+            {first: b"first-new", second: b"second-new"}
+        )
+
+    assert first.read_text(encoding="utf-8") == "first-original"
+    assert second.read_text(encoding="utf-8") == "second-original"
+    assert not list(root.glob(".*.tmp"))
+
+
+def test_staging_hint_names_every_changed_target(tmp_path):
+    root = _make_tree(tmp_path)
     proc = _run(root, "0.31.0")
     assert proc.returncode == 0, proc.stderr
-    assert "wrapper stamp" not in proc.stdout
-    plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin["version"] == "0.31.0"
+    hint = proc.stdout.split("git add", 1)[1].splitlines()[0]
+    for expected in (
+        ".claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json",
+        "codex/.codex-plugin/plugin.json",
+        "copilot/plugin.json",
+        ".github/plugin/marketplace.json",
+        "CHANGELOG.md",
+        "templates/githooks/pre-commit",
+        "templates/cc-settings/guardian-hook-entry.json",
+        "templates/adr-kit-guide.md",
+        ".githooks/pre-commit",
+    ):
+        assert expected in hint
 
 
 def test_no_child_processes_in_source():

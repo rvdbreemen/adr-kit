@@ -46,6 +46,7 @@ if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
 from adr_format import section_text
+from adr_config import ConfigValidationError, load_project_config
 
 # Default LLM invocation — identical shape to adr-judge. Overridable via
 # --llm-cmd, ADR_KIT_LLM_CMD env, or .adr-kit.json suggest.llm_cmd / judge.llm_cmd.
@@ -243,13 +244,18 @@ def extract_decision(body: str) -> str:
 
 
 def load_config(path: Optional[Path]) -> Dict:
-    """Read .adr-kit.json (if present). Returns {} when missing."""
-    if path is None or not path.exists():
+    """Read and schema-validate .adr-kit.json; return defaults when missing."""
+    if path is None:
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        raise SuggestError(f"{path}: invalid JSON ({e.msg} at line {e.lineno})")
+        schema_path = (
+            Path(__file__).resolve().parent.parent
+            / "schemas"
+            / "adr-kit-config.schema.json"
+        )
+        return load_project_config(path, schema_path)
+    except ConfigValidationError as exc:
+        raise SuggestError(str(exc)) from exc
 
 
 def collect_adrs(adr_dir: Path) -> List[Tuple[str, Path, str]]:

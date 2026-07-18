@@ -1,0 +1,13 @@
+# Preserve the real-world corpus byte-for-byte so manifest hashes are identical
+# on Windows, macOS, and Linux regardless of core.autocrlf.
+tests/testsets/otgw-firmware/adrs/*.md -text
+tests/testsets/otgw-firmware/LICENSE -text
+
+# Directly executable and generated runtime surfaces must retain Unix-safe LF.
+bin/* text eol=lf
+scripts/*.py text eol=lf
+.claude-plugin/hooks/* text eol=lf
+.githooks/* text eol=lf
+templates/githooks/* text eol=lf
+codex/bin/* text eol=lf
+copilot/bin/* text eol=lf

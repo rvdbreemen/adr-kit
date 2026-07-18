@@ -111,7 +111,7 @@
       "title": "Prepare Platform-Local Marketplaces for Native Installs",
       "path": "ADR-006-prepare-platform-local-marketplaces-for-native-installs.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-07-18",
       "decision_summary": "Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository...",
       "scope": {
@@ -131,7 +131,7 @@
       "title": "JSON ADR Graph Index for Agent Retrieval",
       "path": "ADR-007-json-adr-graph-index-for-agent-retrieval.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-07-18",
       "decision_summary": "Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be...",
       "scope": {

@@ -40,6 +40,8 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
 "$ADR_KIT/bin/adr-judge" \
     --diff /tmp/adr-judge-diff.patch \
     --adr-dir docs/adr/ \
+    --repo-root "$(git rev-parse --show-toplevel)" \
+    --snapshot staged \
     --llm \
     --json > /tmp/adr-judge-result.json
 EXIT=$?
@@ -90,6 +92,7 @@ If the user disagrees with a Sonnet verdict and wants a sanity check from a diff
 
 ```bash
 "$ADR_KIT/bin/adr-judge" --diff /tmp/adr-judge-diff.patch --adr-dir docs/adr/ \
+    --repo-root "$(git rev-parse --show-toplevel)" --snapshot staged \
     --llm --llm-cmd "claude -p --model claude-opus-4-7" --json
 ```
 
