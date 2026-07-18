@@ -21,12 +21,16 @@ claude --plugin-dir /path/to/your/adr-kit
 For Codex and the standalone Copilot CLI:
 
 ```bash
+python scripts/sync-agent-plugins.py
 python scripts/sync-agent-plugins.py --check
 python scripts/install-agent-envs.py --dry-run
 ```
 
 Use a temporary `CODEX_HOME` or `COPILOT_HOME` for isolated install smoke tests.
 Never point either client at the Claude plugin cache.
+
+The payload check normalizes CRLF and LF before comparison. Run it after every
+engine, schema, template, instruction, or Codex skill change.
 
 ## How to add a skill
 
@@ -57,16 +61,25 @@ Never point either client at the Claude plugin cache.
 - **MINOR**: new feature, backwards-compatible.
 - **PATCH**: bug fix, doc-only change, no behavioural change.
 
+The current release helper accepts stable `X.Y.Z` versions only. Although
+Semantic Versioning permits pre-release and build metadata, `bin/bump-version`
+does not yet accept those forms.
+
 Release steps:
 
-1. Run `bin/bump-version X.Y.Z`; it stamps the Claude, Codex, and Copilot
-   manifests and their marketplace entries together.
-2. Move the `## [Unreleased]` section in `CHANGELOG.md` to a new `## [X.Y.Z] - YYYY-MM-DD` section, and add a fresh empty `## [Unreleased]` at the top.
-3. Commit the changes (`chore(release): vX.Y.Z (...)`).
-4. Tag with the repository's published convention:
+1. Finish the notes under `## [Unreleased]` in `CHANGELOG.md`.
+2. Run `python bin/bump-version X.Y.Z`. It stamps all client manifests,
+   marketplaces, copied-artifact versions, and rolls `Unreleased` into the
+   dated release section.
+3. Run `python scripts/sync-agent-plugins.py`, then inspect `git status` and
+   `git diff`. Stage every stamped/generated file, including the guide,
+   pre-commit wrapper, and both marketplace manifests.
+4. Run the validation commands below and complete the manual client smoke test.
+5. Commit the changes (`chore(release): vX.Y.Z (...)`).
+6. Tag with the repository's published convention:
    `git tag -a vX.Y.Z -m "..."`.
-5. `git push` and `git push --tags`.
-6. Create a GitHub Release on the new tag with notes summarised from the CHANGELOG.
+7. `git push` and `git push --tags`.
+8. Create a GitHub Release on the new tag with notes summarised from the CHANGELOG.
 
 ## Code style
 
@@ -83,10 +96,21 @@ CI is enforced by `.github/workflows/validate.yml` on every push and pull reques
 - `jq empty` on `plugin.json` and `marketplace.json` (syntax check).
 - Schema validation (ajv-cli, draft-07): both manifests are validated against `schemas/plugin.json.schema.json` and `schemas/marketplace.json.schema.json` respectively. The schemas reject the field-type bugs that surfaced post-install in v0.7.1 and v0.7.2 (missing marketplace manifest; `repository` declared as object instead of string).
 - The generated-payload and integration-test gate checks both `codex/` and
-  `copilot/`. Run the official Codex plugin validator locally before release.
+  `copilot/`. Codex currently has no `plugin validate` subcommand; verify with
+  `codex plugin list --json`, `codex mcp list`, and a real `adr_context` call.
 - Presence check on the required-files set.
 - `plugin.json` version must match the top entry of `CHANGELOG.md`.
 - `markdownlint` on skills, agents, instructions, and examples.
+
+Run the local equivalent before opening a PR:
+
+```bash
+python scripts/sync-agent-plugins.py --check
+python bin/adr-doctor
+python bin/adr-index docs/adr/ --check
+python bin/adr-index --adr-dir docs/adr -o docs/adr/ADR-INDEX.md --check
+python -m pytest
+```
 
 PRs that break CI will not be merged.
 

@@ -43,9 +43,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from adr_schema import (
     FrontmatterError,
+    migrate_text,
     parse_frontmatter,
     split_frontmatter,
     validate_frontmatter,
+)
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import (
+    DETECTED_PROFILES,
+    SUPPORTED_PROFILES,
+    detect_profile,
+    is_migration_candidate,
+    migration_notice,
+    required_headings,
+    section_text,
 )
 
 CANONICAL_REQUIRED_SECTIONS = [
@@ -211,6 +225,17 @@ def load_config(path: Optional[Path]) -> Dict:
             f"{path}: strict_from={sf!r} does not match pattern ADR-NNN"
         )
 
+    template = cfg.get("template")
+    if template is not None:
+        if not isinstance(template, dict):
+            raise PolicyError(f"{path}: 'template' must be an object")
+        profile = template.get("profile")
+        if profile is not None and profile not in SUPPORTED_PROFILES:
+            raise PolicyError(
+                f"{path}: template.profile={profile!r} is unsupported; "
+                f"choose one of {SUPPORTED_PROFILES}"
+            )
+
     # Optional jsonschema validation: deeper structural check.
     try:
         import jsonschema
@@ -303,6 +328,37 @@ def discover_files(target: Path) -> List[Path]:
         if ADR_FILENAME_RE.match(p.name):
             seen[p.name.lower()] = p
     return sorted(seen.values(), key=lambda p: p.name.lower())
+
+
+def scan_extra_migration_notices(
+    target: Path,
+    linted_files: List[Path],
+) -> List[Dict]:
+    """Detect recognizable legacy Markdown that canonical lint discovery skips."""
+    if target.is_file() or not target.is_dir():
+        return []
+    linted = {path.resolve() for path in linted_files}
+    notices: List[Dict] = []
+    for path in sorted(target.glob("*.md"), key=lambda p: p.name.lower()):
+        if path.resolve() in linted:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not is_migration_candidate(path, text):
+            continue
+        _after, changed, issues = migrate_text(text, path)
+        notice = migration_notice(
+            text,
+            path,
+            metadata_changed=changed,
+            metadata_issues=issues,
+            migrate_command=str(Path(__file__).resolve().with_name("adr-migrate")),
+        )
+        if notice is not None:
+            notices.append(notice)
+    return notices
 
 
 def gate_completeness(text: str, required: List[str]) -> Optional[List[str]]:
@@ -755,6 +811,19 @@ def gate_consistency(
 
 def _section_text(text: str, heading: str) -> str:
     """Extract text of a markdown section (up to the next ## heading or EOF)."""
+    role_by_heading = {
+        "## Status": "status",
+        "## Context": "context",
+        "## Decision": "decision",
+        "## Alternatives Considered": "alternatives",
+        "## Consequences": "consequences",
+        "## Related Decisions": "related",
+        "## References": "references",
+        "## Enforcement": "enforcement",
+    }
+    role = role_by_heading.get(heading)
+    if role:
+        return section_text(text, role)
     m = re.search(
         rf"^{re.escape(heading)}\s*$\n(.*?)(?=\n##\s+|\Z)",
         text, re.MULTILINE | re.DOTALL,
@@ -941,7 +1010,7 @@ def lint_file(
     strict_from_override: Optional[str],
     enabled_gates: Set[str],
     duplicates: Dict[int, List[str]],
-    required_sections: List[str],
+    required_sections: Optional[List[str]],
     ignore: Set[str],
     supersession: Optional[Dict[int, List[str]]] = None,
     frontmatter_consistency: Optional[Dict[int, List[str]]] = None,
@@ -963,6 +1032,15 @@ def lint_file(
                 "skip_reason": "marker", "findings": []}
 
     findings = []
+    profile = detect_profile(text)
+    _migrated, metadata_changed, metadata_issues = migrate_text(text, fp)
+    migration = migration_notice(
+        text,
+        fp,
+        metadata_changed=metadata_changed,
+        metadata_issues=metadata_issues,
+        migrate_command=str(Path(__file__).resolve().with_name("adr-migrate")),
+    )
 
     if "schema" in enabled_gates and "schema" not in skip_gates:
         raw_frontmatter, _body = split_frontmatter(text)
@@ -989,7 +1067,40 @@ def lint_file(
             })
 
     if "completeness" in enabled_gates and "completeness" not in skip_gates:
-        miss = gate_completeness(text, required_sections)
+        if required_sections is None and profile not in SUPPORTED_PROFILES:
+            level = level_for(
+                "completeness", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
+            )
+            findings.append({
+                "gate": "completeness",
+                "level": level,
+                "details": [f"format={profile}"],
+                "summary": (
+                    (
+                        f"ADR body format is {profile}. "
+                        + migration["message"]
+                        + (
+                            f" Next: {migration['guided_command']}"
+                            if migration and migration.get("guided_command")
+                            else ""
+                        )
+                    )
+                    if migration
+                    else (
+                        f"ADR body format is {profile}; add frontmatter "
+                        f"format: {' | '.join(SUPPORTED_PROFILES)} or migrate it"
+                    )
+                ),
+            })
+            effective_required: List[str] = []
+        else:
+            effective_required = (
+                required_sections
+                if required_sections is not None
+                else required_headings(profile)
+            )
+        miss = gate_completeness(text, effective_required)
         if miss:
             level = level_for(
                 "completeness", adr_num, cfg, strict_from_override,
@@ -1088,7 +1199,13 @@ def lint_file(
     levels = {f["level"] for f in findings}
     bucket = "PASS" if not findings else ("FAIL" if "FAIL" in levels else "ADVISORY")
 
-    return {"file": fp.name, "adr_num": adr_num, "bucket": bucket, "findings": findings}
+    return {
+        "file": fp.name,
+        "adr_num": adr_num,
+        "bucket": bucket,
+        "findings": findings,
+        "migration_notice": migration,
+    }
 
 
 def detect_duplicates(files: List[Path]) -> Dict[int, List[str]]:
@@ -1142,6 +1259,24 @@ def render_human(result: Dict, verbose: bool) -> str:
         for f in result["files"]:
             if f["bucket"] == "SKIPPED":
                 out.append(f"  {f['file']} (reason: {f.get('skip_reason', '?')})")
+    out.append("")
+    notices = result.get("migration_notices", [])
+    out.append(f"Migration notices ({len(notices)}; read-only):")
+    for notice in notices:
+        mode = "deterministic" if notice["deterministic"] else "guided"
+        out.append(
+            f"  {notice['file']} [{notice['detected_format']}; {mode}]"
+        )
+        out.append(f"    {notice['message']}")
+        if notice.get("preview_command"):
+            out.append(f"    preview: {notice['preview_command']}")
+        if notice.get("rename_to"):
+            out.append(f"    rename after migration: {notice['rename_to']}")
+        if notice.get("guided_command"):
+            out.append(f"    next: {notice['guided_command']}")
+    if not notices:
+        out.append("  none")
+    out.append("  No ADRs were migrated.")
     out.append("")
     out.append("Aggregate:")
     if s["fail"] > 0:
@@ -1253,21 +1388,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     ignore = set(cfg.get("ignore", []))
-    required_sections = cfg.get("template", {}).get(
-        "required_sections", CANONICAL_REQUIRED_SECTIONS
-    )
+    required_sections = cfg.get("template", {}).get("required_sections")
 
     files = discover_files(target)
-    if not files:
-        if args.format == "json":
-            print(json.dumps({
-                "summary": {"total": 0, "pass": 0, "advisory": 0, "fail": 0, "skipped": 0},
-                "config_path": str(config_path) if config_path.exists() else None,
-                "files": [], "exit_code": 0,
-            }))
-        else:
-            print(f"No ADRs found at {target}.")
-        return 0
 
     duplicates = detect_duplicates(files)
     supersession = (
@@ -1284,6 +1407,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             frontmatter_consistency, args.strict,
         ) for fp in files
     ]
+    migration_notices = [
+        result["migration_notice"]
+        for result in file_results
+        if result.get("migration_notice") is not None
+    ]
+    migration_notices.extend(scan_extra_migration_notices(target, files))
 
     counts = {"pass": 0, "advisory": 0, "fail": 0, "skipped": 0, "total": len(file_results)}
     for r in file_results:
@@ -1298,6 +1427,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             config_summary[f"severity.{g}"] = v
     if cfg.get("template", {}).get("required_sections"):
         config_summary["template_override"] = "yes"
+    config_summary["template.profile"] = cfg.get("template", {}).get(
+        "profile", "madr"
+    )
 
     result = {
         "target": str(target),
@@ -1309,6 +1441,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "gates_enabled": sorted(gates),
         "summary": counts,
         "files": file_results,
+        "migration_notices": migration_notices,
         "exit_code": 1 if counts["fail"] > 0 else 0,
     }
 

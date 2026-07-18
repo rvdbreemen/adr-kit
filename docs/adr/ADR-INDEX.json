@@ -1,0 +1,244 @@
+{
+  "$schema": "../../schemas/adr-index.schema.json",
+  "schema_version": 1,
+  "adrs": [
+    {
+      "id": "ADR-001",
+      "title": "Make Per-Commit LLM Gates Opt-In",
+      "path": "ADR-001-llm-gates-opt-in.md",
+      "format": "canonical",
+      "status": "Accepted",
+      "date": "2026-05-31",
+      "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-002",
+      "title": "ADR Guardian: SessionStart Staleness Detector with Two-Tier Cadence",
+      "path": "ADR-002-adr-guardian-session-start-staleness-detector.md",
+      "format": "canonical",
+      "status": "Accepted",
+      "date": "2026-05-31",
+      "decision_summary": "Implement the ADR Guardian as a dumb SessionStart detector plus in-session smart sweep, with two-tier cadence and no...",
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-003",
+      "title": "Canonical Template Stays the Storage Format; MADR and Nygard Are Import Formats",
+      "path": "ADR-003-template-profile-compatibility.md",
+      "format": "canonical",
+      "status": "Superseded",
+      "date": "2026-07-18",
+      "decision_summary": "Keep the canonical seven-section template as the only storage format.",
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": "ADR-005"
+      }
+    },
+    {
+      "id": "ADR-004",
+      "title": "Layered ADR Context Injection for Agent Work",
+      "path": "ADR-004-layered-adr-context-injection.md",
+      "format": "canonical",
+      "status": "Accepted",
+      "date": "2026-07-05",
+      "decision_summary": "Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo...",
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-005",
+      "title": "Use Selectable ADR Body Profiles with MADR as the Default",
+      "path": "ADR-005-selectable-agent-friendly-adr-formats.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-18",
+      "decision_summary": "Chosen option: support selectable madr, nygard, and canonical body profiles through one semantic format registry, and...",
+      "scope": {
+        "path_globs": [
+          "schemas/adr-kit-config.schema.json"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [
+          "ADR-003"
+        ],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-006",
+      "title": "Prepare Platform-Local Marketplaces for Native Installs",
+      "path": "ADR-006-prepare-platform-local-marketplaces-for-native-installs.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-07-18",
+      "decision_summary": "Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository...",
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-007",
+      "title": "JSON ADR Graph Index for Agent Retrieval",
+      "path": "ADR-007-json-adr-graph-index-for-agent-retrieval.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-07-18",
+      "decision_summary": "Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be...",
+      "scope": {
+        "path_globs": [
+          "docs/adr/ADR-INDEX.json"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "source": "ADR-002",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-003",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-003",
+      "target": "ADR-005",
+      "type": "superseded-by",
+      "resolved": true
+    },
+    {
+      "source": "ADR-004",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-004",
+      "target": "ADR-002",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-005",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-005",
+      "target": "ADR-003",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-005",
+      "target": "ADR-003",
+      "type": "supersedes",
+      "resolved": true
+    },
+    {
+      "source": "ADR-005",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-006",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-006",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-006",
+      "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-007",
+      "target": "ADR-002",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-007",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-007",
+      "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    }
+  ]
+}

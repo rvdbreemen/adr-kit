@@ -124,12 +124,61 @@ class TestContextRows:
         assert result.returncode == 0
         data = json.loads(result.stdout)
         assert {d["adr_id"] for d in data} == {"ADR-001", "ADR-002", "ADR-010"}
+        assert all({"title", "format", "path"} <= set(row) for row in data)
+
+    def test_graph_output_contains_versioned_nodes_and_edges(self, tmp_path):
+        adr_dir = _make_context_set(tmp_path)
+        related = adr_dir / "ADR-002-cache.md"
+        related.write_text(
+            related.read_text(encoding="utf-8")
+            + "\n## Related Decisions\n\n- ADR-001\n- ADR-999\n",
+            encoding="utf-8",
+        )
+
+        result = _run(
+            ["--adr-dir", str(adr_dir), "--format", "graph"],
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 0, result.stderr
+        graph = json.loads(result.stdout)
+        assert graph["schema_version"] == 1
+        assert graph["$schema"] == "../../schemas/adr-index.schema.json"
+        assert [node["id"] for node in graph["adrs"]] == [
+            "ADR-001",
+            "ADR-002",
+            "ADR-010",
+        ]
+        node = graph["adrs"][0]
+        assert node["scope"]["path_globs"] == ["src/**/*.py"]
+        assert node["decision_summary"].startswith("All database access")
+        assert set(node["metadata"]) == {
+            "binding",
+            "gate",
+            "documents_shipped",
+            "verified_in",
+            "supersedes",
+            "superseded_by",
+        }
+        edges = {
+            (edge["source"], edge["target"]): edge
+            for edge in graph["relationships"]
+        }
+        assert edges[("ADR-002", "ADR-001")]["resolved"] is True
+        assert edges[("ADR-002", "ADR-999")]["resolved"] is False
 
     def test_no_timestamp_in_output(self, tmp_path):
         adr_dir = _make_context_set(tmp_path)
-        first = _run(["--adr-dir", str(adr_dir)], cwd=tmp_path)
-        second = _run(["--adr-dir", str(adr_dir)], cwd=tmp_path)
+        first = _run(
+            ["--adr-dir", str(adr_dir), "--format", "graph"],
+            cwd=tmp_path,
+        )
+        second = _run(
+            ["--adr-dir", str(adr_dir), "--format", "graph"],
+            cwd=tmp_path,
+        )
         assert first.stdout == second.stdout
+        assert "generated_at" not in first.stdout
 
 
 class TestContextSelfGuard:
@@ -141,6 +190,25 @@ class TestContextSelfGuard:
         assert result.returncode == 0
         assert "# ADR Index" in result.stdout
         assert "_(none)_" in result.stdout
+
+    def test_malformed_frontmatter_falls_back_to_invariant_prose(self, tmp_path):
+        adr_dir = tmp_path / "docs" / "adr"
+        adr_dir.mkdir(parents=True)
+        (adr_dir / "ADR-001-fallback.md").write_text(
+            "---\n- invalid\n---\n" + ADR_GLOB,
+            encoding="utf-8",
+        )
+
+        result = _run(
+            ["--adr-dir", str(adr_dir), "--format", "graph"],
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 0, result.stderr
+        node = json.loads(result.stdout)["adrs"][0]
+        assert node["id"] == "ADR-001"
+        assert node["status"] == "Accepted"
+        assert node["scope"]["path_globs"] == ["src/**/*.py"]
 
 
 class TestNoDriftWithWatch:
@@ -237,6 +305,10 @@ class TestReadmeMode:
         assert "| Total ADRs | 2 |" in readme
         assert "ADR-001" in readme
         assert "ADR-002" in readme
+        assert (adr_dir / "ADR-INDEX.md").exists()
+        graph = json.loads((adr_dir / "ADR-INDEX.json").read_text(encoding="utf-8"))
+        assert graph["schema_version"] == 1
+        assert len(graph["adrs"]) == 2
 
     def test_index_check_fails_when_readme_missing_or_stale(self, tmp_path):
         adr_dir = tmp_path / "docs" / "adr"
@@ -248,6 +320,23 @@ class TestReadmeMode:
         assert missing.returncode == 1
         payload = json.loads(missing.stdout)
         assert payload["summary"]["changed"] is True
+
+    def test_index_check_detects_stale_json_graph(self, tmp_path):
+        adr_dir = tmp_path / "docs" / "adr"
+        adr_dir.mkdir(parents=True)
+        _write_adr(adr_dir, 1, "Local Recall")
+        assert _run([str(adr_dir)], cwd=tmp_path).returncode == 0
+        (adr_dir / "ADR-INDEX.json").write_text("{}\n", encoding="utf-8")
+
+        stale = _run(
+            ["--check", "--format", "json", str(adr_dir)],
+            cwd=tmp_path,
+        )
+
+        assert stale.returncode == 1
+        payload = json.loads(stale.stdout)
+        assert payload["summary"]["context_json_changed"] is True
+        assert payload["summary"]["readme_changed"] is False
 
     def test_index_preserves_human_prose_outside_sentinels(self, tmp_path):
         adr_dir = tmp_path / "docs" / "adr"
@@ -283,3 +372,32 @@ class TestReadmeMode:
         payload = json.loads(result.stdout)
         assert payload["summary"]["duplicates"] == 1
         assert "ADR-001 appears in multiple files" in payload["issues"][0]
+
+
+def test_repository_graph_matches_versioned_schema_surface():
+    schema = json.loads(
+        (REPO_ROOT / "schemas" / "adr-index.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    graph = json.loads(
+        (REPO_ROOT / "docs" / "adr" / "ADR-INDEX.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert graph["schema_version"] == schema["properties"]["schema_version"]["const"]
+    assert set(graph) == {"$schema", "schema_version", "adrs", "relationships"}
+    adr_required = set(schema["$defs"]["adr"]["required"])
+    edge_required = set(schema["$defs"]["relationship"]["required"])
+    assert all(set(node) == adr_required for node in graph["adrs"])
+    assert all(set(edge) == edge_required for edge in graph["relationships"])
+    assert all(len(node["decision_summary"]) <= 120 for node in graph["adrs"])
+    assert graph["adrs"] == sorted(
+        graph["adrs"],
+        key=lambda node: int(node["id"].split("-")[1]),
+    )
+    assert graph["relationships"] == sorted(
+        graph["relationships"],
+        key=lambda edge: (edge["source"], edge["target"], edge["type"]),
+    )

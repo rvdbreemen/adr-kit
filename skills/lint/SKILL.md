@@ -10,6 +10,12 @@ allowed-tools: [Read, Glob, Grep]
 
 You are running `/adr-kit:lint`. The user wants to know whether existing ADRs in their project pass the four verification gates that the main `adr` skill enforces and, for v0.14 ADRs, whether their status histories are intact. You read files; you do not modify them. You report.
 
+The deterministic CLI also returns read-only migration notices. Report them
+even when every canonical ADR passes. A notice may contain an exact
+`adr-migrate --dry-run` command for a supported legacy file or a guided
+`/adr-kit:migrate` instruction for Y-Statement, Tyree/Akerman, arc42, hybrid,
+or unknown shapes. Never execute the reported write command from this skill.
+
 ## Inputs
 
 - **No argument**: lint every `docs/adr/ADR-*.md` file in the project root.
@@ -35,7 +41,11 @@ Recognised fields:
   - `always_advisory`: failures are ADVISORY regardless of `strict_from`.
   - `advisory_before_strict_from`: failures are ADVISORY for ADRs that predate `strict_from`, FAIL otherwise. This is the default for `completeness`, `evidence`, `clarity` when `strict_from` is set.
   - For `audit` and `consistency` the implicit default stays `always_strict` even when `strict_from` is set, because an invalid status chain, filename / heading mismatch, duplicate number, or broken cross-reference is a real bug regardless of when the ADR was written. Projects can override this in their config but the default is loud-on-purpose.
-- `template.required_sections` (array of strings, optional): override the canonical seven required sections with a project-specific list. Each entry is the exact heading text including the `## ` prefix. When set, the Completeness gate uses *this* list instead of the canonical one. Useful for projects whose template legitimately differs from the toolkit's default.
+- `template.required_sections` (array of strings, optional): advanced override for a project-specific section list. Each entry is the exact heading text including the `## ` prefix. Without it, Completeness resolves required headings from each ADR's MADR, Nygard, or canonical profile.
+- `template.profile` (string, optional): operational creation default and
+  profile contract. Legal values are `madr` (default), `nygard`, and
+  `canonical`. Per-file `format` frontmatter wins; otherwise headings are
+  detected. `unknown` and `hybrid` fail strict lint.
 
 Example `.adr-kit.json`:
 
@@ -51,7 +61,7 @@ Example `.adr-kit.json`:
     "consistency": "always_strict"
   },
   "template": {
-    "required_sections": ["## Status", "## Context", "## Decision", "## Consequences"]
+    "profile": "madr"
   }
 }
 ```
@@ -128,24 +138,19 @@ For every ADR you read, evaluate each of the four gates separately. A gate eithe
 
 ### Gate 1: Completeness
 
-A passing ADR has every load-bearing section present, in the canonical order, with non-empty content.
+A passing ADR has every load-bearing semantic section for its detected or
+declared profile, with non-empty content.
 
-Required sections (heading text, in this order):
-
-- `## Status`
-- `## Context`
-- `## Decision`
-- `## Alternatives Considered`
-- `## Consequences`
-- `## Related Decisions`
-- `## References`
-
-If `.adr-kit.json` defines `template.required_sections`, use *that* list instead of the canonical seven. Order matters: the headings must appear in the listed order. The toolkit's main `adr` skill still recommends the canonical seven; the override exists for projects whose template legitimately differs.
+Required semantic roles are Status, Context/Problem, Decision/Outcome,
+Alternatives/Considered Options, Consequences, Related Decisions, and
+References. MADR uses `Context and Problem Statement`, `Considered Options`,
+and `Decision Outcome`; Nygard/canonical use their shorter equivalents.
+If `.adr-kit.json` defines `template.required_sections`, use that custom list.
 
 Sub-checks within sections:
 
 - **Status** line is one of: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-XXX`, `Amended by ADR-XXX`. Date in `YYYY-MM-DD` format must be present.
-- **Alternatives Considered** has at least 2 alternatives, each with rejection reasoning. A single bullet point of one word does not count as an alternative.
+- **Alternatives/Considered Options** has at least 2 alternatives, each with rejection reasoning. A single bullet point of one word does not count as an alternative.
 - **Consequences** has both a positive and a negative direction. Look for `Benefits`/`Trade-offs`/`Positive`/`Negative` subheadings or a clearly mixed list. A one-sided Consequences section fails this gate.
 - **Risks** are named with at least one mitigation each (typically inside Consequences as `Risks and mitigations` or similar).
 

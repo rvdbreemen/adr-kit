@@ -22,6 +22,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import detect_profile, required_headings, section_text
+
 REQUIRED_SECTIONS = [
     "## Status",
     "## Context",
@@ -135,6 +141,17 @@ class QualityIssue:
 
 def _section_text(content: str, heading: str) -> str:
     """Extract text of a markdown section (up to the next ## heading or EOF)."""
+    role = {
+        "## Status": "status",
+        "## Context": "context",
+        "## Decision": "decision",
+        "## Alternatives Considered": "alternatives",
+        "## Consequences": "consequences",
+        "## Related Decisions": "related",
+        "## References": "references",
+    }.get(heading)
+    if role:
+        return section_text(content, role)
     pat = _SECTION_BODY_RE.get(heading)
     if pat is None:
         # Fallback for any heading not in REQUIRED_SECTIONS.
@@ -162,8 +179,17 @@ def gate_completeness(content: str) -> Dict:
 
     # Check all required sections present
     missing_sections = []
-    for section in REQUIRED_SECTIONS:
-        present = bool(_SECTION_PRESENCE_RE[section].search(content))
+    profile = detect_profile(content)
+    effective_sections = (
+        required_headings(profile)
+        if profile in {"madr", "nygard", "canonical"}
+        else REQUIRED_SECTIONS
+    )
+    for section in effective_sections:
+        pattern = _SECTION_PRESENCE_RE.get(section) or re.compile(
+            r"^" + re.escape(section) + r"\b", re.MULTILINE
+        )
+        present = bool(pattern.search(content))
         checks[f"section_{section.replace('## ', '').replace(' ', '_').lower()}"] = present
         if not present:
             missing_sections.append(section)

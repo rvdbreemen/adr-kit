@@ -41,6 +41,9 @@ jobs:
       - name: Validate marketplace.json against schema
         run: ajv validate -s schemas/marketplace.json.schema.json -d .claude-plugin/marketplace.json --spec=draft7 -c ajv-formats
 
+      - name: Validate generated ADR graph against schema
+        run: ajv validate -s schemas/adr-index.schema.json -d docs/adr/ADR-INDEX.json --spec=draft2020 -c ajv-formats
+
       - name: Verify required files exist
         run: |
           required_files=(
@@ -57,6 +60,7 @@ jobs:
             "schemas/plugin.json.schema.json"
             "schemas/marketplace.json.schema.json"
             "schemas/adr-kit-config.schema.json"
+            "schemas/adr-index.schema.json"
             "schemas/adr-enforcement.schema.json"
             "skills/adr/SKILL.md"
             "skills/setup/SKILL.md"
@@ -75,6 +79,8 @@ jobs:
             "templates/adr-kit-guide.md"
             "templates/githooks/pre-commit"
             "bin/adr-lint"
+            "bin/adr-index"
+            "bin/adr_catalog.py"
             "bin/adr-judge"
             "bin/adr-audit"
             "bin/adr-retire"
@@ -86,6 +92,7 @@ jobs:
             "tests/test_adr_retire.py"
             "examples/ADR-template.md"
             "examples/.adr-kit.sample.json"
+            "docs/adr/ADR-INDEX.json"
             "examples/ADR-sample-003-grandfathered-legacy.md"
             "README.md"
             "INSTALL.md"
@@ -143,3 +150,28 @@ jobs:
             examples/**/*.md
             templates/**/*.md
           config: ".markdownlint.json"
+
+  python-compatibility:
+    name: Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install test runner
+        run: python -m pip install pytest
+
+      - name: Verify runtime floor, profiles, and generated payloads
+        run: >
+          python -m pytest
+          tests/test_python_compatibility.py
+          tests/test_selectable_formats.py
+          tests/test_agent_installer.py

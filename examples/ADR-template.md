@@ -1,10 +1,36 @@
+---
+id: "ADR-XXX"
+title: "Title in title case"
+status: Proposed
+date: "YYYY-MM-DD"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+---
+
+<!-- markdownlint-disable MD025 -->
+
 # ADR-XXX Title in title case
 
 ## Status
 
-Accepted. Date: YYYY-MM-DD.
+Proposed, YYYY-MM-DD.
 
-(Or one of: `Proposed`, `Deprecated`, `Superseded by ADR-YYY`, `Amended by ADR-YYY`.)
+(Later: `Accepted`, `Deprecated`, `Rejected`, `Superseded by ADR-YYY`, or `Amended by ADR-YYY`.)
+
+## Status History
+
+```yaml
+status_history:
+  - date: YYYY-MM-DD
+    status: Proposed
+    changed_by: Agent or User
+    reason: Initial proposal
+    changed_via: adr-kit
+```
 
 ## Context
 

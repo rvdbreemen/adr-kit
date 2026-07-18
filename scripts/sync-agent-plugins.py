@@ -33,6 +33,11 @@ COPILOT_REPLACEMENTS = {
 }
 
 
+def comparison_bytes(path: Path) -> bytes:
+    """Normalize checkout EOLs for deterministic cross-platform drift checks."""
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
 def sync_directory(source: Path, destination: Path, excluded: set[str] | None = None) -> None:
     excluded = excluded or set()
     if destination.exists():
@@ -90,7 +95,7 @@ def main() -> int:
             destination = target / name
             excluded = EXCLUDED_BIN_FILES if name == "bin" else set()
             expected = {
-                p.relative_to(source): p.read_bytes()
+                p.relative_to(source): comparison_bytes(p)
                 for p in source.rglob("*")
                 if p.is_file()
                 and "__pycache__" not in p.parts
@@ -98,7 +103,7 @@ def main() -> int:
             }
             actual = (
                 {
-                    p.relative_to(destination): p.read_bytes()
+                    p.relative_to(destination): comparison_bytes(p)
                     for p in destination.rglob("*")
                     if p.is_file() and "__pycache__" not in p.parts
                 }
@@ -113,7 +118,7 @@ def main() -> int:
     expected_skills = expected_copilot_skills()
     actual_skills = (
         {
-            p.relative_to(COPILOT / "skills"): p.read_bytes()
+            p.relative_to(COPILOT / "skills"): comparison_bytes(p)
             for p in (COPILOT / "skills").rglob("*")
             if p.is_file()
         }

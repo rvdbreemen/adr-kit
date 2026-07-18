@@ -29,7 +29,7 @@ Usage:
   adr-renumber docs/adr/ADR-043-foo.md --to ADR-051   # disambiguate duplicates
   adr-renumber ADR-043 --adr-dir docs/decisions
 
-Deterministic, stdlib-only, Python 3.9+.
+Deterministic, stdlib-only, Python 3.10+.
 """
 
 from __future__ import annotations

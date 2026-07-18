@@ -1,20 +1,20 @@
 ---
 id: "ADR-003"
 title: "Canonical Template Stays the Storage Format; MADR and Nygard Are Import Formats"
-status: "Accepted"
-date: "2026-06-12"
+status: "Superseded"
+date: "2026-07-18"
 binding: false
 gate: null
 documents_shipped: false
 verified_in: []
 supersedes: []
-superseded_by: null
+superseded_by: "ADR-005"
 ---
 # ADR-003 Canonical Template Stays the Storage Format; MADR and Nygard Are Import Formats
 
 ## Status
 
-Accepted, 2026-06-12.
+Superseded by ADR-005, 2026-07-18.
 
 ## Status History
 
@@ -30,6 +30,11 @@ status_history:
     changed_by: robert@vandenbreemen.net
     reason: Implemented with template-profile detection, migrate patterns G/H, fixtures, and tests
     changed_via: adr-kit v0.21.0
+  - date: 2026-07-18
+    status: Superseded
+    changed_by: Codex
+    reason: ADR-005 replaces the canonical-only storage contract with selectable profiles
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context

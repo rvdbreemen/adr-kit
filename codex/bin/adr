@@ -12,6 +12,19 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import (
+    DEFAULT_PROFILE,
+    SUPPORTED_PROFILES,
+    AdrFormatError,
+    configured_profile,
+    normalize_profile,
+    profile_catalog,
+    profile_template_path,
+)
 from adr_schema import (
     migrate_text,
     parse_frontmatter,
@@ -154,6 +167,84 @@ def load_config(adr_dir: Path, explicit: str | None = None) -> Dict:
     return {}
 
 
+def _slugify(title: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    if not slug:
+        raise AdrLifecycleError("title must contain at least one letter or number")
+    return slug
+
+
+def command_new(args) -> List[str]:
+    adr_dir = Path(args.adr_dir)
+    cfg = load_config(adr_dir, args.config)
+    try:
+        profile = normalize_profile(args.profile) if args.profile else configured_profile(cfg)
+        template_dir = Path(__file__).resolve().parent.parent / "templates"
+        template = profile_template_path(profile, template_dir)
+    except AdrFormatError as exc:
+        raise AdrLifecycleError(str(exc)) from exc
+
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    used = []
+    for path in adr_dir.glob("ADR-*.md"):
+        match = re.match(r"(?i)^ADR-(\d{1,4})-", path.name)
+        if match:
+            used.append(int(match.group(1)))
+    number = max(used, default=0) + 1
+    adr_id = f"ADR-{number:03d}"
+    destination = adr_dir / f"{adr_id}-{_slugify(args.title)}.md"
+    if destination.exists():
+        raise AdrLifecycleError(f"ADR already exists: {destination}")
+
+    body = template.read_text(encoding="utf-8")
+    body = body.replace("ADR-NNN", adr_id)
+    body = body.replace('"Short Imperative Title"', json.dumps(args.title, ensure_ascii=False))
+    body = body.replace("Short Imperative Title", args.title)
+    body = body.replace("YYYY-MM-DD", args.date)
+    body = body.replace("user@example.com", args.changed_by)
+    destination.write_text(body, encoding="utf-8")
+    run_index(adr_dir)
+    return [f"created: {destination} ({profile})"]
+
+
+def command_profiles(args) -> List[str]:
+    template_dir = Path(__file__).resolve().parent.parent / "templates"
+    catalog = profile_catalog(template_dir)
+    if args.format == "json":
+        return [
+            json.dumps(
+                {
+                    "default": DEFAULT_PROFILE,
+                    "all_templates_available": all(
+                        item["available"] for item in catalog
+                    ),
+                    "profiles": catalog,
+                },
+                indent=2,
+            )
+        ]
+
+    lines = [
+        "Shipped ADR profiles (only these identifiers are selectable):",
+    ]
+    for item in catalog:
+        preference = " (preferred)" if item["preferred"] else ""
+        availability = "available" if item["available"] else "MISSING"
+        lines.extend(
+            [
+                f"- {item['id']}{preference}: {item['label']} [{availability}]",
+                f"  Template: {item['template']}",
+                f"  Best for: {item['best_for']}",
+                f"  Trade-off: {item['trade_off']}",
+            ]
+        )
+    lines.append(
+        "Select with `adr new --profile <id>` or "
+        '`template.profile: "<id>"`; do not invent profile names.'
+    )
+    return lines
+
+
 def _auto_accept_config(args, adr_dir: Path) -> Tuple[str, float]:
     cfg = load_config(adr_dir, getattr(args, "config", None))
     auto_cfg = cfg.get("lifecycle", {}).get("auto_accept", {})
@@ -290,6 +381,16 @@ def command_supersede(args) -> List[str]:
     new_path = find_adr_file(adr_dir, new_id)
 
     old_data, old_body = load_adr(old_path)
+    new_data, new_body = load_adr(new_path)
+    if old_data.get("status") != "Accepted":
+        raise AdrLifecycleError(f"{old_id} must be Accepted before supersession")
+    if old_data.get("superseded_by") not in (None, new_id):
+        raise AdrLifecycleError(
+            f"{old_id} already has superseded_by={old_data.get('superseded_by')}"
+        )
+    if new_data.get("status") not in {"Proposed", "Accepted"}:
+        raise AdrLifecycleError(f"{new_id} must be Proposed or Accepted")
+
     old_data["status"] = "Superseded"
     old_data["date"] = args.date
     old_data["superseded_by"] = new_id
@@ -302,9 +403,6 @@ def command_supersede(args) -> List[str]:
         "adr-kit lifecycle",
         args.date,
     )
-    write_adr(old_path, old_data, old_body)
-
-    new_data, new_body = load_adr(new_path)
     supersedes = list(new_data.get("supersedes", []))
     if old_id not in supersedes:
         supersedes.append(old_id)
@@ -317,7 +415,11 @@ def command_supersede(args) -> List[str]:
         "adr-kit lifecycle",
         args.date,
     )
+    # Both records are fully validated before either write. The successor is
+    # written first so a failed old-record write never leaves an unlinked old
+    # pointer.
     write_adr(new_path, new_data, new_body)
+    write_adr(old_path, old_data, old_body)
 
     run_index(adr_dir)
     return [f"superseded: {old_path.name} -> {new_id}", f"updated successor: {new_path.name}"]
@@ -333,6 +435,23 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="adr", description="adr-kit lifecycle commands")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    new = sub.add_parser("new", help="create a Proposed ADR from a selected profile")
+    new.add_argument("title")
+    add_common_args(new)
+    new.add_argument("--profile", choices=list(SUPPORTED_PROFILES), default=None)
+    new.add_argument("--config", default=None, help="config path")
+
+    profiles = sub.add_parser(
+        "profiles",
+        help="list selectable profiles and verify their shipped templates",
+    )
+    profiles.add_argument(
+        "--format",
+        choices=["human", "json"],
+        default="human",
+        help="output format",
+    )
 
     propose = sub.add_parser("propose", help="mark an ADR Proposed")
     propose.add_argument("adr")
@@ -369,7 +488,11 @@ def main(argv: List[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.command == "propose":
+        if args.command == "new":
+            lines = command_new(args)
+        elif args.command == "profiles":
+            lines = command_profiles(args)
+        elif args.command == "propose":
             lines = command_set_status(
                 args,
                 "Proposed",

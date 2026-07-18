@@ -4,8 +4,8 @@ finding (task-5: MADR / Nygard format compatibility).
 Three layers:
 1. detect_template_profile() classifies the fixtures correctly
    (canonical, madr, nygard, plus migrated counterparts as canonical).
-2. bin/adr-audit flags MADR / Nygard shaped files in docs/adr/ with a
-   `template_profile` finding pointing at /adr-kit:migrate.
+2. bin/adr-audit accepts supported MADR / Nygard shapes and flags only
+   unsupported or hybrid profiles.
 3. The hand-migrated canonical versions of both fixtures pass bin/adr-lint
    strictly. The migrate skill performs the live mapping; these fixtures
    document the expected lint-clean outcome.
@@ -112,7 +112,7 @@ def _run_audit(project_root: Path):
     return json.loads(result.stdout)
 
 
-def test_audit_flags_madr_and_nygard_adrs(tmp_path):
+def test_audit_accepts_supported_madr_and_nygard_adrs(tmp_path):
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     shutil.copy(MADR_FIXTURE, adr_dir / MADR_FIXTURE.name)
@@ -120,12 +120,7 @@ def test_audit_flags_madr_and_nygard_adrs(tmp_path):
 
     out = _run_audit(tmp_path)
     findings = [c for c in out["candidates"] if c["decision_type"] == "template_profile"]
-    assert len(findings) == 2
-    profiles = {c["details"]["template_profile"] for c in findings}
-    assert profiles == {"madr", "nygard"}
-    for c in findings:
-        assert "/adr-kit:migrate" in c["details"]["suggestion"]
-        assert c["evidence_files"][0].startswith("docs/adr/")
+    assert findings == []
 
 
 def test_audit_does_not_flag_canonical_adrs(tmp_path):
@@ -138,7 +133,7 @@ def test_audit_does_not_flag_canonical_adrs(tmp_path):
     assert findings == []
 
 
-def test_audit_reports_declared_profile_from_config(tmp_path):
+def test_audit_does_not_flag_configured_supported_profile(tmp_path):
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     shutil.copy(NYGARD_FIXTURE, adr_dir / NYGARD_FIXTURE.name)
@@ -148,8 +143,30 @@ def test_audit_reports_declared_profile_from_config(tmp_path):
 
     out = _run_audit(tmp_path)
     findings = [c for c in out["candidates"] if c["decision_type"] == "template_profile"]
+    assert findings == []
+
+
+def test_audit_flags_hybrid_profile_with_declared_project_default(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    hybrid = (
+        "# ADR-001 Hybrid\n\n"
+        "## Status\n\nProposed\n\n"
+        "## Context\n\nA.\n\n"
+        "## Context and Problem Statement\n\nB.\n\n"
+        "## Decision\n\nA.\n\n"
+        "## Decision Outcome\n\nB.\n\n"
+        "## Consequences\n\nC.\n"
+    )
+    (adr_dir / "ADR-001-hybrid.md").write_text(hybrid, encoding="utf-8")
+    (adr_dir / ".adr-kit.json").write_text(
+        json.dumps({"template": {"profile": "madr"}}), encoding="utf-8"
+    )
+    out = _run_audit(tmp_path)
+    findings = [c for c in out["candidates"] if c["decision_type"] == "template_profile"]
     assert len(findings) == 1
-    assert findings[0]["details"]["declared_profile"] == "nygard"
+    assert findings[0]["details"]["template_profile"] == "hybrid"
+    assert findings[0]["details"]["declared_profile"] == "madr"
 
 
 # ---------- layer 3: migrated fixtures pass adr-lint ----------

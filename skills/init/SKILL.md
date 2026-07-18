@@ -11,6 +11,8 @@ allowed-tools: [Read, Write, Edit, Bash, Glob, Grep, Task]
 You are running the one-shot project bootstrap for adr-kit. Your job is to take a project that has either no ADRs or only legacy-shaped ADRs and:
 
 1. Hook the kit into the project's `CLAUDE.md` and drop the canonical guide at `.claude/adr-kit-guide.md`.
+   New ADRs use MADR unless `docs/adr/.adr-kit.json` selects
+   `template.profile: "nygard"` or `"canonical"`.
 2. Discover decision-shaped artefacts in the source and documentation, propose a starter set of ADRs reflecting decisions already in effect, and let the user accept them in batches.
 3. Install the pre-commit hook so future commits are guarded against ADR drift.
 4. Lint everything to confirm the resulting ADR set passes the four verification gates.
@@ -19,7 +21,7 @@ This is a deep, one-shot operation. Do not skip steps. Do interact with the user
 
 ## Step 0 — Verify Python 3
 
-adr-kit requires Python 3.9 or later. Before doing anything else, verify it is available.
+adr-kit requires Python 3.10 or later. Before doing anything else, verify it is available.
 
 ### Detection
 
@@ -29,7 +31,7 @@ Run these checks in order:
 python3 --version 2>/dev/null || python --version 2>/dev/null || py --version 2>/dev/null
 ```
 
-Parse the output. Acceptable: any Python 3.9+ version string. Not acceptable: Python 2.x, command not found, or no output.
+Parse the output. Acceptable: any Python 3.10+ version string. Not acceptable: Python 2.x, Python 3.9 or earlier, command not found, or no output.
 
 **If Python 3 is found:** print `[adr-kit] Python OK: <version>` and continue to Step 1.
 
@@ -118,7 +120,7 @@ python --version
 ### All platforms — After successful installation
 
 1. Verify the installed version: `python3 --version` (or `python --version` on Windows).
-2. Confirm the version is 3.9+. If it is 3.8 or earlier, warn: `[adr-kit] WARN: Python 3.8 detected. adr-kit recommends 3.9+. Some features may not work.`
+2. Confirm the version is 3.10+. If it is 3.9 or earlier, warn: `[adr-kit] WARN: Python 3.9 or earlier detected. adr-kit requires 3.10+. Some features will not work.`
 3. Print: `[adr-kit] Python 3.x.y installed. Continuing setup...`
 4. Continue to Step 1.
 
@@ -126,7 +128,7 @@ If the user declines installation and Python is unavailable: print the error bel
 
 ```
 [adr-kit] ERROR: Python 3 is required but not installed.
-Install Python 3.9+ from https://www.python.org/downloads/ and re-run /adr-kit:init.
+Install Python 3.10+ from https://www.python.org/downloads/ and re-run /adr-kit:init.
 ```
 
 ## Step 1 — Project hookup
@@ -138,6 +140,18 @@ Locate the plugin's `templates/adr-kit-guide.md`. The plugin is loaded under `~/
 ```bash
 ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1
 ```
+
+If `docs/adr/` already exists, inspect its formats before creating or changing
+records:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+python3 "$ADR_KIT/bin/adr-migrate" --plan docs/adr/
+```
+
+Show the notices, but do not migrate automatically. Continue initialization;
+the user can approve deterministic preview commands or invoke
+`/adr-kit:migrate` for guided mappings afterward.
 
 Copy `templates/adr-kit-guide.md` from that path to the project's `.claude/adr-kit-guide.md` (relative to `pwd`, which the user is expected to set to the project root before invoking).
 
@@ -164,7 +178,7 @@ The stub:
 ## ADR Kit
 
 This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architectural decisions live as ADRs in `docs/adr/`. Full guide: @.claude/adr-kit-guide.md
-Decision index: @docs/adr/ADR-INDEX.md (compact one-row-per-ADR map; regenerate with `bin/adr-index -o docs/adr/ADR-INDEX.md`).
+Decision indexes: @docs/adr/ADR-INDEX.md is the compact session map; `docs/adr/ADR-INDEX.json` is the agent metadata and relationship graph. Regenerate both with `bin/adr-index docs/adr`; open source Markdown ADRs before applying constraints.
 
 Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
 Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time (free). The Claude LLM pass for `llm_judge: true` ADRs is opt-in (enable in `docs/adr/.adr-kit.json`, or review in-session via `/adr-kit:judge`).

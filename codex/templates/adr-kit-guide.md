@@ -27,9 +27,14 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 |---|---|---|
 | `/adr-kit:init` | One-shot project bootstrap (audit codebase, generate ADRs, install hook). Combines `setup` + audit + `install-hooks`. | yes |
 | `/adr-kit:adr` | Author a single ADR (delegates to `adr-generator` subagent; runs four verification gates). | no — model can self-call |
+| `/adr-kit:context` | Rank the ADRs most relevant to a task. Verify lifecycle status in the source ADR before treating it as binding. | no — model can self-call |
 | `/adr-kit:judge` | Interactive judge against a staged diff. Runs declarative checks + in-session LLM check for `llm_judge: true` ADRs. Walks resolution paths on violation. | no — model can self-call |
+| `/adr-kit:review` | Audit a branch or PR against existing ADRs and discover undocumented decisions. | no — model can self-call |
 | `/adr-kit:lint` | Validate existing ADRs against the four verification gates. | yes |
-| `/adr-kit:migrate` | Rewrite legacy ADRs into canonical format. | yes |
+| `/adr-kit:related` | Show inbound/outbound ADR references and dangling links. | no — model can self-call |
+| `/adr-kit:supersede` | Guide a Proposed successor and reciprocal lifecycle update. | yes |
+| `/adr-kit:retire` | Rank Accepted ADRs for retirement; never mutates them. | yes |
+| `/adr-kit:migrate` | Preview metadata or body-profile migration; MADR, Nygard, and canonical are supported. | yes |
 | `/adr-kit:setup` | Append `## ADR Kit` block to `CLAUDE.md` (idempotent). | yes |
 | `/adr-kit:upgrade` | Migrate v0.11 → v0.12 footprint without re-running the heavy audit. | yes |
 | `/adr-kit:install-hooks` | Install or uninstall the pre-commit hook; also manages the guardian's project-scoped SessionStart hook. | yes |
@@ -46,10 +51,58 @@ An ADR cannot move from `Proposed` to `Accepted` until all four pass.
 
 `bin/adr-lint` enforces Completeness and Consistency deterministically. Evidence and Clarity are heuristic; opt in via `--gates evidence,clarity` or run `/adr-kit:lint` to use the LLM-aware skill.
 
+## Choosing an ADR body profile
+
+Use `madr` unless the project has a reason to prefer another profile. MADR's
+explicit problem, decision drivers, options, outcome, trade-offs, and
+confirmation fields reduce the meaning an agent must infer from prose. This is
+an agent-reliability default, not a claim that MADR is globally the most used
+format; no authoritative format census exists.
+
+Discover the installed, pre-made catalog before honoring a user-selected
+alternative:
+
+```bash
+python bin/adr profiles --format json
+```
+
+Accept only a returned profile `id` whose matching template has
+`available: true`. Use that template through `adr new --profile <id>`. Do not
+invent a profile, infer one from an arbitrary template filename, or synthesize
+a replacement for a missing shipped template.
+
+Choose `nygard` when concise human scanning matters more than explicit
+authoring prompts. Choose `canonical` for compatibility with adr-kit
+repositories created before selectable profiles. All three retain the same
+frontmatter, lifecycle history, relationships, references, and Enforcement
+contract. Set the project default with `template.profile` in
+`docs/adr/.adr-kit.json`, or override one new record with `adr new --profile`.
+
+## Discovering and upgrading existing formats
+
+Run `python bin/adr-migrate --plan docs/adr` after install or update and before
+editing an unfamiliar ADR set. The command is read-only and scans canonical
+ADR filenames plus recognizable older filenames.
+
+- MADR, Nygard, and canonical records remain valid. When only invariant
+  metadata or filename normalization is missing, the report gives an exact,
+  deterministic `--dry-run` command.
+- Y-Statements, Tyree/Akerman records, and arc42 decision sections are detected
+  conservatively and routed to guided migration because their meaning cannot
+  always be mapped without judgement.
+- Hybrid and unknown shapes also require guided review.
+
+Install, init, upgrade, and lint may display this report, but none may apply a
+migration automatically. Preview, inspect the diff, obtain approval, then
+apply. A later `adr-lint` run confirms the result.
+
 ## Authoring workflow (`/adr-kit:adr` or `adr-generator`)
 
 1. Identify the architecturally significant change (architecture, NFRs, interfaces, dependencies, build/CI tooling). Refactors and bug fixes within existing patterns do NOT need an ADR.
-2. Invoke `/adr-kit:adr` (or the `adr-generator` subagent). Provide: title, context with concrete forces, ≥ 2 alternatives with rejection reasons, consequences (both directions), related ADRs.
+2. Create the record with `python bin/adr new "Title" --adr-dir docs/adr`.
+   It honors `template.profile` (`madr` by default; `nygard` and `canonical`
+   are selectable). Then invoke `/adr-kit:adr` or the `adr-generator` agent
+   with context, at least 2 alternatives, consequences, and related ADRs.
 3. The agent applies the four gates and writes `docs/adr/ADR-NNN-…md` with `Status: Proposed`.
 4. Human review. Iterate until all gates pass.
 5. Flip Status to `Accepted, YYYY-MM-DD` after explicit human approval and append the matching transition to `## Status History`. **Never self-approve.**
@@ -77,7 +130,11 @@ Optional `## Enforcement` section at the end of an ADR. Fenced JSON code block, 
 - `forbid_pattern` — regex must NOT match any added line in the diff (lines starting with `+`, excluding `+++ ` markers).
 - `forbid_import` — same engine as `forbid_pattern`; the separate name documents intent.
 - `require_pattern` — regex must match at least once in the post-diff content of any file matching `path_glob`.
-- `llm_judge: true` — Claude Sonnet evaluates the diff against this ADR's `## Decision` text when the LLM pass is active. The pre-commit hook batches all `llm_judge: true` ADRs into one Sonnet call and blocks the commit on `VIOLATION`. The LLM pass is opt-in as of v0.17.0 (enable via `judge.llm_enabled:true` in `.adr-kit.json`, or `ADR_KIT_LLM=1` per-commit). Falls back gracefully (advisory only, exit 0) when the `claude` CLI is missing.
+- `llm_judge: true` — the optional LLM pass evaluates the diff against the
+  semantic decision text (`## Decision Outcome` in MADR, `## Decision` in
+  Nygard/canonical). The pass is opt-in (`judge.llm_enabled:true` or
+  `ADR_KIT_LLM=1`) and falls back to advisory when the configured CLI is
+  unavailable.
 - ADRs with no Enforcement block are skipped silently by the judge.
 
 **Path globs** support `**` (recursive). Examples: `src/**/*.py`, `tests/**`, `**/Makefile`.
@@ -164,12 +221,14 @@ The ADR Guardian is a periodic staleness detector that injects an `[adr-guardian
 **Config** (`docs/adr/.adr-kit.json`, `guardian` block):
 
 ```json
-"guardian": {
-  "enabled": true,
-  "drift_stale_days": 1,
-  "llm_stale_days": 14,
-  "nudge_cooldown_hours": 24,
-  "llm_autorun": false
+{
+  "guardian": {
+    "enabled": true,
+    "drift_stale_days": 1,
+    "llm_stale_days": 14,
+    "nudge_cooldown_hours": 24,
+    "llm_autorun": false
+  }
 }
 ```
 
@@ -189,7 +248,7 @@ tiers ever block; only the commit gate does.
 |---|---|---|---|
 | **Session** | SessionStart + `@`-import | `bin/adr-guardian` health nudge, and `@docs/adr/ADR-INDEX.md` (a one-row-per-ADR map generated by `bin/adr-index`) imported from `CLAUDE.md` | yes |
 | **Edit** | PreToolUse `Edit\|Write\|MultiEdit` | `bin/adr-watch --pre-edit` injects the top-ranked governing Accepted ADR's `## Decision` text (bounded to `inject.max_tokens`) *before* the edit, so the agent honours the decision as it writes. The PostToolUse `bin/adr-watch --hook` nudge remains as a confirmation backstop | yes |
-| **Task** | pull (MCP / CLI) | `bin/adr-context` ranks ADRs for a query (five signals); the key-free MCP tools `adr_context` and `adr_judge` let a subagent or workflow retrieve decisions and self-check a diff mid-task | yes |
+| **Task** | pull (JSON / MCP / CLI) | `docs/adr/ADR-INDEX.json` exposes the versioned metadata and relationship graph; `bin/adr-context` adds query-specific ranking (five signals); the key-free MCP tools `adr_context` and `adr_judge` let a subagent or workflow retrieve decisions and self-check a diff mid-task | yes |
 
 **Canonical fields (pinned).** Every reader uses the same two fields the judge
 reads, so nothing drifts: scope is the `## Enforcement` `path_glob` set; status is
@@ -200,16 +259,21 @@ the `## Status` line reconciled with the latest `status_history` entry. Only
 quoted Decision as a binding constraint for that file. If your change would
 violate it, either comply, or write a superseding ADR first.
 
-**Regenerate the index** after adding or accepting an ADR:
-`bin/adr-index -o docs/adr/ADR-INDEX.md` (deterministic, no timestamp, CI-diffable).
+**Regenerate the indexes** after adding or accepting an ADR:
+`bin/adr-index docs/adr` writes the compact `ADR-INDEX.md`, the versioned
+`ADR-INDEX.json` graph, and the generated README block from the same semantic
+records. All are deterministic and timestamp-free. Agents use JSON to shortlist
+records, then open the linked Markdown ADR before applying its decision.
 
 **Config** (`docs/adr/.adr-kit.json`, `inject` block):
 
 ```json
-"inject": {
-  "enabled": true,
-  "max_tokens": 400,
-  "cooldown_hours": 4
+{
+  "inject": {
+    "enabled": true,
+    "max_tokens": 400,
+    "cooldown_hours": 4
+  }
 }
 ```
 

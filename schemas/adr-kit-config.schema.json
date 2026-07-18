@@ -78,12 +78,12 @@
     },
     "template": {
       "type": "object",
-      "description": "Override the canonical seven required sections with a project-specific list. Useful for projects whose template legitimately differs from the toolkit's default.",
-      "additionalProperties": true,
+      "description": "Select one shipped ADR body profile for new records, or override lint-required headings. A required_sections override does not register a custom selectable profile. Existing files are parsed by their format frontmatter or deterministic heading detection.",
+      "additionalProperties": false,
       "properties": {
         "required_sections": {
           "type": "array",
-          "description": "Required top-level headings, in the order they must appear. Each entry is the exact heading text including the '## ' prefix.",
+          "description": "Lint-only required top-level headings, in the order they must appear. Each entry is the exact heading text including the '## ' prefix. This does not create a selectable profile or template.",
           "items": {
             "type": "string",
             "pattern": "^##\\s+\\S"
@@ -93,7 +93,8 @@
         "profile": {
           "type": "string",
           "enum": ["canonical", "madr", "nygard"],
-          "description": "Declared source template profile of this project's existing ADR set (introduced in adr-kit v0.21.0). Purely informational: adr-audit uses it to annotate template_profile findings, and /adr-kit:migrate can use it as a hint for which mapping pattern (MADR mapping, Nygard lift) applies. Lint behaviour is unchanged: validation always targets the canonical seven sections or template.required_sections. The canonical template remains the storage format; 'madr' and 'nygard' describe an import format, not an alternative lint target."
+          "default": "madr",
+          "description": "Operational body profile for newly created ADRs. Values are restricted to the shipped profile catalog: MADR is the agent-friendly default; Nygard is concise; canonical preserves the pre-v0.34 adr-kit format. Per-file format frontmatter remains authoritative."
         }
       }
     },

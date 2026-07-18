@@ -8,7 +8,7 @@ on:
 
 jobs:
   index-fresh:
-    name: docs/adr/ADR-INDEX.md is up to date
+    name: generated ADR indexes are up to date
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,11 +18,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Regenerate the ADR index and diff against the committed copy
+      - name: Check generated README, Markdown, and JSON indexes
         run: |
           chmod +x bin/adr-index
-          python bin/adr-index --adr-dir docs/adr -o docs/adr/ADR-INDEX.md
-          if ! git diff --exit-code -- docs/adr/ADR-INDEX.md; then
-            echo "::error::docs/adr/ADR-INDEX.md is stale. Regenerate with: bin/adr-index -o docs/adr/ADR-INDEX.md"
-            exit 1
-          fi
+          python bin/adr-index --check docs/adr

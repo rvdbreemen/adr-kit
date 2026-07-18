@@ -9,11 +9,15 @@ license: MIT
 This is a mutating workflow. Confirm the workspace root, then:
 
 1. Follow `the ADR Kit setup skill` to add the managed `AGENTS.md` block and guide.
-2. Run `python <plugin-root>/bin/adr-audit --root <workspace>`.
-3. Present discovered decisions in small batches. Create only the choices the
+2. If `<workspace>/docs/adr` exists, run
+   `python <plugin-root>/bin/adr-migrate --plan <workspace>/docs/adr`.
+   Report deterministic preview commands and guided notices; do not migrate.
+3. Run `python <plugin-root>/bin/adr-audit --root <workspace>`.
+4. Present discovered decisions in small batches. Create only the choices the
    user approves, using `the ADR Kit adr skill`.
-4. Follow `the ADR Kit install-hooks skill`.
-5. Run `python <plugin-root>/bin/adr-doctor --fix-index docs/adr/`.
+5. Follow `the ADR Kit install-hooks skill`.
+6. Run `python <plugin-root>/bin/adr-doctor --fix-index docs/adr/` and report
+   any migration notices from lint.
 
 Resolve `<plugin-root>` from this skill's absolute catalog path. Never use a
 Claude plugin cache path. Keep existing `AGENTS.md` content byte-stable outside

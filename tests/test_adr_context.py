@@ -280,6 +280,64 @@ def test_json_has_signals(tmp_path):
     )
 
 
+def test_json_results_include_actionable_catalog_metadata(tmp_path):
+    _write_adr(
+        tmp_path,
+        1,
+        "JWT Authentication",
+        status="Accepted",
+        date_str="2025-03-01",
+        decision="We use JWT tokens for authentication and authorization.",
+        related=["ADR-002"],
+    )
+    _write_adr(
+        tmp_path,
+        2,
+        "Token Rotation",
+        status="Proposed",
+        decision="Rotate authentication tokens every hour.",
+    )
+
+    result = _run_cli(
+        "--format",
+        "json",
+        "--adr-dir",
+        str(tmp_path),
+        "--min-score",
+        "0.0",
+        "jwt authentication",
+    )
+
+    assert result.returncode == 0, result.stderr
+    item = json.loads(result.stdout)[0]
+    assert {
+        "adr_id",
+        "title",
+        "path",
+        "status",
+        "format",
+        "decision_summary",
+        "scope",
+        "related_ids",
+        "metadata",
+        "score",
+        "signals",
+    } <= set(item)
+    assert item["path"].endswith("ADR-001-jwt-authentication.md")
+    assert item["status"] == "Accepted"
+    assert item["format"] in {"canonical", "nygard", "madr"}
+    assert item["decision_summary"].startswith("We use JWT tokens")
+    assert item["related_ids"] == ["ADR-002"]
+    assert set(item["metadata"]) == {
+        "binding",
+        "gate",
+        "documents_shipped",
+        "verified_in",
+        "supersedes",
+        "superseded_by",
+    }
+
+
 def test_text_output_format(tmp_path):
     """--format text must produce human-readable lines."""
     _write_adr(tmp_path, 42, "Use Redis for Session Caching",

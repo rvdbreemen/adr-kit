@@ -86,6 +86,15 @@
       ],
       "pattern": "^ADR-[0-9]{3,4}$",
       "description": "Successor ADR id when this ADR is superseded."
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "madr",
+        "nygard",
+        "canonical"
+      ],
+      "description": "Optional ADR body profile discriminator. Legacy records may omit it and are detected from headings."
     }
   }
 }

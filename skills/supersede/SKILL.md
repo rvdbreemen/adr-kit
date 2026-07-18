@@ -1,6 +1,6 @@
 ---
 name: supersede
-description: Guided supersession of an existing Architecture Decision Record. Shows the target's dependency graph first, drafts the superseding ADR via the adr-generator subagent (Status Proposed, back-linked), and only after explicit user approval flips the old ADR's Status line to "Superseded by ADR-M", appends status_history entries on both sides, and wires Related Decisions both ways. Verifies the chain with bin/adr-related and bin/adr-lint. Refuses to overwrite an existing supersession that points at a different ADR.
+description: Guided supersession of an existing Architecture Decision Record. Shows the target's dependency graph first, drafts the superseding ADR via the adr-generator subagent (Status Proposed, back-linked), and only after explicit user approval flips the old ADR's Status line to "Superseded by ADR-M", appends status_history entries on both sides, and wires Related Decisions both ways. Verifies the chain with bin/adr-related and bin/adr-lint. The skill must inspect and refuse an existing supersession pointer before calling the v0.33.0 lifecycle CLI.
 argument-hint: "[ADR id to supersede; e.g. \"ADR-007\"]"
 license: MIT
 disable-model-invocation: true

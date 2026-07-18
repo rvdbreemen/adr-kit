@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -94,7 +96,10 @@ def test_dry_run_is_repeatable_and_does_not_execute_install(tmp_path: Path, caps
                 json.dumps(
                     {
                         "marketplaces": [
-                            {"name": installer.MARKETPLACES["codex"]}
+                            {
+                                "name": installer.MARKETPLACES["codex"],
+                                "root": str(source),
+                            }
                         ]
                     }
                 ),
@@ -107,6 +112,228 @@ def test_dry_run_is_repeatable_and_does_not_execute_install(tmp_path: Path, caps
     output = capsys.readouterr().out
     assert output.count("plugin add") == 2
     assert "source with spaces" not in output  # marketplace already registered
+
+
+@pytest.mark.parametrize(
+    ("system", "env", "expected"),
+    [
+        (
+            "Windows",
+            {"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
+            Path("C:/Users/test/AppData/Local/adr-kit/marketplaces"),
+        ),
+        (
+            "Darwin",
+            {},
+            Path("/Users/test/Library/Application Support/adr-kit/marketplaces"),
+        ),
+        (
+            "Linux",
+            {"XDG_DATA_HOME": "/home/test/.data"},
+            Path("/home/test/.data/adr-kit/marketplaces"),
+        ),
+    ],
+)
+def test_platform_install_roots(system, env, expected):
+    home = Path("C:/Users/test") if system == "Windows" else Path("/Users/test")
+    if system == "Linux":
+        home = Path("/home/test")
+    assert installer.default_install_root(
+        system=system,
+        env=env,
+        home=home,
+    ) == expected
+
+
+def test_python_runtime_probe_accepts_spaces_and_rejects_old_versions():
+    executable = "C:/Program Files/Python/python.exe"
+
+    accepted = installer.validate_python(
+        executable,
+        lambda command: completed(
+            command,
+            json.dumps(
+                {
+                    "version": [3, 12, 4],
+                    "executable": executable,
+                }
+            ),
+        ),
+    )
+    assert "Program Files" in accepted
+
+    with pytest.raises(RuntimeError, match=r"Python 3\.10\+ is required"):
+        installer.validate_python(
+            executable,
+            lambda command: completed(
+                command,
+                json.dumps(
+                    {
+                        "version": [3, 9, 19],
+                        "executable": executable,
+                    }
+                ),
+            ),
+        )
+
+
+def test_detection_isolates_timeout_and_os_errors(tmp_path):
+    executables = {
+        name: str(tmp_path / f"{name}.exe")
+        for name in installer.SUPPORTED
+    }
+
+    def runner(command):
+        name = Path(command[0]).stem
+        if name == "claude":
+            raise subprocess.TimeoutExpired(command, 10)
+        if name == "codex":
+            raise OSError("cannot execute")
+        return completed(command, "GitHub Copilot CLI 1.0.70")
+
+    detected = installer.detect_clients(
+        which=lambda name: executables[name],
+        runner=runner,
+    )
+    assert list(detected) == ["copilot"]
+
+
+def test_command_rendering_quotes_paths_for_windows_and_posix():
+    command = ["/path with spaces/python", "script.py", "value with spaces"]
+    windows = installer._display_command(command, system="Windows")
+    posix = installer._display_command(command, system="Linux")
+    assert '"/path with spaces/python"' in windows
+    assert "'/path with spaces/python'" in posix
+    assert "'value with spaces'" in posix
+
+
+def test_marketplace_source_matching_is_separator_and_case_tolerant(tmp_path):
+    source = tmp_path / "Prepared Source"
+    payload = {"root": str(source).upper().replace("\\", "/")}
+    assert installer.marketplace_source_matches(payload, source)
+    assert not installer.marketplace_source_matches(
+        {"root": str(tmp_path / "another")},
+        source,
+    )
+    source.mkdir()
+    (source / installer.PREPARED_MARKER).write_text("{}\n", encoding="utf-8")
+    assert installer.claude_marketplace_source_matches(
+        {"name": "rvdbreemen-adr-kit", "source": "directory"},
+        source,
+    )
+
+
+def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
+    version = installer.validate_source(ROOT)
+    prepared = installer.prepare_install_source(
+        ROOT,
+        version=version,
+        python_executable=str(Path(sys.executable).resolve()),
+        install_root=tmp_path / "platform data with spaces",
+        dry_run=False,
+        system="Darwin" if os.name != "nt" else "Windows",
+    )
+
+    for client in ("codex", "copilot"):
+        config = json.loads((prepared / client / ".mcp.json").read_text())
+        assert config["mcpServers"]["adr-kit"]["command"] == str(
+            Path(sys.executable).resolve()
+        )
+    assert (prepared / installer.PREPARED_MARKER).is_file()
+    assert not (prepared / ".git").exists()
+    assert not (prepared / "backlog").exists()
+    installer.validate_prepared_mcp(prepared, str(Path(sys.executable).resolve()))
+
+    if os.name != "nt":
+        mode = (prepared / ".claude-plugin" / "hooks" / "run-hook.cmd").stat().st_mode
+        assert mode & stat.S_IXUSR
+
+    second = installer.prepare_install_source(
+        ROOT,
+        version=version,
+        python_executable=str(Path(sys.executable).resolve()),
+        install_root=tmp_path / "platform data with spaces",
+        dry_run=False,
+    )
+    assert second == prepared
+
+
+def test_prepared_source_dry_run_writes_nothing(tmp_path):
+    destination = installer.prepare_install_source(
+        ROOT,
+        version="1.2.3",
+        python_executable=sys.executable,
+        install_root=tmp_path / "dry-run",
+        dry_run=True,
+        system="Linux",
+    )
+    assert not destination.exists()
+
+
+def test_installer_continues_after_one_client_fails(monkeypatch, tmp_path):
+    clients = {
+        name: installer.Client(name, f"/bin/{name}", name)
+        for name in ("claude", "codex")
+    }
+    calls = []
+
+    def fail(*args, **kwargs):
+        calls.append("claude")
+        raise RuntimeError("broken client")
+
+    def succeed(*args, **kwargs):
+        calls.append("codex")
+
+    monkeypatch.setitem(installer.INSTALLERS, "claude", fail)
+    monkeypatch.setitem(installer.INSTALLERS, "codex", succeed)
+    installed, failures = installer.install_selected_clients(
+        ["claude", "codex"],
+        clients,
+        tmp_path,
+        version="1.0.0",
+        dry_run=False,
+        skip_validation=True,
+        runner=lambda command: completed(command),
+    )
+
+    assert calls == ["claude", "codex"]
+    assert installed == ["codex"]
+    assert failures == [("claude", "broken client")]
+
+
+def test_failed_client_state_read_does_not_trigger_mutation(tmp_path):
+    client = installer.Client("codex", "/bin/codex", "codex-cli")
+    calls = []
+
+    def runner(command):
+        calls.append(list(command))
+        return completed(command, stderr="state unavailable", returncode=1)
+
+    with pytest.raises(RuntimeError, match="marketplace listing"):
+        installer.install_codex(
+            client,
+            tmp_path,
+            False,
+            runner,
+            desired_version="1.0.0",
+        )
+    assert len(calls) == 1
+    assert calls[0][-3:] == ["marketplace", "list", "--json"]
+
+
+def test_source_preflight_fails_before_client_detection(monkeypatch, tmp_path):
+    called = False
+
+    def detect():
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(installer, "detect_clients", detect)
+    with pytest.raises(SystemExit) as exc:
+        installer.main(["--source", str(tmp_path), "--detect-only"])
+    assert exc.value.code == 2
+    assert called is False
 
 
 def test_post_install_validation_requires_plugin_and_mcp():
@@ -174,6 +401,18 @@ def test_codex_payload_is_synced():
         encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_payload_comparison_is_newline_stable(tmp_path):
+    spec = importlib.util.spec_from_file_location("sync_agent_plugins", SYNC)
+    sync = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(sync)
+    lf = tmp_path / "lf.txt"
+    crlf = tmp_path / "crlf.txt"
+    lf.write_bytes(b"one\ntwo\n")
+    crlf.write_bytes(b"one\r\ntwo\r\n")
+    assert sync.comparison_bytes(lf) == sync.comparison_bytes(crlf)
 
 
 def test_claude_and_codex_manifests_are_separate_and_versioned_together():

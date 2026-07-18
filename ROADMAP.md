@@ -1,67 +1,96 @@
 # adr-kit roadmap
 
-This document captures the project's direction. It is not a contract, but a signal of where the maintainer wants the toolkit to go and which directions are deliberately *not* on the table. The goal is to make filtering decisions easy: contributions and issues that align with this roadmap are likely to land; those that do not are likely to be politely deferred.
+This document captures the project's direction. It is not a release contract.
+It exists to make contribution and prioritisation decisions predictable.
 
 ## Status
 
-`adr-kit` is in pre-1.0. The structure, file layout, and skill conventions are stable and in use, but may evolve before v1.0.0. Each release since v0.2.0 has been additive; we have not introduced a breaking change since the v0.2.0 plugin restructure.
+`adr-kit` is at v0.33.0 and remains pre-1.0. The Claude, Codex, and standalone
+Copilot distributions, 14 workflows, local ADR lifecycle, deterministic
+enforcement, context injection, guardian, MCP server, and generated indexes are
+all shipped. File layout and conventions may still change before v1.0.0.
 
-If a breaking change becomes necessary before v1.0.0 (for example, renaming a default convention because of consistent user feedback), it will land as a minor bump (v0.x to v0.x+1), be called out in CHANGELOG, and include a migration note in the release.
+The [2026-07-18 source audit](docs/reviews/2026-07-18-source-audit/FINDINGS.md)
+is the current engineering baseline. Its high-severity enforcement and
+portability findings take priority over new surface area.
+
+If a breaking change becomes necessary before v1.0.0, it will land as a minor
+version, be called out in the changelog, and include a tested migration note.
 
 ## Toward v1.0.0
 
-`v1.0.0` is the "this layout will not change again without a long deprecation window" signal. Criteria the maintainer wants to satisfy before tagging v1.0.0:
+`v1.0.0` is the signal that the public layout and core contracts will not
+change without a deprecation window. Current release criteria are:
 
-- 90 days of field time without a needed breaking change.
-- At least 5 unrelated installations beyond the maintainer's own (signal: someone other than the author finds the toolkit useful).
-- The four verification gates have been used to block at least one PR in real-world review (signal: the toolkit is being used as intended, not just installed).
-- A migration guide for the v0.x to v1.0 transition is published in CHANGELOG, with the upgrade path tested on a non-trivial existing ADR set.
+- Close or explicitly accept every P1 finding in the current source audit.
+- Test the minimum supported Python version and Windows plus Unix packaging
+  contracts in CI.
+- Exercise native plugin installation, MCP startup, and one workflow per client
+  in release smoke tests.
+- Accumulate 90 days of field time without a needed breaking change.
+- Reach at least five unrelated installations beyond the maintainer's own.
+- Confirm the four verification gates have blocked at least one real-world PR.
+- Publish and test the v0.x to v1.0 migration path on a non-trivial ADR set.
 
-**Field check (2026-05-26, 31 days post-v0.9.0):** GREEN for core framework. CI green across all recent runs (v0.13.3). One pre-commit hook exit-code bug (issue #6, v0.13.1) reported by an external user and fixed within 24h (v0.13.2). Dev-worktree lint: 79/79 PASS. External adoption: Lenivvenil/claude-mini opened an adr-kit MCP integration issue.
+**Field check (2026-07-18, v0.33.0 plus unreleased work):** all five dogfood
+ADRs pass strict lint, both generated ADR indexes are current, and 558 tests
+are collected. The payload sync gate is newline-stable across CRLF and LF
+checkouts. An isolated
+performance threshold can still be noisy under concurrent load.
+High-severity source findings remain open, so v1.0 criteria are not met.
 
-## Planned features (signals, not commitments)
+## Planned work (signals, not commitments)
 
-These are likely additions in upcoming versions. Priority is shaped by user requests; a feature without a real-world ask may slip indefinitely.
+Priority is shaped by user evidence and the source audit:
 
-A 2026-06-12 landscape research pass ([docs/research/2026-06-12-adr-landscape.md](docs/research/2026-06-12-adr-landscape.md)) confirmed that no classic ADR tool offers diff enforcement, staleness detection, or agent integration, and that the AI-native space is creation/templating-only or analysis-without-lifecycle. The three highest-leverage gaps it identified now lead this list:
-
-- **In-flight guidance (`adr-watch`, backlog task-6)**: a `PostToolUse` hook on Edit/Write that runs `bin/adr-context` on the touched path plus a light Enforcement pattern-match, and nudges the agent with the relevant Accepted ADRs *while it is editing*. Closes the gap between SessionStart context and pre-commit enforcement. Deterministic, key-free, per-session cooldown.
-- **Thin MCP server (`bin/adr-mcp`, backlog task-7)**: 4-6 MCP tools (context, judge, status, quality, suggest) wrapping the existing Python CLIs over stdio. Brings the same guardrails to Cursor, Windsurf, and Copilot without the skills format. Python stdlib only; deliberately small — the 73-tool approach elsewhere in the ecosystem is a cautionary tale, not a template. This revises the previously implicit "no MCP" posture: a stdio Python server adds no new runtime, so it stays within the no-build-step, no-JS constraint.
-- **Team-safe numbering (backlog task-8)**: CI duplicate-number check plus a `bin/adr-renumber` helper, addressing ADR-number races between parallel branches and agents.
-- **Guardian team mode (backlog task-9)**: weekly CI-cron cheap-tier sweep with issue reporting, plus multi-session-safe local state.
-- **Catalog listing (backlog task-11)**: submit adr-kit to the canonical [adr.github.io/adr-tooling](https://adr.github.io/adr-tooling/) catalog, which as of May 2026 lists zero AI-agent tools. Best done after MADR/Nygard compatibility (v0.22) since the catalog is template-organized.
-- **Tier-2 chore**: branch protection on `main`, dependabot for the GitHub Actions workflow, release-drafter for auto-generated release notes, codespell in CI. Repo-automation polish that benefits maintainers more than users. Likely v0.8.0.
-- **ADR query skill** (`/adr-kit:related ADR-XXX`): walks the `## Related Decisions` section across the ADR set and returns the dependency graph for a chosen ADR. Useful when an ADR is being superseded and you need to see who else points at it. Will land only if a real user asks for it; not auto-prioritised.
-- **`/adr-kit:retirement-audit` skill** (issue #8): scans the ADR set for three signals -- stale status with no supersession link, 90+ days without a git touch, Enforcement pattern matching zero lines in `src/`. Presents candidates for human review; includes GitHub Actions weekly-cron template.
+- Harden `adr-judge`: isolate regex evaluation, validate runtime config types,
+  fail safely on oversized diffs, decode Git-quoted paths, and evaluate
+  `require_pattern` against the staged/post-diff snapshot.
+- Make lifecycle updates transactional and enforce legal status/supersession
+  transitions before either ADR is written.
+- Align context ranking and generated validators with their documented
+  lifecycle and Enforcement semantics.
+- Finish the external ADR tooling catalog contribution and repository
+  automation follow-ups already tracked in Backlog.
 
 ## Recently landed
 
-- ✅ **`/adr-kit:context` skill** (issue #7, v0.20.1, 2026-06): given a topic string, returns the 3-5 most relevant accepted ADRs with relevance explanation. Solves the context-window problem in projects with 30+ ADRs. Read-only; safe from parallel subagents.
-
-- ✅ **CI Action for `bin/adr-judge`** (v0.19.0, 2026-05-31): composite GitHub Action (`.github/actions/adr-judge/action.yml`) that computes the PR diff via `git diff --unified=0 origin/<base>...HEAD` and pipes it to `bin/adr-judge`. Declarative-only by default — no LLM, no API key required. Self-dogfooded via `.github/workflows/adr-judge-self.yml`. README "CI integration" section extended with a copy-paste snippet mirroring the v0.10 `adr-lint` pattern.
-- ✅ **`pre-commit` framework support** (v0.19.0, 2026-05-31): `.pre-commit-hooks.yaml` at repo root declares an `adr-judge` hook. A thin Python wrapper `bin/adr-judge-precommit` captures `git diff --cached --unified=0` and pipes it to the sibling `bin/adr-judge`, resolving the sibling path via `__file__` so it works regardless of PATH. Declarative-only by default. README documents the `.pre-commit-config.yaml` snippet.
-- ✅ **Three-mode workflow** (v0.12.0, 2026-05-06): `/adr-kit:init` for one-shot project bootstrap (audit + ADR generation + pre-commit hook), pre-commit verification via `bin/adr-judge` against declarative `Enforcement` blocks, and on-demand `/adr-kit:judge` for in-session review. LLM judging stays in-session (no `claude -p` shell-out, no API key in the hook environment). Hook is default-on after init/upgrade. Backwards compatible: v0.11 users opt into the new layout via `/adr-kit:upgrade`.
-- ✅ **Audit existing codebase** (v0.12.0, 2026-05-06): `bin/adr-audit` scans top-level config files and documentation for decision-shaped artefacts and emits a candidate list. The `/adr-kit:init` skill drives Claude through batched user-approval to convert candidates into Accepted ADRs.
-- ✅ **ADR migration helper** (`/adr-kit:migrate`, v0.11.0, 2026-04-25): rewrites legacy-shaped ADRs into the canonical seven-section template. Read-then-confirm; never silent.
+- **TASK-29:** the automatic installer now prepares a persistent
+  platform-local marketplace with its validated Python runtime embedded,
+  restores Unix entry-point modes, isolates client failures, completes a real
+  MCP handshake, and runs its compatibility contract on Windows, macOS, and
+  Linux.
+- **TASK-26:** MADR is the default for new records; Nygard and the legacy
+  canonical profile are selectable through one semantic registry. Profile
+  migration is dry-run capable and idempotent, and all native client payloads
+  share the same templates and engines.
+- **v0.33.0:** separate native Codex and standalone Copilot distributions,
+  detected-client installer, generated payload gate, and workspace-aware MCP.
+- **v0.32.0:** canonical frontmatter, strict local governance, generated README
+  index, lifecycle commands, after-the-fact acceptance, and local doctor.
+- **v0.31.0:** layered session/edit/task context injection and compact ADR index.
+- **v0.20.0-v0.30.x:** context lookup, watcher, MCP, team-safe numbering,
+  guardian team mode and trends, dependency/retirement workflows, CI action,
+  pre-commit framework support, migration, and audited overrides.
 
 ## Out of scope (deliberate non-goals)
 
-These are choices the maintainer has already made. PRs proposing them will be politely declined unless the proposal includes a substantive new argument that has not been considered.
-
-- **Multi-language support for skill bodies.** The skill prompts are English-only. A project's ADR template can be in any language the project chooses, but the skill instructions stay English to keep the agent-instruction surface small and easy to maintain. The patterns (anti-rationalization, four gates) are language-neutral; the wrapper around them is not.
-- **ADR visualisation (graph rendering, diagrams).** Out of scope. If you need a graph, generate it from the `## Related Decisions` sections with a script in your project. The skill is markdown-shaped, not visualisation-shaped.
-- **Bundling other plugins.** `adr-kit` is a single-purpose plugin: ADR creation, review, and lint. Cross-cutting governance (RFCs, design docs, lightweight specs) belongs in a separate kit if someone wants to write it. The maintainer is happy to link to such a kit, not to absorb it.
-- **Anthropic-specific features.** The toolkit aims to work in Claude Code, Claude Cowork, Cursor, GitHub Copilot, and OpenAI Codex CLI. Features that only work in one tool are not accepted upstream unless they degrade gracefully on the others. The portable cp-based install path in INSTALL.md is the floor.
-- **Heavy framework wrapping.** No build step, no compiled assets, no JavaScript runtime. The toolkit is markdown plus a JSON manifest. If a feature would require any of those, it is probably better as a separate project.
+- **Multi-language skill bodies.** Project ADRs can use another language, but
+  upstream agent instructions remain English.
+- **Rendered ADR visualisation.** Diagrams and interactive graph UIs are out of
+  scope. The shipped `adr-related` dependency report remains textual.
+- **Bundling unrelated governance plugins.** ADR Kit stays single-purpose.
+- **Client-exclusive core behavior.** Client integrations may differ, but core
+  workflows must degrade gracefully outside any one vendor.
+- **Heavy framework wrapping.** Stdlib Python is the runtime floor; no compiled
+  assets, JavaScript runtime, hosted service, or external Python framework.
 
 ## How decisions get made
 
-Decisions about `adr-kit` itself follow the same conventions and pass the same four verification gates that the toolkit asks of its users. The maintainer eats the dog food: significant changes to the plugin layout, default conventions, or user-visible behaviour are documented and reasoned about in PR descriptions before merging.
+Significant changes to plugin layout, default conventions, enforcement, or
+user-visible behavior need an ADR or a PR description with equivalent context,
+alternatives, consequences, and evidence. Small fixes and documentation
+corrections do not need a new decision record.
 
-For substantial decisions, the PR description is structured as a mini-ADR (Status, Context, Decision, Alternatives Considered, Consequences). This is a guideline, not a rule. Tiny PRs (fix a typo, bump a date) do not need it.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Project-specific examples should stay in your own copy of `SKILL.md`, not upstream. Generic improvements that benefit any user are welcome.
-
-If you are unsure whether your idea fits the roadmap, open an issue using the feature-request template before writing a PR. The template asks for alternatives-considered, which is the same discipline the gates ask of an ADR; that filtering itself often clarifies whether the change belongs in the toolkit.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Project-specific policy belongs in the
+consuming project; generic improvements that benefit any user are welcome.

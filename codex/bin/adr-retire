@@ -23,6 +23,12 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import section_text
+
 # Safety cap for repo-wide file scans (tech-removal signal).
 MAX_FILES = 50_000
 
@@ -82,6 +88,13 @@ def extract_status(text: str) -> Optional[str]:
 
 def extract_section(text: str, heading: str) -> str:
     """Return section content until the next level-two heading."""
+    role = {
+        "Status": "status",
+        "Decision": "decision",
+        "Enforcement": "enforcement",
+    }.get(heading)
+    if role:
+        return section_text(text, role)
     match = re.search(
         rf"^##\s+{re.escape(heading)}\s*$\n+(.*?)(?=^##\s+|\Z)",
         text,

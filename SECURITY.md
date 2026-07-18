@@ -2,9 +2,25 @@
 
 ## Scope
 
-`adr-kit` is a documentation toolkit. It does not handle secrets, network requests to external services, or sensitive user data on its own. Its scope is markdown files, plugin manifests, and slash-command instructions for AI coding agents.
+`adr-kit` is a local ADR lifecycle and enforcement toolkit. Its deterministic
+default path is Python-stdlib-only and does not require an API key, but the
+project is not documentation-only.
 
-The most realistic security concern is that the `setup` skill writes to a project's `CLAUDE.md` and the `adr-generator` agent writes new files under `docs/adr/`. These are constrained writes inside the user's own project directory. No external network calls.
+Security-relevant surfaces include:
+
+- parsing repository-controlled ADRs, JSON configuration, regular expressions,
+  Git diffs, paths, and hook payloads;
+- pre-commit and CI enforcement that can allow or block a change;
+- lifecycle, migration, setup, upgrade, index, hook, and generator workflows
+  that write inside a project;
+- installers that change Claude, Codex, and Copilot client state;
+- optional LLM passes that launch a configured `claude` command and may send
+  ADR/diff content to that provider.
+
+Treat ADRs and `.adr-kit.json` as trusted repository policy, not as harmless
+prose. The deterministic judge is a guardrail, not a sandbox or a substitute
+for branch protection and code review. Current known limitations are recorded
+in the [2026-07-18 source audit](docs/reviews/2026-07-18-source-audit/FINDINGS.md).
 
 ## Reporting a vulnerability
 
@@ -24,8 +40,8 @@ Only the latest minor release line is supported with security fixes. Older versi
 
 | Version | Status |
 |---|---|
-| `v0.6.x` (latest) | Supported. |
-| `v0.5.x` and earlier | No security backports. |
+| `v0.33.x` (latest) | Supported. |
+| `v0.32.x` and earlier | No routine security backports. |
 
 ## Acknowledgement
 

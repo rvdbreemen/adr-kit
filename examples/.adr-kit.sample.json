@@ -19,13 +19,8 @@
     "consistency": "always_strict"
   },
 
-  "_comment_template": "Override the canonical seven required sections with your project's actual template. Each entry is the exact heading text including the '## ' prefix; order matters. Omit this whole 'template' object to use the canonical seven. Set it when your historical template legitimately differs (for example, a leaner four-section template).",
+  "_comment_template": "Select the body profile for newly created ADRs: 'madr' (default), 'nygard', or 'canonical'. Existing files use their optional format frontmatter or deterministic heading detection. required_sections is an advanced custom-template override and does not create semantic role mappings.",
   "template": {
-    "required_sections": [
-      "## Status",
-      "## Context",
-      "## Decision",
-      "## Consequences"
-    ]
+    "profile": "madr"
   }
 }

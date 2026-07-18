@@ -51,6 +51,12 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import section_text
+
 # Default LLM invocation. Overridable via --llm-cmd, ADR_KIT_LLM_CMD env, or
 # .adr-kit.json's judge.llm_cmd. Tests inject a fake binary here.
 DEFAULT_LLM_CMD = ["claude", "-p", "--model", "claude-sonnet-4-6"]
@@ -792,8 +798,7 @@ def extract_decision(body: str) -> str:
     the diff. Sending it (rather than the full ADR body) keeps the prompt
     compact and the judge focused.
     """
-    m = DECISION_SECTION_RE.search(body)
-    return m.group(1).strip() if m else ""
+    return section_text(body, "decision")
 
 
 def collect_llm_targets(adrs: List[Tuple[str, Path, str]]) -> List[Dict]:
