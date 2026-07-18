@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import SUPPORTED_PROFILES
 
 FRONTMATTER_FIELD_ORDER = (
     "id",
@@ -31,7 +37,14 @@ VALID_STATUSES = {"Proposed", "Accepted", "Deprecated", "Superseded", "Amended",
 
 ADR_ID_RE = re.compile(r"\bADR-(\d{1,4})\b", re.IGNORECASE)
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
+LEGACY_FILENAME_RE = re.compile(
+    r"(?i)^(?:ADR[-_ ]?)?0*(\d{1,4})[-_. ]+(.+?)\.md$"
+)
 TITLE_RE = re.compile(r"^#\s+ADR-\d{1,4}\s+(.+?)\s*$", re.MULTILINE | re.IGNORECASE)
+LEGACY_TITLE_RE = re.compile(
+    r"^#\s+(?:ADR[-_ ]?)?0*\d{1,4}[.:\s-]+(.+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 STATUS_SECTION_RE = re.compile(
     r"^##\s+Status(?!\s+History)\s*$\n+([^\n]+)",
     re.IGNORECASE | re.MULTILINE,
@@ -126,13 +139,30 @@ def infer_frontmatter(body: str, path: Optional[Path] = None) -> Dict:
         match = ADR_FILENAME_RE.match(path.name)
         if match:
             filename_id = f"ADR-{int(match.group(1)):03d}"
+        else:
+            legacy_match = LEGACY_FILENAME_RE.match(path.name)
+            if legacy_match:
+                filename_id = f"ADR-{int(legacy_match.group(1)):03d}"
     heading_id = None
-    heading_match = re.search(r"^#\s+(ADR-\d{1,4})\b", body, re.MULTILINE | re.IGNORECASE)
+    heading_match = re.search(
+        r"^#\s+(ADR-\d{1,4})\b", body, re.MULTILINE | re.IGNORECASE
+    )
     if heading_match:
         heading_id = _normalize_adr_id(heading_match.group(1))
+    else:
+        legacy_heading = re.search(
+            r"^#\s+(?:ADR[-_ ]?)?0*(\d{1,4})[.:\s-]+",
+            body,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        if legacy_heading:
+            heading_id = f"ADR-{int(legacy_heading.group(1)):03d}"
     adr_id = filename_id or heading_id or "ADR-000"
 
-    title_match = TITLE_RE.search(body)
+    title_match = TITLE_RE.search(body) or LEGACY_TITLE_RE.search(body)
+    if title_match is None:
+        generic_title = re.search(r"^#\s+(.+?)\s*$", body, re.MULTILINE)
+        title_match = generic_title
     title = title_match.group(1).strip() if title_match else ""
 
     status_line = ""
@@ -215,7 +245,38 @@ def canonicalize_frontmatter(existing: Dict, inferred: Dict) -> Dict:
     for key in FRONTMATTER_FIELD_ORDER:
         if key not in merged:
             merged[key] = inferred.get(key)
+    status = merged.get("status")
+    if isinstance(status, str):
+        normalized_status = {
+            item.casefold(): item for item in VALID_STATUSES
+        }.get(status.strip().casefold())
+        if normalized_status is not None:
+            merged["status"] = normalized_status
     return merged
+
+
+def _normalize_legacy_heading(
+    body: str,
+    path: Optional[Path],
+    inferred: Dict,
+) -> str:
+    """Normalize an identifiable legacy H1 without changing decision prose."""
+    if path is None or ADR_FILENAME_RE.match(path.name):
+        return body
+    adr_id = inferred.get("id")
+    title = inferred.get("title")
+    if (
+        not isinstance(adr_id, str)
+        or adr_id == "ADR-000"
+        or not isinstance(title, str)
+        or not title.strip()
+    ):
+        return body
+    heading = re.search(r"^#\s+.+?\s*$", body, re.MULTILINE)
+    if heading is None:
+        return body
+    normalized = f"# {adr_id} {title.strip()}"
+    return body[: heading.start()] + normalized + body[heading.end() :]
 
 
 def validate_frontmatter(data: Dict) -> List[str]:
@@ -273,11 +334,15 @@ def validate_frontmatter(data: Dict) -> List[str]:
         if not re.fullmatch(r"ADR-\d{3,4}", ref):
             issues.append(f"supersedes entry {ref!r} must be an ADR-NNN string")
 
+    profile = data.get("format")
+    if profile is not None and profile not in SUPPORTED_PROFILES:
+        issues.append("format must be one of: " + ", ".join(SUPPORTED_PROFILES))
+
     return issues
 
 
 def migrate_text(text: str, path: Optional[Path] = None) -> Tuple[str, bool, List[str]]:
-    """Add/complete canonical frontmatter, preserving markdown body text."""
+    """Add canonical metadata and normalize an identifiable legacy H1."""
     raw_frontmatter, body = split_frontmatter(text)
     inferred = infer_frontmatter(body, path)
     try:
@@ -289,5 +354,6 @@ def migrate_text(text: str, path: Optional[Path] = None) -> Tuple[str, bool, Lis
     if issues:
         return text, False, issues
     rendered = render_frontmatter(data)
-    new_text = f"{rendered}{body}"
+    normalized_body = _normalize_legacy_heading(body, path, inferred)
+    new_text = f"{rendered}{normalized_body}"
     return new_text, new_text != text, []

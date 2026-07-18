@@ -42,19 +42,29 @@ Not every decision needs an ADR. Use this decision tree:
 
 ## Project Conventions
 
-Default conventions (override per project if the team uses something different; document the override in the project's ADR skill):
+Invariant conventions:
 
 - **Filename**: `ADR-XXX-kebab-case-title.md` with **uppercase** `ADR-` prefix, **3-digit zero-padded** number, kebab-case title.
   - Correct: `ADR-001-postgresql-for-sensor-data.md`, `ADR-042-grpc-internal-rpc.md`
   - Wrong: `adr-0001-postgresql.md`, `ADR-1-postgresql.md`, `ADR-001_PostgreSQL.md`
-- **Heading**: `# ADR-XXX Title` as the first line.
-- **Sections** in this order: `## Status`, `## Status History`, `## Context`, `## Decision`, `## Alternatives Considered`, `## Consequences`, `## Related Decisions`, `## References`.
+- **Frontmatter**: the file starts with the invariant fields from
+  `schemas/adr-frontmatter.schema.json`, including `format` for new records.
+- **Heading**: `# ADR-XXX Title` immediately after frontmatter.
+- **Body profile**: read `template.profile` from `.adr-kit.json` (`madr` by
+  default) and scaffold with `python bin/adr new "Title"`. Before honoring a
+  user-selected alternative, run `python bin/adr profiles --format json`.
+  Accept only a returned id with `available: true` and use its matching
+  template. The shipped alternatives are `nygard` and `canonical`. Do not
+  invent profile names or hand-map headings: all profiles preserve invariant
+  Status, Status History, Related Decisions, References, and Enforcement
+  sections.
 - **Status values**: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-YYY`, `Amended by ADR-YYY`. Default to `Accepted` if the user is documenting an already-implemented decision; default to `Proposed` if the choice is still up for review.
 - **Date format**: `YYYY-MM-DD`.
 - **No em dashes** anywhere. Use colons, periods, commas, or parentheses.
 - **English** unless the project explicitly uses another language for documentation.
 
-If the project uses a different convention (e.g. `adr-NNNN-` lowercase 4-digit, or `0001-...` without prefix), check the project's `SKILL.md` Project Conventions section and follow that. Do not silently mix conventions in the same `docs/adr/` directory.
+Existing MADR, Nygard, and legacy canonical records are all first-class.
+Unknown or hybrid records require explicit migration review.
 
 ---
 
@@ -142,7 +152,7 @@ If a gate cannot pass, do not save the file. Tell the user which gate fails and 
 If the ADR has a code surface — that is, if a future code change could violate the decision in a way that's recognisable from the diff — propose an `## Enforcement` section. Three patterns:
 
 - **Declarative.** The rule can be expressed as regex / glob / forbidden-import. Example: "no String class in hot paths" maps to `forbid_pattern: \\bString\\b ... in src/**`. Build a JSON block per `schemas/adr-enforcement.schema.json`. This is the preferred form because the pre-commit hook (`bin/adr-judge`) catches violations deterministically.
-- **LLM-judgeable.** The rule needs a model's judgement (semantic compliance, intent reading). Set `"llm_judge": true`. The hook surfaces an advisory line; deeper review happens in-session via `/adr-kit:judge`.
+- **LLM-judgeable.** The rule needs a model's judgement (semantic compliance, intent reading). Set `"llm_judge": true`. When the opt-in LLM pass is enabled, a `VIOLATION` blocks the commit; when it is disabled or unavailable, only declarative rules run. Deeper review is available via `/adr-kit:judge`.
 - **Manual review only.** No code surface (governance, process, organisational decision). Omit the section AND add one line in the ADR body explaining *why* it has no code surface. The judge skips ADRs without an Enforcement block silently; the explanation tells reviewers (Check 7 in `instructions/adr.review.md`) it's intentional.
 
 Propose the block to the user with a clear rationale ("Declarative: the rule maps cleanly to a regex on added lines"). Let the user accept, edit, or downgrade to `llm_judge: true`. Do not invent rules the user did not endorse.
@@ -176,21 +186,34 @@ Do not commit. Do not push. The user owns the commit step.
 Copy this verbatim into the new ADR file, then fill in. Do not invent sections, do not skip sections, do not reorder.
 
 ```markdown
+---
+id: "ADR-XXX"
+title: "Title in title case"
+status: Proposed
+date: "YYYY-MM-DD"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+---
+
 # ADR-XXX Title in title case
 
 ## Status
 
-Accepted. Date: YYYY-MM-DD.
+Proposed, YYYY-MM-DD.
 
-(Or: Proposed; or: Superseded by ADR-YYY; or: Amended by ADR-YYY.)
+(Later: Accepted; Deprecated; Rejected; Superseded by ADR-YYY; or Amended by ADR-YYY.)
 
 ## Status History
 
 status_history:
   - date: YYYY-MM-DD
-    status: Accepted
+    status: Proposed
     changed_by: Agent or User
-    reason: Initial decision record
+    reason: Initial proposal
     changed_via: adr-kit
 
 ## Context

@@ -25,9 +25,9 @@ def test_init_skill_has_step0():
     assert "Step 0" in _init_text(), "Expected 'Step 0' in skills/init/SKILL.md"
 
 
-def test_init_skill_mentions_python39():
-    """Init skill must reference Python 3.9 as the minimum required version."""
-    assert "3.9" in _init_text(), "Expected '3.9' in skills/init/SKILL.md"
+def test_init_skill_mentions_python310():
+    """Init skill must reference Python 3.10 as the minimum required version."""
+    assert "3.10" in _init_text(), "Expected '3.10' in skills/init/SKILL.md"
 
 
 def test_init_skill_has_windows_install():

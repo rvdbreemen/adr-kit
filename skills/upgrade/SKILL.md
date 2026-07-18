@@ -15,6 +15,18 @@ You bring a project's **installed adr-kit artifacts** in line with the **install
 
 If the project has no ADRs yet, point the user to `/adr-kit:init` instead.
 
+After resolving `ADR_KIT` in Step 0 and before refreshing artifacts, run
+format discovery:
+
+```bash
+python3 "$ADR_KIT/bin/adr-migrate" --plan docs/adr/
+```
+
+Report every migration notice. Do not apply any migration during upgrade.
+Supported legacy records receive a deterministic dry-run command; external,
+hybrid, or ambiguous formats receive `/adr-kit:migrate <path>` guidance.
+Continue the artifact upgrade regardless of whether notices exist.
+
 ## Step 0 — Artifact freshness check and refresh
 
 Resolve the plugin path and run the detector:
@@ -136,6 +148,7 @@ adr-kit upgrade complete:
 - hook:      <installed | already present>
 - backfill:  <N> ADRs got declarative rules, <M> got llm_judge:true, <K> skipped, <Q> already had Enforcement
 - lint:      <P> PASS, <A> ADVISORY, <F> FAIL
+- formats:   <N> deterministic migration notices, <M> guided notices; 0 auto-migrated
 ```
 
 Suggest a commit:

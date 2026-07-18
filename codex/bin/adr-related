@@ -31,6 +31,12 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import section_text
+
 
 # ---------------------------------------------------------------------------
 # Module-level compiled regexes (all linear; no nested quantifiers)
@@ -157,8 +163,7 @@ def parse_adr_refs(path: Path) -> Optional[AdrRefs]:
     status_m = _STATUS_SECTION_RE.search(content)
     status = status_m.group(1).capitalize() if status_m else "Unknown"
 
-    related_m = _RELATED_SECTION_RE.search(content)
-    related_text = related_m.group(1) if related_m else ""
+    related_text = section_text(content, "related")
     related_ids = [i for i in _ids_from(_ADR_TOKEN_RE, related_text) if i != adr_id]
 
     supersedes_ids = [i for i in _ids_from(_SUPERSEDES_CLAIM_RE, content) if i != adr_id]

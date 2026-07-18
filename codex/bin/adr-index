@@ -31,6 +31,11 @@ from typing import Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from adr_schema import infer_frontmatter, parse_frontmatter, split_frontmatter
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import section_text
 
 
 BEGIN = "<!-- adr-kit-index:begin -->"
@@ -123,10 +128,10 @@ def enforcement_globs(text: str) -> List[str]:
 
 def decision_oneline(text: str) -> str:
     """One-line summary of the Decision section: first meaningful sentence."""
-    match = DECISION_SECTION_RE.search(text)
-    if not match:
+    decision = section_text(text, "decision")
+    if not decision:
         return ""
-    for raw_line in match.group(1).splitlines():
+    for raw_line in decision.splitlines():
         line = raw_line.strip()
         if not line or line.startswith(("#", "```", "<!--", "-->")):
             continue

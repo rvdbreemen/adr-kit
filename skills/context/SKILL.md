@@ -1,6 +1,6 @@
 ---
 name: context
-description: Loads the Architecture Decision Records most relevant to a task before you implement it, so existing decisions are honored without burning context on the whole ADR set. Give it a topic (e.g. "mqtt discovery", "heap allocation", "caching") and it returns the 3-5 most relevant Accepted ADRs as readable context — title, one-line decision, file path, and relevance score. Read-only and safe to call from parallel subagents. Invoke before starting implementation in a project that has ADRs.
+description: Loads the Architecture Decision Records most relevant to a task before you implement it, so existing decisions are considered without burning context on the whole ADR set. Give it a topic (e.g. "mqtt discovery", "heap allocation", "caching") and it returns the 3-5 most relevant ADRs as readable context: title, one-line decision, file path, and relevance score. Accepted ADRs rank higher, but Proposed records can also appear in v0.33.0, so verify status in the source file. Read-only and safe to call from parallel subagents.
 argument-hint: "[topic or task description; e.g. \"mqtt discovery\"]"
 license: MIT
 allowed-tools: [Read, Bash]
@@ -38,8 +38,8 @@ edits ADRs or code, so it is safe to call from parallel subagents.
    readable context, not just a filename:
 
    - **`ADR-NNN — <title>`** (relevance: `<score>`)
-   - one-line summary of its `## Decision` (paraphrase the decision, don't dump
-     the whole section)
+   - one-line summary of its semantic decision (`## Decision Outcome` for
+     MADR, `## Decision` for Nygard/canonical; paraphrase rather than dumping)
    - file path, so the user can open the full record
 
    Order by relevance (highest first), most relevant ADR last in your message so

@@ -242,7 +242,7 @@ def generate_scripts_for_adr(
 
     if "shell" in langs:
         p = adr_output / "validate.sh"
-        p.write_text(generate_shell_script(adr_id, rules), encoding="utf-8", newline="\n")
+        p.write_bytes(generate_shell_script(adr_id, rules).encode("utf-8"))
         _make_executable(p)
         written.append(p)
 

@@ -69,7 +69,7 @@ for _cmd in python3 python py; do
 done
 
 if [ -z "$_PYTHON3" ]; then
-  echo "[adr-kit] ERROR: Python 3 not found. adr-judge requires Python 3.9+." >&2
+  echo "[adr-kit] ERROR: Python 3 not found. adr-judge requires Python 3.10+." >&2
   echo "[adr-kit] Install Python: https://www.python.org/downloads/" >&2
   echo "[adr-kit] On macOS: brew install python3" >&2
   echo "[adr-kit] On Windows: winget install Python.Python.3.12" >&2

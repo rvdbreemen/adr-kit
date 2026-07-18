@@ -4,9 +4,9 @@
 Walks a project root looking for decision-shaped artefacts: top-level config
 files (deps, build tools, CI), and documented decisions in README/docs/AGENTS
 (.md). Emits a JSON list of candidates that the /adr-kit:init skill feeds
-into Claude for LLM curation. Also classifies existing ADRs in docs/adr/ by
-template profile (canonical | madr | nygard | unknown) and flags MADR/Nygard
-shaped files as `template_profile` findings pointing at /adr-kit:migrate.
+into Claude for LLM curation. It also classifies existing ADRs in docs/adr/ by
+body profile. MADR, Nygard, and canonical are supported; only unknown or
+ambiguous hybrid shapes produce a `template_profile` migration finding.
 
 This CLI is intentionally dumb on purpose. It surfaces evidence; it does NOT
 decide which decisions deserve ADRs. That call belongs to the human reviewer
@@ -34,6 +34,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import SUPPORTED_PROFILES, detect_profile
 
 # Top-level files that, by their mere presence, suggest a tooling decision.
 TOOLING_MARKERS = [
@@ -87,110 +93,17 @@ DOC_PHRASES = [
 
 # ---------- template-profile detection (task-5, v0.21.0) ----------
 #
-# Classifies an ADR file as one of four template profiles so that existing
-# MADR / Nygard ADR sets can be flagged for /adr-kit:migrate. Heuristic and
-# advisory by design: detection never blocks anything, it only surfaces a
-# candidate. The canonical seven-section template stays the storage format
-# (see docs/adr/ADR-003-template-profile-compatibility.md).
-#
-# Per repo convention these helpers are duplicated module-level functions,
-# not a shared import: bins do not import each other.
-
-CANONICAL_SECTIONS = [
-    "## Status",
-    "## Context",
-    "## Decision",
-    "## Alternatives Considered",
-    "## Consequences",
-    "## Related Decisions",
-    "## References",
-]
-
-MADR_HEADINGS = [
-    "## Context and Problem Statement",
-    "## Considered Options",
-    "## Decision Outcome",
-]
-
-NYGARD_CORE = ["## Status", "## Context", "## Decision", "## Consequences"]
-NYGARD_ABSENT = ["## Alternatives Considered", "## Related Decisions", "## References"]
-
-TEMPLATE_PROFILES = ("canonical", "madr", "nygard", "unknown")
-
-
-def _strip_code_fences(text: str) -> str:
-    """Drop fenced code blocks so a `## ` inside a fence is not a heading.
-
-    Single linear pass over lines; no regex backtracking risk.
-    """
-    out: List[str] = []
-    in_fence = False
-    for line in text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            in_fence = not in_fence
-            continue
-        if not in_fence:
-            out.append(line)
-    return "\n".join(out)
-
-
-def _h2_headings(text: str) -> List[str]:
-    """Return normalised `## Heading` lines outside code fences."""
-    headings: List[str] = []
-    for line in _strip_code_fences(text).splitlines():
-        if line.startswith("## ") and not line.startswith("###"):
-            headings.append(line.rstrip().rstrip("#").rstrip())
-    return headings
-
-
-def _has_frontmatter_status(text: str) -> bool:
-    """True when the file opens with YAML frontmatter that carries `status:`.
-
-    MADR 3.x files start with `---` frontmatter holding status / date /
-    deciders. We only look inside the leading frontmatter block, line by line.
-    """
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return False
-    for line in lines[1:50]:  # frontmatter is short; cap the scan
-        if line.strip() == "---":
-            return False
-        if line.lstrip().lower().startswith("status:"):
-            return True
-    return False
-
+# Classification delegates to the shared semantic registry. Detection is
+# advisory here; strict validation belongs to adr-lint. ADR-005 supersedes
+# ADR-003's canonical-only storage contract.
 
 def detect_template_profile(text: str) -> str:
-    """Classify ADR text as canonical | madr | nygard | unknown.
-
-    Heuristic signals:
-    - madr: >= 2 of {Context and Problem Statement, Considered Options,
-      Decision Outcome, YAML frontmatter status:}. Checked first because
-      these headings are unambiguous MADR vocabulary.
-    - canonical: all seven canonical sections present.
-    - nygard: the four Nygard sections present and none of the
-      canonical-only sections (Alternatives Considered, Related Decisions,
-      References).
-    - unknown: anything else. Advisory only; never a hard verdict.
-    """
-    headings = set(_h2_headings(text))
-    madr_signals = sum(1 for h in MADR_HEADINGS if h in headings)
-    if _has_frontmatter_status(text):
-        madr_signals += 1
-    if madr_signals >= 2:
-        return "madr"
-    if all(s in headings for s in CANONICAL_SECTIONS):
-        return "canonical"
-    if all(s in headings for s in NYGARD_CORE) and not any(
-        s in headings for s in NYGARD_ABSENT
-    ):
-        return "nygard"
-    return "unknown"
+    """Classify ADR text with the shared semantic profile registry."""
+    return detect_profile(text)
 
 
 # Default skip globs (non-source / non-doc noise + existing ADR & backlog content).
-# docs/adr is skipped because existing ADRs are already canonical decisions —
+# docs/adr is skipped because existing ADRs are already recorded decisions —
 # scanning them just produces grep noise from the Decision sections.
 # backlog/** is skipped because Backlog.md task narratives (decided to, instead
 # of) describe TASK-level choices, not ADR-level architecture.
@@ -451,12 +364,12 @@ def scan_doc_decisions(root: Path, skip_regexes: List[re.Pattern]) -> List[Dict]
 
 
 def scan_template_profiles(root: Path) -> List[Dict]:
-    """Flag MADR / Nygard shaped ADRs in docs/adr/ for /adr-kit:migrate.
+    """Flag unsupported or hybrid ADRs in docs/adr/ for /adr-kit:migrate.
 
     The default skip glob `docs/adr/**` only applies to the decision-phrase
     doc scan; this scanner deliberately targets the ADR directory itself.
-    Canonical and unknown files produce no finding (canonical needs nothing,
-    unknown needs a human eye, not an automated nudge).
+    All three supported profiles produce no finding. Unknown and hybrid files
+    need an explicit source profile or human review before safe conversion.
     """
     adr_dir = root / "docs" / "adr"
     if not adr_dir.is_dir():
@@ -469,7 +382,7 @@ def scan_template_profiles(root: Path) -> List[Dict]:
         try:
             cfg = json.loads(cfg_text)
             value = cfg.get("template", {}).get("profile")
-            if isinstance(value, str) and value in TEMPLATE_PROFILES:
+            if isinstance(value, str) and value in SUPPORTED_PROFILES:
                 declared = value
         except (json.JSONDecodeError, AttributeError):
             pass
@@ -481,15 +394,14 @@ def scan_template_profiles(root: Path) -> List[Dict]:
         if text is None:
             continue
         profile = detect_template_profile(text)
-        if profile not in ("madr", "nygard"):
+        if profile not in ("unknown", "hybrid"):
             continue
         rel = fp.relative_to(root).as_posix()
-        label = "MADR" if profile == "madr" else "Nygard"
         details: Dict = {
             "template_profile": profile,
             "suggestion": (
-                "Run /adr-kit:migrate to map this ADR into the canonical "
-                "seven-section template."
+                "Add explicit format frontmatter or run /adr-kit:migrate "
+                "with a supported source and target profile."
             ),
         }
         if declared:
@@ -497,7 +409,7 @@ def scan_template_profiles(root: Path) -> List[Dict]:
         out.append(
             {
                 "id": f"template-profile-{next_id:03d}",
-                "title": f"{rel} uses the {label} ADR template, not the canonical seven sections",
+                "title": f"{rel} has an unsupported or ambiguous ADR body format ({profile})",
                 "decision_type": "template_profile",
                 "evidence_files": [rel],
                 "details": details,

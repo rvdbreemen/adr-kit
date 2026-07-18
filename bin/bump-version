@@ -78,7 +78,7 @@ def _read_json(path: Path) -> dict:
 
 
 def _write_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
+    path.write_bytes((json.dumps(data, indent=2) + "\n").encode("utf-8"))
 
 
 def main(argv: list) -> int:
@@ -170,7 +170,7 @@ def main(argv: list) -> int:
             f"## [Unreleased]\n\n## [{new_version}] - {today}",
             1,
         )
-        CHANGELOG.write_text(changelog, encoding="utf-8", newline="\n")
+        CHANGELOG.write_bytes(changelog.replace("\r\n", "\n").encode("utf-8"))
         print(f"  + CHANGELOG.md: [Unreleased] -> [{new_version}] - {today}")
 
     # 6. Wrapper-version stamps in the copied-artifact templates (task-15).
@@ -184,7 +184,9 @@ def main(argv: list) -> int:
             content = WRAPPER_STAMP_RE.sub(
                 f'ADR_KIT_WRAPPER_VERSION="{new_version}"', content, count=1
             )
-            PRECOMMIT_TEMPLATE.write_text(content, encoding="utf-8", newline="\n")
+            PRECOMMIT_TEMPLATE.write_bytes(
+                content.replace("\r\n", "\n").encode("utf-8")
+            )
             print(f"  + templates/githooks/pre-commit wrapper stamp -> {new_version}")
     except OSError:
         pass
@@ -205,7 +207,7 @@ def main(argv: list) -> int:
             guide = GUIDE_STAMP_RE.sub(
                 f"<!-- adr-kit-guide v{new_version} -->", guide, count=1
             )
-            GUIDE_TEMPLATE.write_text(guide, encoding="utf-8", newline="\n")
+            GUIDE_TEMPLATE.write_bytes(guide.replace("\r\n", "\n").encode("utf-8"))
             print(f"  + templates/adr-kit-guide.md version line -> {new_version}")
     except OSError:
         pass
@@ -219,7 +221,7 @@ def main(argv: list) -> int:
             content = WRAPPER_STAMP_RE.sub(
                 f'ADR_KIT_WRAPPER_VERSION="{new_version}"', content, count=1
             )
-            own_wrapper.write_text(content, encoding="utf-8", newline="\n")
+            own_wrapper.write_bytes(content.replace("\r\n", "\n").encode("utf-8"))
             print(f"  + .githooks/pre-commit wrapper stamp -> {new_version}")
     except OSError:
         pass

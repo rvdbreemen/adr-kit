@@ -41,6 +41,12 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import section_text
+
 # Default LLM invocation — identical shape to adr-judge. Overridable via
 # --llm-cmd, ADR_KIT_LLM_CMD env, or .adr-kit.json suggest.llm_cmd / judge.llm_cmd.
 # Tests inject a fake binary here.
@@ -233,8 +239,7 @@ def extract_title(body: str) -> str:
 
 def extract_decision(body: str) -> str:
     """Return the body of the ## Decision section, or '' if absent."""
-    m = DECISION_SECTION_RE.search(body)
-    return m.group(1).strip() if m else ""
+    return section_text(body, "decision")
 
 
 def load_config(path: Optional[Path]) -> Dict:

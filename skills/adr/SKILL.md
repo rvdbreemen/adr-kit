@@ -212,24 +212,56 @@ This pattern was originally introduced by [trailofbits/skills](https://github.co
 
 ## ADR Template
 
-Default template. Override with project specifics in your project's local copy of this file.
+MADR is the default profile. Create from the project configuration with:
+
+```text
+python bin/adr profiles --format json
+python bin/adr new "Short imperative title" --adr-dir docs/adr
+```
+
+Use `--profile madr|nygard|canonical` for a one-record override. The bundled
+templates are `templates/adr-template.{madr,nygard,canonical}.md`; the
+unqualified `templates/adr-template.md` is the MADR default. All profiles keep
+frontmatter, Status, Status History, Related Decisions, References, and
+Enforcement invariant. The older example below is the `canonical` profile,
+retained for backward-compatible projects.
+
+When the user requests a non-default format, first read the JSON catalog.
+Accept only a returned `id`, require `available: true`, and scaffold from that
+entry's `template` path through `adr new --profile <id>`. Never invent a
+profile name, infer one from an arbitrary filename, hand-map headings, or
+generate a substitute for a missing shipped template.
 
 ```markdown
+---
+id: "ADR-XXX"
+title: "Title in title case"
+status: Proposed
+date: "YYYY-MM-DD"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+format: canonical
+---
+
 # ADR-XXX Title in title case
 
 ## Status
 
-Accepted. Date: YYYY-MM-DD.
+Proposed, YYYY-MM-DD.
 
-(Or: Proposed; Deprecated; Superseded by ADR-YYY; Amended by ADR-YYY.)
+(Later: Accepted; Deprecated; Rejected; Superseded by ADR-YYY; or Amended by ADR-YYY.)
 
 ## Status History
 
 status_history:
   - date: YYYY-MM-DD
-    status: Accepted
+    status: Proposed
     changed_by: Agent or User
-    reason: Initial decision record
+    reason: Initial proposal
     changed_via: adr-kit
 
 ## Context
@@ -315,7 +347,9 @@ Wrong:
 
 ### Project override
 
-If your project uses a different convention (e.g. `adr-NNNN-` lowercase 4-digit, or `0001-...` without prefix), override this section in your local copy of the skill and the agent. Mixing conventions in the same `docs/adr/` directory is the worst outcome.
+The filename contract remains fixed. Select the body profile with
+`template.profile` in `docs/adr/.adr-kit.json`; choose `madr` (default),
+`nygard`, or `canonical`. A per-file `format` value is authoritative.
 
 ---
 
@@ -349,8 +383,9 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 ### 2. During implementation
 
 - Create the ADR with `Status: Proposed`.
-- Get the next ADR number (`ls docs/adr/ADR-*.md` and increment).
-- Write a comprehensive ADR using the template.
+- Run `python bin/adr new "Title" --adr-dir docs/adr`; it allocates the next
+  number and honors `template.profile`.
+- Complete the selected profile without renaming its semantic headings.
 - Reference the ADR in code comments at non-obvious enforcement sites: `// See ADR-XXX for why we use this pattern.`
 - Implement according to the ADR's decision.
 
@@ -648,7 +683,8 @@ The full adr-kit toolset wraps this skill with three operational modes:
 - **`/adr-kit:upgrade`** — for users on v0.11: migrate to the v0.12 footprint without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
 - **`/adr-kit:lint`** — validate ADR file content against the four verification gates (Completeness / Evidence / Clarity / Consistency). The deterministic CLI is `bin/adr-lint`; the skill drives the heuristic gates.
 - **`bin/adr-doctor`** — local health check for agent start and finish: strict lint, generated-index freshness, shipped-but-Proposed ADRs, old Proposed ADRs, changed evidence behind Accepted ADRs, and missing named gates. Material drift auto-triggers a local `bin/adr-audit --root ...` pass and includes the audit summary in the doctor output. Use `--fix-index` to regenerate the index before checking it.
-- **`/adr-kit:migrate`** — rewrite legacy-shaped ADRs into the canonical seven-section template.
+- **`/adr-kit:migrate`** — preview metadata changes or convert between MADR,
+  Nygard, and canonical profiles; guided handling remains for legacy shapes.
 
 ### When to invoke this skill (`/adr-kit:adr`) vs the others
 

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""adr-migrate: add canonical adr-kit frontmatter to ADR files.
+"""adr-migrate: plan or apply safe ADR metadata and profile migrations.
 
-The migration preserves the markdown body exactly. It only prepends or repairs
-frontmatter metadata so local tools can recall and validate ADRs reliably.
+Migration preserves decision prose and invariant sections. For recognizable
+legacy filenames it can also normalize the H1 and supported profile extensions
+so the reported rename produces a strict-lintable ADR.
 
 Usage:
   adr-migrate                         # migrate docs/adr/
   adr-migrate docs/decisions/         # migrate a directory
   adr-migrate docs/adr/ADR-001-x.md   # migrate one file
+  adr-migrate --plan docs/adr/        # detect formats; never write
   adr-migrate --check docs/adr/       # exit 1 when any file needs migration
   adr-migrate --dry-run --format json docs/adr/
 """
@@ -21,6 +23,18 @@ import sys
 from pathlib import Path
 from typing import Dict, List
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import (
+    AdrFormatError,
+    classify_format,
+    convert_profile,
+    is_migration_candidate,
+    migration_notice,
+    normalize_profile,
+)
 from adr_schema import migrate_text
 
 
@@ -38,7 +52,69 @@ def discover_files(target: Path) -> List[Path]:
     )
 
 
-def migrate_file(path: Path, write: bool) -> Dict:
+def discover_plan_files(target: Path) -> List[Path]:
+    """Find canonical and recognizable legacy ADR files for read-only planning."""
+    if target.is_file():
+        return [target]
+    if not target.is_dir():
+        return []
+    candidates: List[Path] = []
+    for path in sorted(target.glob("*.md"), key=lambda p: p.name.lower()):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            if ADR_FILE_RE.match(path.name):
+                candidates.append(path)
+            continue
+        if is_migration_candidate(path, text):
+            candidates.append(path)
+    return candidates
+
+
+def plan_file(path: Path) -> Dict:
+    try:
+        before = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        notice = {
+            "file": str(path),
+            "detected_format": "unknown",
+            "supported": False,
+            "deterministic": False,
+            "action": "guided-migration",
+            "message": f"Could not read ADR: {exc}",
+            "preview_command": None,
+            "apply_command": None,
+            "guided_command": None,
+            "rename_to": None,
+            "metadata_change": False,
+            "metadata_issues": [str(exc)],
+            "writes_automatically": False,
+        }
+        return {
+            "file": str(path),
+            "detected_format": "unknown",
+            "notice": notice,
+        }
+    _after, changed, issues = migrate_text(before, path)
+    return {
+        "file": str(path),
+        "detected_format": classify_format(before),
+        "notice": migration_notice(
+            before,
+            path,
+            metadata_changed=changed,
+            metadata_issues=issues,
+            migrate_command=str(Path(__file__).resolve()),
+        ),
+    }
+
+
+def migrate_file(
+    path: Path,
+    write: bool,
+    to_profile: str | None = None,
+    from_profile: str | None = None,
+) -> Dict:
     try:
         before = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -50,6 +126,15 @@ def migrate_file(path: Path, write: bool) -> Dict:
         }
 
     after, changed, issues = migrate_text(before, path)
+    detected_source = None
+    if not issues and to_profile is not None:
+        try:
+            after, detected_source = convert_profile(
+                after, to_profile, source=from_profile
+            )
+            changed = after != before
+        except AdrFormatError as exc:
+            issues = [str(exc)]
     if not issues and changed and write:
         try:
             path.write_text(after, encoding="utf-8")
@@ -66,6 +151,8 @@ def migrate_file(path: Path, write: bool) -> Dict:
         "changed": changed,
         "ok": not issues,
         "issues": issues,
+        "source_profile": detected_source,
+        "target_profile": to_profile,
     }
 
 
@@ -90,6 +177,48 @@ def render_text(target: Path, results: List[Dict], check: bool, dry_run: bool) -
     return "\n".join(lines)
 
 
+def render_plan_text(target: Path, scanned: List[Dict]) -> str:
+    notices = [item["notice"] for item in scanned if item["notice"] is not None]
+    deterministic = [item for item in notices if item["deterministic"]]
+    guided = [item for item in notices if not item["deterministic"]]
+    formats: Dict[str, int] = {}
+    for item in scanned:
+        profile = item["detected_format"]
+        formats[profile] = formats.get(profile, 0) + 1
+
+    lines = [
+        f"adr-migrate plan: {target}",
+        (
+            f"Files scanned: {len(scanned)}; notices: {len(notices)}; "
+            f"deterministic: {len(deterministic)}; guided: {len(guided)}"
+        ),
+    ]
+    if formats:
+        lines.append(
+            "Detected formats: "
+            + ", ".join(f"{name}={formats[name]}" for name in sorted(formats))
+        )
+    for notice in notices:
+        mode = "deterministic" if notice["deterministic"] else "guided"
+        lines.append(
+            f"  {notice['detected_format']} ({mode}): {notice['file']}"
+        )
+        lines.append(f"    {notice['message']}")
+        if notice.get("preview_command"):
+            lines.append(f"    preview: {notice['preview_command']}")
+        if notice.get("rename_to"):
+            lines.append(
+                "    after approved migration, rename to: "
+                + notice["rename_to"]
+            )
+        if notice.get("guided_command"):
+            lines.append(f"    next: {notice['guided_command']}")
+    if not notices:
+        lines.append("No migration notices.")
+    lines.append("No files changed. Migration is never automatic.")
+    return "\n".join(lines)
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="adr-migrate",
@@ -107,6 +236,11 @@ def main(argv: List[str] | None = None) -> int:
         help="do not write; exit 1 if any ADR needs migration",
     )
     parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="detect supported and legacy formats; report migration advice; never write",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="do not write; report what would change",
@@ -117,12 +251,77 @@ def main(argv: List[str] | None = None) -> int:
         default="text",
         help="output format (default: text)",
     )
+    parser.add_argument(
+        "--to-profile",
+        choices=["madr", "nygard", "canonical"],
+        default=None,
+        help="also convert supported body headings to this profile",
+    )
+    parser.add_argument(
+        "--from-profile",
+        choices=["madr", "nygard", "canonical"],
+        default=None,
+        help="explicit source profile for an unknown or hybrid document",
+    )
     args = parser.parse_args(argv)
 
+    if args.plan and (
+        args.check or args.dry_run or args.to_profile or args.from_profile
+    ):
+        parser.error(
+            "--plan cannot be combined with --check, --dry-run, "
+            "--to-profile, or --from-profile"
+        )
+
     target = Path(args.path)
+    if args.plan:
+        scanned = [plan_file(path) for path in discover_plan_files(target)]
+        notices = [
+            item["notice"] for item in scanned if item["notice"] is not None
+        ]
+        deterministic = [item for item in notices if item["deterministic"]]
+        guided = [item for item in notices if not item["deterministic"]]
+        formats: Dict[str, int] = {}
+        for item in scanned:
+            profile = item["detected_format"]
+            formats[profile] = formats.get(profile, 0) + 1
+        payload = {
+            "target": str(target),
+            "mode": "plan",
+            "read_only": True,
+            "summary": {
+                "total": len(scanned),
+                "notices": len(notices),
+                "deterministic": len(deterministic),
+                "guided": len(guided),
+                "formats": formats,
+            },
+            "files": notices,
+        }
+        if args.format == "json":
+            print(json.dumps(payload, indent=2))
+        else:
+            print(render_plan_text(target, scanned))
+        return 0
+
     files = discover_files(target)
     write = not args.check and not args.dry_run
-    results = [migrate_file(path, write=write) for path in files]
+    try:
+        to_profile = (
+            normalize_profile(args.to_profile) if args.to_profile else None
+        )
+    except AdrFormatError as exc:
+        print(f"adr-migrate: {exc}", file=sys.stderr)
+        return 2
+    results = [
+        migrate_file(
+            path,
+            write=write,
+            to_profile=to_profile,
+            from_profile=args.from_profile,
+        )
+        for path in files
+    ]
 
     failed = [r for r in results if not r["ok"]]
     changed = [r for r in results if r["changed"]]

@@ -23,6 +23,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_format import section_text
+
 
 # ---------------------------------------------------------------------------
 # Domain keyword sets used by infer_task_domain()
@@ -191,14 +197,12 @@ def extract_adr_metadata(adr_file: Path) -> Dict:
                 adr_date = None
 
     # Decision text for domain + keyword scoring
-    decision_match = _DECISION_SECTION_RE.search(content)
-    decision_text = decision_match.group(1).strip() if decision_match else ""
+    decision_text = section_text(content, "decision")
 
     # Related ADR IDs from ## Related Decisions section
-    related_section_match = _RELATED_SECTION_RE.search(content)
+    related_text = section_text(content, "related")
     related_ids: List[str] = []
-    if related_section_match:
-        related_text = related_section_match.group(1)
+    if related_text:
         for m in _ADR_REF_RE.finditer(related_text):
             related_ids.append(f"ADR-{int(m.group(1)):03d}")
 

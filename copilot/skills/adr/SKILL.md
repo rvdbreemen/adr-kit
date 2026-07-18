@@ -14,11 +14,17 @@ Before writing:
 
 1. Call `adr-kit.adr_context` with the task and absolute `project_root`.
 2. Read the returned Accepted ADRs and report any conflict.
-3. Find the next unused `ADR-NNN` under `docs/adr/`.
+3. Run `python <plugin-root>/bin/adr profiles --format json`, then resolve the
+   project body profile from `template.profile`. The default is `madr`. If the
+   user chooses another format, accept only a returned id with
+   `available: true` and use its returned template. The shipped alternatives
+   are `nygard` and `canonical`; never invent a profile or replacement
+   template.
 
-Draft from the bundled `templates/adr-template.md`. The plugin root is the
-grandparent of this skill's `skills/` directory, as shown in Codex's skill
-catalog. Start new decisions as Proposed. Require all four gates before
+Resolve the plugin root as the grandparent of this skill's `skills/` directory,
+then run `python <plugin-root>/bin/adr new "Title" --adr-dir docs/adr`.
+Use `--profile` only for a one-record override. Start new decisions as
+Proposed. Require all four gates before
 acceptance: Completeness, Evidence, Clarity, and Consistency. Include at least
 two alternatives, positive and negative consequences, explicit risks and
 mitigations, and verifiable references.

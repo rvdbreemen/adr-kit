@@ -81,14 +81,25 @@ def test_skip_glob_excludes_path(tmp_path):
 
 
 def test_default_skip_excludes_existing_adrs(tmp_path):
-    """docs/adr/** is in the default skip list so existing ADRs don't recurse."""
+    """Existing ADR prose is skipped, while profile diagnostics still run."""
     (tmp_path / "docs" / "adr").mkdir(parents=True)
     (tmp_path / "docs" / "adr" / "ADR-001-foo.md").write_text(
         "# ADR-001\n\nWe decided to do foo instead of bar.\n"
     )
     code, out = _run(tmp_path)
     assert code == 0
-    assert out["candidates"] == []
+    assert not [
+        candidate
+        for candidate in out["candidates"]
+        if candidate["decision_type"] == "documented"
+    ]
+    profile = [
+        candidate
+        for candidate in out["candidates"]
+        if candidate["decision_type"] == "template_profile"
+    ]
+    assert len(profile) == 1
+    assert profile[0]["details"]["template_profile"] == "unknown"
 
 
 def test_output_writes_file(tmp_path):

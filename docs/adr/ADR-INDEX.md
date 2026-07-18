@@ -8,5 +8,7 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | --- | --- | --- | --- |
 | ADR-001 | Accepted | - | Make the per-commit LLM pass opt-in, add a concurrency guard, and ask |
 | ADR-002 | Accepted | - | Implement the ADR Guardian as a dumb SessionStart detector plus in-session smart |
-| ADR-003 | Accepted | - | Keep the canonical seven-section template as the only storage format. |
+| ADR-003 | Superseded | - | Keep the canonical seven-section template as the only storage format. |
 | ADR-004 | Accepted | - | Adopt a layered ADR context injection model with three fail-open injection tiers |
+| ADR-005 | Accepted | `schemas/adr-kit-config.schema.json` | Chosen option: **support selectable `madr`, `nygard`, and `canonical` body |
+| ADR-006 | Proposed | - | Chosen option: **prepare a persistent platform-local marketplace from validated |

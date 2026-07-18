@@ -4,6 +4,59 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Documentation
+
+- Added a prominent, client-neutral `INSTALL-AGENT.md` runbook so coding
+  agents can detect, preview, install, initialize, and validate ADR Kit without
+  reading the full README. Native Claude Code, Codex, and Copilot paths fall
+  back to MCP, Agent Skills, or direct Python commands for other agents.
+- Explained the MADR default in the README, human and agent installation
+  guides, and the installed project guide: MADR minimizes agent inference,
+  Nygard optimizes concision, and canonical preserves upgrade compatibility.
+
+### Added
+
+- **Three-platform installer contract (TASK-29).**
+  `scripts/install-agent-envs.py` now validates its full source and Python
+  3.10+ child runtime before client mutations, prepares a persistent
+  platform-local marketplace with the exact interpreter embedded in Codex and
+  Copilot MCP manifests, restores Unix executable modes, and completes a real
+  MCP initialize/tools-list smoke test. Detection and installation failures
+  are isolated per client. CI runs the installer contract on Windows, macOS,
+  and Linux.
+- **Shipped profile catalog (TASK-28).** `bin/adr profiles` now gives humans
+  and coding agents an ordered catalog, with JSON output, MADR preference,
+  format guidance, exact template paths, and installed availability. Profile
+  selection and template resolution share one registry, so only `madr`,
+  `nygard`, and `canonical` are selectable and a missing shipped template
+  blocks ADR creation before a record is written.
+- **Legacy format discovery and migration plans (TASK-27).**
+  `bin/adr-migrate --plan` scans canonical and recognizable old filenames,
+  reports supported-profile metadata/rename work, and conservatively detects
+  Y-Statement, Tyree/Akerman, arc42, hybrid, and unknown shapes. Install,
+  init, upgrade, and lint surface the same read-only advice; no path migrates
+  content automatically. The deterministic supported-profile path also
+  normalizes legacy numeric H1 headings and adds required extension sections.
+- **Selectable ADR body profiles (TASK-26).** `madr`, `nygard`, and the
+  backward-compatible `canonical` profile share one stdlib semantic registry.
+  `bin/adr new` honors `template.profile` with MADR as the default, while
+  `--profile` selects one record.
+- **Deterministic profile migration.** `bin/adr-migrate --to-profile` supports
+  dry-run, check, explicit-source disambiguation, and idempotent conversion
+  without rewriting invariant metadata, history, references, or Enforcement.
+- **Format research and ADR-005.** A cited evaluation covers Nygard, MADR,
+  Y-Statements, Tyree/Akerman, arc42, and ISO-oriented records. ADR-005
+  supersedes ADR-003's canonical-only storage decision.
+
+### Changed
+
+- Lint, quality, index, context, judge, related, retirement, suggestion,
+  audit, lifecycle, and edit-time injection consume semantic roles across all
+  supported profiles. Unknown and ambiguous hybrid records fail strict lint
+  with an explicit migration path.
+- Generated client payload drift checks normalize CRLF and LF before
+  comparison, keeping `--check` deterministic across Windows and Unix.
+
 ## [0.33.0] - 2026-07-18
 
 ### Added
