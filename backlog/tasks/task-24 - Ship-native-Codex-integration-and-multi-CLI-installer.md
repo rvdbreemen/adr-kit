@@ -1,10 +1,10 @@
 ---
 id: TASK-24
 title: Ship native Codex integration and multi-CLI installer
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-18 11:30'
-updated_date: '2026-07-18 12:13'
+updated_date: '2026-07-18 12:18'
 labels: []
 dependencies: []
 ---
@@ -25,7 +25,7 @@ Implement a first-class, additive Codex integration for ADR-kit and a cross-plat
 - [x] #6 Official Codex plugin validator plus a live Codex process discover ADR-kit skills and MCP tools
 - [x] #7 Claude Code and Copilot integrations receive live smoke validation without overwriting unmanaged configuration
 - [x] #8 Focused tests, full test suite, manifests, ADR gates, and install smokes all pass before merge
-- [ ] #9 Version, changelog, release notes, PR, merge, tag, and GitHub release are completed only after validation
+- [x] #9 Version, changelog, release notes, PR, merge, tag, and GitHub release are completed only after validation
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -42,9 +42,11 @@ Implement a first-class, additive Codex integration for ADR-kit and a cross-plat
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan approved by the user's explicit implementation, testing, merge, and release instructions on 2026-07-18. Release is gated on all automated and live client validations passing.
-
-Implementation and validation are complete for the separate Codex and Copilot distributions without changing the Claude Code plugin contract. Claude Code 2.1.214, Codex 0.144.5, and Copilot CLI 1.0.70 were detected by verified version signatures and each passed an isolated clean-home native plugin install plus plugin/MCP discovery.
-
-Final release-gate evidence: full pytest suite 524 passed, 3 skipped in 137.12s; focused cross-client regressions 44 passed, 1 platform skip; official Codex plugin validator PASS; Git Bash hook resolution from isolated Codex and Copilot caches PASS; Markdown lint 0 issues; strict ADR lint 4 PASS/0 advisory/0 fail; adr-index clean; adr-doctor 0 findings; payload drift, JSON syntax, version lockstep, and git diff checks PASS. PR, merge, tag, and GitHub release remain pending.
+Implementation, validation, merge, and release completed on 2026-07-18. Claude Code 2.1.214, Codex 0.144.5, and Copilot CLI 1.0.70 each passed isolated native installation and plugin/MCP discovery. The separate Codex and Copilot payloads do not change the Claude Code manifest, skills, agent, or three-hook contract. Final local suite: 524 passed, 3 skipped. All five PR checks and all three post-merge main workflows passed. Merge commit: d2542d3fe6367f7bc0a7cd9af9ee6f3944c18775. Release tag and URL: v0.33.0, https://github.com/rvdbreemen/adr-kit/releases/tag/v0.33.0.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Released ADR Kit v0.33.0. Added separate native Codex and standalone Copilot CLI distributions, verified multi-CLI detection/installation, workspace-aware MCP tools, and cross-client hook cache resolution while preserving the Claude Code plugin contract. Validation: 524 passed, 3 skipped locally; all PR and post-merge GitHub checks passed. PR: https://github.com/rvdbreemen/adr-kit/pull/14. Release: https://github.com/rvdbreemen/adr-kit/releases/tag/v0.33.0.
+<!-- SECTION:FINAL_SUMMARY:END -->
