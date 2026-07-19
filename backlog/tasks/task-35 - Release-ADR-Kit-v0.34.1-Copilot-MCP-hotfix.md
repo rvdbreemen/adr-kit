@@ -1,11 +1,11 @@
 ---
 id: TASK-35
 title: Release ADR Kit v0.34.1 Copilot MCP hotfix
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-07-19 07:47'
-updated_date: '2026-07-19 07:54'
+updated_date: '2026-07-19 07:57'
 labels:
   - release
   - copilot
@@ -46,8 +46,8 @@ Publish the merged Copilot MCP executable-path correction as ADR Kit v0.34.1 usi
 - [x] #1 CHANGELOG records the Copilot MCP path/root correction under v0.34.1.
 - [x] #2 All client manifests, marketplaces, guide, and wrapper stamps report 0.34.1.
 - [x] #3 Release validation and synchronized payload checks pass.
-- [ ] #4 The release changes are merged to main through a green GitHub pull request.
-- [ ] #5 Annotated tag v0.34.1 and a GitHub Release with user-facing recovery notes are published.
+- [x] #4 The release changes are merged to main through a green GitHub pull request.
+- [x] #5 Annotated tag v0.34.1 and a GitHub Release with user-facing recovery notes are published.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -60,4 +60,12 @@ Publish the merged Copilot MCP executable-path correction as ADR Kit v0.34.1 usi
 
 <!-- SECTION:NOTES:BEGIN -->
 Prepared v0.34.1 with a focused Copilot MCP fix entry in CHANGELOG. `bin/bump-version` synchronized every client manifest, marketplace, guide, and wrapper stamp, and `sync-agent-plugins.py` propagated the canonical templates. Release validation: full suite 641 passed, 4 skipped; adr-doctor passed; generated ADR index checks passed; payload synchronization check and git diff check passed. Live Copilot handshake evidence remains recorded in TASK-34.
+
+GitHub release evidence: fix PR #15 and release PR #16 merged; all 11 release PR checks passed; annotated tag v0.34.1 points to merged main commit b48a4eb73d88cf8b3b5b5ea14761f05cbff9b635; release published at https://github.com/rvdbreemen/adr-kit/releases/tag/v0.34.1.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Released ADR Kit v0.34.1 as a focused GitHub Copilot MCP path hotfix. The fix and release were merged through green PRs, all client versions and copied artifacts were synchronized, the full local suite and cross-platform GitHub CI passed, and annotated tag v0.34.1 plus user-facing GitHub Release notes were published.
+<!-- SECTION:FINAL_SUMMARY:END -->
