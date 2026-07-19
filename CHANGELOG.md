@@ -4,6 +4,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-07-19
+
+### Fixed
+
+- GitHub Copilot now resolves the bundled `adr-mcp` executable through
+  `${PLUGIN_ROOT}` instead of looking under the active project. The MCP server
+  still uses the active project as its root, and installer validation now
+  exercises the manifest from an unrelated workspace.
+
 ## [0.34.0] - 2026-07-18
 
 ### Documentation
@@ -840,7 +849,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.1...HEAD
+[0.34.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.0...v0.34.1
 [0.34.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.31.0...v0.32.0
