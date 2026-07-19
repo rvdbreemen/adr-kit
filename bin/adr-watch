@@ -629,6 +629,7 @@ def _emit_hook_output(text: str, event: str = "PostToolUse") -> None:
     """
     if os.environ.get("CLAUDE_PLUGIN_ROOT") and not os.environ.get("COPILOT_CLI"):
         payload = {
+            "suppressOutput": True,
             "hookSpecificOutput": {
                 "hookEventName": event,
                 "additionalContext": text,

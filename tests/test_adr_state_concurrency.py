@@ -30,7 +30,7 @@ Use the repository layer for all matching source files.
 ## Enforcement
 
 ```json
-{"forbid_pattern": [{"pattern": "cursor\\\\.execute", "path_glob": "src/**/*.py"}]}
+{"forbid_pattern": [{"pattern": "legacy_api\\\\.execute", "path_glob": "src/**/*.py"}]}
 ```
 """
 

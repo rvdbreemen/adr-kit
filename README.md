@@ -27,7 +27,14 @@ all indexes with `python bin/adr-index docs/adr` and verify them with
 
 `adr-kit` turns Architecture Decision Records from passive documentation into active guardrails. Your agent gets the relevant decisions injected while it codes, every commit is checked against the accepted decisions, and a guardian watches for decisions that go stale. One toolkit covers the whole lifecycle: capture, enforce, maintain, retire.
 
-Ships native, separate plugins for Claude Code, OpenAI Codex, and the standalone GitHub Copilot CLI, plus portable files for Cursor, Claude Cowork, and any agent that supports the [Agent Skills](https://agentskills.io/) format. The engines are dependency-free Python 3.10+ (stdlib only, no build step, no API key required for any default path).
+Ships first-class, separate integrations for Claude Code, OpenAI Codex, and
+the standalone GitHub Copilot CLI. All three include English skill metadata,
+the same deterministic engines, and quiet-by-default lifecycle behavior:
+routine successful hooks do not print progress, while relevant ADR context is
+delivered to the agent and actionable warnings remain available. Portable
+Agent Skills and stdio MCP fallbacks remain available for compatible clients.
+The engines are dependency-free Python 3.10+ (stdlib only, no build step, no
+API key required for any default path).
 
 > **Pre-1.0**: functional and in daily use, but conventions may still evolve before v1.0.0. Pin a tag if you need stability across upgrades.
 >
@@ -137,12 +144,14 @@ project. Start a new Copilot session or run `/mcp reload` in the current one.
 Agents should use these native update commands instead of editing the installed
 `.mcp.json` or replacing `${PLUGIN_ROOT}` with a machine-specific path.
 
-### Cursor, Claude Cowork, and other agents
+### Portable Agent Skills and MCP clients
 
 [INSTALL.md](INSTALL.md) documents the native plugin layouts and portable
 fallbacks.
 
-On top of the file install, every tool that speaks MCP (Cursor, Cline, Windsurf, Copilot, Codex) can connect to the bundled [MCP server](#mcp-server-binadr-mcp) for the enforcement and context tools; see below.
+On top of the native installs, any compatible local stdio MCP client can
+connect to the bundled [MCP server](#mcp-server-binadr-mcp) for enforcement
+and context tools.
 
 The CLI engines under `bin/` require Python 3.10+, with no pip install. The
 automatic installer embeds the absolute interpreter that launched it, so
@@ -208,7 +217,10 @@ Three layers, each with a clear path:
 
 ## MCP server: `bin/adr-mcp`
 
-A deliberately thin MCP server (stdio, newline-delimited JSON-RPC 2.0, Python stdlib only, zero dependencies) that exposes the guardrails to any MCP client: Cursor, Cline, Windsurf, Copilot, or Claude Code itself. Four tools, all key-free:
+A deliberately thin MCP server (stdio, newline-delimited JSON-RPC 2.0, Python
+stdlib only, zero dependencies) that exposes the guardrails to Claude Code,
+OpenAI Codex, GitHub Copilot CLI, or another compatible local stdio MCP
+client. Four tools, all key-free:
 
 | Tool | Arguments | Wraps |
 | --- | --- | --- |
@@ -222,8 +234,7 @@ A deliberately thin MCP server (stdio, newline-delimited JSON-RPC 2.0, Python st
 claude mcp add adr-kit -- python /path/to/adr-kit/bin/adr-mcp --root "$(pwd)"
 ```
 
-For Cursor, Cline, and other stdio clients, place the following in the
-client's MCP configuration file (for example `.cursor/mcp.json`):
+For another stdio client, place the following in its MCP configuration:
 
 ```json
 {
@@ -494,7 +505,9 @@ The lint consistency gate fails duplicates at merge time with both files named, 
 
 **Is this an Anthropic product?**
 
-No. Independent open-source toolkit, MIT licensed. It installs cleanest in Claude Code because the plugin system is the most mature, but the same files run in Cursor, Copilot, Codex, and friends.
+No. It is an independent open-source toolkit under the MIT license, with
+first-class integrations for Claude Code, OpenAI Codex, and GitHub Copilot
+CLI.
 
 ## Comparison
 
@@ -509,7 +522,7 @@ A plain ADR template gives you a markdown file with sections to fill in. What `a
 | Enforcement | absent | declarative rules vs every commit and PR, key-free; opt-in LLM judge |
 | Aging | absent | guardian (drift, missing, stale), retirement audit, trend history, coverage KPI |
 | Team workflows | absent | CI sweeps with tracking issue, collision-safe numbering, audited overrides, guided supersession |
-| Tool integration | none | Claude Code plugin, Cursor / Copilot / Codex file installs, 4-tool MCP server |
+| Tool integration | none | Claude Code, OpenAI Codex, and GitHub Copilot CLI integrations plus a 4-tool MCP server |
 
 If your team is happy with a plain template and the discipline lives in your culture, you do not need this. If you want the discipline to survive contact with an AI agent at 2 a.m., this is what `adr-kit` is for.
 

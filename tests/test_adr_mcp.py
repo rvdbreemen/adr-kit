@@ -1,8 +1,8 @@
 """End-to-end tests for bin/adr-mcp: the thin MCP stdio server.
 
 Drives the server as a subprocess over stdin/stdout with newline-delimited
-JSON-RPC 2.0 messages, mirroring how an MCP client (Claude Code, Cursor,
-Cline) talks to a stdio server. All messages for a scenario are written in
+JSON-RPC 2.0 messages, mirroring how Claude Code, Codex, GitHub Copilot CLI,
+or another stdio MCP client talks to a server. All messages for a scenario are written in
 one batch and the responses are matched back by request id, which keeps the
 tests deadlock-free without threads.
 """

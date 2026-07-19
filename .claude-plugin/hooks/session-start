@@ -5,10 +5,8 @@
 # The guardian self-guards: it exits 0 silently when there is no docs/adr/
 # with ADRs in the working directory, so this hook is safe in any project.
 #
-# Output format mirrors the superpowers session-start hook:
-#   CURSOR_PLUGIN_ROOT set  -> {"additional_context": "..."}
-#   CLAUDE_PLUGIN_ROOT set  -> {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "..."}}
-#   otherwise               -> {"additionalContext": "..."}
+# Claude Code receives model-only additionalContext with raw output suppressed.
+# Other supported SDK clients receive the common top-level context envelope.
 #
 # The guardian bin handles the output format branching itself, so this
 # wrapper just needs to locate Python and run the bin.

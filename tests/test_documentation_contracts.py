@@ -142,6 +142,63 @@ def test_agent_install_runbook_covers_native_and_portable_paths():
     assert all(item in text for item in required)
 
 
+def test_first_class_client_docs_and_skill_metadata_are_english():
+    readme = README.read_text(encoding="utf-8")
+    for client in ("Claude Code", "OpenAI Codex", "GitHub Copilot CLI"):
+        assert client in readme
+    assert "quiet-by-default" in readme
+
+    dutch_markers = re.compile(
+        r"\b(?:maak|werk|zoek|controleer|gebruik|voor|naar|nieuwste|bruikbare)\b",
+        re.IGNORECASE,
+    )
+    skill_files = [
+        *sorted((REPO_ROOT / "skills").glob("*/SKILL.md")),
+        *sorted((REPO_ROOT / "codex" / "skills").glob("*/SKILL.md")),
+        *sorted((REPO_ROOT / "copilot" / "skills").glob("*/SKILL.md")),
+    ]
+    assert len(skill_files) == 42
+    for path in skill_files:
+        text = path.read_text(encoding="utf-8")
+        match = re.search(r"^description:\s*(.+)$", text, re.MULTILINE)
+        assert match, f"{path} has no description metadata"
+        description = match.group(1).strip(" '\"")
+        assert description, f"{path} has an empty description"
+        assert not dutch_markers.search(description), (
+            f"{path} description is not English: {description}"
+        )
+
+
+def test_product_docs_do_not_advertise_removed_client():
+    removed_client = "cur" + "sor"
+    roots = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "INSTALL.md",
+        REPO_ROOT / "INSTALL-AGENT.md",
+        REPO_ROOT / "CHANGELOG.md",
+        REPO_ROOT / "CONTRIBUTING.md",
+        REPO_ROOT / "MIGRATING-FROM-ADR-SKILL.md",
+        REPO_ROOT / ".claude-plugin" / "plugin.json",
+        *sorted((REPO_ROOT / "docs").rglob("*.md")),
+        *sorted((REPO_ROOT / "instructions").glob("*.md")),
+    ]
+    for path in roots:
+        assert removed_client not in path.read_text(encoding="utf-8").lower(), (
+            f"removed client reference remains in {path}"
+        )
+
+
+def test_shipped_hook_manifests_have_no_routine_progress_messages():
+    manifests = [
+        REPO_ROOT / ".claude-plugin" / "plugin.json",
+        REPO_ROOT / "templates" / "cc-settings" / "guardian-hook-entry.json",
+        REPO_ROOT / "codex" / "templates" / "cc-settings" / "guardian-hook-entry.json",
+        REPO_ROOT / "copilot" / "templates" / "cc-settings" / "guardian-hook-entry.json",
+    ]
+    for path in manifests:
+        assert "statusMessage" not in path.read_text(encoding="utf-8")
+
+
 def test_agent_install_runbook_is_prominent_and_client_neutral():
     readme = README.read_text(encoding="utf-8")
     install = AGENT_INSTALL.read_text(encoding="utf-8")

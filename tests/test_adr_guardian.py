@@ -505,6 +505,7 @@ class TestOutputFormat:
         assert rc == 0
         if out.strip():  # may be empty if cooldown or not-due
             data = json.loads(out)
+            assert data["suppressOutput"] is True
             assert "additionalContext" in data or "hookSpecificOutput" in data
 
     def test_claude_code_envelope(self, tmp_path):
@@ -518,6 +519,7 @@ class TestOutputFormat:
         assert rc == 0
         if out.strip():
             data = json.loads(out)
+            assert data["suppressOutput"] is True
             assert "hookSpecificOutput" in data
             assert data["hookSpecificOutput"]["hookEventName"] == "SessionStart"
             assert "additionalContext" in data["hookSpecificOutput"]

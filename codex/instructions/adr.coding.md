@@ -13,7 +13,7 @@ When you are about to implement or change code, run through these rules **before
   - Build and tooling: build system, CI gates, development workflow
 
   If yes, an ADR is in scope. If clearly no (bug fix, refactor that preserves contract, doc fix), skip the ADR work.
-- **Use the canonical guide**: `docs/adr/README.md` is the source of truth for the project's ADR conventions. The ADR `SKILL.md` (in `.claude/skills/adr/`, `.cursor/skills/adr/`, or `.github/skills/adr/` depending on your tool) is the comprehensive how-to.
+- **Use the canonical guide**: `docs/adr/README.md` is the source of truth for the project's ADR conventions. The ADR `SKILL.md` installed by Claude Code, Codex, or GitHub Copilot CLI is the comprehensive how-to.
 
 ## Creating a new ADR
 

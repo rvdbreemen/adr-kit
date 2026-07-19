@@ -179,7 +179,7 @@ When the checklist passes, proceed with the release steps in the next section.
 
 Use the issue templates if they fit. If not, a plain issue is fine. Include:
 
-- Your AI coding tool and version (Claude Code, Cursor, Copilot, Codex CLI).
+- Your AI coding tool and version (Claude Code, GitHub Copilot CLI, or OpenAI Codex).
 - The reproduction steps.
 - What you expected to happen.
 - Any relevant config (sanitised, no secrets).

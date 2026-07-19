@@ -54,7 +54,7 @@ All database access goes through the repository layer. It keeps handlers thin.
 ## Enforcement
 
 ```json
-{"forbid_pattern": [{"pattern": "cursor", "path_glob": "src/**/*.py"}]}
+{"forbid_pattern": [{"pattern": "legacy_api", "path_glob": "src/**/*.py"}]}
 ```
 """
 
