@@ -16,7 +16,7 @@ verificatie-agents per claim).
 
 **[geverifieerd 3-0]** De canonieke catalogus [adr.github.io/adr-tooling](https://adr.github.io/adr-tooling/)
 (laatst bijgewerkt 2026-05-11) bevat **geen enkele AI-agent-georiënteerde tool** — geen
-Claude Code plugins, Cursor rules, MCP-servers of LLM-features. De catalogus is volledig
+Claude Code plugins, editor rules, MCP servers, or LLM features. De catalogus is volledig
 georganiseerd rond templates:
 
 - **MADR-tools:** adr-log, ADR Manager, Backstage ADR plugin, Log4brains, pyadr
@@ -53,7 +53,7 @@ Alle onderstaande beschrijvingen zijn **[single-source]** tenzij anders vermeld.
 - TypeScript / Node.js 20+, stdio MCP-transport, **73 MCP-tools**, npm-installeerbaar
 - Tree-sitter AST-analyse voor 50+ talen, ripgrep-zoeken, knowledge graph code↔ADR
 - "Smart Code Linking": AI-gestuurde koppeling van codebestanden aan ADRs
-- Doelclients: Claude, Cline, Cursor, Windsurf
+- Doelclients: lokale MCP-compatibele codeeragents
 - Adoptie: **29 stars**, 13 forks, v2.6.8 (mei 2026), actief onderhouden, >80% testdekking
 - De README vermeldt **niet**: drift-detectie, staleness-metrics, supersede/archive-lifecycle
 
@@ -102,7 +102,7 @@ Geïdentificeerde kansen (uitgewerkt in ROADMAP.md):
 1. **In-flight guidance** — PostToolUse-hook die tijdens het editen relevante ADRs nudge't
    (dicht het gat tussen SessionStart-context en pre-commit-enforcement).
 2. **Dunne MCP-server** (Python, stdio, 4-6 tools) — zelfde guardrails toolneutraal naar
-   Cursor/Windsurf/Copilot; bewust contrast met de 73-tools-aanpak.
+   lokale stdio MCP-clients; bewust contrast met de 73-tools-aanpak.
 3. **Team-veilige nummering** — CI-duplicaatcheck + renumber-tool tegen merge-conflicten
    bij parallelle branches/agents.
 4. **Guardian team-modus** — CI-cron sweep i.p.v. alleen per-machine SessionStart-state.

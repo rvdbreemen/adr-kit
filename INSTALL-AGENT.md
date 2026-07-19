@@ -113,6 +113,11 @@ The installer uses separate native payloads:
 
 Do not point Codex or Copilot at the Claude plugin cache.
 
+All shipped skill descriptions are English. Claude Code context hooks request
+raw-output suppression and have no routine progress label; relevant ADR context
+still reaches the model through `additionalContext`. Codex and Copilot use
+their native skill and MCP surfaces without installing noisy lifecycle hooks.
+
 Before calling a client API, the installer validates the complete source and
 creates a persistent prepared marketplace in the operating system's per-user
 data directory. Its Codex and Copilot MCP manifests contain the exact absolute

@@ -97,7 +97,7 @@ All database access goes through the repository layer.
 ```json
 {{
   "forbid_pattern": [
-    {{"pattern": "cursor\\\\.execute", "path_glob": "{glob}",
+    {{"pattern": "legacy_api\\\\.execute", "path_glob": "{glob}",
       "message": "no direct DB calls outside repository layer"}}
   ]
 }}
@@ -368,6 +368,7 @@ class TestHookMode:
         )
         assert rc == 0
         envelope = json.loads(out)
+        assert envelope["suppressOutput"] is True
         hso = envelope["hookSpecificOutput"]
         assert hso["hookEventName"] == "PostToolUse"
         assert "[adr-watch] ADR-001" in hso["additionalContext"]
@@ -430,7 +431,7 @@ All database access goes through the repository layer. """ + ("blah " * 400) + "
 ## Enforcement
 
 ```json
-{"forbid_pattern": [{"pattern": "cursor", "path_glob": "src/**/*.py"}]}
+{"forbid_pattern": [{"pattern": "legacy_api", "path_glob": "src/**/*.py"}]}
 ```
 """
 
@@ -450,6 +451,7 @@ class TestPreEditInject:
         )
         assert rc == 0
         payload = json.loads(out)
+        assert payload["suppressOutput"] is True
         ctx = payload["hookSpecificOutput"]["additionalContext"]
         assert payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
         assert "[adr-inject] ADR-001" in ctx

@@ -82,8 +82,7 @@ When the user asks to add the guardian hook to the project's `.claude/settings.j
    {
      "type": "command",
      "command": "ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1) && [ -n \"$ADR_KIT\" ] && _PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
-     "timeout": 10,
-     "statusMessage": "Checking ADR health..."
+     "timeout": 10
    }
    ```
 

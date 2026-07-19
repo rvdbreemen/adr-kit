@@ -1,6 +1,6 @@
 {
   "name": "adr-kit",
-  "version": "0.34.1",
+  "version": "0.34.2",
   "description": "Native ADR governance for GitHub Copilot CLI with decision workflows and a key-free MCP server.",
   "author": {
     "name": "Robert van den Breemen",

@@ -611,23 +611,20 @@ def _escape_for_json(s: str) -> str:
 def _emit_context(text: str) -> None:
     """Print the SessionStart context-injection JSON envelope.
 
-    Mirrors the superpowers session-start hook logic:
-      CURSOR_PLUGIN_ROOT set  → Cursor format (additional_context, snake_case)
-      CLAUDE_PLUGIN_ROOT set, no COPILOT_CLI → Claude Code format (nested hookSpecificOutput)
-      otherwise               → SDK standard (top-level additionalContext)
+    Claude Code receives its event-specific envelope. Other supported SDK
+    clients receive the common top-level context field. Both forms request
+    suppression of raw hook output while preserving model context.
     """
     escaped = _escape_for_json(text)
-    if os.environ.get("CURSOR_PLUGIN_ROOT"):
-        out = f'{{"additional_context": "{escaped}"}}'
-    elif os.environ.get("CLAUDE_PLUGIN_ROOT") and not os.environ.get("COPILOT_CLI"):
+    if os.environ.get("CLAUDE_PLUGIN_ROOT") and not os.environ.get("COPILOT_CLI"):
         out = (
-            '{"hookSpecificOutput": {'
+            '{"suppressOutput": true, "hookSpecificOutput": {'
             '"hookEventName": "SessionStart", '
             f'"additionalContext": "{escaped}"'
             "}}"
         )
     else:
-        out = f'{{"additionalContext": "{escaped}"}}'
+        out = f'{{"suppressOutput": true, "additionalContext": "{escaped}"}}'
     sys.stdout.write(out + "\n")
     sys.stdout.flush()
 

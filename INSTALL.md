@@ -250,8 +250,8 @@ home.
 
 ## Portable fallback
 
-Cursor, Claude Cowork, and agents without plugin support can still vendor the
-portable source files:
+Agents without native plugin support can still vendor the portable source
+files:
 
 - `skills/adr/SKILL.md`
 - `agents/adr-generator.md`
@@ -282,6 +282,11 @@ copilot plugin list
 copilot mcp list
 copilot skill list
 ```
+
+Routine successful integration activity is quiet by design. Claude Code hook
+responses use model-only `additionalContext` with raw output suppression and
+no progress label. Codex and Copilot receive ADR Kit through their native
+skills and MCP server, without extra lifecycle messages.
 
 ## Updating
 

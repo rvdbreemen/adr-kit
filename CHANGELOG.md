@@ -4,6 +4,21 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.34.2] - 2026-07-19
+
+### Changed
+
+- Claude Code context hooks now request raw-output suppression and omit routine
+  progress labels while continuing to deliver relevant ADR context to the
+  model. Codex and GitHub Copilot CLI keep their quiet native skill and MCP
+  integrations.
+- All three client distributions now carry verified English skill metadata.
+  The README and install guides document Claude Code, OpenAI Codex, and GitHub
+  Copilot CLI as first-class integrations, with portable Agent Skills and MCP
+  described generically.
+- Removed obsolete client-specific product references and runtime envelope
+  branches from product documentation and generated payloads.
+
 ## [0.34.1] - 2026-07-19
 
 ### Fixed
@@ -184,7 +199,7 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Changed
 
-- **README rewritten around the decision lifecycle (capture, guard, maintain).** The old README grew feature-by-feature across eleven releases and read as a changelog with a table of contents. The new structure leads with what the toolkit is for (architecture decisions that AI coding agents actually follow), puts the agentic install paths first (Claude Code four-command install up top; Codex CLI, Cursor, Copilot, Cowork and the MCP server right after), and makes the upgrade story explicit: plugin updates flow automatically, copied artifacts are stamp-checked by the guardian and refreshed by `/adr-kit:upgrade`, and existing MADR / Nygard ADR sets import via `/adr-kit:migrate`. All 14 skills and the CLI engines are described in terms of what they do for a software project rather than when they shipped. Reference detail that moved out of the README (full config keys, hook internals) lives on in the project guide, INSTALL.md, and the CHANGELOG. No behavioural changes.
+- **README rewritten around the decision lifecycle (capture, guard, maintain).** The old README grew feature-by-feature across eleven releases and read as a changelog with a table of contents. The new structure leads with what the toolkit is for (architecture decisions that AI coding agents actually follow), puts the agentic install paths first (Claude Code, Codex CLI, Copilot CLI, portable fallbacks, and the MCP server), and makes the upgrade story explicit: plugin updates flow automatically, copied artifacts are stamp-checked by the guardian and refreshed by `/adr-kit:upgrade`, and existing MADR / Nygard ADR sets import via `/adr-kit:migrate`. All 14 skills and the CLI engines are described in terms of what they do for a software project rather than when they shipped. Reference detail that moved out of the README (full config keys, hook internals) lives on in the project guide, INSTALL.md, and the CHANGELOG. No behavioural changes.
 
 ## [0.30.1] - 2026-06-13
 
@@ -279,7 +294,7 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
-- **`bin/adr-mcp`: thin Model Context Protocol server over stdio (task-7).** Hand-rolled JSON-RPC 2.0 on the Python stdlib only (no `mcp` package), newline-delimited messages. Exposes 4 key-free tools that wrap the existing CLIs via subprocess: `adr_context` (heuristic ADR ranking), `adr_judge` (declarative Enforcement pass on a diff, never `--llm`), `adr_status` (repository health JSON), `adr_quality` (per-ADR grades). `adr-suggest` is deliberately not exposed: it is LLM-only and the MCP server stays key-free. Project root via `--root`, `PROJECT_ROOT` env, or cwd; ADR directory via `--adr-dir` (default `<root>/docs/adr`). Brings the same guardrails to Cursor, Cline, Windsurf, and Copilot without the skills format. Tests in `tests/test_adr_mcp.py` (14 end-to-end stdio tests).
+- **`bin/adr-mcp`: thin Model Context Protocol server over stdio (task-7).** Hand-rolled JSON-RPC 2.0 on the Python stdlib only (no `mcp` package), newline-delimited messages. Exposes 4 key-free tools that wrap the existing CLIs via subprocess: `adr_context` (heuristic ADR ranking), `adr_judge` (declarative Enforcement pass on a diff, never `--llm`), `adr_status` (repository health JSON), `adr_quality` (per-ADR grades). `adr-suggest` is deliberately not exposed: it is LLM-only and the MCP server stays key-free. Project root via `--root`, `PROJECT_ROOT` env, or cwd; ADR directory via `--adr-dir` (default `<root>/docs/adr`). Brings the same guardrails to compatible local stdio clients without the skills format. Tests in `tests/test_adr_mcp.py` (14 end-to-end stdio tests).
 
 ## [0.20.1] - 2026-06-07
 
@@ -795,7 +810,7 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 - `CONTRIBUTING.md`: dev loop (`claude --plugin-dir .`), how to add a skill or agent, version-bump and release procedure, code style (no em dashes, English, kebab-case file names), validation, and issue-reporting guidelines.
 - `argument-hint: "[short title of the decision]"` on `skills/adr/SKILL.md` so users see the expected slash-command syntax in the picker.
 - `allowed-tools: [Read, Write, Edit]` on `skills/setup/SKILL.md` so the one-time `/adr-kit:setup` does not prompt for tool permission.
-- `homepage` (already present), enriched `keywords` list (covers Claude Cowork, Cursor, Copilot, Codex, agent-skills, AI coding assistant, decision-records, verification-gates, anti-rationalization), and an empty `dependencies: []` placeholder in `.claude-plugin/plugin.json`.
+- `homepage` (already present), enriched `keywords` list (covers Claude Code, Copilot, Codex, agent-skills, AI coding assistant, decision-records, verification-gates, anti-rationalization), and an empty `dependencies: []` placeholder in `.claude-plugin/plugin.json`.
 
 ## [0.4.0] - 2026-04-25
 
@@ -824,7 +839,7 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 ### Changed
 
-- **Breaking for non-Claude-Code tools**: `SKILL.md` source path moved from `adr-kit/SKILL.md` to `adr-kit/skills/adr/SKILL.md` to match the Claude Code plugin layout. Destination paths in `.claude/`, `.cursor/`, `.github/`, `.codex/` are unchanged. `INSTALL.md` and the bundled install script updated accordingly.
+- **Breaking for non-Claude-Code tools**: `SKILL.md` source path moved from `adr-kit/SKILL.md` to `adr-kit/skills/adr/SKILL.md` to match the Claude Code plugin layout. Existing client-specific destination paths were unchanged. `INSTALL.md` and the bundled install script were updated accordingly.
 
 ## [0.2.0-attribution] - 2026-04-25
 
@@ -842,14 +857,15 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 - `instructions/adr.coding.md`: ADR rules during coding work, including implementation checklist and supersession workflow.
 - `instructions/adr.review.md`: six named ADR checks for code review with concrete review-comment templates.
 - `examples/ADR-template.md`: clean template to copy into new ADRs.
-- `INSTALL.md`: per-tool install paths for Claude Code, Claude Cowork, Cursor, GitHub Copilot, and OpenAI Codex CLI, plus a one-shot helper script and a generic fallback.
+- `INSTALL.md`: per-tool install paths for Claude Code, GitHub Copilot CLI, and OpenAI Codex, plus a one-shot helper script and a generic fallback.
 - `README.md`, `LICENSE` (MIT).
 
 ### Credits
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.1...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.2...HEAD
+[0.34.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.1...v0.34.2
 [0.34.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.0...v0.34.1
 [0.34.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.32.0...v0.33.0

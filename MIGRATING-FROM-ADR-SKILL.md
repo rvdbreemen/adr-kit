@@ -1,6 +1,6 @@
 # Migrating from `Jvdbreemen/adr-skill` to `rvdbreemen/adr-kit`
 
-[`Jvdbreemen/adr-skill`](https://github.com/Jvdbreemen/adr-skill) by Jim van den Breemen was the direct inspiration for `adr-kit`. The two patterns that distinguish both toolkits, anti-rationalization guards and verification gates, were first combined in a single ADR skill by Jim's project. `adr-kit` builds on that combination by adding a focused creator agent, path-specific instructions, a setup command that wires `CLAUDE.md`, a lint skill that enforces the four gates against existing ADRs, and per-tool install paths for Claude Code, Claude Cowork, Cursor, GitHub Copilot, and OpenAI Codex CLI.
+[`Jvdbreemen/adr-skill`](https://github.com/Jvdbreemen/adr-skill) by Jim van den Breemen was the direct inspiration for `adr-kit`. The two patterns that distinguish both toolkits, anti-rationalization guards and verification gates, were first combined in a single ADR skill by Jim's project. `adr-kit` builds on that combination by adding a focused creator agent, path-specific instructions, a setup command that wires `CLAUDE.md`, a lint skill that enforces the four gates against existing ADRs, and first-class integrations for Claude Code, GitHub Copilot CLI, and OpenAI Codex.
 
 If you already use `adr-skill`, this guide explains your options. There is no urgency to switch.
 
@@ -31,7 +31,7 @@ If you have written ADRs against `adr-skill` and they pass its review, they pass
 | Creator agent | Not bundled | `adr-generator` subagent that authors a complete ADR file |
 | Lint of existing ADRs | Not bundled | `/adr-kit:lint` runs the four gates against your existing `docs/adr/` tree |
 | Code-review integration | Suggested in the skill body | Six named checks plus review-comment templates in `instructions/adr.review.md` |
-| Tool reach | Claude Code primarily | Claude Code, Claude Cowork, Cursor, GitHub Copilot, OpenAI Codex CLI, with per-tool install paths in INSTALL.md |
+| Tool reach | Claude Code primarily | Claude Code, GitHub Copilot CLI, and OpenAI Codex, with per-tool install paths in INSTALL.md |
 | CI validation | None bundled | GitHub Actions workflow validates plugin.json + required-files + version-consistency + markdownlint |
 | Contributor-facing | README only | README, INSTALL, CHANGELOG, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, ROADMAP, this migration guide, two issue templates, a PR template |
 
