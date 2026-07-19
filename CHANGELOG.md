@@ -4,6 +4,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-07-19
+
+### Changed
+
+- Promoted the quiet Claude Code, OpenAI Codex, and GitHub Copilot CLI
+  integration work to the user-requested `v0.35` minor release line. This
+  release supersedes v0.34.2 and contains the same hook suppression, English
+  skill metadata, three-client documentation, and obsolete-client cleanup.
+
 ## [0.34.2] - 2026-07-19
 
 ### Changed
@@ -864,7 +873,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.2...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.2...v0.35.0
 [0.34.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.1...v0.34.2
 [0.34.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.0...v0.34.1
 [0.34.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.33.0...v0.34.0
