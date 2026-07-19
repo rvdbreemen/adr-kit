@@ -239,11 +239,24 @@ def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
         assert config["mcpServers"]["adr-kit"]["command"] == str(
             Path(sys.executable).resolve()
         )
+    copilot_config = json.loads((prepared / "copilot" / ".mcp.json").read_text())
+    assert copilot_config["mcpServers"]["adr-kit"] == {
+        "cwd": ".",
+        "command": str(Path(sys.executable).resolve()),
+        "args": ["${PLUGIN_ROOT}/bin/adr-mcp"],
+    }
     assert (prepared / installer.PREPARED_MARKER).is_file()
     assert not (prepared / ".git").exists()
     assert not (prepared / "backlog").exists()
-    installer.validate_prepared_mcp(prepared, str(Path(sys.executable).resolve()))
+    consumer = tmp_path / "unrelated consumer project"
+    installer.validate_prepared_mcp(
+        prepared,
+        str(Path(sys.executable).resolve()),
+        copilot_project_root=consumer,
+    )
     installer.validate_prepared_hooks(prepared)
+    assert consumer.is_dir()
+    assert not (consumer / "bin" / "adr-mcp").exists()
 
     if os.name != "nt":
         entrypoints = [
@@ -438,9 +451,14 @@ def test_claude_and_codex_manifests_are_separate_and_versioned_together():
 
 def test_copilot_has_a_native_manifest_and_mcp_contract():
     manifest = json.loads((ROOT / "copilot" / "plugin.json").read_text())
+    mcp = json.loads((ROOT / "copilot" / ".mcp.json").read_text())
     assert manifest["name"] == "adr-kit"
     assert manifest["skills"] == "skills/"
     assert manifest["mcpServers"] == ".mcp.json"
+    assert mcp["mcpServers"]["adr-kit"]["cwd"] == "."
+    assert mcp["mcpServers"]["adr-kit"]["args"] == [
+        "${PLUGIN_ROOT}/bin/adr-mcp"
+    ]
     assert not (ROOT / "copilot" / ".claude-plugin").exists()
 
 

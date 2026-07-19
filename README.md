@@ -121,6 +121,22 @@ Code agent mode. The separate `copilot/` distribution follows GitHub's
 [Copilot plugin contract](https://docs.github.com/en/copilot/concepts/agents/about-plugins)
 and installs 14 skills plus the same key-free MCP server.
 
+If an older installation reports that `adr-mcp` is missing under the active
+project (for example `<project>/bin/adr-mcp`), refresh both marketplace and
+plugin, then reload MCP servers:
+
+```bash
+copilot plugin marketplace update rvdbreemen-adr-kit-copilot
+copilot plugin update adr-kit
+copilot mcp get adr-kit
+```
+
+In `copilot mcp get adr-kit`, the executable argument must be
+`${PLUGIN_ROOT}/bin/adr-mcp`; `cwd` remains `.` so ADR Kit serves the active
+project. Start a new Copilot session or run `/mcp reload` in the current one.
+Agents should use these native update commands instead of editing the installed
+`.mcp.json` or replacing `${PLUGIN_ROOT}` with a machine-specific path.
+
 ### Cursor, Claude Cowork, and other agents
 
 [INSTALL.md](INSTALL.md) documents the native plugin layouts and portable

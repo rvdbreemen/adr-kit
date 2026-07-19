@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
@@ -596,19 +597,13 @@ INSTALLERS = {
 }
 
 
-def validate_prepared_mcp(source: Path, python_executable: str) -> None:
-    """Start the packaged MCP server and complete initialize/tools-list."""
-    for client_name in ("codex", "copilot"):
-        config = json.loads(
-            (source / client_name / ".mcp.json").read_text(encoding="utf-8")
-        )
-        command = config.get("mcpServers", {}).get("adr-kit", {}).get("command")
-        if command != python_executable:
-            raise RuntimeError(
-                f"{client_name} MCP runtime mismatch: "
-                f"expected {python_executable!r}, found {command!r}"
-            )
-
+def _validate_mcp_process(
+    command: list[str],
+    *,
+    working_directory: Path,
+    environment: dict[str, str] | None = None,
+) -> None:
+    """Complete an initialize/tools-list handshake with one MCP command."""
     messages = [
         {
             "jsonrpc": "2.0",
@@ -626,24 +621,27 @@ def validate_prepared_mcp(source: Path, python_executable: str) -> None:
     payload = "\n".join(json.dumps(message) for message in messages) + "\n"
     try:
         result = subprocess.run(
-            [
-                python_executable,
-                str(source / "codex" / "bin" / "adr-mcp"),
-                "--root",
-                str(source),
-            ],
+            command,
             input=payload,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=30,
+            cwd=str(working_directory),
+            env=environment,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"packaged MCP server could not start: {exc}") from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise RuntimeError(f"packaged MCP smoke test failed: {detail}")
+    expected_root = str(working_directory.resolve())
+    if f"serving root={expected_root} " not in result.stderr:
+        raise RuntimeError(
+            "packaged MCP server used an unexpected project root; "
+            f"expected {expected_root}"
+        )
     responses = {}
     try:
         for line in result.stdout.splitlines():
@@ -660,7 +658,73 @@ def validate_prepared_mcp(source: Path, python_executable: str) -> None:
             "packaged MCP smoke test returned unexpected tools: "
             + ", ".join(sorted(names))
         )
-    print("Prepared MCP runtime: PASS (initialize + tools/list)")
+
+
+def validate_prepared_mcp(
+    source: Path,
+    python_executable: str,
+    *,
+    copilot_project_root: Path | None = None,
+) -> None:
+    """Exercise each packaged MCP manifest through its client path semantics."""
+    temporary_project = None
+    if copilot_project_root is None:
+        temporary_project = tempfile.TemporaryDirectory(
+            prefix="adr-kit-copilot-project-"
+        )
+        copilot_project_root = Path(temporary_project.name)
+    copilot_project_root.mkdir(parents=True, exist_ok=True)
+
+    try:
+        for client_name in ("codex", "copilot"):
+            plugin_root = source / client_name
+            config = json.loads(
+                (plugin_root / ".mcp.json").read_text(encoding="utf-8")
+            )
+            server = config.get("mcpServers", {}).get("adr-kit", {})
+            command = server.get("command")
+            if command != python_executable:
+                raise RuntimeError(
+                    f"{client_name} MCP runtime mismatch: "
+                    f"expected {python_executable!r}, found {command!r}"
+                )
+            args = server.get("args")
+            if not isinstance(args, list) or not all(
+                isinstance(value, str) for value in args
+            ):
+                raise RuntimeError(f"{client_name} MCP args must be a string list")
+
+            environment = os.environ.copy()
+            if client_name == "copilot":
+                if not any("${PLUGIN_ROOT}" in value for value in args):
+                    raise RuntimeError(
+                        "copilot MCP args must resolve from ${PLUGIN_ROOT}"
+                    )
+                environment.update(
+                    {
+                        "PLUGIN_ROOT": str(plugin_root),
+                        "COPILOT_PLUGIN_ROOT": str(plugin_root),
+                        "CLAUDE_PLUGIN_ROOT": str(plugin_root),
+                    }
+                )
+                expanded_args = [
+                    value.replace("${PLUGIN_ROOT}", str(plugin_root))
+                    for value in args
+                ]
+                working_directory = copilot_project_root
+            else:
+                expanded_args = args
+                working_directory = plugin_root
+
+            _validate_mcp_process(
+                [command, *expanded_args],
+                working_directory=working_directory,
+                environment=environment,
+            )
+        print("Prepared MCP runtimes: PASS (initialize + tools/list)")
+    finally:
+        if temporary_project is not None:
+            temporary_project.cleanup()
 
 
 def validate_prepared_hooks(source: Path) -> None:
