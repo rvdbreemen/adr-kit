@@ -4,7 +4,7 @@
       "cwd": ".",
       "command": "python",
       "args": [
-        "./bin/adr-mcp"
+        "${PLUGIN_ROOT}/bin/adr-mcp"
       ]
     }
   }
