@@ -1,11 +1,11 @@
 ---
 id: TASK-37
 title: Publish ADR Kit v0.35.0 superseding patch release
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-07-19 11:38'
-updated_date: '2026-07-19 11:39'
+updated_date: '2026-07-19 11:44'
 labels:
   - release
   - version
@@ -37,7 +37,7 @@ Promote the completed quiet three-client integration release from v0.34.2 to the
 - [x] #1 All ADR Kit client manifests and copied-artifact version stamps report 0.35.0.
 - [x] #2 CHANGELOG documents v0.35.0 and its comparison links without losing v0.34.2 history.
 - [x] #3 Version, packaging, generated-payload, and documentation checks pass.
-- [ ] #4 A green pull request is merged to main, annotated tag v0.35.0 is pushed, and a public GitHub Release explains that it supersedes v0.34.2.
+- [x] #4 A green pull request is merged to main, annotated tag v0.35.0 is pushed, and a public GitHub Release explains that it supersedes v0.34.2.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -50,4 +50,12 @@ Promote the completed quiet three-client integration release from v0.34.2 to the
 
 <!-- SECTION:NOTES:BEGIN -->
 Updated all five client/marketplace manifests and copied-artifact stamps to 0.35.0; synchronized Codex/Copilot payloads; retained v0.34.2 history with an explicit superseding v0.35.0 changelog entry. Generated payload, ADR index, version, packaging, documentation, and diff checks pass (28 passed, 1 skipped).
+
+PR #20 merged to main as 109f25403febeef227d95cdcca863d0f16458d4f. All required checks passed. The first Linux self-test run encountered the pre-existing timing-sensitive regex-worker restart flake; rerunning the failed job passed with 647 tests and 1 skip, without runtime changes. Annotated tag v0.35.0 was pushed and the public release was published at https://github.com/rvdbreemen/adr-kit/releases/tag/v0.35.0.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Published ADR Kit v0.35.0 as the recommended release superseding v0.34.2. Synchronized the version across Claude, Codex, Copilot, marketplace manifests, generated client payloads, managed hooks, and guide templates while retaining the v0.34.2 changelog history. PR #20 merged cleanly to main; tag v0.35.0 points to merge commit 109f25403febeef227d95cdcca863d0f16458d4f and the public GitHub Release is live. Verification included the complete required CI matrix on Python 3.10/3.12 for Windows, macOS, and Linux, 647 passing pytest cases with 1 skip on the final self-test run, packaging validation, ADR enforcement, and generated-index freshness.
+<!-- SECTION:FINAL_SUMMARY:END -->
