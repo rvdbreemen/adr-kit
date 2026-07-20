@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "client": "codex-cli",
+  "contract_date": "2026-07-20",
+  "client_version": "codex-cli 0.144.6",
+  "adr_kit_version": "0.36.0",
+  "source_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+  "working_tree_clean": true,
+  "release_eligible": true,
+  "prepared_payload_sha256": "b70e64e03e98f23da91b9156b12881bace06e30243e174cccd29edef3b82c4cf",
+  "official_contract": {
+    "url": "https://learn.chatgpt.com/docs/hooks",
+    "checked_on": "2026-07-19"
+  },
+  "environment": "Windows-11-10.0.26200-SP0; Python 3.12.9",
+  "native_lifecycle": {
+    "marketplace_add": true,
+    "install": true,
+    "list": true,
+    "remove": true,
+    "reinstall": true,
+    "verified_update_via_remove_add": true
+  },
+  "discovery": {"skills": 14, "hooks": 6, "mcp_servers": 1},
+  "smoke": {"hook_success": true, "malformed_hook_fail_open": true, "mcp_list": true, "stale_cache_fixture": true, "doctor": true},
+  "latency_evidence": {
+    "hooks": {"method_id": "adr-kit-hook-latency-v1", "state": "warm-filesystem", "samples": 30, "all_targets_met": true, "source": "docs/hook-performance.md"},
+    "generation": {"method_id": "client-generation-v1", "samples": 11, "clean_p50_ms": 713.408, "clean_p95_ms": 735.485, "warm_p50_ms": 34.965, "warm_p95_ms": 60.974, "warm_writes": 0, "source": "packaging/client-generation-benchmark.json"}
+  },
+  "evidence_links": [
+    "tests/fixtures/codex/native-contract.json",
+    "docs/clients/codex.md",
+    "docs/hook-performance.md",
+    "packaging/client-generation-benchmark.json"
+  ],
+  "degradations": [
+    "Native plugin update and disable commands are not present in Codex CLI 0.144.6; verified remove/add and settings opt-out provide the supported lifecycle."
+  ],
+  "certification": {
+    "required_outcomes": {"workflow-discovery": true, "task-context": true, "edit-governance": true, "mcp": true, "pre-commit": true, "lifecycle": true, "doctor": true},
+    "fixtures": {"generator": true, "schema": true, "hook": true, "installer": true, "doctor": true, "package": true, "adr-lint": true, "adr-index": true, "regression": true},
+    "native_smoke": {"install": true, "list": true, "workflow-discovery": true, "workflow-invocation": true, "instructions": true, "hook-outcomes": true, "mcp-initialize": true, "mcp-list": true, "mcp-call": true, "second-install-noop": true, "verified-update": true, "rollback": true, "doctor": true, "uninstall-preserves-user-state": true},
+    "lifecycle_preservation": {"unrelated-config": true, "instruction-bytes-outside-markers": true, "local-guide": true, "previous-healthy-payload": true, "source-checkout": true},
+    "native_optimization": {"native-manifest-layout": true, "native-discovery-syntax": true, "client-skill-metadata": true, "concise-prompt-behavior": true, "native-hook-shape": true, "no-deprecated-prompt-claim": true, "deprecated-prompt-first-class": false},
+    "release_policy": {"archive_allowlist_clean": true, "consolidated_candidate": true, "stable_releases_today": 0, "default_or_hook_reversal": false}
+  },
+  "trust_state": "hook commands remain subject to Codex review; no bypass attempted",
+  "latency_method": "adr-kit-hook-latency-v1",
+  "model_invocation": "not-run: paid/cloud model use requires opt-in",
+  "platforms": {
+    "windows": {"status": "pass"},
+    "macos": {"status": "not-run", "reason": "no macOS runner available"},
+    "linux": {"status": "not-run", "reason": "no Linux runner available"}
+  }
+}

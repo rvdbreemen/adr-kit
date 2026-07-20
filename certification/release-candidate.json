@@ -1,0 +1,426 @@
+{
+  "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+  "contract_date": "2026-07-20",
+  "records": [
+    {
+      "adr_kit_version": "0.36.0",
+      "artifact_sha256": "b70e64e03e98f23da91b9156b12881bace06e30243e174cccd29edef3b82c4cf",
+      "benchmarks": [
+        {
+          "baseline_p95_ms": 1000.0,
+          "hard_timeout_ms": 5000,
+          "max_ms": 735.485,
+          "method_id": "client-generation-v1",
+          "p50_ms": 713.408,
+          "p95_ms": 735.485,
+          "samples": 11,
+          "state": "cold",
+          "timed_out": false,
+          "writes": 193
+        },
+        {
+          "baseline_p95_ms": 150.0,
+          "hard_timeout_ms": 1000,
+          "max_ms": 60.974,
+          "method_id": "client-generation-v1",
+          "p50_ms": 34.965,
+          "p95_ms": 60.974,
+          "samples": 11,
+          "state": "warm",
+          "timed_out": false,
+          "writes": 0
+        }
+      ],
+      "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+      "client": "claude-code-cli",
+      "client_version": "2.1.215 (Claude Code)",
+      "contract_date": "2026-07-20",
+      "degradations": [],
+      "dependencies": {
+        "development": [
+          "pytest"
+        ],
+        "development_in_runtime": false,
+        "exact_pins": [],
+        "licenses": [
+          "MIT"
+        ],
+        "runtime": []
+      },
+      "environment_fingerprint": "Windows-11-10.0.26200-SP0; Python 3.12.9",
+      "evidence_links": [
+        "tests/fixtures/claude/native-contract.json",
+        "docs/clients/claude.md",
+        "docs/hook-performance.md",
+        "packaging/client-generation-benchmark.json"
+      ],
+      "evidence_mode": "native",
+      "fixtures": {
+        "adr-index": true,
+        "adr-lint": true,
+        "doctor": true,
+        "generator": true,
+        "hook": true,
+        "installer": true,
+        "package": true,
+        "regression": true,
+        "schema": true
+      },
+      "inventory": {
+        "bin_baseline": 27,
+        "exception": null,
+        "scripts_baseline": 3,
+        "task_40_added": 4
+      },
+      "lifecycle_preservation": {
+        "instruction-bytes-outside-markers": true,
+        "local-guide": true,
+        "previous-healthy-payload": true,
+        "source-checkout": true,
+        "unrelated-config": true
+      },
+      "native_optimization": {
+        "client-skill-metadata": true,
+        "concise-prompt-behavior": true,
+        "deprecated-prompt-first-class": false,
+        "native-discovery-syntax": true,
+        "native-hook-shape": true,
+        "native-manifest-layout": true,
+        "no-deprecated-prompt-claim": true
+      },
+      "native_smoke": {
+        "doctor": true,
+        "hook-outcomes": true,
+        "install": true,
+        "instructions": true,
+        "list": true,
+        "mcp-call": true,
+        "mcp-initialize": true,
+        "mcp-list": true,
+        "rollback": true,
+        "second-install-noop": true,
+        "uninstall-preserves-user-state": true,
+        "verified-update": true,
+        "workflow-discovery": true,
+        "workflow-invocation": true
+      },
+      "os": "windows",
+      "platforms": {
+        "linux": {
+          "reason": "no Linux runner available",
+          "status": "not-run"
+        },
+        "macos": {
+          "reason": "no macOS runner available",
+          "status": "not-run"
+        },
+        "windows": {
+          "reason": "independent native Windows smoke passed",
+          "status": "pass"
+        }
+      },
+      "release_policy": {
+        "archive_allowlist_clean": true,
+        "consolidated_candidate": true,
+        "default_or_hook_reversal": false,
+        "stable_releases_today": 0
+      },
+      "required_outcomes": {
+        "doctor": true,
+        "edit-governance": true,
+        "lifecycle": true,
+        "mcp": true,
+        "pre-commit": true,
+        "task-context": true,
+        "workflow-discovery": true
+      },
+      "source_links": [
+        "https://code.claude.com/docs/en/plugins"
+      ],
+      "surface": "cli",
+      "working_tree_clean": true
+    },
+    {
+      "adr_kit_version": "0.36.0",
+      "artifact_sha256": "b70e64e03e98f23da91b9156b12881bace06e30243e174cccd29edef3b82c4cf",
+      "benchmarks": [
+        {
+          "baseline_p95_ms": 1000.0,
+          "hard_timeout_ms": 5000,
+          "max_ms": 735.485,
+          "method_id": "client-generation-v1",
+          "p50_ms": 713.408,
+          "p95_ms": 735.485,
+          "samples": 11,
+          "state": "cold",
+          "timed_out": false,
+          "writes": 193
+        },
+        {
+          "baseline_p95_ms": 150.0,
+          "hard_timeout_ms": 1000,
+          "max_ms": 60.974,
+          "method_id": "client-generation-v1",
+          "p50_ms": 34.965,
+          "p95_ms": 60.974,
+          "samples": 11,
+          "state": "warm",
+          "timed_out": false,
+          "writes": 0
+        }
+      ],
+      "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+      "client": "codex-cli",
+      "client_version": "codex-cli 0.144.6",
+      "contract_date": "2026-07-20",
+      "degradations": [
+        "Native plugin update and disable commands are not present in Codex CLI 0.144.6; verified remove/add and settings opt-out provide the supported lifecycle."
+      ],
+      "dependencies": {
+        "development": [
+          "pytest"
+        ],
+        "development_in_runtime": false,
+        "exact_pins": [],
+        "licenses": [
+          "MIT"
+        ],
+        "runtime": []
+      },
+      "environment_fingerprint": "Windows-11-10.0.26200-SP0; Python 3.12.9",
+      "evidence_links": [
+        "tests/fixtures/codex/native-contract.json",
+        "docs/clients/codex.md",
+        "docs/hook-performance.md",
+        "packaging/client-generation-benchmark.json"
+      ],
+      "evidence_mode": "native",
+      "fixtures": {
+        "adr-index": true,
+        "adr-lint": true,
+        "doctor": true,
+        "generator": true,
+        "hook": true,
+        "installer": true,
+        "package": true,
+        "regression": true,
+        "schema": true
+      },
+      "inventory": {
+        "bin_baseline": 27,
+        "exception": null,
+        "scripts_baseline": 3,
+        "task_40_added": 4
+      },
+      "lifecycle_preservation": {
+        "instruction-bytes-outside-markers": true,
+        "local-guide": true,
+        "previous-healthy-payload": true,
+        "source-checkout": true,
+        "unrelated-config": true
+      },
+      "native_optimization": {
+        "client-skill-metadata": true,
+        "concise-prompt-behavior": true,
+        "deprecated-prompt-first-class": false,
+        "native-discovery-syntax": true,
+        "native-hook-shape": true,
+        "native-manifest-layout": true,
+        "no-deprecated-prompt-claim": true
+      },
+      "native_smoke": {
+        "doctor": true,
+        "hook-outcomes": true,
+        "install": true,
+        "instructions": true,
+        "list": true,
+        "mcp-call": true,
+        "mcp-initialize": true,
+        "mcp-list": true,
+        "rollback": true,
+        "second-install-noop": true,
+        "uninstall-preserves-user-state": true,
+        "verified-update": true,
+        "workflow-discovery": true,
+        "workflow-invocation": true
+      },
+      "os": "windows",
+      "platforms": {
+        "linux": {
+          "reason": "no Linux runner available",
+          "status": "not-run"
+        },
+        "macos": {
+          "reason": "no macOS runner available",
+          "status": "not-run"
+        },
+        "windows": {
+          "reason": "independent native Windows smoke passed",
+          "status": "pass"
+        }
+      },
+      "release_policy": {
+        "archive_allowlist_clean": true,
+        "consolidated_candidate": true,
+        "default_or_hook_reversal": false,
+        "stable_releases_today": 0
+      },
+      "required_outcomes": {
+        "doctor": true,
+        "edit-governance": true,
+        "lifecycle": true,
+        "mcp": true,
+        "pre-commit": true,
+        "task-context": true,
+        "workflow-discovery": true
+      },
+      "source_links": [
+        "https://learn.chatgpt.com/docs/hooks"
+      ],
+      "surface": "cli",
+      "working_tree_clean": true
+    },
+    {
+      "adr_kit_version": "0.36.0",
+      "artifact_sha256": "b70e64e03e98f23da91b9156b12881bace06e30243e174cccd29edef3b82c4cf",
+      "benchmarks": [
+        {
+          "baseline_p95_ms": 1000.0,
+          "hard_timeout_ms": 5000,
+          "max_ms": 735.485,
+          "method_id": "client-generation-v1",
+          "p50_ms": 713.408,
+          "p95_ms": 735.485,
+          "samples": 11,
+          "state": "cold",
+          "timed_out": false,
+          "writes": 193
+        },
+        {
+          "baseline_p95_ms": 150.0,
+          "hard_timeout_ms": 1000,
+          "max_ms": 60.974,
+          "method_id": "client-generation-v1",
+          "p50_ms": 34.965,
+          "p95_ms": 60.974,
+          "samples": 11,
+          "state": "warm",
+          "timed_out": false,
+          "writes": 0
+        }
+      ],
+      "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+      "client": "github-copilot-cli",
+      "client_version": "GitHub Copilot CLI 1.0.71",
+      "contract_date": "2026-07-20",
+      "degradations": [
+        "PreToolUse cannot inject arbitrary model context",
+        "plugins enable/disable subcommands were unavailable in CLI 1.0.71; settings opt-out plus uninstall/reinstall is used"
+      ],
+      "dependencies": {
+        "development": [
+          "pytest"
+        ],
+        "development_in_runtime": false,
+        "exact_pins": [],
+        "licenses": [
+          "MIT"
+        ],
+        "runtime": []
+      },
+      "environment_fingerprint": "Windows-11-10.0.26200-SP0; Python 3.12.9",
+      "evidence_links": [
+        "tests/fixtures/copilot/native-contract.json",
+        "docs/clients/copilot.md",
+        "docs/hook-performance.md",
+        "packaging/client-generation-benchmark.json"
+      ],
+      "evidence_mode": "native",
+      "fixtures": {
+        "adr-index": true,
+        "adr-lint": true,
+        "doctor": true,
+        "generator": true,
+        "hook": true,
+        "installer": true,
+        "package": true,
+        "regression": true,
+        "schema": true
+      },
+      "inventory": {
+        "bin_baseline": 27,
+        "exception": null,
+        "scripts_baseline": 3,
+        "task_40_added": 4
+      },
+      "lifecycle_preservation": {
+        "instruction-bytes-outside-markers": true,
+        "local-guide": true,
+        "previous-healthy-payload": true,
+        "source-checkout": true,
+        "unrelated-config": true
+      },
+      "native_optimization": {
+        "client-skill-metadata": true,
+        "concise-prompt-behavior": true,
+        "deprecated-prompt-first-class": false,
+        "native-discovery-syntax": true,
+        "native-hook-shape": true,
+        "native-manifest-layout": true,
+        "no-deprecated-prompt-claim": true
+      },
+      "native_smoke": {
+        "doctor": true,
+        "hook-outcomes": true,
+        "install": true,
+        "instructions": true,
+        "list": true,
+        "mcp-call": true,
+        "mcp-initialize": true,
+        "mcp-list": true,
+        "rollback": true,
+        "second-install-noop": true,
+        "uninstall-preserves-user-state": true,
+        "verified-update": true,
+        "workflow-discovery": true,
+        "workflow-invocation": true
+      },
+      "os": "windows",
+      "platforms": {
+        "linux": {
+          "reason": "no Linux runner available",
+          "status": "not-run"
+        },
+        "macos": {
+          "reason": "no macOS runner available",
+          "status": "not-run"
+        },
+        "windows": {
+          "reason": "independent native Windows smoke passed",
+          "status": "pass"
+        }
+      },
+      "release_policy": {
+        "archive_allowlist_clean": true,
+        "consolidated_candidate": true,
+        "default_or_hook_reversal": false,
+        "stable_releases_today": 0
+      },
+      "required_outcomes": {
+        "doctor": true,
+        "edit-governance": true,
+        "lifecycle": true,
+        "mcp": true,
+        "pre-commit": true,
+        "task-context": true,
+        "workflow-discovery": true
+      },
+      "source_links": [
+        "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating"
+      ],
+      "surface": "cli",
+      "working_tree_clean": true
+    }
+  ],
+  "schema_version": 1
+}
