@@ -8,9 +8,17 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
+
+from clients.installer.contracts import DetectedClient
+from clients.installer.detection import detailed_detection
+from clients.installer.planning import build_plan, render_plan
+from clients.installer.transaction import client_lock, run_transaction
+from clients.installer.payload import payload_digest, remove_owned_payloads
+from clients.installer.updates import record_update_state, update_decision
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "install-agent-envs.py"
@@ -239,6 +247,10 @@ def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
         assert config["mcpServers"]["adr-kit"]["command"] == str(
             Path(sys.executable).resolve()
         )
+    claude_config = json.loads((prepared / ".mcp.json").read_text())
+    assert claude_config["mcpServers"]["adr-kit"]["command"] == str(
+        Path(sys.executable).resolve()
+    )
     copilot_config = json.loads((prepared / "copilot" / ".mcp.json").read_text())
     assert copilot_config["mcpServers"]["adr-kit"] == {
         "cwd": ".",
@@ -248,6 +260,9 @@ def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
     assert (prepared / installer.PREPARED_MARKER).is_file()
     assert not (prepared / ".git").exists()
     assert not (prepared / "backlog").exists()
+    assert not (prepared / "tests").exists()
+    assert not (prepared / "docs" / "plans").exists()
+    assert (prepared / "agents" / "adr-generator.md").is_file()
     consumer = tmp_path / "unrelated consumer project"
     installer.validate_prepared_mcp(
         prepared,
@@ -260,7 +275,9 @@ def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
 
     if os.name != "nt":
         entrypoints = [
-            prepared / ".claude-plugin" / "hooks" / "run-hook.cmd",
+            prepared / "hooks" / "run-hook.cmd",
+            prepared / "codex" / "hooks" / "run-hook.cmd",
+            prepared / "copilot" / "hooks" / "run-hook.cmd",
             *[
                 path
                 for prefix in ("bin", "codex/bin", "copilot/bin")
@@ -441,12 +458,13 @@ def test_claude_and_codex_manifests_are_separate_and_versioned_together():
     claude = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
     codex = json.loads((ROOT / "codex" / ".codex-plugin" / "plugin.json").read_text())
     assert claude["version"] == codex["version"]
-    assert "hooks" in claude
-    assert "hooks" not in codex
+    assert "hooks" not in claude
+    assert codex["hooks"] == "./hooks/hooks.json"
     assert codex["skills"] == "./skills/"
     assert codex["mcpServers"] == "./.mcp.json"
-    assert "CLAUDE_PLUGIN_ROOT" in json.dumps(claude["hooks"])
-    assert "codex" not in json.dumps(claude["hooks"]).lower()
+    claude_hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())
+    assert "CLAUDE_PLUGIN_ROOT" in json.dumps(claude_hooks)
+    assert "codex" not in json.dumps(claude_hooks).lower()
 
 
 def test_copilot_has_a_native_manifest_and_mcp_contract():
@@ -454,6 +472,7 @@ def test_copilot_has_a_native_manifest_and_mcp_contract():
     mcp = json.loads((ROOT / "copilot" / ".mcp.json").read_text())
     assert manifest["name"] == "adr-kit"
     assert manifest["skills"] == "skills/"
+    assert manifest["hooks"] == "hooks.json"
     assert manifest["mcpServers"] == ".mcp.json"
     assert mcp["mcpServers"]["adr-kit"]["cwd"] == "."
     assert mcp["mcpServers"]["adr-kit"]["args"] == [
@@ -478,3 +497,179 @@ def test_copilot_marketplace_points_only_to_copilot_distribution():
     entry = marketplace["plugins"][0]
     assert marketplace["name"] == "rvdbreemen-adr-kit-copilot"
     assert entry["source"] == "copilot"
+
+
+def _effective_settings():
+    return {
+        "clients": {
+            "claude": {"enabled": None},
+            "codex": {"enabled": None},
+            "copilot": {"enabled": None},
+        }
+    }
+
+
+def test_detailed_detection_is_read_only_and_reports_overrides(tmp_path):
+    install_root = tmp_path / "marketplaces"
+    old = install_root / "0.34.0"
+    current = install_root / "0.35.0"
+    for root, version in ((old, "0.34.0"), (current, "0.35.0")):
+        root.mkdir(parents=True)
+        (root / installer.PREPARED_MARKER).write_text(
+            json.dumps({"version": version, "source": str(ROOT)}),
+            encoding="utf-8",
+        )
+    before = sorted(str(path) for path in tmp_path.rglob("*"))
+    clients = {"codex": installer.Client("codex", "C:/Codex/codex.exe", "codex-cli 1")}
+    detected = detailed_detection(
+        clients,
+        install_root=install_root,
+        effective_settings=_effective_settings(),
+        env={"CODEX_HOME": "C:/custom codex"},
+    )
+    after = sorted(str(path) for path in tmp_path.rglob("*"))
+    assert before == after
+    assert detected["codex"].config_override == "C:/custom codex"
+    assert detected["codex"].installed_version == "0.35.0"
+    assert detected["codex"].duplicate_roots == (str(old.resolve()),)
+
+
+def test_plan_is_stable_complete_and_opt_out_aware(tmp_path):
+    detected = {
+        "claude": DetectedClient(
+            "claude",
+            "C:/claude.exe",
+            "Claude Code 2",
+            None,
+            True,
+            "0.35.0",
+            str(tmp_path),
+            "abc",
+            (),
+            False,
+            True,
+            (),
+        )
+    }
+    settings = _effective_settings()
+    settings["clients"]["claude"]["enabled"] = False
+    plan = build_plan(
+        detected,
+        source=tmp_path,
+        version="0.35.0",
+        source_sha256="abc",
+        effective_settings=settings,
+    )
+    assert not plan.clients[0].selected
+    assert "validation" in render_plan(plan)
+    assert json.loads(render_plan(plan, format="json"))["schema_version"] == 1
+
+
+def test_major_version_plan_requires_confirmation(tmp_path):
+    state = DetectedClient(
+        "codex",
+        "C:/codex.exe",
+        "codex-cli 1",
+        None,
+        True,
+        "0.35.0",
+        str(tmp_path),
+        "abc",
+        (),
+        False,
+        True,
+        (),
+    )
+    plan = build_plan(
+        {"codex": state},
+        source=tmp_path,
+        version="1.0.0",
+        source_sha256="def",
+        effective_settings=_effective_settings(),
+    )
+    assert plan.requires_confirmation
+    assert plan.clients[1].migrations == ("major-version:0.35.0->1.0.0",)
+
+
+def test_client_transactions_are_isolated_and_retain_failure_evidence(tmp_path):
+    events = []
+    with pytest.raises(RuntimeError, match="activation failed"):
+        run_transaction(
+            "claude",
+            state_root=tmp_path,
+            apply=lambda: events.append("apply"),
+            validate=lambda: (_ for _ in ()).throw(RuntimeError("activation failed")),
+            rollback=lambda: events.append("rollback"),
+        )
+    assert events == ["apply", "rollback"]
+    evidence = json.loads(
+        (tmp_path / "evidence" / "claude-last-transaction.json").read_text()
+    )
+    assert evidence["status"] == "rolled-back"
+    assert evidence["error"] == "activation failed"
+
+    with client_lock(tmp_path, "codex"):
+        with pytest.raises(RuntimeError, match="already locked"):
+            with client_lock(tmp_path, "codex"):
+                pass
+
+
+def test_payload_digest_is_newline_stable_and_uninstall_is_ownership_bounded(tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "file.txt").write_bytes(b"one\r\ntwo\r\n")
+    (second / "file.txt").write_bytes(b"one\ntwo\n")
+    assert payload_digest(first) == payload_digest(second)
+    (first / installer.PREPARED_MARKER).write_text("{}\n", encoding="utf-8")
+    user = tmp_path / "user"
+    user.mkdir()
+    (user / "keep.txt").write_text("keep", encoding="utf-8")
+    assert remove_owned_payloads(tmp_path) == [first]
+    assert user.is_dir()
+    assert second.is_dir()
+
+
+def test_update_policy_is_deferred_pinned_and_records_last_check(tmp_path):
+    values = {
+        "update": {
+            "policy": "pinned",
+            "trigger": "project-setup",
+            "frequency_hours": 24,
+            "offline": False,
+            "pinned_version": "0.35.0",
+        }
+    }
+    decision = update_decision(values, "0.35.0", now=100, last_check=99)
+    assert decision["activation_allowed"]
+    assert not decision["due"]
+    path = record_update_state(
+        tmp_path, "copilot", version="0.35.0", trigger=decision["trigger"]
+    )
+    state = json.loads(path.read_text())
+    assert state["client"] == "copilot"
+    assert state["trigger"] == "project-setup"
+
+
+def test_stale_lock_is_recovered_and_interruption_is_evidenced(tmp_path):
+    lock = tmp_path / "locks" / "codex.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_text("stale\n", encoding="utf-8")
+    os.utime(lock, (time.time() - 3600, time.time() - 3600))
+    with client_lock(tmp_path, "codex", stale_seconds=1):
+        assert lock.is_file()
+    assert not lock.exists()
+
+    with pytest.raises(KeyboardInterrupt):
+        run_transaction(
+            "copilot",
+            state_root=tmp_path,
+            apply=lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
+            validate=lambda: None,
+            rollback=lambda: None,
+        )
+    evidence = json.loads(
+        (tmp_path / "evidence" / "copilot-last-transaction.json").read_text()
+    )
+    assert evidence["status"] == "rolled-back"

@@ -1,0 +1,61 @@
+{
+  "approved_baseline_p95_ms": {
+    "clean": 1000.0,
+    "warm": 150.0
+  },
+  "clean": {
+    "bytes_read": 817445,
+    "bytes_written": 1365642,
+    "elapsed_ms": {
+      "max": 735.485,
+      "p50": 713.408,
+      "p95": 735.485
+    },
+    "files_read": 83,
+    "files_written": 193,
+    "process_startup_included": true,
+    "sample_count": 11,
+    "state": "clean-full"
+  },
+  "methodology": {
+    "cache": "disposable stat-keyed hot path; byte validation on cache miss",
+    "cold_state": "new empty output root per sample",
+    "generator": "scripts/build-client-adapters.py",
+    "generator_count": 1,
+    "hard_timeouts_ms": {
+      "clean": 5000,
+      "warm": 1000
+    },
+    "warm_process_startup": "amortized once per persistent agent or release host",
+    "warm_state": "persistent Python host, stat-validated fingerprint no-op"
+  },
+  "passed": true,
+  "peak_memory_bytes": 157095,
+  "platform": {
+    "os": "nt",
+    "python": "3.12.9",
+    "reference": "windows-native"
+  },
+  "regression_threshold_percent": 20,
+  "regressions": [],
+  "schema_version": 1,
+  "standalone_python_startup": {
+    "p50_ms": 121.663,
+    "p95_ms": 137.438,
+    "sample_count": 11
+  },
+  "warm": {
+    "bytes_read": 0,
+    "bytes_written": 0,
+    "elapsed_ms": {
+      "max": 60.974,
+      "p50": 34.965,
+      "p95": 60.974
+    },
+    "files_read": 0,
+    "files_written": 0,
+    "process_startup_included": false,
+    "sample_count": 11,
+    "state": "warm-unchanged"
+  }
+}

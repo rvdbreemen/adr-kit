@@ -1,0 +1,265 @@
+{
+  "$schema": "../schemas/client-capabilities.schema.json",
+  "schema_version": 1,
+  "program_scope": {
+    "first_class_clients": [
+      "claude-code-cli",
+      "codex-cli",
+      "github-copilot-cli"
+    ],
+    "future_epic": "TASK-43"
+  },
+  "ownership": {
+    "canonical": [
+      "clients/*.json",
+      "hooks/manifest.json",
+      "instructions/ADR-guide.md",
+      "skills/*/SKILL.md",
+      "packaging/*-source.json",
+      "packaging/public-artifacts.json"
+    ],
+    "generated": [
+      "codex/{bin,instructions,schemas,skills,templates}/**",
+      "copilot/{bin,instructions,schemas,skills,templates}/**",
+      "prompts/{claude-code-cli,codex-cli,github-copilot-cli}/**",
+      "*/generated-hooks.json",
+      "packaging/{dependencies,executables}.json"
+    ],
+    "hand_authored_validated": [
+      ".claude-plugin/plugin.json",
+      ".claude-plugin/marketplace.json",
+      ".agents/plugins/marketplace.json",
+      "codex/.codex-plugin/plugin.json",
+      "codex/hooks/hooks.json",
+      ".github/plugin/marketplace.json",
+      "copilot/plugin.json",
+      "copilot/hooks.json",
+      ".mcp.json",
+      "codex/.mcp.json",
+      "copilot/.mcp.json"
+    ]
+  },
+  "settings": {
+    "precedence": [
+      "project",
+      "global",
+      "detected-default"
+    ],
+    "definitions": [
+      {
+        "key": "clients.enabled",
+        "value_type": "string",
+        "scopes": [
+          "global",
+          "project"
+        ]
+      },
+      {
+        "key": "doctor.repair_safe",
+        "value_type": "boolean",
+        "scopes": [
+          "global",
+          "project"
+        ]
+      },
+      {
+        "key": "judgment.cloud_enabled",
+        "value_type": "boolean",
+        "scopes": [
+          "global",
+          "project"
+        ]
+      },
+      {
+        "key": "judgment.local_enabled",
+        "value_type": "boolean",
+        "scopes": [
+          "global",
+          "project"
+        ]
+      },
+      {
+        "key": "updates.mode",
+        "value_type": "string",
+        "scopes": [
+          "global",
+          "project"
+        ]
+      }
+    ]
+  },
+  "clients": [
+    {
+      "id": "claude-code-cli",
+      "surface": "cli",
+      "platforms": {
+        "windows": "release-required",
+        "macos": "best-effort",
+        "linux": "best-effort"
+      },
+      "required_outcomes": [
+        "workflow-discovery",
+        "task-context",
+        "edit-governance",
+        "mcp",
+        "pre-commit",
+        "lifecycle",
+        "doctor"
+      ],
+      "event_mappings": {
+        "edit-governance": {
+          "outcome": "edit-governance",
+          "mode": "native",
+          "native_event": "PreToolUse"
+        },
+        "task-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "SessionStart"
+        }
+      },
+      "degradations": [
+        {
+          "id": "claude-rich-workflow-source",
+          "outcome": "workflow-discovery",
+          "reason": "Claude supports richer skill metadata and native slash-command discovery.",
+          "user_effect": "Claude receives the canonical rich skill while the other clients receive generated concise adapters with the same outcome.",
+          "backstop": "All clients also receive generated prompt wrappers and use the same executables.",
+          "blocks_certification": false
+        }
+      ],
+      "probes": {
+        "detect": "claude --version",
+        "install": "scripts/install-agent-envs.py",
+        "update": "scripts/install-agent-envs.py",
+        "rollback": "scripts/install-agent-envs.py",
+        "disable": "scripts/settings.py",
+        "remove": "scripts/install-agent-envs.py",
+        "doctor": "bin/adr-doctor"
+      },
+      "settings_keys": [
+        "clients.enabled",
+        "doctor.repair_safe",
+        "judgment.cloud_enabled",
+        "judgment.local_enabled",
+        "updates.mode"
+      ],
+      "certification_ref": "claude-code-cli"
+    },
+    {
+      "id": "codex-cli",
+      "surface": "cli",
+      "platforms": {
+        "windows": "release-required",
+        "macos": "best-effort",
+        "linux": "best-effort"
+      },
+      "required_outcomes": [
+        "workflow-discovery",
+        "task-context",
+        "edit-governance",
+        "mcp",
+        "pre-commit",
+        "lifecycle",
+        "doctor"
+      ],
+      "event_mappings": {
+        "edit-governance": {
+          "outcome": "edit-governance",
+          "mode": "native",
+          "native_event": "PreToolUse"
+        },
+        "task-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "SessionStart"
+        }
+      },
+      "degradations": [],
+      "probes": {
+        "detect": "codex --version",
+        "install": "scripts/install-agent-envs.py",
+        "update": "scripts/install-agent-envs.py",
+        "rollback": "scripts/install-agent-envs.py",
+        "disable": "scripts/settings.py",
+        "remove": "scripts/install-agent-envs.py",
+        "doctor": "bin/adr-doctor"
+      },
+      "settings_keys": [
+        "clients.enabled",
+        "doctor.repair_safe",
+        "judgment.cloud_enabled",
+        "judgment.local_enabled",
+        "updates.mode"
+      ],
+      "certification_ref": "codex-cli"
+    },
+    {
+      "id": "github-copilot-cli",
+      "surface": "cli",
+      "platforms": {
+        "windows": "release-required",
+        "macos": "best-effort",
+        "linux": "best-effort"
+      },
+      "required_outcomes": [
+        "workflow-discovery",
+        "task-context",
+        "edit-governance",
+        "mcp",
+        "pre-commit",
+        "lifecycle",
+        "doctor"
+      ],
+      "event_mappings": {
+        "edit-governance": {
+          "outcome": "edit-governance",
+          "mode": "backstop",
+          "native_event": "PostToolUse",
+          "degradation_id": "copilot-pretool-context-limit"
+        },
+        "task-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "SessionStart"
+        }
+      },
+      "degradations": [
+        {
+          "id": "copilot-pretool-context-limit",
+          "outcome": "edit-governance",
+          "reason": "Copilot PreToolUse cannot inject arbitrary model context.",
+          "user_effect": "The same deterministic guard runs proactively and PostToolUse verifies the result.",
+          "backstop": "Generated workflow prompts require context lookup before edits and PostToolUse records drift.",
+          "blocks_certification": false
+        }
+      ],
+      "probes": {
+        "detect": "copilot --version",
+        "install": "scripts/install-agent-envs.py",
+        "update": "scripts/install-agent-envs.py",
+        "rollback": "scripts/install-agent-envs.py",
+        "disable": "scripts/settings.py",
+        "remove": "scripts/install-agent-envs.py",
+        "doctor": "bin/adr-doctor"
+      },
+      "settings_keys": [
+        "clients.enabled",
+        "doctor.repair_safe",
+        "judgment.cloud_enabled",
+        "judgment.local_enabled",
+        "updates.mode"
+      ],
+      "certification_ref": "github-copilot-cli"
+    }
+  ],
+  "certification": {
+    "windows_native_required": true,
+    "best_effort_platforms": [
+      "macos",
+      "linux"
+    ],
+    "all_clients_block_release": true,
+    "evidence_schema": "schemas/certification-evidence.schema.json"
+  }
+}

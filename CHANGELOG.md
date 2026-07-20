@@ -4,6 +4,39 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-07-20
+
+### Added
+
+- First-class native packages for Claude Code CLI, OpenAI Codex CLI, and
+  GitHub Copilot CLI now share one canonical set of 14 ADR workflows while
+  retaining client-native manifests, skill metadata, prompts, hooks, and MCP
+  declarations.
+- Project setup, global defaults with per-project overrides, detected-client
+  installation, verified updates, rollback, disable/uninstall behavior, and
+  generated ADR guidance are available through deterministic stdlib tooling.
+- `adr-doctor` now has fast and deep modes for generated drift, settings,
+  native registration, MCP, hook packages, local judgment, and measured hook
+  latency, with bounded `--check` and `--fix` repair authority.
+- A normalized fail-open hook runtime covers the supported lifecycle moments
+  each client exposes, with Windows-native latency evidence and portable
+  Python fallback behavior.
+
+### Changed
+
+- Added deterministic, evidence-backed certification and support-matrix gates
+  for the Claude Code, Codex, and GitHub Copilot CLI payloads. Client-native
+  plugin, skill, prompt, and hook optimization is now release-blocking.
+- Native Windows observations now assemble into the release schema through the
+  existing client build entrypoint. Release automation pins a separate evidence
+  commit, avoiding a self-referential candidate hash while retaining exact
+  candidate and prepared-payload binding.
+- Client generation is byte-deterministic, zero-runtime-dependency, allowlist
+  bounded, and measured on Windows. The v0.36.0 candidate records clean p95
+  735.485 ms and warm no-op p95 60.974 ms with zero rewrites.
+- Current implementation scope is intentionally limited to Claude, Codex, and
+  Copilot. Wider coding-agent support is retained only in future TASK-43.
+
 ## [0.35.0] - 2026-07-19
 
 ### Changed
@@ -873,7 +906,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.2...v0.35.0
 [0.34.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.1...v0.34.2
 [0.34.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.0...v0.34.1

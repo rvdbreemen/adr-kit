@@ -1,0 +1,304 @@
+"""Deterministic, bounded, read-only ADR hook core."""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import re
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+MAX_INPUT_BYTES = 64 * 1024
+MAX_PARENT_CHARS = 8 * 1024
+MAX_CONTEXT_CHARS = 4 * 1024
+MAX_RESULTS = 3
+WRITE_TOOLS = {
+    "edit",
+    "multiedit",
+    "write",
+    "applypatch",
+    "create",
+    "notebookedit",
+}
+NOOP_EVENTS = {
+    "stop",
+    "subagentstop",
+    "sessionend",
+    "permissionrequest",
+    "notification",
+    "interrupt",
+    "postcompact",
+}
+EVENT_ALIASES = {
+    "sessionstart": "SessionStart",
+    "userpromptsubmit": "UserPromptSubmit",
+    "userpromptsubmitted": "UserPromptSubmit",
+    "pretooluse": "PreToolUse",
+    "posttooluse": "PostToolUse",
+    "subagentstart": "SubagentStart",
+    "precompact": "PreCompact",
+    "stop": "Stop",
+    "subagentstop": "SubagentStop",
+    "sessionend": "SessionEnd",
+    "permissionrequest": "PermissionRequest",
+    "notification": "Notification",
+    "interrupt": "Interrupt",
+    "postcompact": "PostCompact",
+}
+
+
+@dataclass(frozen=True)
+class Envelope:
+    client: str
+    client_version: str | None
+    event: str
+    session_id: str | None
+    agent_id: str | None
+    workspace: Path
+    tool_name: str | None
+    tool_input: dict[str, Any]
+    prompt: str | None
+    parent_context: str | None
+
+
+def _bounded_text(value: object, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value[:limit]
+
+
+def _first(payload: dict, *keys: str) -> object:
+    for key in keys:
+        if key in payload:
+            return payload[key]
+    return None
+
+
+def normalize(payload: dict[str, Any], client: str, event: str | None) -> Envelope:
+    native = event or _first(payload, "hook_event_name", "hookEventName", "event")
+    compact = re.sub(r"[^a-z]", "", str(native or "").lower())
+    normalized_event = EVENT_ALIASES.get(compact, str(native or "Unknown"))
+    workspace_raw = _first(payload, "cwd", "workspace", "workspace_root")
+    workspace = Path(str(workspace_raw or Path.cwd())).expanduser().resolve()
+    tool_input = _first(payload, "tool_input", "toolInput", "tool")
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+    tool_name = _bounded_text(
+        _first(payload, "tool_name", "toolName", "tool_name_normalized"), 80
+    )
+    prompt = _bounded_text(
+        _first(payload, "prompt", "user_prompt", "userPrompt"), MAX_INPUT_BYTES // 2
+    )
+    parent = _bounded_text(
+        _first(payload, "parent_context", "parentContext", "adr_context"),
+        MAX_PARENT_CHARS,
+    )
+    return Envelope(
+        client=client,
+        client_version=_bounded_text(
+            _first(payload, "client_version", "version"), 80
+        ),
+        event=normalized_event,
+        session_id=_bounded_text(
+            _first(payload, "session_id", "sessionId"), 160
+        ),
+        agent_id=_bounded_text(
+            _first(payload, "agent_id", "agentId", "subagent_id"), 160
+        ),
+        workspace=workspace,
+        tool_name=tool_name,
+        tool_input=tool_input,
+        prompt=prompt,
+        parent_context=parent,
+    )
+
+
+def parse_payload(raw: bytes, client: str, event: str | None = None) -> Envelope | None:
+    if len(raw) > MAX_INPUT_BYTES:
+        return None
+    try:
+        payload = json.loads(raw.decode("utf-8")) if raw.strip() else {}
+    except (UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("adr_kit_disabled") is True:
+        return None
+    return normalize(payload, client, event)
+
+
+def duplicate_event(envelope: Envelope) -> bool:
+    """Best-effort cross-process dedupe in OS temp; failures stay fail-open."""
+    if not envelope.session_id:
+        return False
+    path_value = _first(
+        envelope.tool_input, "file_path", "filePath", "path", "notebook_path"
+    )
+    signature = json.dumps(
+        [
+            envelope.event,
+            envelope.tool_name,
+            path_value,
+            envelope.prompt,
+            envelope.agent_id,
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    safe_session = re.sub(r"[^A-Za-z0-9._-]", "_", envelope.session_id)[:80]
+    state = Path(tempfile.gettempdir()) / f"adr-kit-hook-{safe_session}.seen"
+    try:
+        if state.is_file() and state.read_text(encoding="utf-8") == signature:
+            return True
+        temporary = state.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_text(signature, encoding="utf-8")
+        os.replace(temporary, state)
+    except OSError:
+        return False
+    return False
+
+
+def _index_path(workspace: Path) -> Path | None:
+    candidates = (
+        workspace / "docs" / "adr" / "ADR-INDEX.json",
+        workspace / "adr" / "ADR-INDEX.json",
+    )
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def load_records(workspace: Path) -> list[dict[str, Any]]:
+    path = _index_path(workspace)
+    if path is None or path.stat().st_size > 2 * 1024 * 1024:
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return []
+    records = payload.get("adrs", []) if isinstance(payload, dict) else []
+    return [
+        item
+        for item in records
+        if isinstance(item, dict) and item.get("status") == "Accepted"
+    ]
+
+
+def _tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9][a-z0-9._/-]{2,}", text.lower())
+        if token not in {"the", "and", "for", "with", "from", "this", "that"}
+    }
+
+
+def _record_text(record: dict[str, Any]) -> str:
+    scope = record.get("scope", {})
+    globs = scope.get("path_globs", []) if isinstance(scope, dict) else []
+    return " ".join(
+        [
+            str(record.get("id", "")),
+            str(record.get("title", "")),
+            str(record.get("decision_summary", "")),
+            " ".join(str(value) for value in globs),
+        ]
+    )
+
+
+def rank(records: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    query_tokens = _tokens(query)
+    scored = []
+    for record in records:
+        overlap = len(query_tokens & _tokens(_record_text(record)))
+        scored.append((overlap, str(record.get("id", "")), record))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    positive = [record for score, _id, record in scored if score > 0]
+    return (positive or [item[2] for item in scored])[:MAX_RESULTS]
+
+
+def _safe_edit_path(envelope: Envelope) -> Path | None:
+    value = _first(
+        envelope.tool_input, "file_path", "filePath", "path", "notebook_path"
+    )
+    if not isinstance(value, str) or len(value) > 4096:
+        return None
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = envelope.workspace / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(envelope.workspace)
+    except ValueError:
+        return None
+    return resolved
+
+
+def _matching_path_records(
+    records: list[dict[str, Any]], workspace: Path, path: Path
+) -> list[dict[str, Any]]:
+    relative = path.relative_to(workspace).as_posix()
+    matches = []
+    for record in records:
+        scope = record.get("scope", {})
+        globs = scope.get("path_globs", []) if isinstance(scope, dict) else []
+        if any(fnmatch.fnmatchcase(relative, str(pattern)) for pattern in globs):
+            matches.append(record)
+    return matches or rank(records, relative)
+
+
+def _render(records: list[dict[str, Any]], heading: str) -> str:
+    if not records:
+        return ""
+    lines = [heading]
+    for record in records[:MAX_RESULTS]:
+        source = f"docs/adr/{record.get('path', '')}"
+        lines.append(
+            f"- {record.get('id')}: {record.get('title')} — "
+            f"{record.get('decision_summary')} (source: {source})"
+        )
+    return "\n".join(lines)[:MAX_CONTEXT_CHARS]
+
+
+def evaluate(envelope: Envelope) -> tuple[str, str]:
+    compact_event = re.sub(r"[^a-z]", "", envelope.event.lower())
+    if compact_event in NOOP_EVENTS:
+        return "", "noop"
+    records = load_records(envelope.workspace)
+    if not records:
+        return "", "noop"
+    if envelope.event == "SessionStart":
+        return _render(records[:MAX_RESULTS], "Relevant Accepted ADR orientation:"), "session"
+    if envelope.event == "UserPromptSubmit":
+        return _render(
+            rank(records, envelope.prompt or ""),
+            "Accepted ADRs relevant to this prompt:",
+        ), "prompt"
+    if envelope.event in {"PreToolUse", "PostToolUse"}:
+        tool = (envelope.tool_name or "").lower().replace("_", "")
+        if tool not in WRITE_TOOLS:
+            return "", "noop"
+        path = _safe_edit_path(envelope)
+        if path is None:
+            return "", "noop"
+        selected = _matching_path_records(records, envelope.workspace, path)
+        heading = (
+            "Governing Accepted ADRs before this edit:"
+            if envelope.event == "PreToolUse"
+            else "Post-edit ADR backstop; verify this change against:"
+        )
+        return _render(selected, heading), (
+            "pre-edit" if envelope.event == "PreToolUse" else "post-edit"
+        )
+    if envelope.event == "SubagentStart":
+        return (
+            (envelope.parent_context or "")[:MAX_CONTEXT_CHARS],
+            "subagent",
+        )
+    if envelope.event == "PreCompact":
+        return _render(
+            records[:MAX_RESULTS],
+            "ADR continuity for context compaction:",
+        ), "compact"
+    return "", "noop"

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "direct_scripts": [
+    {
+      "path": "scripts/benchmark-client-generation.py",
+      "owner": "development",
+      "purpose": "benchmark deterministic client generation",
+      "task_40_added": true
+    },
+    {
+      "path": "scripts/build-client-adapters.py",
+      "owner": "generator",
+      "purpose": "build and validate three-client artifacts",
+      "task_40_added": true
+    },
+    {
+      "path": "scripts/install-agent-envs.py",
+      "owner": "installer",
+      "purpose": "detect and install native client plugins",
+      "task_40_added": false
+    },
+    {
+      "path": "scripts/settings.py",
+      "owner": "settings",
+      "purpose": "read and update ADR Kit settings",
+      "task_40_added": true
+    },
+    {
+      "path": "scripts/setup-project.py",
+      "owner": "setup",
+      "purpose": "install project guide and managed instructions",
+      "task_40_added": true
+    },
+    {
+      "path": "scripts/sync-agent-plugins.py",
+      "owner": "compatibility",
+      "purpose": "legacy alias for client artifact generation",
+      "task_40_added": false
+    }
+  ]
+}

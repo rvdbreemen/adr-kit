@@ -1,0 +1,59 @@
+# ADR Kit hook latency method
+
+The authoritative fixture is
+`tests/fixtures/hooks/reference-corpus.json`; its method ID is
+`adr-kit-hook-latency-v1`.
+
+The harness fixes:
+
+- Windows as the required native certification machine class;
+- macOS and Linux as best-effort evidence;
+- one unmeasured warm-up launch, then 30 release-certification samples or 5
+  bounded deep-doctor samples;
+- cold-process, warm-filesystem, and warm-persistent-host cache labels;
+- end-to-end subprocess startup inclusion;
+- the reference payload for each lifecycle event;
+- p50, p95, hard timeout, and 20% CI-variance metadata.
+
+The native host is the certified Windows path. Python is a fail-open portable
+fallback and is not eligible for the edit-hook latency certification.
+
+Run the focused evidence:
+
+```bash
+python -m pytest tests/test_hook_protocol.py tests/test_hook_performance.py
+python bin/adr-doctor --deep --check --format json
+```
+
+The doctor uses the same method ID and fixture and reports every event's
+measurements without coercing missed targets into passes.
+
+## Current Windows development evidence
+
+The native host reduced the Python end-to-end SessionStart path from roughly
+200 ms to roughly 20–35 ms on the development machine. SessionStart, prompt,
+subagent, compact, stop, and hard-timeout budgets pass consistently.
+
+Windows process creation proved that the original 10/25/100 ms edit-hook
+budget was physically unattainable on the certification machine. The approved
+Windows PreToolUse/PostToolUse budget is therefore 25 ms p50, 50 ms p95, and
+a strictly enforced 100 ms hard timeout. Full pre/post-edit automation remains
+enabled.
+
+A 3,072-byte `no_std`, no-CRT executable measured over 300 launches at
+13.171 ms minimum, 18.116 ms p50, 25.857 ms p95, and 144.603 ms maximum before
+JSON parsing, ADR lookup, or output. The evidence is preserved in
+`tests/fixtures/hooks/windows-process-floor.json`.
+
+This is retained as an explicit certification finding, not hidden by
+excluding startup or relabeling the result. The semantic benchmark enforces
+the 100 ms timeout on every measured launch and reports every timeout, rather
+than treating a later successful sample as representative.
+
+The first 30-sample warm-filesystem certification after the policy decision
+passed every event and every hard timeout. The edit-hook results were:
+
+| Event | p50 | p95 | maximum | timeouts |
+|---|---:|---:|---:|---:|
+| PreToolUse | 22.358 ms | 28.275 ms | 30.260 ms | 0 |
+| PostToolUse | 22.932 ms | 28.080 ms | 29.787 ms | 0 |

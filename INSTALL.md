@@ -87,6 +87,10 @@ for one client is isolated and does not hide or block other detected clients.
 Useful options:
 
 ```bash
+# Read the complete plan without writing
+python scripts/install-agent-envs.py --plan
+python scripts/install-agent-envs.py --plan --format json
+
 # Preview native commands without changing client state
 python scripts/install-agent-envs.py --dry-run --project-root "/path/to/project"
 
@@ -102,6 +106,9 @@ python scripts/install-agent-envs.py --source "/path/with spaces/adr-kit"
 # Override the interpreter or prepared-marketplace data location
 python scripts/install-agent-envs.py --python /opt/python/bin/python3
 python scripts/install-agent-envs.py --install-root "/persistent/user/data/adr-kit"
+
+# Remove ADR Kit-owned registrations and prepared payloads
+python scripts/install-agent-envs.py --uninstall --clients codex
 ```
 
 The installer validates every required manifest before a client mutation. It
@@ -117,14 +124,18 @@ and executable Unix entry-point modes. The first run may re-register an older
 checkout/Git marketplace against this prepared source; later runs recognize
 the same source and use update/no-op paths.
 
-Re-running the installer is idempotent. Post-install validation checks native
+Re-running the installer is idempotent. The desired-state plan includes
+effective opt-outs, migrations, backups, activation, validation, rollback, and
+removals before mutation. A major-version migration pauses until the reviewed
+command is repeated with `--yes`. Post-install validation checks native
 registration and MCP listing, while prepared-source validation starts
 `adr-mcp`, completes MCP initialize plus tools/list, and executes the packaged
 Claude SessionStart wrapper through the platform shell before any client is
 changed. Failure of one selected client is reported after the installer
-continues with the others. Client-native marketplace operations are not
-transactional, so a failed client may need its normal plugin install command
-re-run; successful clients remain installed. `--skip-validation` is intended
+continues with the others. Each client has an independent lock and transaction
+evidence file. Activation failure re-registers the retained previous healthy
+payload when available; successful clients remain installed.
+`--skip-validation` is intended
 only for offline packaging tests. After validation, the installer runs
 `adr-migrate --plan` against `<project-root>/docs/adr`. The scan is read-only
 and fail-open: it prints deterministic preview commands or guided migration
@@ -147,9 +158,65 @@ Claude Code continues to use:
 - `.claude-plugin/plugin.json`
 - repository-root `skills/`
 - repository-root `agents/`
-- the existing SessionStart, PreToolUse, and PostToolUse hooks
+- plugin-root `hooks/hooks.json` with six bounded lifecycle outcomes
+- plugin-root `.mcp.json`
 
 The Codex and Copilot distributions do not change this contract.
+
+## Project guidance and settings
+
+Native plugin installation and project registration are separate, inspectable
+steps. Preview project changes first:
+
+```bash
+python scripts/setup-project.py --project-root "/path/to/project" --dry-run
+python scripts/setup-project.py --project-root "/path/to/project"
+```
+
+Project setup owns only:
+
+- generated `.adr-kit/ADR-guide.md`;
+- the ADR Kit marker block in `AGENTS.md`;
+- the ADR Kit marker block in `CLAUDE.md`;
+- the ADR Kit marker block in `.github/copilot-instructions.md`; and
+- an ADR Kit-owned `.githooks/pre-commit`.
+
+An old generated guide is backed up under `.adr-kit/backups/`. User additions
+belong in `.adr-kit/ADR-guide.local.md` or outside managed markers. Setup
+refuses duplicate, nested, reversed, or incomplete markers before writing.
+Legacy `.agents/adr-kit-guide.md`, `.claude/adr-kit-guide.md`, and the Claude
+`ADR-KIT STUB` block migrate once with content-addressed backups. Singular
+`AGENT.md` is not created.
+
+Inspect effective settings and their source:
+
+```bash
+python scripts/settings.py --project-root "/path/to/project" show
+python scripts/settings.py --project-root "/path/to/project" --format json show
+```
+
+Global defaults live in `%APPDATA%\adr-kit\settings.json` on Windows and
+`${XDG_CONFIG_HOME:-~/.config}/adr-kit/settings.json` on macOS/Linux.
+Per-project overrides live in `.adr-kit/settings.json` and take precedence.
+Use `set ... --scope global` for a global value; project is the default scope.
+
+```bash
+python scripts/settings.py --project-root "/path/to/project" set update.offline true
+python scripts/settings.py --project-root "/path/to/project" set clients.codex.enabled false
+python scripts/settings.py --project-root "/path/to/project" unset clients.codex.enabled
+```
+
+Pre-commit defaults on. Setting `pre_commit.enabled` to `false` and rerunning
+setup removes only the ADR Kit-owned pre-commit file; setting it to `true`
+reinstalls it. A custom `core.hooksPath` or unrelated pre-commit hook is never
+replaced automatically.
+
+Local judgment has no default provider or model tag. Run settings with
+`--probe-models` for a bounded local identity check that does not invoke a
+model. One verified candidate can become active in the optional judgment
+workflow; missing, unreachable, or multiple candidates remain actionable
+unavailable/degraded/ambiguous states. Paid/cloud judgment is disabled until
+explicit opt-in. Deterministic checks continue independently.
 
 Validate from a terminal:
 
@@ -158,7 +225,7 @@ claude plugin validate .
 claude plugin details adr-kit@rvdbreemen-adr-kit
 ```
 
-Expected: 14 skills, one `adr-generator` agent, and three hooks.
+Expected: 14 skills, one `adr-generator` agent, six hooks, and one MCP server.
 
 ## OpenAI Codex
 
@@ -176,6 +243,7 @@ Codex loads the separate `codex/` distribution through
 
 - `.codex-plugin/plugin.json`
 - 14 Codex-native skills under `codex/skills/`
+- `hooks/hooks.json` with SessionStart, prompt, edit, subagent, and compact outcomes
 - `.mcp.json` with the `adr-kit` server
 - a self-contained, generated copy of the deterministic engines
 
@@ -205,7 +273,6 @@ copilot plugin marketplace add rvdbreemen/adr-kit
 copilot plugin install adr-kit@rvdbreemen-adr-kit-copilot
 copilot plugin list
 copilot mcp list
-copilot skill list
 ```
 
 Registration visibility is only the first check. In each installed client,
@@ -240,8 +307,9 @@ for evidence and remediation recommendations.
 
 Copilot loads `.github/plugin/marketplace.json`, which points only to the
 separate `copilot/` distribution. That distribution has a root `plugin.json`,
-14 Copilot-compatible skills, and `.mcp.json`. It does not load the Claude
-manifest or Codex manifest.
+14 Copilot-compatible skills, lower-camel `hooks.json`, and `.mcp.json`. Open
+`/skills` inside Copilot CLI for discovery. It does not load the Claude or
+Codex manifest.
 
 On Windows, a sandboxed caller may have read-only access to the user's normal
 `~/.copilot` directory. For CI or isolated smoke tests, set `COPILOT_HOME` to a
@@ -269,7 +337,7 @@ scripts.
 Run the repository checks:
 
 ```bash
-python scripts/sync-agent-plugins.py --check
+python scripts/build-client-adapters.py --check
 python -m pytest tests/test_agent_installer.py tests/test_adr_mcp.py
 ```
 
@@ -280,31 +348,35 @@ claude plugin details adr-kit@rvdbreemen-adr-kit
 codex mcp list
 copilot plugin list
 copilot mcp list
-copilot skill list
 ```
 
-Routine successful integration activity is quiet by design. Claude Code hook
-responses use model-only `additionalContext` with raw output suppression and
-no progress label. Codex and Copilot receive ADR Kit through their native
-skills and MCP server, without extra lifecycle messages.
+Routine successful integration activity is quiet by design. All three clients
+receive bounded fail-open hooks plus native skills and MCP. Copilot's
+PreToolUse contract cannot inject arbitrary context, so proactive context,
+PostToolUse, and pre-commit provide that outcome without fake deny/retry logic.
 
-## Updating
+## Updating and rollback
 
-Pull the new tag and re-run:
+Verified stable updates run only from project setup or deferred maintenance,
+never from a lifecycle hook. Effective settings control frequency, offline
+mode, notification/manual behavior, and an optional exact pin. Pull the new
+tag and re-run:
 
 ```bash
 python scripts/install-agent-envs.py
 ```
 
 Project ADRs under `docs/adr/` are never part of the plugin update.
+The installer authenticates the repository identity, validates the prepared
+payload digest, retains one previous payload, and records each client's update
+trigger and last-check state.
 
 ## Uninstall
 
 ```bash
-claude plugin uninstall adr-kit@rvdbreemen-adr-kit
-codex plugin remove adr-kit@rvdbreemen-adr-kit-codex
-copilot plugin uninstall adr-kit
+python scripts/install-agent-envs.py --uninstall
 ```
 
-Remove the corresponding marketplace only when no other plugin uses it.
-Uninstalling ADR Kit preserves the project's `docs/adr/` directory.
+Uninstall removes only ADR Kit-owned registrations and marked prepared
+payloads. It preserves user configuration, `.adr-kit/ADR-guide.local.md`, and
+the project's `docs/adr/` directory.

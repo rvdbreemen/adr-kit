@@ -1,0 +1,102 @@
+name: ADR Kit release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_commit:
+        description: Exact release-candidate commit SHA
+        required: true
+        type: string
+      evidence_ref:
+        description: Exact commit SHA containing redacted certification evidence
+        required: true
+        type: string
+      evidence_bundle:
+        description: Evidence-ref-relative redacted three-client bundle
+        required: true
+        default: certification/release-candidate.json
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: windows-latest
+    env:
+      ADR_KIT_GATE_ID: three-client-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_commit }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Bind checkout to the candidate
+        shell: pwsh
+        run: |
+          $actual = git rev-parse HEAD
+          if ($actual -ne "${{ inputs.candidate_commit }}") {
+            throw "Checked out $actual, expected ${{ inputs.candidate_commit }}"
+          }
+
+      - name: Validate deterministic release inputs
+        shell: pwsh
+        run: |
+          python scripts/build-client-adapters.py --check
+          python bin/adr-lint --strict docs/adr
+          python bin/adr-index --check docs/adr
+          python -m pip install pytest
+          python -m pytest -q
+
+      - name: Checkout independently retained evidence
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.evidence_ref }}
+          path: .release-evidence
+          sparse-checkout: certification
+
+      - name: Bind evidence checkout and path
+        id: evidence
+        shell: pwsh
+        run: |
+          if ("${{ inputs.evidence_ref }}" -notmatch '^[0-9a-fA-F]{40}$') {
+            throw "Evidence ref must be an exact 40-character commit SHA"
+          }
+          $actual = git -C .release-evidence rev-parse HEAD
+          if ($actual -ne "${{ inputs.evidence_ref }}") {
+            throw "Checked out evidence $actual, expected ${{ inputs.evidence_ref }}"
+          }
+          $root = (Resolve-Path .release-evidence).Path
+          $bundle = (Resolve-Path (Join-Path $root "${{ inputs.evidence_bundle }}")).Path
+          $prefix = $root.TrimEnd('\') + '\'
+          if (-not $bundle.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Evidence bundle escapes the pinned evidence checkout"
+          }
+          "bundle=$bundle" >> $env:GITHUB_OUTPUT
+
+      - name: Require all-three native Windows evidence
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .release-output | Out-Null
+          $result = python scripts/build-client-adapters.py `
+            --certify "${{ steps.evidence.outputs.bundle }}" `
+            --candidate-commit "${{ inputs.candidate_commit }}" `
+            --release-candidate `
+            --support-output .release-output/client-support.md `
+            --format json
+          $code = $LASTEXITCODE
+          $result | Set-Content -Encoding utf8 .release-output/gate.json
+          if ($code -ne 0) {
+            throw "All-three native certification gate failed"
+          }
+
+      - name: Retain certified support matrix and gate result
+        uses: actions/upload-artifact@v4
+        with:
+          name: adr-kit-certification-${{ inputs.candidate_commit }}
+          path: .release-output/
+          if-no-files-found: error
+          retention-days: 90

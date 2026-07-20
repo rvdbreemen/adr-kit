@@ -27,12 +27,13 @@ all indexes with `python bin/adr-index docs/adr` and verify them with
 
 `adr-kit` turns Architecture Decision Records from passive documentation into active guardrails. Your agent gets the relevant decisions injected while it codes, every commit is checked against the accepted decisions, and a guardian watches for decisions that go stale. One toolkit covers the whole lifecycle: capture, enforce, maintain, retire.
 
-Ships first-class, separate integrations for Claude Code, OpenAI Codex, and
-the standalone GitHub Copilot CLI. All three include English skill metadata,
+Ships separate integration payloads for Claude Code CLI, OpenAI Codex CLI, and
+the standalone GitHub Copilot CLI. The generated
+[client support matrix](docs/client-support.md) distinguishes simulated
+contract coverage from release-candidate native certification. All three include English skill metadata,
 the same deterministic engines, and quiet-by-default lifecycle behavior:
 routine successful hooks do not print progress, while relevant ADR context is
-delivered to the agent and actionable warnings remain available. Portable
-Agent Skills and stdio MCP fallbacks remain available for compatible clients.
+delivered to the agent and actionable warnings remain available.
 The engines are dependency-free Python 3.10+ (stdlib only, no build step, no
 API key required for any default path).
 
@@ -80,6 +81,43 @@ explicit and automated installs. The post-install format scan is read-only:
 it reports deterministic preview commands or guided migration steps and never
 rewrites an ADR.
 
+### Register ADR Kit in a project
+
+Preview and apply the shared three-client project guidance separately from
+native plugin registration:
+
+```bash
+python scripts/setup-project.py --project-root /path/to/project --dry-run
+python scripts/setup-project.py --project-root /path/to/project
+python scripts/settings.py --project-root /path/to/project show
+```
+
+Setup writes generated `.adr-kit/ADR-guide.md`, adds independent owned blocks
+to `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md`, and installs
+the deterministic pre-commit gate by default. It preserves all bytes outside
+the marker blocks. An existing generated guide is backed up before replacement;
+project-specific guidance belongs in user-owned
+`.adr-kit/ADR-guide.local.md`.
+
+Settings use global defaults with per-project overrides. The effective output
+shows the value and source of every option. Disable or re-enable pre-commit,
+for example:
+
+```bash
+python scripts/settings.py --project-root /path/to/project set pre_commit.enabled false
+python scripts/setup-project.py --project-root /path/to/project
+python scripts/settings.py --project-root /path/to/project set pre_commit.enabled true
+python scripts/setup-project.py --project-root /path/to/project
+```
+
+Settings also cover verified stable updates, trigger/frequency, offline and
+pinned operation, per-client opt-outs, doctor repair/check-only policy, and
+local versus paid/cloud judgment. No provider or model tag is a fallback
+default. `--probe-models` performs a bounded local identity check without
+invoking a model; zero or multiple candidates remain visibly unavailable or
+ambiguous. Paid/cloud judgment remains explicit opt-in, and no model runs in a
+hook hot path.
+
 ### Claude Code
 
 ```
@@ -89,14 +127,26 @@ rewrites an ADR.
 /adr-kit:init
 ```
 
-The first three install the plugin. The fourth is the one-shot per-project bootstrap: it wires a slim stub into your `CLAUDE.md` (full guide lands at `.claude/adr-kit-guide.md`), **audits your existing codebase for decisions already in effect** (the database you chose, the framework you committed to, the patterns you standardized on) and walks you through recording them as Accepted ADRs in batches, then installs the pre-commit enforcement hook. Idempotent: safe to re-run.
+The first three install the plugin. The fourth is the one-shot per-project
+bootstrap: it wires a marker-owned pointer into `CLAUDE.md` (the shared guide
+lands at `.adr-kit/ADR-guide.md`), **audits your existing codebase for decisions
+already in effect** (the database you chose, the framework you committed to,
+the patterns you standardized on), walks you through recording them as
+Accepted ADRs in batches, and installs the pre-commit enforcement hook.
+Idempotent: safe to re-run.
 
 That is the whole setup. From the next session on, your agent knows the decisions, gets nudged when it touches them, and receives a local check when it commits.
 
-Prefer a lighter start? `/adr-kit:setup` writes only the `CLAUDE.md` stub and guide, skipping the audit and the hook; you can add those later with `/adr-kit:init` or `/adr-kit:install-hooks`.
+Prefer a lighter start? Run `scripts/setup-project.py --dry-run`, then apply
+it. This installs the shared guide, three independent managed instruction
+blocks, and (by default) pre-commit without running the architecture audit.
+Disable pre-commit first through `adr-kit:settings` when guidance-only setup is
+required.
 
-The Claude integration remains rooted in `.claude-plugin/`, the original
-`skills/`, and the existing three hooks.
+The Claude integration keeps only its manifest under `.claude-plugin/`.
+Plugin-root `skills/`, `hooks/hooks.json`, `.mcp.json`, agents, and bundled
+executables provide 14 workflows, six bounded hooks, and the four-tool MCP
+server.
 
 ### OpenAI Codex
 
@@ -120,13 +170,15 @@ copilot plugin marketplace add rvdbreemen/adr-kit
 copilot plugin install adr-kit@rvdbreemen-adr-kit-copilot
 copilot plugin list
 copilot mcp list
-copilot skill list
 ```
 
 This targets `@github/copilot` invoked as `copilot`, not `gh copilot` or VS
 Code agent mode. The separate `copilot/` distribution follows GitHub's
 [Copilot plugin contract](https://docs.github.com/en/copilot/concepts/agents/about-plugins)
 and installs 14 skills plus the same key-free MCP server.
+Open `/skills` inside Copilot CLI to discover ADR Kit workflows. Its lower-camel
+hook package supplies proactive session/task context and PostToolUse; pre-commit
+remains the edit-enforcement backstop.
 
 If an older installation reports that `adr-mcp` is missing under the active
 project (for example `<project>/bin/adr-mcp`), refresh both marketplace and
@@ -206,7 +258,7 @@ Three layers, each with a clear path:
 - **Health dashboard (`bin/adr-status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, and since v0.29.0 the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
 - **Quality scoring (`bin/adr-quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
 - **Generated index refresh (`bin/adr-index docs/adr/`)**: atomically rebuilds the sentinel-owned `docs/adr/README.md` block plus `ADR-INDEX.md` and `ADR-INDEX.json`. `--check` exits non-zero when any generated view is missing or stale, or duplicate ADR ids exist. Use `--format graph --adr-dir docs/adr` to inspect the graph without writing.
-- **Local doctor (`bin/adr-doctor`)**: runs strict lint plus generated-index freshness checks, then nudges on shipped-but-still-Proposed ADRs, old Proposed ADRs, Accepted ADRs whose `verified_in` files changed after acceptance, and missing named gates. Material drift auto-triggers a local `bin/adr-audit --root ...` pass and includes the audit summary in the doctor output. `--fix-index` repairs the generated index before checking it.
+- **Local doctor (`bin/adr-doctor`)**: fast mode checks ADR/index state, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
 - **Lifecycle commands (`bin/adr`, v0.32.0+)**: local `propose`, `accept`, `supersede`, `reject`, and `document` commands update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated README index.
 - **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then auto-accept only when strict lint and quality checks pass. `--auto-mode assist` reports eligibility without mutating until confirmed.
 - **Retirement audit (`/adr-kit:retire`, `bin/adr-retire`)**: ranks Accepted ADRs for retirement using four deterministic signals (status age, technology removal, supersession, policy drift). Read-only; a recommendation always needs a human.
@@ -530,9 +582,10 @@ If your team is happy with a plain template and the discipline lives in your cul
 
 ```
 adr-kit/
-├── skills/            # 14 Claude Code skills (unchanged native integration)
-├── codex/             # separate Codex plugin, 14 skills, MCP, packaged engines
-├── copilot/           # separate standalone Copilot CLI plugin
+├── skills/            # 14 Claude Code skills
+├── hooks/             # Claude hook config plus shared fail-open runtime
+├── codex/             # Codex plugin: 14 skills, hooks, MCP, packaged engines
+├── copilot/           # Copilot CLI plugin: 14 skills, hooks, MCP, engines
 ├── scripts/           # detected-client installer and payload sync check
 ├── agents/            # adr-generator subagent
 ├── bin/               # 20 stdlib-only Python entry points plus shared helpers

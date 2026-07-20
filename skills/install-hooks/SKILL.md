@@ -1,12 +1,15 @@
 ---
 name: install-hooks
-description: Install or uninstall the adr-kit pre-commit hook in the current project. Copies templates/githooks/pre-commit into .githooks/pre-commit, makes it executable, and runs `git config core.hooksPath .githooks`. Idempotent. Used internally by /adr-kit:init and /adr-kit:upgrade; also exposed standalone for users who want to add or remove the hook independently.
+description: "Install or remove ADR Kit's deterministic pre-commit gate. Use for ADR hooks, pre-commit enforcement, or uninstalling the owned git hook."
 argument-hint: "[--uninstall]"
 disable-model-invocation: true
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 
 # adr-kit install-hooks
+
+Use `$ARGUMENTS` only for `--uninstall`; empty means install. Reject all other
+arguments.
 
 You install or uninstall the adr-kit pre-commit hook in the project the user is currently in (`pwd` should be the project root).
 

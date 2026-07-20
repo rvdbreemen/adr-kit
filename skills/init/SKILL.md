@@ -1,12 +1,15 @@
 ---
 name: init
-description: One-shot project bootstrap for adr-kit. Hooks the kit into CLAUDE.md (via a slim stub + a copy of templates/adr-kit-guide.md → .claude/adr-kit-guide.md), runs bin/adr-audit to enumerate decision-shaped artefacts in source + documentation, walks the user through batch approval to generate Accepted ADRs via the adr-generator subagent, installs the pre-commit hook, and finally lints. Idempotent across re-runs. User-invocable only — this is a side-effecting operation.
+description: "Initialize ADR Kit in a project. Use for adr-kit init, first-time ADR setup, architecture audit, managed guidance, and the pre-commit gate."
 argument-hint: "[no arguments]"
 disable-model-invocation: true
 allowed-tools: [Read, Write, Edit, Bash, Glob, Grep, Task]
 ---
 
 # adr-kit init
+
+`$ARGUMENTS` is reserved for future init options and should normally be empty.
+Reject unknown arguments instead of guessing.
 
 You are running the one-shot project bootstrap for adr-kit. Your job is to take a project that has either no ADRs or only legacy-shaped ADRs and:
 

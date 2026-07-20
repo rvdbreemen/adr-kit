@@ -40,6 +40,11 @@ status_history:
     changed_by: Robert van den Breemen
     reason: Human approval: records the v0.34.0 engine-resolution decision after review
     changed_via: adr-kit lifecycle
+  - date: 2026-07-20
+    status: Accepted
+    changed_by: Codex
+    reason: Reverified checkout-engine packaging coverage after native plugin-root hook migration; decision unchanged
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement

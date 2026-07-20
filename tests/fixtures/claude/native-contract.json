@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "client": "claude-code-cli",
+  "official_contract_date": "2026-07-19",
+  "manifest": ".claude-plugin/plugin.json",
+  "component_roots": ["skills", "hooks/hooks.json", ".mcp.json", "agents", "bin"],
+  "events": ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "PreCompact"],
+  "workflow_count": 14,
+  "invocation": "/adr-kit:{workflow}",
+  "windows_required": true,
+  "best_effort": ["macos", "linux"]
+}

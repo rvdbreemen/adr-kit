@@ -1,7 +1,7 @@
 {
   "name": "adr-kit",
   "description": "Architecture Decision Record toolkit for AI coding agents: bootstrap, multi-format authoring, bounded deterministic enforcement, lifecycle workflows, context injection, generated graph indexes, and local health checks.",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "author": {
     "name": "Robert van den Breemen",
     "url": "https://github.com/rvdbreemen"
@@ -25,42 +25,5 @@
     "guardian",
     "staleness-detection"
   ],
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/run-hook.cmd\" session-start",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Edit|MultiEdit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/run-hook.cmd\" pre-tool-use",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|MultiEdit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/run-hook.cmd\" post-tool-use",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  },
   "dependencies": []
 }

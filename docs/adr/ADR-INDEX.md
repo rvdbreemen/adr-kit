@@ -15,3 +15,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-007 | Accepted | `docs/adr/ADR-INDEX.json` | Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be... |
 | ADR-008 | Accepted | `templates/githooks/pre-commit` | Chosen option: add the checkout as another candidate root, ranked by manifest version like every other root, because... |
 | ADR-009 | Accepted | `bin/adr-lint` | Chosen option: bound the gate to the region and vocabulary where a finding is actionable, because it restores the gat... |
+| ADR-010 | Accepted | `schemas/client-capabilities.schema.json` | Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce... |

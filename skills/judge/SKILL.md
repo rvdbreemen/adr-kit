@@ -1,11 +1,14 @@
 ---
 name: judge
-description: Interactive judge of a staged git diff against the project's Accepted ADRs. Runs bin/adr-judge with the LLM pass (Claude Sonnet by default, since v0.13.0) — same engine the pre-commit hook uses, so verdicts are consistent. On violation, walks the user through three resolution paths (write a new ADR, supersede an existing ADR, fix the code). Pairs with the pre-commit hook — invoke before committing on important changes, or after the hook blocks you to drive the resolution.
+description: "Judge a staged diff against Accepted ADRs. Use for ADR compliance, a blocked pre-commit, staged changes, or architectural violations."
 argument-hint: "[no arguments]"
 allowed-tools: [Read, Bash, Edit, Write, Task]
 ---
 
 # adr-kit judge
+
+Use `$ARGUMENTS` as an optional focus for the staged review. Empty means judge
+the complete staged diff.
 
 You are running an interactive judge of the user's staged git diff against the project's Accepted ADRs. As of adr-kit v0.13.0, the LLM evaluation is done by `bin/adr-judge --llm` (Claude Sonnet by default) — same engine and same prompt as the pre-commit hook, so a verdict here matches the verdict the hook would emit. Your job is to drive the resolution loop the hook can't drive: walk the user through fixing each violation interactively.
 

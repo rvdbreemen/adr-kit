@@ -1,6 +1,6 @@
 ---
 name: supersede
-description: Guided supersession of an existing Architecture Decision Record. Shows the target's dependency graph first, drafts and accepts the successor after explicit approval, then uses the transactional lifecycle CLI to update both records and generated indexes. Verifies the chain with bin/adr-related and bin/adr-lint.
+description: "Supersede an Accepted ADR while preserving history and links. Use for replacing a decision, successor ADRs, or changed architecture."
 argument-hint: "[ADR id to supersede; e.g. \"ADR-007\"]"
 license: MIT
 disable-model-invocation: true
@@ -8,6 +8,9 @@ allowed-tools: [Read, Bash, Edit, Write, Task]
 ---
 
 # adr-kit supersede
+
+Use `$ARGUMENTS` as the required ADR id. Ask for the id when it is empty and
+never infer a destructive target.
 
 You are running `/adr-kit:supersede`. Purpose: replace an existing decision
 with a new one without rewriting history. The old ADR's reasoning stays

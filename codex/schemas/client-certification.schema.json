@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rvdbreemen/adr-kit/schemas/client-certification.schema.json",
+  "title": "ADR Kit three-client certification evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "candidate_commit", "contract_date", "records"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "candidate_commit": {"type": "string", "minLength": 7},
+    "contract_date": {"type": "string", "format": "date"},
+    "records": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"$ref": "#/$defs/record"}
+    }
+  },
+  "$defs": {
+    "status": {"enum": ["pass", "fail", "not-run"]},
+    "platform": {
+      "type": "object",
+      "required": ["status", "reason"],
+      "properties": {
+        "status": {"$ref": "#/$defs/status"},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "benchmark": {
+      "type": "object",
+      "required": ["method_id", "state", "samples", "p50_ms", "p95_ms", "max_ms", "hard_timeout_ms", "timed_out", "baseline_p95_ms", "writes"],
+      "properties": {
+        "method_id": {"type": "string"},
+        "state": {"enum": ["cold", "warm"]},
+        "samples": {"type": "integer", "minimum": 5},
+        "p50_ms": {"type": "number", "minimum": 0},
+        "p95_ms": {"type": "number", "minimum": 0},
+        "max_ms": {"type": "number", "minimum": 0},
+        "hard_timeout_ms": {"type": "number", "minimum": 1},
+        "timed_out": {"type": "boolean"},
+        "baseline_p95_ms": {"type": "number", "minimum": 0},
+        "writes": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "client", "client_version", "adr_kit_version", "surface", "os",
+        "candidate_commit", "contract_date", "evidence_mode", "environment_fingerprint",
+        "required_outcomes", "fixtures", "native_smoke", "platforms", "benchmarks",
+        "degradations", "lifecycle_preservation", "native_optimization",
+        "inventory", "dependencies", "release_policy", "source_links", "evidence_links"
+      ],
+      "properties": {
+        "client": {"enum": ["claude-code-cli", "codex-cli", "github-copilot-cli"]},
+        "client_version": {"type": "string"},
+        "adr_kit_version": {"type": "string"},
+        "surface": {"const": "cli"},
+        "os": {"const": "windows"},
+        "candidate_commit": {"type": "string", "minLength": 7},
+        "contract_date": {"type": "string", "format": "date"},
+        "evidence_mode": {"enum": ["simulated", "native"]},
+        "working_tree_clean": {"type": "boolean"},
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "environment_fingerprint": {"type": "string", "minLength": 1},
+        "required_outcomes": {"type": "object", "additionalProperties": {"const": true}},
+        "fixtures": {"type": "object", "additionalProperties": {"const": true}},
+        "native_smoke": {"type": "object", "additionalProperties": {"const": true}},
+        "platforms": {
+          "type": "object",
+          "required": ["windows", "macos", "linux"],
+          "properties": {
+            "windows": {"$ref": "#/$defs/platform"},
+            "macos": {"$ref": "#/$defs/platform"},
+            "linux": {"$ref": "#/$defs/platform"}
+          },
+          "additionalProperties": false
+        },
+        "benchmarks": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"$ref": "#/$defs/benchmark"}
+        },
+        "degradations": {"type": "array", "items": {"type": "string"}},
+        "lifecycle_preservation": {"type": "object", "additionalProperties": {"const": true}},
+        "native_optimization": {"type": "object", "additionalProperties": {"type": "boolean"}},
+        "inventory": {"type": "object"},
+        "dependencies": {"type": "object"},
+        "release_policy": {"type": "object"},
+        "source_links": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "evidence_links": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

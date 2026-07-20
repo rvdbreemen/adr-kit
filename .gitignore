@@ -47,9 +47,11 @@ out/
 *.tmp
 *.bak
 *.log
+*.pdb
 
 # ADR Guardian state (per-machine, never committed)
 .adr-kit-state.json
 docs/adr/.adr-kit-state.json
 .adr-kit-state.json.lock
 docs/adr/.adr-kit-state.json.lock
+.adr-kit-cache/

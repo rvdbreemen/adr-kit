@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "measured_on": "2026-07-19",
+  "method": "Python subprocess.run around a 3,072-byte no_std/no-CRT Windows executable",
+  "samples": 300,
+  "process_startup_included": true,
+  "executable_bytes": 3072,
+  "measurements_ms": {
+    "min": 13.171,
+    "p50": 18.116,
+    "p95": 25.857,
+    "p99": 33.878,
+    "max": 144.603
+  },
+  "comparison_budget_ms": {
+    "p50": 25,
+    "p95": 50,
+    "hard_timeout": 100
+  },
+  "result": {
+    "p50": true,
+    "p95": true,
+    "hard_timeout": false
+  },
+  "conclusion": "The revised 25/50 ms percentile targets accommodate the measured Windows process-creation floor. The separate 100 ms hard timeout remains enforced by the semantic benchmark; this unbounded floor probe recorded one scheduling outlier above it."
+}

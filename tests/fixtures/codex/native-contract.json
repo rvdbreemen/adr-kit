@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "client": "codex-cli",
+  "official_contract_date": "2026-07-19",
+  "manifest": "codex/.codex-plugin/plugin.json",
+  "component_roots": ["codex/skills", "codex/hooks/hooks.json", "codex/.mcp.json", "codex/bin"],
+  "events": ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "PreCompact"],
+  "workflow_count": 14,
+  "invocation": "$adr-kit:{workflow}",
+  "degradations": ["custom prompts are local and deprecated", "hook changes require Codex trust review"],
+  "windows_required": true,
+  "best_effort": ["macos", "linux"]
+}

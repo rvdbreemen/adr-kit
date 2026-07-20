@@ -1,12 +1,14 @@
 ---
 name: retire
-description: Audits Accepted Architecture Decision Records for possible retirement using deterministic staleness, technology-removal, supersession, and enforcement-policy signals. Produces ranked candidates for human review; never edits ADRs.
+description: "Rank Accepted ADRs for retirement. Use for stale decisions, removed technology, supersession signals, or ADR cleanup. Read-only."
 argument-hint: "[ADR directory; defaults to docs/adr/]"
 disable-model-invocation: true
 allowed-tools: [Read, Bash]
 ---
 
 # adr-kit retire
+
+Use `$ARGUMENTS` as the ADR directory; default to `docs/adr/` when it is empty.
 
 You are running `/adr-kit:retire`. This is a read-only audit of Accepted ADRs
 that may no longer describe the project accurately.

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "exceptions": [
+    {
+      "id": "claude-rich-workflow-source",
+      "fixture": "clients/fixtures/claude-rich-workflow-source.json",
+      "rationale": "Claude retains its richer native skill metadata while generated clients use the same compact procedure catalog.",
+      "user_effect": "Claude receives richer discovery text; workflow outcomes and deterministic commands remain equal."
+    },
+    {
+      "id": "copilot-pretool-context-limit",
+      "fixture": "clients/fixtures/copilot-pretool-context-limit.json",
+      "rationale": "Copilot cannot inject arbitrary model context at PreToolUse.",
+      "user_effect": "Proactive deterministic checks and PostToolUse verification replace pre-edit context injection."
+    }
+  ]
+}
