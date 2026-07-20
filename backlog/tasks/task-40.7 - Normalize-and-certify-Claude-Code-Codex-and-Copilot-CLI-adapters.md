@@ -1,11 +1,11 @@
 ---
 id: TASK-40.7
 title: Coordinate native normalization and three-client certification
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-07-19 17:51'
-updated_date: '2026-07-19 23:17'
+updated_date: '2026-07-20 05:26'
 labels:
   - claude
   - codex
@@ -52,7 +52,7 @@ Coordinate first-class native delivery for Claude Code CLI, Codex CLI, and Copil
 - [x] #6 Shared fixtures cover generated drift, version skew, old layouts, settings precedence, missing optional hooks, and user-owned config preservation.
 - [x] #7 No client logic outside Claude, Codex, and Copilot enters TASK-40 packages.
 - [x] #8 TASK-40.7.1, TASK-40.7.2, and TASK-40.7.3 each provide passing independent Windows native certification and documented best-effort macOS/Linux status.
-- [ ] #9 The aggregate support matrix contains only the three clients and the all-three release gate passes.
+- [x] #9 The aggregate support matrix contains only the three clients and the all-three release gate passes.
 - [x] #10 The complete ADR Kit regression suite passes after all three child tasks complete.
 <!-- AC:END -->
 
@@ -78,4 +78,14 @@ Temporary candidate packaging preflight passed without touching the real index: 
 Aggregate certification hardening 2026-07-20: native observations now have a deterministic assembler into the release schema, and release-candidate CI consumes a separately pinned evidence commit to avoid candidate/evidence hash self-reference. The certified three-client matrix and gate receipt are generated only after validation and uploaded as retained artifacts; the candidate's conservative simulated matrix is not falsely promoted.
 
 Current final working-tree evidence: 746 passed, 6 skipped; generator clean p50/p95 713.408/735.485 ms, warm p50/p95 34.965/60.974 ms, zero warm writes; prepared payload SHA-256 6a7fc1bddcf64bd25b6b9e90d7a1d93aae180b2a0d9ae2fad6d658c0ef8e673a; prepared MCP and Claude hook smoke pass. AC #9 remains open because the all-three gate correctly rejects dirty records and requires a maintainer-authorized commit followed by clean commit-bound native reruns.
+
+Release completion 2026-07-20: Claude Code 2.1.215, Codex CLI 0.144.6, and GitHub Copilot CLI 1.0.71 each passed fresh isolated Windows native installation through their own plugin manager. Install/list/discovery/MCP validation passed for all three; the earlier lifecycle run also proved second-install no-op, uninstall, and reinstall. The shared prepared payload SHA-256 is b70e64e03e98f23da91b9156b12881bace06e30243e174cccd29edef3b82c4cf.
+
+The aggregate three-client bundle is retained at evidence commit 44b288d1e70c37a0965705d68af12639ac094339 and is bound to exact candidate 23809600c81f0ba76aabdb052040aa41860adb21. Release workflow run 29718988476 passed the full deterministic suite, independently checked the evidence, passed the all-three gate, and uploaded the support matrix/gate receipt. Release v0.36.0 is published.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Delivered and certified native ADR Kit parity for exactly Claude Code CLI, Codex CLI, and GitHub Copilot CLI. Each client uses the shared deterministic engine with native manifests, skills/prompts, hooks where supported, MCP, managed guidance, installer lifecycle, and doctor checks. Windows native installation and discovery passed for all three; the aggregate evidence is commit-bound and separately retained. The all-three release workflow passed against candidate 23809600c81f0ba76aabdb052040aa41860adb21 and release v0.36.0 was published. Wider clients remain outside this task in future TASK-43.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-40
 title: 'EPIC: Certify Claude, Codex, and Copilot native support'
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-07-19 17:49'
-updated_date: '2026-07-19 23:17'
+updated_date: '2026-07-20 05:26'
 labels:
   - epic
   - plugins
@@ -67,7 +67,7 @@ Deliver first-class native ADR Kit support for exactly Claude Code CLI, Codex CL
 - [x] #4 Detection, install, update, rollback, disable, and uninstall converge idempotently, install verified stable updates automatically outside hook hot paths, and pause before breaking changes or migrations.
 - [x] #5 Fast and deep doctor modes implement the approved safe-repair, --check, and --fix boundaries and diagnose the three clients in human and JSON output.
 - [x] #6 Hooks meet the approved p50, p95, and hard-timeout budgets under a documented cold/warm benchmark method and fail open without model, network, install, index rebuild, or ADR mutation work.
-- [ ] #7 Claude Code CLI, Codex CLI, and Copilot CLI preserve documented workflows and each has independent release-candidate-bound Windows native certification plus best-effort macOS/Linux status.
+- [x] #7 Claude Code CLI, Codex CLI, and Copilot CLI preserve documented workflows and each has independent release-candidate-bound Windows native certification plus best-effort macOS/Linux status.
 - [x] #8 Every ADR Kit release is blocked unless required Claude, Codex, and Copilot evidence passes; no future client participates in TASK-40 completion or release gating.
 - [x] #9 Configured local-model judgment may default on in its documented workflow, while paid/cloud judgment remains explicit opt-in through global defaults with per-project overrides.
 - [x] #10 Documentation, migration, rollback, settings, client-specific degradations, repair authority, and uninstall behavior match implemented evidence and describe only the three active clients.
@@ -107,4 +107,16 @@ Adversarial release audit 2026-07-20 found and fixed three previously hidden blo
 ADR-010 size-budget audit also found `scripts/client_generation.py` above its 400-line support-module target. It is now a 232-line orchestrator backed by 129/312/239-line model, artifact, and state modules; a regression test enforces <=300 lines for TASK-40 entrypoints and <=400 for support modules. Windows benchmark after decomposition: clean p50 713.408 ms / p95 735.485 ms; warm p50 34.965 ms / p95 60.974 ms; zero warm writes. Prepared payload SHA-256 is 6a7fc1bddcf64bd25b6b9e90d7a1d93aae180b2a0d9ae2fad6d658c0ef8e673a; prepared MCP initialize/tools-list and Claude SessionStart fail-open smoke passed.
 
 Final regression after adversarial fixes: 746 passed, 6 skipped; generated adapter drift clean; `git diff --check`, strict ADR lint (10/10), and ADR index drift check pass. Deep doctor verified Codex/Copilot registration, all three MCP/hook packages, live MCP, and all measured hook budgets; it intentionally remains non-green because ADR-010 is still Proposed and Claude registration is trust-pending in the current user environment. AC #7 remains open until a maintainer-authorized candidate commit is created and all three native records are rerun clean against that exact commit.
+
+Release completion 2026-07-20: final candidate 23809600c81f0ba76aabdb052040aa41860adb21 passed PR CI across Python 3.10/3.12 on Windows, macOS, and Ubuntu, then passed release workflow 29718988476 on Windows with the complete suite, strict ADR lint/index/generator checks, independently retained native evidence, and artifact retention.
+
+Claude Code, Codex, and Copilot fresh isolated native installs all passed against the final candidate payload. The prepared payload SHA-256 is b70e64e03e98f23da91b9156b12881bace06e30243e174cccd29edef3b82c4cf. Thirty-sample hook certification met every p50, p95, and hard-timeout target. Evidence commit 44b288d1e70c37a0965705d68af12639ac094339 is pinned to the exact candidate.
+
+ADR-010 is Accepted. Annotated tag v0.36.0 resolves to 23809600c81f0ba76aabdb052040aa41860adb21 and the stable GitHub release is published at https://github.com/rvdbreemen/adr-kit/releases/tag/v0.36.0. TASK-43 remains the sole future scope for additional clients.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Released ADR Kit v0.36.0 with first-class native support limited to Claude Code CLI, Codex CLI, and GitHub Copilot CLI. The release adds deterministic canonical generation, client-native skills/prompts and hook packages, MCP integration, managed project guidance and settings, idempotent installation/update/rollback/uninstall, fast/deep doctor modes, latency-certified fail-open hooks, explicit packaging/dependency budgets, and a pinned all-three release gate. The final candidate passed the full cross-platform PR matrix and Windows release certification with independently retained evidence. No future client was added to active product or release scope; expansion remains in TASK-43.
+<!-- SECTION:FINAL_SUMMARY:END -->
