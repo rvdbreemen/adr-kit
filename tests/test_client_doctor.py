@@ -25,7 +25,11 @@ from adr_doctor_models import benchmark_extension
 from adr_doctor_probes import classify_model_probe
 
 
-def _doctor(project: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+def _doctor(
+    project: Path,
+    *extra: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
@@ -44,6 +48,7 @@ def _doctor(project: Path, *extra: str) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         check=False,
         timeout=60,
+        env=env,
     )
 
 
@@ -96,7 +101,21 @@ def test_fix_backs_up_instruction_before_managed_rewrite(tmp_path):
     (project / "docs" / "adr").mkdir(parents=True)
     agents = project / "AGENTS.md"
     agents.write_text("user guidance\n", encoding="utf-8")
-    result = _doctor(project, "--fix")
+    executable_dir = tmp_path / "bin"
+    executable_dir.mkdir()
+    if os.name == "nt":
+        executable = executable_dir / "codex.cmd"
+        executable.write_text("@echo codex-cli 1.0\n", encoding="utf-8")
+    else:
+        executable = executable_dir / "codex"
+        executable.write_text(
+            "#!/bin/sh\nprintf 'codex-cli 1.0\\n'\n",
+            encoding="utf-8",
+        )
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    env = os.environ.copy()
+    env["PATH"] = str(executable_dir) + os.pathsep + env.get("PATH", "")
+    result = _doctor(project, "--fix", env=env)
     assert result.returncode in {0, 1}
     assert "user guidance" in agents.read_text(encoding="utf-8")
     assert "ADR-KIT CODEX START" in agents.read_text(encoding="utf-8")
