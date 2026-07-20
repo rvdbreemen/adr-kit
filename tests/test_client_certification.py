@@ -316,4 +316,5 @@ def test_release_workflow_pins_evidence_separately_from_candidate():
     assert '--certify "${{ inputs.evidence_bundle }}"' not in workflow
     assert "--support-output .release-output/client-support.md" in workflow
     assert "actions/upload-artifact@v4" in workflow
+    assert "include-hidden-files: true" in workflow
     assert "docs/client-support.md `" not in workflow
