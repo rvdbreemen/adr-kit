@@ -4,7 +4,7 @@
   "contract_date": "2026-07-20",
   "client_version": "2.1.215 (Claude Code)",
   "adr_kit_version": "0.36.0",
-  "source_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+  "source_commit": "23809600c81f0ba76aabdb052040aa41860adb21",
   "working_tree_clean": true,
   "release_eligible": true,
   "prepared_payload_sha256": "b70e64e03e98f23da91b9156b12881bace06e30243e174cccd29edef3b82c4cf",

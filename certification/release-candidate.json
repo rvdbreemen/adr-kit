@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+  "candidate_commit": "23809600c81f0ba76aabdb052040aa41860adb21",
   "contract_date": "2026-07-20",
   "records": [
     {
@@ -31,7 +31,7 @@
           "writes": 0
         }
       ],
-      "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+      "candidate_commit": "23809600c81f0ba76aabdb052040aa41860adb21",
       "client": "claude-code-cli",
       "client_version": "2.1.215 (Claude Code)",
       "contract_date": "2026-07-20",
@@ -169,7 +169,7 @@
           "writes": 0
         }
       ],
-      "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+      "candidate_commit": "23809600c81f0ba76aabdb052040aa41860adb21",
       "client": "codex-cli",
       "client_version": "codex-cli 0.144.6",
       "contract_date": "2026-07-20",
@@ -309,7 +309,7 @@
           "writes": 0
         }
       ],
-      "candidate_commit": "aeb4e7c0576a7a2862305e19a55580f4a223c2e6",
+      "candidate_commit": "23809600c81f0ba76aabdb052040aa41860adb21",
       "client": "github-copilot-cli",
       "client_version": "GitHub Copilot CLI 1.0.71",
       "contract_date": "2026-07-20",
