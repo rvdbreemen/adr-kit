@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -59,6 +61,10 @@ def test_native_hook_host_meets_every_hard_timeout():
     result = measure(ROOT, ROOT, samples=5)
     assert result["method_id"] == METHOD_ID
     assert result["process_startup_included"]
+    if any(
+        item["host"] != "native" for item in result["results"].values()
+    ):
+        pytest.skip("native hook binary is unavailable on this runner")
     assert all(
         item["targets"]["hard_timeout"] for item in result["results"].values()
     ), result

@@ -98,5 +98,6 @@ jobs:
         with:
           name: adr-kit-certification-${{ inputs.candidate_commit }}
           path: .release-output/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 90
