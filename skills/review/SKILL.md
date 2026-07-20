@@ -1,11 +1,14 @@
 ---
 name: review
-description: PR/branch-level ADR audit. Validates the COMMITTED work of the current branch (or a PR) against the project's ADRs in two passes - enforcement (bin/adr-judge on the merge-base range diff, same engine as the pre-commit hook and the CI action) and discovery (find NEW architectural decisions in the diff plus commit messages plus PR description that no ADR documents yet, then draft Proposed ADRs for the ones the user picks). Invoke before opening or merging a PR, or on an existing PR to make sure nothing undocumented slips through. Complements /adr-kit:judge, which only sees the staging area.
+description: "Review a branch or pull request against ADRs. Use for PR review, branch architecture, undocumented decisions, or ADR compliance."
 argument-hint: "[base-ref, default: origin/main]"
 allowed-tools: [Read, Bash, Edit, Write, Task]
 ---
 
 # adr-kit review
+
+Use `$ARGUMENTS` as the base ref, PR, or review target; default to
+`origin/main` when it is empty.
 
 You are auditing the committed work of a branch or PR against the project's ADR set. Two questions, in order:
 

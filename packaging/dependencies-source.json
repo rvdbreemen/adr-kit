@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "runtime": [],
+  "development": [
+    {
+      "name": "pytest",
+      "license": "MIT",
+      "purpose": "test runner",
+      "exact_pin": null
+    }
+  ],
+  "policy": {
+    "runtime_dependency_budget": 0,
+    "exact_pins_require_adr": true,
+    "coverage_is_runtime": false
+  }
+}

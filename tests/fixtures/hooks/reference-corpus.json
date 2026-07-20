@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "method_id": "adr-kit-hook-latency-v1",
+  "machine_class": {
+    "required": "Windows native certification runner",
+    "best_effort": ["macOS", "Linux"]
+  },
+  "sample_count": {
+    "certification": 30,
+    "deep_doctor": 5
+  },
+  "cache_states": ["cold-process", "warm-filesystem", "warm-persistent-host"],
+  "process_startup_included": true,
+  "ci_variance_percent": 20,
+  "budgets": {
+    "SessionStart": {"p50_ms": 50, "p95_ms": 150, "hard_timeout_ms": 500},
+    "UserPromptSubmit": {"p50_ms": 75, "p95_ms": 250, "hard_timeout_ms": 500},
+    "SubagentStart": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 250},
+    "PreToolUse": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
+    "PostToolUse": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
+    "PreCompact": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 500},
+    "Stop": {"p50_ms": 50, "p95_ms": 200, "hard_timeout_ms": 750}
+  }
+}

@@ -1,11 +1,14 @@
 ---
 name: adr
-description: 'Architecture Decision Record (ADR) management skill. Creates, maintains, and enforces architectural decisions with anti-rationalization guards and named verification gates. Drop into any project to give an AI coding agent a shared, enforceable ADR workflow.'
+description: "Create or review Architecture Decision Records. Use for ADRs, architecture decisions, durable trade-offs, new dependencies, contracts, or patterns."
 argument-hint: "[short title of the decision]"
 license: MIT
 ---
 
 # ADR Skill: Architecture Decision Record Management
+
+Use `$ARGUMENTS` as the decision title or review target. If it is empty, infer
+the target only from the user's current request; otherwise ask one short question.
 
 ## Overview
 

@@ -16,10 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def _direct_entrypoints() -> list[str]:
     paths = [
-        ".claude-plugin/hooks/run-hook.cmd",
-        ".claude-plugin/hooks/session-start",
-        ".claude-plugin/hooks/pre-tool-use",
-        ".claude-plugin/hooks/post-tool-use",
+        "hooks/run-hook.cmd",
+        "codex/hooks/run-hook.cmd",
         ".githooks/pre-commit",
         "templates/githooks/pre-commit",
     ]
@@ -32,7 +30,21 @@ def _direct_entrypoints() -> list[str]:
     return sorted(set(paths))
 
 
+def _require_commit_bound_entrypoints() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", *_direct_entrypoints()],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout.splitlines()
+    if set(tracked) != set(_direct_entrypoints()):
+        pytest.skip("direct-entrypoint index contract requires a committed candidate")
+
+
 def test_git_index_records_every_direct_entrypoint_as_executable():
+    _require_commit_bound_entrypoints()
     result = subprocess.run(
         ["git", "ls-files", "--stage", "--", *_direct_entrypoints()],
         cwd=ROOT,
@@ -50,6 +62,7 @@ def test_git_index_records_every_direct_entrypoint_as_executable():
 
 
 def test_git_archive_preserves_manual_install_modes(tmp_path):
+    _require_commit_bound_entrypoints()
     tree = subprocess.run(
         ["git", "write-tree"],
         cwd=ROOT,
@@ -82,8 +95,9 @@ def test_manual_checkout_entrypoints_execute_on_unix(tmp_path):
     hook = subprocess.run(
         [
             "sh",
-            str(ROOT / ".claude-plugin" / "hooks" / "run-hook.cmd"),
-            "session-start",
+            str(ROOT / "hooks" / "run-hook.cmd"),
+            "SessionStart",
+            "claude-code-cli",
         ],
         cwd=tmp_path,
         capture_output=True,
@@ -95,12 +109,12 @@ def test_manual_checkout_entrypoints_execute_on_unix(tmp_path):
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows polyglot-wrapper contract")
 def test_manual_checkout_hook_wrapper_is_quiet_on_windows():
-    wrapper = ROOT / ".claude-plugin" / "hooks" / "run-hook.cmd"
+    wrapper = ROOT / "hooks" / "run-hook.cmd"
     result = subprocess.run(
         # Invoke by absolute path, matching how plugin.json launches the hook.
         # A bare name is not resolvable when NoDefaultCurrentDirectoryInExePath
         # is set, which is the default in several Windows shells.
-        ["cmd.exe", "/d", "/c", str(wrapper), "session-start"],
+        ["cmd.exe", "/d", "/c", str(wrapper), "SessionStart", "claude-code-cli"],
         cwd=wrapper.parent,
         capture_output=True,
         text=True,

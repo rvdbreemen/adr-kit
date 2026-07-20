@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "client": "github-copilot-cli",
+  "official_contract_date": "2026-07-19",
+  "manifest": "copilot/plugin.json",
+  "component_roots": ["copilot/skills", "copilot/hooks.json", "copilot/.mcp.json", "copilot/bin"],
+  "events": ["sessionStart", "userPromptSubmitted", "postToolUse"],
+  "workflow_count": 14,
+  "invocation": "/skills",
+  "degradations": ["PreToolUse cannot inject arbitrary model context; PostToolUse and pre-commit are the edit backstops"],
+  "windows_required": true,
+  "best_effort": ["macos", "linux"]
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "approved_by": "TASK-40.2",
+  "platform": "windows-native",
+  "p95_ms": {
+    "clean": 1000.0,
+    "warm": 150.0
+  },
+  "regression_threshold_percent": 20
+}

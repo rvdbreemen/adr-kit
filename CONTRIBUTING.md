@@ -21,16 +21,82 @@ claude --plugin-dir /path/to/your/adr-kit
 For Codex and the standalone Copilot CLI:
 
 ```bash
-python scripts/sync-agent-plugins.py
-python scripts/sync-agent-plugins.py --check
+python scripts/build-client-adapters.py
+python scripts/build-client-adapters.py --check
 python scripts/install-agent-envs.py --dry-run
 ```
 
 Use a temporary `CODEX_HOME` or `COPILOT_HOME` for isolated install smoke tests.
 Never point either client at the Claude plugin cache.
 
-The payload check normalizes CRLF and LF before comparison. Run it after every
-engine, schema, template, instruction, or Codex skill change.
+`clients/workflows.json`, `clients/capabilities.json`, `hooks/manifest.json`,
+the root `skills/` catalog, `instructions/ADR-guide.md`, and the packaging
+source registries are canonical. Codex/Copilot skills, all prompt wrappers,
+client payload copies, hook declarations, and packaging inventories are
+generated. Native plugin and marketplace manifests remain hand-authored, but
+the generator validates their version, provenance, required artifacts, and
+registered exceptions. Run the exact drift gate after changing any canonical
+input:
+
+```bash
+python scripts/build-client-adapters.py --check
+```
+
+`scripts/sync-agent-plugins.py` remains a compatibility alias. Generation reads
+only declared product roots, uses atomic write-if-changed output, and never
+contacts a network.
+
+Ordinary pull requests validate the simulated all-three certification contract:
+
+```bash
+python scripts/build-client-adapters.py \
+  --certify tests/certification/simulated-pass.json \
+  --candidate-commit simulated-task40 \
+  --support-output docs/client-support.md \
+  --check
+```
+
+Release-candidate automation adds `--release-candidate` and the exact candidate
+commit. That mode rejects simulated, missing, stale, or mixed-commit evidence.
+Native observations are captured only after that candidate is clean. Keep the
+redacted observations and assembled bundle on a separate evidence commit so
+adding evidence cannot change the candidate hash it certifies:
+
+```bash
+python scripts/build-client-adapters.py \
+  --root . \
+  --assemble-native-evidence ../adr-kit-evidence/certification/native \
+  --candidate-commit <40-character-candidate-sha> \
+  --evidence-output ../adr-kit-evidence/certification/release-candidate.json
+```
+
+The evidence root must contain exactly
+`{claude,codex,copilot}/windows-native.json`. Each observation must identify
+the same candidate and prepared-payload hash, record a clean working tree,
+carry passing native smoke/outcome/preservation maps, and contain the
+30-sample hook result. The assembler adds the checked-in Windows generator,
+dependency, and executable evidence, runs the same release validator, and
+writes nothing on failure. Commit the redacted `certification/` directory on
+the evidence branch, then dispatch `release-candidate.yml` with the exact
+candidate SHA, exact evidence-commit SHA, and bundle path. The workflow checks
+out and binds both commits independently; neither a branch name nor evidence
+from inside the candidate checkout can promote a release. A passing run emits
+the native-certified support matrix and machine-readable gate result as the
+`adr-kit-certification-<candidate>` workflow artifact. It does not rewrite the
+candidate's conservative simulated matrix.
+
+Windows-native generator performance is release evidence. Recalibrate it after
+changing the graph, renderer, cache, or output count:
+
+```bash
+python scripts/benchmark-client-generation.py --samples 11
+```
+
+The checked-in baseline blocks p95 regressions above 20 percent. Clean builds
+include process startup; warm measurements use the persistent-host path and
+record standalone Python startup separately. The stat-keyed cache is
+disposable, ignored, and never packaged; deleting it forces full byte
+validation without changing output.
 
 ## How to add a skill
 
@@ -71,15 +137,19 @@ Release steps:
 2. Run `python bin/bump-version X.Y.Z`. It stamps all client manifests,
    marketplaces, copied-artifact versions, and rolls `Unreleased` into the
    dated release section.
-3. Run `python scripts/sync-agent-plugins.py`, then inspect `git status` and
+3. Run `python scripts/build-client-adapters.py`, then inspect `git status` and
    `git diff`. Stage every stamped/generated file, including the guide,
    pre-commit wrapper, and both marketplace manifests.
 4. Run the validation commands below and complete the manual client smoke test.
-5. Commit the changes (`chore(release): vX.Y.Z (...)`).
-6. Tag with the repository's published convention:
+5. Commit the release candidate (`chore(release): vX.Y.Z (...)`), then capture
+   and assemble the three native Windows observations on the separate evidence
+   commit described above.
+6. Run the `ADR Kit release candidate` workflow with both exact commit SHAs.
+   Do not continue unless its all-three gate passes.
+7. Tag the validated candidate with the repository's published convention:
    `git tag -a vX.Y.Z -m "..."`.
-7. `git push` and `git push --tags`.
-8. Create a GitHub Release on the new tag with notes summarised from the CHANGELOG.
+8. `git push` and `git push --tags`.
+9. Create a GitHub Release on the new tag with notes summarised from the CHANGELOG.
 
 ## Code style
 
@@ -105,7 +175,7 @@ CI is enforced by `.github/workflows/validate.yml` on every push and pull reques
 Run the local equivalent before opening a PR:
 
 ```bash
-python scripts/sync-agent-plugins.py --check
+python scripts/build-client-adapters.py --check
 python bin/adr-doctor
 python bin/adr-index docs/adr/ --check
 python bin/adr-index --adr-dir docs/adr -o docs/adr/ADR-INDEX.md --check

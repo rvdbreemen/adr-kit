@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "source": "hooks/manifest.json",
+  "policy": {
+    "fail_open": true,
+    "network_allowed": false,
+    "future_clients_allowed": false
+  },
+  "events": [
+    {
+      "id": "session-start",
+      "command": "session-start",
+      "matcher": null,
+      "outcome": "task-context",
+      "latency_budget_ms": 500,
+      "latency": {"p50_ms": 50, "p95_ms": 150, "hard_timeout_ms": 500},
+      "clients": {
+        "claude-code-cli": "SessionStart",
+        "codex-cli": "SessionStart",
+        "github-copilot-cli": "sessionStart"
+      }
+    },
+    {
+      "id": "user-prompt-submit",
+      "command": "user-prompt-submit",
+      "matcher": null,
+      "outcome": "task-context",
+      "latency_budget_ms": 500,
+      "latency": {"p50_ms": 75, "p95_ms": 250, "hard_timeout_ms": 500},
+      "clients": {
+        "claude-code-cli": "UserPromptSubmit",
+        "codex-cli": "UserPromptSubmit",
+        "github-copilot-cli": "userPromptSubmitted"
+      }
+    },
+    {
+      "id": "pre-tool-use",
+      "command": "pre-tool-use",
+      "matcher": "Edit|MultiEdit|Write",
+      "outcome": "edit-governance",
+      "latency_budget_ms": 100,
+      "latency": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
+      "clients": {
+        "claude-code-cli": "PreToolUse",
+        "codex-cli": "PreToolUse",
+        "github-copilot-cli": null
+      }
+    },
+    {
+      "id": "post-tool-use",
+      "command": "post-tool-use",
+      "matcher": "Edit|MultiEdit|Write",
+      "outcome": "edit-governance",
+      "latency_budget_ms": 100,
+      "latency": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
+      "clients": {
+        "claude-code-cli": "PostToolUse",
+        "codex-cli": "PostToolUse",
+        "github-copilot-cli": "postToolUse"
+      }
+    },
+    {
+      "id": "subagent-start",
+      "command": "subagent-start",
+      "matcher": null,
+      "outcome": "task-context",
+      "latency_budget_ms": 250,
+      "latency": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 250},
+      "clients": {
+        "claude-code-cli": "SubagentStart",
+        "codex-cli": "SubagentStart",
+        "github-copilot-cli": null
+      }
+    },
+    {
+      "id": "pre-compact",
+      "command": "pre-compact",
+      "matcher": null,
+      "outcome": "lifecycle",
+      "latency_budget_ms": 500,
+      "latency": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 500},
+      "clients": {
+        "claude-code-cli": "PreCompact",
+        "codex-cli": "PreCompact",
+        "github-copilot-cli": null
+      }
+    }
+  ]
+}

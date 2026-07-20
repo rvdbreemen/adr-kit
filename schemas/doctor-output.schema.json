@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rvdbreemen/adr-kit/schemas/doctor-output.schema.json",
+  "title": "ADR Kit doctor output",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "mode",
+    "root",
+    "overall_status",
+    "clients",
+    "summary",
+    "checks",
+    "repairs",
+    "adr",
+    "exit_code"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"enum": ["fast", "deep"]},
+    "root": {"type": "string"},
+    "overall_status": {
+      "enum": ["healthy", "repaired", "degraded", "failed"]
+    },
+    "clients": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claude", "codex", "copilot"],
+      "properties": {
+        "claude": {"$ref": "#/$defs/status"},
+        "codex": {"$ref": "#/$defs/status"},
+        "copilot": {"$ref": "#/$defs/status"}
+      }
+    },
+    "summary": {"type": "object"},
+    "checks": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/check"}
+    },
+    "repairs": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "adr": {"type": "object"},
+    "exit_code": {"enum": [0, 1]}
+  },
+  "$defs": {
+    "status": {
+      "enum": [
+        "healthy",
+        "repaired",
+        "degraded",
+        "disabled",
+        "trust-pending",
+        "stale",
+        "unsupported",
+        "failed"
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "client",
+        "status",
+        "required",
+        "summary",
+        "evidence",
+        "repairs",
+        "degradations",
+        "actions",
+        "extension"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "client": {"type": "string"},
+        "status": {"$ref": "#/$defs/status"},
+        "required": {"type": "boolean"},
+        "summary": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "object"}},
+        "repairs": {"type": "array", "items": {"type": "object"}},
+        "degradations": {"type": "array", "items": {"type": "object"}},
+        "actions": {"type": "array", "items": {"type": "object"}},
+        "extension": {
+          "oneOf": [{"type": "object"}, {"type": "null"}]
+        }
+      }
+    }
+  }
+}

@@ -1,12 +1,15 @@
 ---
 name: upgrade
-description: Refresh a project's installed adr-kit artifacts after a plugin update, and migrate legacy footprints. Runs adr-guardian artifacts to detect copied wrappers (git pre-commit hook, project-scoped settings entry, guide file) that lag the installed plugin version, refreshes them idempotently, and still handles the legacy v0.11 to v0.12 migration (CLAUDE.md stub, guide copy, hook install, Enforcement backfill). Safe to re-run.
+description: "Upgrade ADR Kit project artifacts and legacy layouts. Use after a plugin update, for stale wrappers, guide refresh, or migration."
 argument-hint: "[no arguments]"
 disable-model-invocation: true
 allowed-tools: [Read, Write, Edit, Bash, Task]
 ---
 
 # adr-kit upgrade
+
+`$ARGUMENTS` should be empty. Stop for confirmation before any breaking
+migration or backup-backed rewrite.
 
 You bring a project's **installed adr-kit artifacts** in line with the **installed plugin version**. Two jobs, run in order:
 

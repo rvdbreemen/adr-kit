@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "adr-kit": {
+      "command": "python",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/bin/adr-mcp"
+      ]
+    }
+  }
+}

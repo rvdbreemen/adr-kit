@@ -1,12 +1,15 @@
 ---
 name: context
-description: Loads the Architecture Decision Records most relevant to a task before you implement it, so existing decisions are considered without burning context on the whole ADR set. Give it a topic (e.g. "mqtt discovery", "heap allocation", "caching") and it returns the 3-5 most relevant ADRs with lifecycle metadata, source path, decision summary, scope, declared links, and explainable relevance signals. Read-only and safe to call from parallel subagents.
+description: "Find ADRs relevant to a task before implementation. Use for ADR context, governing decisions, architecture constraints, or why a design exists. Read-only."
 argument-hint: "[topic or task description; e.g. \"mqtt discovery\"]"
 license: MIT
 allowed-tools: [Read, Bash]
 ---
 
 # adr-kit context
+
+Use `$ARGUMENTS` as the task topic. If empty, use the current user request or
+ask for one short topic when the request does not identify one.
 
 You are running `/adr-kit:context`. Purpose: surface the ADRs that constrain the
 task at hand **before** writing code, so you implement within existing decisions

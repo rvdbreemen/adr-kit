@@ -154,7 +154,7 @@
       "path": "ADR-008-resolve-the-enforcement-engine-from-a-version-ranked-root-set-including-the-checkout.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-18",
+      "date": "2026-07-20",
       "decision_summary": "Chosen option: add the checkout as another candidate root, ranked by manifest version like every other root, because...",
       "scope": {
         "path_globs": [
@@ -191,6 +191,31 @@
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_lint_clarity.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-010",
+      "title": "Certify Three Native CLI Clients Through One Outcome Contract",
+      "path": "ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-20",
+      "decision_summary": "Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce...",
+      "scope": {
+        "path_globs": [
+          "schemas/client-capabilities.schema.json"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "three-client-release",
+        "documents_shipped": false,
+        "verified_in": [
+          "schemas/client-capabilities.schema.json",
+          "tests/test_client_capabilities_schema.py"
         ],
         "supersedes": [],
         "superseded_by": null
@@ -321,6 +346,48 @@
     {
       "source": "ADR-009",
       "target": "ADR-007",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-006",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-007",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-008",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-009",
       "type": "related",
       "resolved": true
     }

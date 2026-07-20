@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import textwrap
+from datetime import date
 from pathlib import Path
 
 
@@ -131,8 +132,8 @@ def test_doctor_detects_stale_index_and_fix_index_cleans_it(tmp_path):
     adr_dir = _repo(tmp_path)
     _write_adr(adr_dir)
 
-    stale_code, stale = _run_doctor(adr_dir, tmp_path)
-    fixed_code, fixed = _run_doctor(adr_dir, tmp_path, "--fix-index")
+    stale_code, stale = _run_doctor(adr_dir, tmp_path, "--check")
+    fixed_code, fixed = _run_doctor(adr_dir, tmp_path)
 
     assert stale_code == 1
     assert stale["summary"]["index_ok"] is False
@@ -176,6 +177,45 @@ def test_doctor_reports_accepted_evidence_changed_after_acceptance(tmp_path):
     assert any(f["type"] == "accepted_evidence_changed" for f in out["findings"])
     assert out["audit"]["triggered"] is True
     assert out["audit"]["reason"] == "material_drift"
+
+
+def test_doctor_honors_lifecycle_evidence_review_after_acceptance(tmp_path):
+    adr_dir = _repo(tmp_path)
+    path = _write_adr(
+        adr_dir,
+        status="Accepted",
+        date="2000-01-01",
+        verified_in=["src/app.py:shipped_symbol"],
+    )
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + f"""
+
+## Status History
+
+```yaml
+status_history:
+  - date: {date.today().isoformat()}
+    status: Accepted
+    changed_by: reviewer
+    reason: Reverified changed evidence without changing the decision
+    changed_via: adr-kit lifecycle
+```
+""",
+        encoding="utf-8",
+    )
+
+    code, out = _run_doctor(adr_dir, tmp_path, "--fix-index")
+
+    assert code == 0, {
+        "findings": out["findings"],
+        "summary": out["summary"],
+        "adr": out["adr"]["summary"],
+    }
+    assert not any(
+        finding["type"] == "accepted_evidence_changed"
+        for finding in out["findings"]
+    )
 
 
 def test_doctor_surfaces_missing_named_gate_from_strict_lint(tmp_path):

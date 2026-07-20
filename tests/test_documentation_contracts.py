@@ -171,6 +171,14 @@ def test_first_class_client_docs_and_skill_metadata_are_english():
 
 def test_product_docs_do_not_advertise_removed_client():
     removed_client = "cur" + "sor"
+    evidence_directories = {"plans", "research", "reviews", "superpowers"}
+    product_docs = [
+        path
+        for path in sorted((REPO_ROOT / "docs").rglob("*.md"))
+        if not evidence_directories.intersection(
+            path.relative_to(REPO_ROOT / "docs").parts
+        )
+    ]
     roots = [
         REPO_ROOT / "README.md",
         REPO_ROOT / "INSTALL.md",
@@ -179,7 +187,7 @@ def test_product_docs_do_not_advertise_removed_client():
         REPO_ROOT / "CONTRIBUTING.md",
         REPO_ROOT / "MIGRATING-FROM-ADR-SKILL.md",
         REPO_ROOT / ".claude-plugin" / "plugin.json",
-        *sorted((REPO_ROOT / "docs").rglob("*.md")),
+        *product_docs,
         *sorted((REPO_ROOT / "instructions").glob("*.md")),
     ]
     for path in roots:

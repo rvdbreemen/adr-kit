@@ -1,12 +1,15 @@
 ---
 name: migrate
-description: Preview and migrate legacy or supported ADR body profiles. Adds canonical metadata and converts between MADR, Nygard, and legacy canonical headings without rewriting decision prose.
+description: "Preview or migrate ADR metadata and body profiles. Use for legacy ADRs, MADR, Nygard, canonical conversion, or migration planning."
 argument-hint: "[file or directory; defaults to docs/adr/]"
 disable-model-invocation: true
 allowed-tools: [Read, Edit, Glob, Grep]
 ---
 
 # adr-kit migrate
+
+Use `$ARGUMENTS` as the file or directory; default to `docs/adr/`. Always
+preview before applying a migration.
 
 You are running `/adr-kit:migrate`. The user wants to add invariant adr-kit
 metadata or convert between the supported `madr`, `nygard`, and `canonical`

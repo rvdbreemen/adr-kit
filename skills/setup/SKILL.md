@@ -1,11 +1,15 @@
 ---
 name: setup
-description: One-time project setup for adr-kit. Hooks `CLAUDE.md` (slim stub with @-import) and drops the canonical guide at `.claude/adr-kit-guide.md`. v0.11-style inline `## ADR Kit Rules` sections are detected and left untouched (run `/adr-kit:upgrade` to migrate them). Idempotent across re-runs. The lighter cousin of `/adr-kit:init` — `setup` does not run a codebase audit or install the pre-commit hook.
+description: "Set up ADR Kit project guidance without an architecture audit. Use for managed CLAUDE.md guidance, the local ADR guide, or lightweight setup."
+argument-hint: "[no arguments]"
 disable-model-invocation: true
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 
 # adr-kit setup
+
+`$ARGUMENTS` should be empty. Reject unknown arguments instead of changing the
+setup scope.
 
 You are running the one-time project setup for the adr-kit plugin. Your job is to:
 

@@ -57,6 +57,7 @@ From the ADR Kit checkout:
 ```bash
 python --version
 python scripts/install-agent-envs.py --detect-only
+python scripts/install-agent-envs.py --plan --format json
 ```
 
 Use `python3`, `py -3`, or an absolute interpreter path when that is the
@@ -102,6 +103,13 @@ Or install an approved subset:
 ```bash
 python scripts/install-agent-envs.py --clients codex,copilot --project-root <absolute-target-project>
 ```
+
+Inspect the desired-state plan before mutation. Detected clients are selected
+by default; `clients.claude.enabled`, `clients.codex.enabled`, and
+`clients.copilot.enabled` provide global defaults with project overrides.
+Breaking-version migrations require `--yes`. Each client has its own lock,
+validation, evidence, and previous-payload rollback. Stable update checks run
+from setup or deferred maintenance, never from lifecycle hooks.
 
 The installer uses separate native payloads:
 
@@ -181,9 +189,22 @@ Run the native `init` workflow once in the project:
 - GitHub Copilot CLI: invoke the installed ADR Kit `init` skill
 
 Initialization adds managed project guidance, audits existing architectural
-decisions, proposes initial ADRs for review, and offers the deterministic
-pre-commit gate. Use `setup` instead when the user wants guidance only, without
-the audit or hook.
+decisions, proposes initial ADRs for review, and installs the deterministic
+pre-commit gate by default.
+
+The client-neutral project registration path is:
+
+```bash
+python <absolute-adr-kit-checkout>/scripts/setup-project.py --project-root <absolute-target-project> --dry-run
+python <absolute-adr-kit-checkout>/scripts/setup-project.py --project-root <absolute-target-project>
+python <absolute-adr-kit-checkout>/scripts/settings.py --project-root <absolute-target-project> show
+```
+
+It writes generated `.adr-kit/ADR-guide.md` and independent ADR Kit blocks in
+`AGENTS.md`, `CLAUDE.md`, and Copilot instructions. It preserves user bytes
+outside markers and never overwrites `.adr-kit/ADR-guide.local.md`. To request
+guidance-only setup, set `pre_commit.enabled` to `false` before applying setup;
+set it back to `true` and rerun to re-enable the owned hook.
 
 After initialization, validate the target project. Replace both placeholders
 with absolute paths:

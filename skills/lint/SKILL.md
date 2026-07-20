@@ -1,12 +1,15 @@
 ---
 name: lint
-description: Lints existing Architecture Decision Records against four verification gates plus the deterministic status-history audit. Run on a single ADR file or on the whole docs/adr/ tree. Reports pass/fail per gate per file with file:line citations for failures. Read-only.
+description: "Lint ADRs against schema and four verification gates. Use for ADR lint, validation, status-history checks, or file-and-line findings. Read-only."
 argument-hint: "[file or directory; defaults to docs/adr/]"
 disable-model-invocation: true
 allowed-tools: [Read, Glob, Grep]
 ---
 
 # adr-kit lint
+
+Use `$ARGUMENTS` as the ADR file or directory; default to `docs/adr/` when it
+is empty.
 
 You are running `/adr-kit:lint`. The user wants to know whether existing ADRs in their project pass the four verification gates that the main `adr` skill enforces and, for v0.14 ADRs, whether their status histories are intact. You read files; you do not modify them. You report.
 

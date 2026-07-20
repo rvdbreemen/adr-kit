@@ -1,12 +1,14 @@
 ---
 name: related
-description: Shows the dependency graph for one Architecture Decision Record. Give it an ADR id (e.g. "ADR-007") and it lists outbound edges (Related Decisions entries, Supersedes claims, Superseded by / Amended by status refs) and inbound edges (every other ADR that references it, with the reference kind), flagging dangling references to ADRs that do not exist. Read-only and safe to call from parallel subagents. Invoke before superseding or retiring an ADR, or whenever you need to know what depends on a decision.
+description: "Show inbound and outbound links for one ADR. Use for related decisions, dependencies, dangling ADR links, supersession, or retirement. Read-only."
 argument-hint: "[ADR id; e.g. \"ADR-007\" or \"7\"]"
 license: MIT
 allowed-tools: [Read, Bash]
 ---
 
 # adr-kit related
+
+Use `$ARGUMENTS` as the required ADR id. Ask for the id when it is empty.
 
 You are running `/adr-kit:related`. Purpose: show who an ADR points at and who
 points back at it, before anyone changes its status. This is read-only; it

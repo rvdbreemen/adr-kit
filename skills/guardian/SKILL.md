@@ -1,11 +1,14 @@
 ---
 name: guardian
-description: "ADR-set health sweep for adr-kit. Runs the due health tier(s) — cheap (drift + stale + lint) and/or LLM (suggest + audit) — applies mix-by-finding-type responses, and stamps the state file when done. Invoke after seeing an [adr-guardian] ... DUE block at session start, or on demand to run a full health sweep. Accepts optional arg: cheap | llm | all. LLM tier always asks before spending."
+description: "Check ADR health, drift, stale decisions, and lint. Use for ADR guardian, health sweep, stale ADRs, or an [adr-guardian] DUE notice."
 argument-hint: "[cheap | llm | all]"
 allowed-tools: [Read, Bash, Edit, Write, Task, Glob, Grep]
 ---
 
 # adr-kit guardian
+
+Use `$ARGUMENTS` as `cheap`, `llm`, or `all`; default to the due tier when it
+is empty. Never start paid or cloud judgment without explicit permission.
 
 You are running the ADR-set health sweep. Your job is to run whichever tier(s) are due (or were requested), surface findings using the mix-by-finding-type responses below, and stamp the state file when done.
 
