@@ -145,7 +145,7 @@ required.
 
 The Claude integration keeps only its manifest under `.claude-plugin/`.
 Plugin-root `skills/`, `hooks/hooks.json`, `.mcp.json`, agents, and bundled
-executables provide 14 workflows, six bounded hooks, and the four-tool MCP
+executables provide 15 workflows, six bounded hooks, and the five-tool MCP
 server.
 
 ### OpenAI Codex
@@ -159,8 +159,8 @@ codex mcp list
 Codex does not use Claude's `/adr-kit:...` slash-command syntax. ADR Kit
 workflows appear as namespaced skills: open `/skills`, or invoke
 `$adr-kit:context`, `$adr-kit:judge`, `$adr-kit:lint`, and the other skills.
-The separate `codex/` distribution contains all 14 workflows and the key-free
-four-tool MCP server. See the official [Codex skills](https://learn.chatgpt.com/docs/build-skills)
+The separate `codex/` distribution contains all 15 workflows and the key-free
+five-tool MCP server. See the official [Codex skills](https://learn.chatgpt.com/docs/build-skills)
 and [plugin](https://learn.chatgpt.com/docs/build-plugins) contracts.
 
 ### Standalone GitHub Copilot CLI
@@ -175,7 +175,7 @@ copilot mcp list
 This targets `@github/copilot` invoked as `copilot`, not `gh copilot` or VS
 Code agent mode. The separate `copilot/` distribution follows GitHub's
 [Copilot plugin contract](https://docs.github.com/en/copilot/concepts/agents/about-plugins)
-and installs 14 skills plus the same key-free MCP server.
+and installs 15 skills plus the same key-free MCP server.
 Open `/skills` inside Copilot CLI to discover ADR Kit workflows. Its lower-camel
 hook package supplies proactive session/task context and PostToolUse; pre-commit
 remains the edit-enforcement backstop.
@@ -229,6 +229,18 @@ Three layers, each with a clear path:
 - **`/adr-kit:adr`** loads the full authoring guide. Its two signature disciplines, borrowed and battle-tested from earlier skills (see [Credits](#credits)):
   - **Anti-rationalization guards**: a table of the excuses agents and humans use to skip writing an ADR ("it is obvious", "I will document it later", "the code speaks for itself"), each with a counter-argument. Fires before the decision goes unrecorded.
   - **Four verification gates**: Completeness, Evidence, Clarity, Consistency. An ADR cannot flip from `Proposed` to `Accepted` until it passes all four, and a reviewer can block on a single named gate ("fails Evidence, add measurements").
+- **`/adr-kit:grill`** turns incomplete knowledge into a useful decision record.
+  It reads repository facts first, labels claims as observed, human-stated,
+  inferred, or unknown, and asks one unresolved decision question at a time.
+  It can complete an existing Proposed ADR, reconstruct a decision from a PR,
+  git range, chat log, or document, and revalidate an older decision. Source
+  material is evidence, never acceptance authority.
+- **`bin/adr-readiness`** is the deterministic companion to grilling. It
+  classifies a record, separates mechanical fixes from human decisions,
+  resolves explicit implementation links, and emits stable human, JSON, or
+  GitHub output without invoking a model or changing lifecycle state.
+  See the [ADR Grilling user guide](docs/adr-grilling.md) for complete
+  subject, reconstruction, resume, queue, acceptance, and CI examples.
 - **`adr-generator` agent** scaffolds the ADR for you: decision tree for "does this need an ADR?", a proposed `## Enforcement` block when the decision has a code surface, and a post-write quality check.
 - **`/adr-kit:init`'s audit** mines an existing codebase for decisions already in effect, so you start with a real decision log instead of an empty directory.
 - **`/adr-kit:review`** audits a finished branch or PR: it enforces the existing ADRs against the committed range diff and, crucially, hunts for **new decisions the branch introduced but never recorded**, reading both the diff and the stated intent (commit messages, PR description), because decisions are often confessed in prose while the diff looks like plumbing. Found candidates are deduped against your existing set and drafted as `Proposed`, never auto-accepted.
@@ -252,7 +264,7 @@ Three layers, each with a clear path:
 
 ### Maintain the decision log (decisions age; the kit notices)
 
-- **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, and lint health. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
+- **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart reads only that local 24-hour cache and offers at most three next actions; it never scans or starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
   - **Team mode (v0.22.0+)**: a weekly CI cron sweep maintains a single "ADR guardian audit" tracking issue (created on findings, updated, closed when clean) so the whole team sees ADR health, not just whoever opened a session today. Copy `templates/github-workflows/adr-guardian-audit.yml` into your repo.
   - **Trend history (v0.29.0+)**: every sweep appends to a 52-entry trend log, and the nudge shows the delta: `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`. A KPI with memory, not a snapshot.
 - **Health dashboard (`bin/adr-status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, and since v0.29.0 the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
@@ -260,7 +272,7 @@ Three layers, each with a clear path:
 - **Generated index refresh (`bin/adr-index docs/adr/`)**: atomically rebuilds the sentinel-owned `docs/adr/README.md` block plus `ADR-INDEX.md` and `ADR-INDEX.json`. `--check` exits non-zero when any generated view is missing or stale, or duplicate ADR ids exist. Use `--format graph --adr-dir docs/adr` to inspect the graph without writing.
 - **Local doctor (`bin/adr-doctor`)**: fast mode checks ADR/index state, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
 - **Lifecycle commands (`bin/adr`, v0.32.0+)**: local `propose`, `accept`, `supersede`, `reject`, and `document` commands update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated README index.
-- **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then auto-accept only when strict lint and quality checks pass. `--auto-mode assist` reports eligibility without mutating until confirmed.
+- **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then verify strict lint, quality, and human readiness. The default `assist` mode reports eligibility without mutating; acceptance requires `--confirm` after the engineer reviews the packet. Existing projects that intentionally require the legacy automatic transition can explicitly configure `lifecycle.auto_accept.mode: "auto"`.
 - **Retirement audit (`/adr-kit:retire`, `bin/adr-retire`)**: ranks Accepted ADRs for retirement using four deterministic signals (status age, technology removal, supersession, policy drift). Read-only; a recommendation always needs a human.
 - **Dependency graph (`/adr-kit:related`, `bin/adr-related`)**: who does ADR-007 point at, and who points back? Outbound and inbound edges per declared reference kind, with dangling links flagged. The same normalized edges are available repository-wide in `ADR-INDEX.json`.
 - **Guided supersession (`/adr-kit:supersede`)**: replace a decision without rewriting history. The skill shows the dependency graph first, drafts the successor as `Proposed`, and asks before changing lifecycle state. The lifecycle CLI enforces legal transitions and all acceptance gates, rejects competing chains, and updates both records plus generated indexes in one rollback-safe transaction.
@@ -272,7 +284,7 @@ Three layers, each with a clear path:
 A deliberately thin MCP server (stdio, newline-delimited JSON-RPC 2.0, Python
 stdlib only, zero dependencies) that exposes the guardrails to Claude Code,
 OpenAI Codex, GitHub Copilot CLI, or another compatible local stdio MCP
-client. Four tools, all key-free:
+client. Five tools, all key-free:
 
 | Tool | Arguments | Wraps |
 | --- | --- | --- |
@@ -280,6 +292,7 @@ client. Four tools, all key-free:
 | `adr_judge` | `diff` (string) | `adr-judge` (declarative pass only) |
 | `adr_status` | none | `adr-status --format json` |
 | `adr_quality` | `adr_id?` (string) | `adr-quality --format json` per ADR |
+| `adr_readiness` | `adr_id?`, `all_proposed?`, `changed_paths?`, `source_text?`, `today?` | shared read-only readiness model |
 
 ```bash
 # Claude Code
@@ -299,7 +312,10 @@ For another stdio client, place the following in its MCP configuration:
 }
 ```
 
-Why only four tools? Contrast is the feature: the 73-tool approach already exists elsewhere. adr-kit ships the smallest surface that carries the guardrails and nothing that needs an API key.
+Why only five tools? Contrast is the feature: adr-kit ships the smallest
+surface that carries the guardrails and readiness facts, and nothing that needs
+an API key. Grilling itself stays in the client session so an engineer or
+architect remains part of the decision.
 
 ## Slash commands
 
@@ -308,6 +324,7 @@ Why only four tools? Contrast is the feature: the 73-tool approach already exist
 | Command | Type | Auto-invocable | When to use |
 |---|---|---|---|
 | `/adr [title]` | knowledge / guide | yes | Author or review an ADR: anti-rationalization guards, four gates, supersession workflow. |
+| `/adr-kit:grill [target]` | guided decision interview | yes | Complete a Proposed ADR, reconstruct one from a PR/range/source, or revalidate an existing decision; asks one evidence-backed question at a time. |
 | `/adr-kit:init` | one-time bootstrap | no | Once per project: CLAUDE.md stub, codebase audit to Accepted ADRs, pre-commit hook. |
 | `/adr-kit:setup` | one-time write | no | Lighter alternative: stub plus guide only, no audit, no hook. Idempotent. |
 | `/adr-kit:context [topic]` | read-only lookup | yes | Load the 3 to 5 most relevant ADRs before implementing; verify lifecycle status in the source ADR. |
@@ -348,6 +365,24 @@ python bin/adr profiles
 python bin/adr new "Short imperative title" --adr-dir docs/adr
 python bin/adr new "Concise Nygard record" --profile nygard --adr-dir docs/adr
 ```
+
+Then finish the decision deliberately:
+
+```text
+/adr-kit:grill ADR-NNN
+```
+
+The grill loop records each answer, leaves unresolved items under
+`## Open Questions`, and ends with an acceptance packet. Only an explicit
+same-session `yes` authorizes the lifecycle command:
+
+```bash
+python bin/adr accept ADR-NNN --changed-by "<engineer>" --reason "<decision>"
+```
+
+If the session stops early, the valid Proposed ADR and
+`/adr-kit:grill ADR-NNN` are the resumable state. A PR, commit, chat log, or
+source document can supply evidence but can never imply acceptance.
 
 The strict filename contract remains uppercase `ADR-` plus a three-digit
 number. Existing canonical records remain valid. `adr profiles` is the
@@ -440,6 +475,28 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
 State lives in `docs/adr/.adr-kit-state.json`: gitignored, per-machine, atomic writes, safe across parallel sessions.
 
 ## CI integration
+
+### Proposed-ADR readiness: `adr-readiness` (composite action)
+
+Copy `templates/github-workflows/adr-readiness.yml`, or invoke the action
+directly after a full-history checkout:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@main
+  with:
+    adr-dir: docs/adr
+```
+
+The action compares the pull request's exact base and head SHAs, writes a
+sanitized step summary plus annotations, and exports stable counts and ADR ids.
+It exits `1` only when changed implementation is explicitly linked to a
+`Proposed` ADR. Architecture-sensitive changes without a proven link are
+advisory; Accepted, Rejected, and Superseded ADRs never block this readiness
+gate. Missing refs or runtime failures exit `2`. It is stdlib-only, key-free,
+comment-free, and model-free.
 
 ### PR enforcement: `bin/adr-judge` (composite action)
 
@@ -574,7 +631,7 @@ A plain ADR template gives you a markdown file with sections to fill in. What `a
 | Enforcement | absent | declarative rules vs every commit and PR, key-free; opt-in LLM judge |
 | Aging | absent | guardian (drift, missing, stale), retirement audit, trend history, coverage KPI |
 | Team workflows | absent | CI sweeps with tracking issue, collision-safe numbering, audited overrides, guided supersession |
-| Tool integration | none | Claude Code, OpenAI Codex, and GitHub Copilot CLI integrations plus a 4-tool MCP server |
+| Tool integration | none | Claude Code, OpenAI Codex, and GitHub Copilot CLI integrations plus a 5-tool MCP server |
 
 If your team is happy with a plain template and the discipline lives in your culture, you do not need this. If you want the discipline to survive contact with an AI agent at 2 a.m., this is what `adr-kit` is for.
 
@@ -582,10 +639,10 @@ If your team is happy with a plain template and the discipline lives in your cul
 
 ```
 adr-kit/
-├── skills/            # 14 Claude Code skills
+├── skills/            # 15 Claude Code skills
 ├── hooks/             # Claude hook config plus shared fail-open runtime
-├── codex/             # Codex plugin: 14 skills, hooks, MCP, packaged engines
-├── copilot/           # Copilot CLI plugin: 14 skills, hooks, MCP, engines
+├── codex/             # Codex plugin: 15 skills, hooks, MCP, packaged engines
+├── copilot/           # Copilot CLI plugin: 15 skills, hooks, MCP, engines
 ├── scripts/           # detected-client installer and payload sync check
 ├── agents/            # adr-generator subagent
 ├── bin/               # 20 stdlib-only Python entry points plus shared helpers

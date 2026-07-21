@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rvdbreemen/adr-kit/schemas/adr-readiness.schema.json",
+  "title": "ADR Kit readiness report",
+  "type": "object",
+  "required": ["schema_version", "evaluated_on", "adr_dir", "summary", "advisories", "adrs"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "evaluated_on": {"type": "string", "format": "date"},
+    "adr_dir": {"type": "string"},
+    "summary": {
+      "type": "object",
+      "required": ["total", "blocking_proposed", "blocking_count", "advisory_count"]
+    },
+    "advisories": {"type": "array"},
+    "adrs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "adr_id", "title", "path", "status", "classification",
+          "mechanical_findings", "human_findings", "quality",
+          "implementation_link", "next_command"
+        ],
+        "properties": {
+          "classification": {
+            "enum": [
+              "not-an-adr",
+              "needs-human-input",
+              "needs-mechanical-fix",
+              "ready-for-confirmation",
+              "accepted",
+              "rejected",
+              "supersession-required"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -27,7 +27,11 @@ that may no longer describe the project accurately.
    `staleness_90day`, `tech_removal`, `broken_supersession`, and
    `policy_mismatch`.
 4. For any `REVIEW` or `RETIRE` result, ask the user whether the decision is
-   actually obsolete before proposing a superseding ADR.
+   actually obsolete, then offer `/adr-kit:grill --revalidate ADR-NNN`.
+   Revalidate changed forces, remaining implementation, new evidence, and
+   human intent before choosing unchanged, successor, reject-candidate, or
+   defer. Keep this audit read-only until the user confirms a separate
+   lifecycle command.
 
 ## Boundaries
 

@@ -10,19 +10,23 @@ use std::env;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 const MAX_INPUT: u64 = 64 * 1024;
 const MAX_CONTEXT: usize = 4 * 1024;
 const MAX_PARENT: usize = 8 * 1024;
 const MAX_RESULTS: usize = 3;
+const QUEUE_MAX_BYTES: u64 = 256 * 1024;
 
 #[derive(Clone)]
 struct Record {
     id: String,
     title: String,
     path: String,
+    status: String,
     summary: String,
     globs: Vec<String>,
+    verified: Vec<String>,
 }
 
 fn json_string(input: &str, key: &str) -> Option<String> {
@@ -175,17 +179,58 @@ fn load_records(workspace: &Path) -> Vec<Record> {
     let Ok(text) = fs::read_to_string(path) else { return Vec::new() };
     let Some(adrs) = array_section(&text, "adrs") else { return Vec::new() };
     top_level_objects(adrs).into_iter().filter_map(|object| {
-        if json_string(object, "status").as_deref() != Some("Accepted") {
-            return None;
-        }
         Some(Record {
             id: json_string(object, "id")?,
             title: json_string(object, "title").unwrap_or_default(),
             path: json_string(object, "path").unwrap_or_default(),
+            status: json_string(object, "status").unwrap_or_default(),
             summary: json_string(object, "decision_summary").unwrap_or_default(),
             globs: string_array(object, "path_globs"),
+            verified: string_array(object, "verified_in"),
         })
     }).collect()
+}
+
+fn load_queue_context(workspace: &Path) -> String {
+    let path = workspace.join("docs/adr/.adr-kit-readiness.json");
+    let Ok(metadata) = fs::metadata(&path) else { return String::new() };
+    if metadata.len() > QUEUE_MAX_BYTES {
+        return String::new();
+    }
+    let fresh = metadata.modified().ok().and_then(|modified| {
+        SystemTime::now().duration_since(modified).ok()
+    }).map(|age| age < Duration::from_secs(24 * 60 * 60)).unwrap_or(false);
+    if !fresh {
+        return String::new();
+    }
+    let Ok(text) = fs::read_to_string(path) else { return String::new() };
+    if !text.contains("\"schema_version\": 1") && !text.contains("\"schema_version\":1") {
+        return String::new();
+    }
+    let Some(actions) = array_section(&text, "actions") else { return String::new() };
+    let mut lines = vec!["Proposed ADR decision queue (derived, non-authoritative):".to_string()];
+    for object in top_level_objects(actions).into_iter().take(MAX_RESULTS) {
+        let Some(adr_id) = json_string(object, "adr_id") else { continue };
+        let Some(command) = json_string(object, "command") else { continue };
+        let digits = adr_id.strip_prefix("ADR-").map(|value| {
+            (3..=4).contains(&value.len()) && value.chars().all(|ch| ch.is_ascii_digit())
+        }).unwrap_or(false);
+        if !digits || command != format!("/adr-kit:grill {}", adr_id) {
+            continue;
+        }
+        let reasons = string_array(object, "reasons").into_iter().take(2)
+            .map(|reason| reason.replace(['\r', '\n'], " "))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("- {}: {} -> {}", adr_id, reasons, command));
+    }
+    if lines.len() == 1 {
+        String::new()
+    } else {
+        let mut output = lines.join("\n");
+        output.truncate(output.len().min(MAX_CONTEXT));
+        output
+    }
 }
 
 fn tokens(value: &str) -> Vec<String> {
@@ -334,6 +379,53 @@ fn render(records: &[Record], heading: &str) -> String {
     output
 }
 
+fn client_grill(client: &str, arguments: &str) -> String {
+    let prefix = match client {
+        "claude-code-cli" => "/adr-kit:grill",
+        "codex-cli" => "$adr-kit:grill",
+        "github-copilot-cli" => "adr-kit:grill",
+        _ => "adr-kit:grill",
+    };
+    format!("{} {}", prefix, arguments)
+}
+
+fn proposed_advisory(records: &[Record], relative: &str, client: &str) -> String {
+    let mut linked: Vec<&Record> = records.iter().filter(|record| {
+        record.status == "Proposed" && record.globs.iter().chain(record.verified.iter())
+            .any(|pattern| glob_match(pattern.replace('\\', "/").as_bytes(), relative.as_bytes()))
+    }).collect();
+    linked.sort_by_key(|record| record.id.clone());
+    let mut lines: Vec<String> = linked.into_iter().take(MAX_RESULTS).filter_map(|record| {
+        let digits = record.id.strip_prefix("ADR-").map(|value| {
+            (3..=4).contains(&value.len()) && value.chars().all(|ch| ch.is_ascii_digit())
+        }).unwrap_or(false);
+        digits.then(|| format!(
+            "Proposed ADR implementation link: {} -> {}",
+            record.id,
+            client_grill(client, &record.id),
+        ))
+    }).collect();
+    let folded = relative.to_ascii_lowercase();
+    let sensitive = [
+        "architecture/", "infra/", "infrastructure/", "migration/", "migrations/",
+        "schema/", "schemas/", "api/", "contract/", "contracts/", "config/",
+        "deploy/", "security/", "dockerfile", "compose.yml", "compose.yaml",
+        "pyproject.toml", "package.json", "cargo.toml", "go.mod",
+    ].iter().any(|marker| folded.contains(marker));
+    let source_safe = relative.chars().all(|ch| {
+        ch.is_ascii_alphanumeric() || "_./\\ -".contains(ch)
+    });
+    if lines.is_empty() && sensitive && source_safe {
+        lines.push(format!(
+            "Possible durable architecture decision -> {}",
+            client_grill(client, &format!("--source \"{}\"", relative.replace('\\', "/"))),
+        ));
+    }
+    let mut output = lines.join("\n");
+    output.truncate(output.len().min(MAX_CONTEXT));
+    output
+}
+
 fn normalized_event(value: &str) -> String {
     let compact: String = value.chars().filter(|ch| ch.is_ascii_alphabetic()).map(|ch| ch.to_ascii_lowercase()).collect();
     match compact.as_str() {
@@ -406,12 +498,24 @@ fn run() -> Option<String> {
         let bounded: String = parent.chars().take(MAX_PARENT.min(MAX_CONTEXT)).collect();
         return Some(response(client, &event, &bounded, false));
     }
-    let records = load_records(&workspace);
-    if records.is_empty() {
+    let all_records = load_records(&workspace);
+    let records: Vec<Record> = all_records.iter()
+        .filter(|record| record.status == "Accepted").cloned().collect();
+    let proposed: Vec<Record> = all_records.iter()
+        .filter(|record| record.status == "Proposed").cloned().collect();
+    if records.is_empty() && proposed.is_empty() && event != "SessionStart" {
         return None;
     }
     let (context, pre_edit) = if event == "SessionStart" {
-        (render(&records, "Relevant Accepted ADR orientation:"), false)
+        let orientation = render(&records, "Relevant Accepted ADR orientation:");
+        let queue = load_queue_context(&workspace);
+        let context = match (orientation.is_empty(), queue.is_empty()) {
+            (false, false) => format!("{}\n\n{}", orientation, queue),
+            (false, true) => orientation,
+            (true, false) => queue,
+            (true, true) => return None,
+        };
+        (context, false)
     } else if event == "UserPromptSubmit" {
         let prompt = json_string(&payload, "prompt")
             .or_else(|| json_string(&payload, "user_prompt"))
@@ -441,7 +545,15 @@ fn run() -> Option<String> {
         } else {
             "Post-edit ADR backstop; verify this change against:"
         };
-        (render(&selected, heading), event == "PreToolUse")
+        let governed = render(&selected, heading);
+        let advisory = proposed_advisory(&proposed, &relative, client);
+        let context = match (governed.is_empty(), advisory.is_empty()) {
+            (false, false) => format!("{}\n{}", governed, advisory),
+            (false, true) => governed,
+            (true, false) => advisory,
+            (true, true) => return None,
+        };
+        (context, event == "PreToolUse")
     } else if event == "PreCompact" {
         (render(&records, "ADR continuity for context compaction:"), false)
     } else {

@@ -20,7 +20,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_MCP = REPO_ROOT / "bin" / "adr-mcp"
 
-EXPECTED_TOOLS = {"adr_context", "adr_judge", "adr_status", "adr_quality"}
+EXPECTED_TOOLS = {
+    "adr_context",
+    "adr_judge",
+    "adr_status",
+    "adr_quality",
+    "adr_readiness",
+}
 
 INITIALIZE = {
     "jsonrpc": "2.0",
@@ -306,6 +312,89 @@ def test_adr_quality_unknown_id_is_tool_error(project: Path):
         project, [INITIALIZE, INITIALIZED, call("adr_quality", {"adr_id": "ADR-999"}, 10)]
     )
     assert responses[10]["result"]["isError"] is True
+
+
+def test_adr_readiness_is_key_free_and_read_only(project: Path):
+    adr = project / "docs" / "adr" / "ADR-001-no-foo.md"
+    before = adr.read_bytes()
+    responses, _, _ = run_session(
+        project,
+        [
+            INITIALIZE,
+            INITIALIZED,
+            call(
+                "adr_readiness",
+                {"adr_id": "ADR-001", "today": "2026-07-20"},
+                16,
+            ),
+        ],
+    )
+
+    payload = json.loads(tool_text(responses[16]))
+    assert payload["schema_version"] == 1
+    assert payload["adrs"][0]["adr_id"] == "ADR-001"
+    assert payload["adrs"][0]["classification"] == "accepted"
+    assert adr.read_bytes() == before
+
+
+def test_adr_readiness_all_proposed_and_cli_parity(project: Path):
+    adr = project / "docs" / "adr" / "ADR-001-no-foo.md"
+    text = adr.read_text(encoding="utf-8")
+    adr.write_text(
+        text.replace("status: Accepted", "status: Proposed").replace(
+            "Accepted, 2026-01-01", "Proposed, 2026-01-01"
+        ),
+        encoding="utf-8",
+    )
+    responses, _, _ = run_session(
+        project,
+        [
+            INITIALIZE,
+            INITIALIZED,
+            call(
+                "adr_readiness",
+                {"all_proposed": True, "today": "2026-07-20"},
+                17,
+            ),
+        ],
+    )
+    mcp_payload = json.loads(tool_text(responses[17]))
+    cli = subprocess.run(
+        [
+            sys.executable,
+            str(ADR_MCP.parent / "adr-readiness"),
+            "--all-proposed",
+            "--repo-root",
+            str(project),
+            "--today",
+            "2026-07-20",
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert cli.returncode == 0, cli.stderr
+    assert mcp_payload == json.loads(cli.stdout)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"adr_id": 1},
+        {"all_proposed": "yes"},
+        {"base": "main"},
+        {"today": ""},
+        {"project_root": "missing-workspace"},
+    ],
+)
+def test_adr_readiness_malformed_inputs_are_tool_errors(project: Path, arguments):
+    responses, _, _ = run_session(
+        project,
+        [INITIALIZE, INITIALIZED, call("adr_readiness", arguments, 18)],
+    )
+    assert responses[18]["result"]["isError"] is True
 
 
 def test_unknown_tool_is_invalid_params(project: Path):

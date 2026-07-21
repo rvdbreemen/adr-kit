@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Inspect ADR readiness without mutating repository or lifecycle state."""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import subprocess
+import sys
+from datetime import date
+from pathlib import Path
+from typing import List, Sequence, Tuple
+
+from adr_readiness import ReadinessError, build_readiness_report, normalize_path
+
+
+def _ensure_utf8_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, io.UnsupportedOperation):
+                pass
+
+
+def _git_diff(root: Path, base: str | None, head: str | None) -> Tuple[List[str], str]:
+    if base or head:
+        if not (base and head):
+            raise ReadinessError("--base and --head must be supplied together")
+        range_args: Sequence[str] = (f"{base}...{head}",)
+    else:
+        range_args = ("--cached",)
+    names = subprocess.run(
+        ["git", "diff", "--name-only", "-M", *range_args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
+    diff = subprocess.run(
+        ["git", "diff", "--unified=0", "-M", *range_args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
+    if names.returncode != 0 or diff.returncode != 0:
+        error = names.stderr.strip() or diff.stderr.strip() or "git diff failed"
+        raise ReadinessError(error)
+    paths = sorted(
+        {normalize_path(line) for line in names.stdout.splitlines() if line.strip()},
+        key=str.casefold,
+    )
+    return paths, diff.stdout
+
+
+def _human(report: dict) -> str:
+    lines = [
+        f"ADR readiness ({report['evaluated_on']}): {report['summary']['total']} record(s)"
+    ]
+    for item in report["adrs"]:
+        lines.append(
+            f"- {item['adr_id']} [{item['status']}] {item['classification']}: "
+            f"{item['title']}"
+        )
+        for finding in item["mechanical_findings"] + item["human_findings"]:
+            lines.append(f"  {finding['code']}: {finding['message']}")
+        if item["implementation_link"]["blocking_proposed"]:
+            lines.append("  LINKED_PROPOSED_IMPLEMENTATION: merge readiness is blocked")
+        if item["next_command"]:
+            lines.append(f"  Next: {item['next_command']}")
+    for advisory in report["advisories"]:
+        lines.append(
+            f"- {advisory['code']}: {advisory['path']}: {advisory['message']}"
+        )
+    return "\n".join(lines)
+
+
+def _safe_markdown(value: object) -> str:
+    return (
+        str(value)
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("`", "'")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _github(report: dict) -> str:
+    lines = ["## ADR readiness", "", f"Evaluated: `{report['evaluated_on']}`", ""]
+    for item in report["adrs"]:
+        icon = "[BLOCK]" if item["implementation_link"]["blocking_proposed"] else "[INFO]"
+        lines.append(
+            f"- {icon} **{item['adr_id']}** - `{item['classification']}` - "
+            f"{_safe_markdown(item['title'])}"
+        )
+        if item["next_command"]:
+            lines.append(f"  - Next: `{_safe_markdown(item['next_command'])}`")
+    for advisory in report["advisories"]:
+        lines.append(
+            f"- [ADVISORY] `{advisory['code']}` - `{_safe_markdown(advisory['path'])}` - "
+            f"{_safe_markdown(advisory['message'])}"
+        )
+    if not report["adrs"]:
+        lines.append("- No ADR readiness findings.")
+    return "\n".join(lines)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("adr", nargs="?", help="ADR identifier such as ADR-011")
+    parser.add_argument("--all-proposed", action="store_true")
+    parser.add_argument("--diff", action="store_true", help="analyze the staged diff")
+    parser.add_argument("--base")
+    parser.add_argument("--head")
+    parser.add_argument("--format", choices=("human", "json", "github"), default="human")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--adr-dir", default="docs/adr")
+    parser.add_argument("--today", help="evaluation date in YYYY-MM-DD format")
+    return parser
+
+
+def main(argv: List[str] | None = None) -> int:
+    _ensure_utf8_streams()
+    args = build_parser().parse_args(argv)
+    try:
+        if args.adr and args.all_proposed:
+            raise ReadinessError("ADR id and --all-proposed are mutually exclusive")
+        root = Path(args.repo_root).expanduser().resolve()
+        if not root.is_dir():
+            raise ReadinessError(f"repository root not found: {root}")
+        adr_dir_input = Path(args.adr_dir).expanduser()
+        adr_dir = (
+            adr_dir_input.resolve()
+            if adr_dir_input.is_absolute()
+            else (root / adr_dir_input).resolve()
+        )
+        if not adr_dir.is_dir():
+            raise ReadinessError(f"ADR directory not found: {adr_dir}")
+        evaluated_on = date.fromisoformat(args.today) if args.today else date.today()
+        use_diff = args.diff or args.base is not None or args.head is not None
+        paths, diff_text = _git_diff(root, args.base, args.head) if use_diff else ([], "")
+        report = build_readiness_report(
+            adr_dir,
+            evaluated_on=evaluated_on,
+            adr_id=args.adr,
+            all_proposed=args.all_proposed,
+            changed_paths=paths,
+            source_text=diff_text,
+        )
+        try:
+            report["adr_dir"] = normalize_path(str(adr_dir.relative_to(root)))
+        except ValueError:
+            report["adr_dir"] = normalize_path(adr_dir.name)
+    except (ReadinessError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        print(f"adr-readiness: {exc}", file=sys.stderr)
+        return 2
+    if args.format == "json":
+        print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
+    elif args.format == "github":
+        print(_github(report))
+    else:
+        print(_human(report))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

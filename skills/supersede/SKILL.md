@@ -47,6 +47,11 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
 
 ## Step 2 - Draft the superseding ADR (Proposed)
 
+Before drafting, run `/adr-kit:grill --revalidate ADR-OLD`. Revalidation covers
+changed forces, alternatives, migration, consequences, new evidence, and impact
+on related ADRs. It supports unchanged, Proposed successor, reject-candidate,
+and explicit defer outcomes. Never rewrite Accepted prose.
+
 Determine the next free ADR number (highest existing + 1, no gaps, no reuse).
 Invoke the `adr-generator` subagent with:
 
@@ -69,6 +74,10 @@ Invoke the `adr-generator` subagent with:
 Show the draft to the user. **Never auto-accept it.** The user reviews and
 may iterate; the new ADR is only flipped to `Accepted` (by the user or on
 their explicit instruction) before the old one is touched.
+
+Show the complete acceptance packet and require an explicit `yes` in this
+active session before invoking `adr accept`. A failure or interruption stops
+before `adr supersede`, leaving the old ADR and reciprocal links unchanged.
 
 ## Step 3 - Supersede transactionally (only after approval)
 

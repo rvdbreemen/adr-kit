@@ -14,6 +14,25 @@ the target only from the user's current request; otherwise ask one short questio
 
 This skill enables systematic creation, maintenance, and enforcement of Architecture Decision Records. ADRs document significant architectural choices along with their context, alternatives considered, and consequences. They serve as living documentation so current and future developers (and AI agents) understand why the system is built the way it is.
 
+## Guided authoring contract
+
+Treat `/adr-kit:adr <subject>` as the complete creation flow; do not add or
+suggest a separate create command.
+
+1. First decide whether the subject is consequential and difficult to reverse.
+   End with no ADR for an ordinary implementation choice.
+2. For a qualifying subject, invoke `python <plugin-root>/bin/adr propose` so
+   the lifecycle command creates a `Proposed` record.
+3. Continue with `/adr-kit:grill ADR-NNN`. Cover context, decision,
+   alternatives, consequences, evidence, scope, ownership, conflicts, and Open
+   Questions.
+4. Show an acceptance packet containing decision, rationale, alternatives,
+   consequences, evidence, scope, conflicts, and lifecycle effect. Require an
+   explicit `yes` in this active session.
+5. Only then invoke `python <plugin-root>/bin/adr accept ADR-NNN`. Missing
+   evidence, strict lint failures, conflicts, and unresolved Open Questions
+   remain authoritative blockers and become the next grill question.
+
 The skill bundles three patterns that distinguish it from a basic ADR template:
 
 1. **Anti-Rationalization Guards**: a table of excuses agents and humans use to skip writing an ADR, paired with counter-arguments. Pre-flight discipline.
@@ -118,8 +137,9 @@ When introducing this skill to an existing codebase, perform a comprehensive arc
 3. Identify constraints (memory, performance, compatibility, security).
 4. Research alternatives even if obvious.
 5. Document consequences: positive AND negative.
-6. Create ADR with `Status: Accepted` (since already implemented).
-7. Link to actual implementation (files, commits).
+6. Create the ADR with `Status: Proposed`, even when code already shipped.
+7. Link to actual implementation (files, commits), then grill the reconstructed
+   rationale and request independent acceptance for this ADR.
 
 **Step 4: prioritize.** Start with foundational decisions that:
 

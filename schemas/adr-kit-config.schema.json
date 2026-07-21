@@ -279,6 +279,33 @@
         }
       }
     },
+    "lifecycle": {
+      "type": "object",
+      "description": "Configuration for the ADR lifecycle commands (bin/adr document, bin/adr accept --auto), introduced in adr-kit v0.37.0. Controls the auto-accept gate defaults that apply when --auto is used without explicit flags.",
+      "additionalProperties": false,
+      "properties": {
+        "auto_accept": {
+          "type": "object",
+          "description": "Defaults for 'adr accept --auto'. All keys are optional; CLI flags override config values.",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["auto", "assist"],
+              "description": "Default operating mode for 'adr accept --auto'. 'assist' (default) reports eligibility without mutating the file; 'auto' immediately accepts and rewrites the ADR when all gates pass. Overridden by --auto-mode on the command line.",
+              "default": "assist"
+            },
+            "quality_threshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Minimum quality score (0.0–1.0) required before auto-accept proceeds. Overridden by --quality-threshold on the command line. Default 0.70.",
+              "default": 0.7
+            }
+          }
+        }
+      }
+    },
     "guardian": {
       "type": "object",
       "description": "Configuration for the ADR Guardian (bin/adr-guardian + /adr-kit:guardian skill), introduced in adr-kit v0.18.0. The guardian is a periodic ADR-set health detector that injects a staleness nudge at Claude Code SessionStart when a health tier is due. Detection is free (no LLM) and default-on. The LLM tier (adr-suggest + audit) always asks before spending unless llm_autorun is explicitly set true.",

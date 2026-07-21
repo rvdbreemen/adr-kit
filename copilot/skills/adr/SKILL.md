@@ -14,7 +14,8 @@ local ADR Kit tools and follow this canonical workflow:
 1. Retrieve relevant Accepted ADRs before writing and report conflicts.
 2. Run `python <plugin-root>/bin/adr profiles --format json`; use only a returned profile with `available: true`.
 3. Use `madr` as the default; support `nygard` and `canonical` only when returned as available, and never invent a profile or template.
-4. Create Proposed records with at least two alternatives, consequences, risks, mitigations, and verifiable references.
-5. Require Completeness, Evidence, Clarity, and Consistency before acceptance; supersede rather than rewriting Accepted decisions.
+4. Qualify `<subject>` as a consequential, difficult-to-reverse decision before creating a record; do not create an ADR for an ordinary reversible implementation choice.
+5. Create a Proposed record, then follow the canonical grill protocol for context, decision, alternatives, consequences, risks, mitigations, evidence, scope, ownership, conflicts, and Open Questions.
+6. Show the final acceptance packet and require an explicit `yes` in this active session before invoking `adr accept`; require Completeness, Evidence, Clarity, and Consistency and supersede rather than rewriting Accepted decisions.
 
 Do not contact another model or mutate user-owned instructions.

@@ -11,7 +11,7 @@ Select `adr-kit:supersede` from `/skills`, or ask Copilot to use the `supersede`
 Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
-1. Inspect relationships, draft a Proposed successor, and wait for approval.
-2. Use `adr supersede` for the transaction; verify reciprocal links, append-only history, and generated indexes.
+1. Inspect relationships, draft a Proposed successor, and grill changed forces, alternatives, migration, consequences, evidence, and Open Questions.
+2. Require the successor acceptance packet and explicit confirmation, accept the successor first, then use `adr supersede` for the transaction; verify reciprocal links, append-only history, and generated indexes.
 
 Do not contact another model or mutate user-owned instructions.

@@ -12,7 +12,12 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from adr_format import SUPPORTED_PROFILES, detect_profile, section_text
+from adr_format import (
+    SUPPORTED_PROFILES,
+    detect_profile,
+    section_text,
+    unresolved_open_questions,
+)
 from adr_schema import (
     FrontmatterError,
     infer_frontmatter,
@@ -166,12 +171,19 @@ def load_adr_record(path: Path) -> Dict:
     """Load one ADR into the shared semantic record shape."""
     text = path.read_text(encoding="utf-8")
     raw_frontmatter, body = split_frontmatter(text)
+    metadata_findings: List[Dict[str, str]] = []
     try:
         declared = parse_frontmatter(raw_frontmatter)
-    except FrontmatterError:
+    except FrontmatterError as exc:
         # Index and retrieval are tolerant readers. Strict lint reports the
         # malformed metadata; discovery still falls back to invariant prose.
         declared = {}
+        metadata_findings.append(
+            {
+                "code": "FRONTMATTER_MALFORMED",
+                "message": f"Metadata could not be parsed: {exc}",
+            }
+        )
     inferred = infer_frontmatter(body, path)
     metadata = dict(inferred)
     metadata.update(declared)
@@ -180,6 +192,13 @@ def load_adr_record(path: Path) -> Dict:
     latest = history[-1] if history else {}
     status = str(latest.get("status") or metadata.get("status") or "Unknown").capitalize()
     status_date = latest.get("date") or metadata.get("date")
+    if status not in {"Proposed", "Accepted", "Rejected", "Deprecated", "Superseded", "Amended"}:
+        metadata_findings.append(
+            {
+                "code": "STATUS_UNKNOWN",
+                "message": f"Lifecycle status is not recognized: {status}",
+            }
+        )
 
     detected_format = detect_profile(text)
     declared_format = metadata.get("format")
@@ -188,6 +207,13 @@ def load_adr_record(path: Path) -> Dict:
         if declared_format in SUPPORTED_PROFILES
         else detected_format
     )
+    if declared_format is not None and str(declared_format).casefold() not in SUPPORTED_PROFILES:
+        metadata_findings.append(
+            {
+                "code": "FORMAT_UNKNOWN",
+                "message": f"ADR format is not recognized: {declared_format}",
+            }
+        )
 
     adr_id = normalize_adr_id(metadata.get("id")) or normalize_adr_id(path.name)
     if adr_id is None:
@@ -207,6 +233,7 @@ def load_adr_record(path: Path) -> Dict:
     )
 
     decision_text = section_text(text, "decision")
+    open_questions = unresolved_open_questions(text)
     return {
         "num": int(re.search(r"\d+", adr_id).group(0)) if normalize_adr_id(adr_id) else 0,
         "adr_id": adr_id,
@@ -226,6 +253,10 @@ def load_adr_record(path: Path) -> Dict:
         "superseded_by": superseded_by,
         "related_ids": related_ids,
         "amended_by": amended_by,
+        "open_questions": open_questions,
+        "metadata_findings": sorted(
+            metadata_findings, key=lambda item: (item["code"], item["message"])
+        ),
         "_source_path": path,
     }
 

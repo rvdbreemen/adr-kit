@@ -157,7 +157,7 @@ def test_first_class_client_docs_and_skill_metadata_are_english():
         *sorted((REPO_ROOT / "codex" / "skills").glob("*/SKILL.md")),
         *sorted((REPO_ROOT / "copilot" / "skills").glob("*/SKILL.md")),
     ]
-    assert len(skill_files) == 42
+    assert len(skill_files) == 45
     for path in skill_files:
         text = path.read_text(encoding="utf-8")
         match = re.search(r"^description:\s*(.+)$", text, re.MULTILINE)

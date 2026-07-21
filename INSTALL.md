@@ -8,6 +8,9 @@ and removal.
 ADR Kit has separate native distributions for Claude Code, OpenAI Codex, and
 the standalone GitHub Copilot CLI. They share deterministic Python engines,
 but they do not share manifests, cache paths, or client-specific instructions.
+After installation, follow the
+[ADR Grilling user guide](docs/adr-grilling.md) to create, reconstruct, resume,
+and explicitly finish a decision.
 
 ## Requirements
 
@@ -225,7 +228,7 @@ claude plugin validate .
 claude plugin details adr-kit@rvdbreemen-adr-kit
 ```
 
-Expected: 14 skills, one `adr-generator` agent, six hooks, and one MCP server.
+Expected: 15 skills, one `adr-generator` agent, six hooks, and one MCP server.
 
 ## OpenAI Codex
 
@@ -242,7 +245,7 @@ Codex loads the separate `codex/` distribution through
 `.agents/plugins/marketplace.json`. It contains:
 
 - `.codex-plugin/plugin.json`
-- 14 Codex-native skills under `codex/skills/`
+- 15 Codex-native skills under `codex/skills/`
 - `hooks/hooks.json` with SessionStart, prompt, edit, subagent, and compact outcomes
 - `.mcp.json` with the `adr-kit` server
 - a self-contained, generated copy of the deterministic engines
@@ -255,12 +258,18 @@ $adr-kit:context
 $adr-kit:judge
 $adr-kit:lint
 $adr-kit:adr
+$adr-kit:grill ADR-NNN
 ```
 
-The MCP tools are `adr_context`, `adr_judge`, `adr_status`, and `adr_quality`.
-Each accepts an optional absolute `project_root`; the Codex skills always pass
-the active workspace so the server never mistakes its plugin cache for the
-project.
+The five MCP tools are `adr_context`, `adr_judge`, `adr_status`, `adr_quality`,
+and read-only `adr_readiness`. Each accepts an optional absolute
+`project_root`; the Codex skills always pass the active workspace so the server
+never mistakes its plugin cache for the project.
+
+After installation, use the
+[ADR Grilling user guide](docs/adr-grilling.md) for subject-based authoring,
+PR/range or source reconstruction, the Proposed queue, explicit acceptance, and
+the model-free pull-request readiness gate.
 
 ## Standalone GitHub Copilot CLI
 
@@ -307,7 +316,7 @@ for evidence and remediation recommendations.
 
 Copilot loads `.github/plugin/marketplace.json`, which points only to the
 separate `copilot/` distribution. That distribution has a root `plugin.json`,
-14 Copilot-compatible skills, lower-camel `hooks.json`, and `.mcp.json`. Open
+15 Copilot-compatible skills, lower-camel `hooks.json`, and `.mcp.json`. Open
 `/skills` inside Copilot CLI for discovery. It does not load the Claude or
 Codex manifest.
 

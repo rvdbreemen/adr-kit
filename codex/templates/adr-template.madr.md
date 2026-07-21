@@ -76,6 +76,11 @@ State how implementation of the decision will be verified.
 * Good, because ...
 * Bad, because ...
 
+## Open Questions
+
+List unresolved human decisions as unchecked tasks. Accepted ADRs must have no
+unresolved items.
+
 ## Related Decisions
 
 * None.

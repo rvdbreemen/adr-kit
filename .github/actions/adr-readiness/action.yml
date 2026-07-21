@@ -1,0 +1,72 @@
+name: ADR Readiness (adr-kit)
+description: >
+  Report Proposed ADR readiness for a pull request and block only an explicitly
+  linked, implemented Proposed decision. Deterministic, key-free, and model-free.
+
+inputs:
+  adr-dir:
+    description: ADR directory relative to the checked-out repository.
+    required: false
+    default: docs/adr
+  base:
+    description: Base commit or ref. Defaults to the pull request base SHA/ref.
+    required: false
+    default: ""
+  head:
+    description: Head commit or ref. Defaults to the pull request head SHA.
+    required: false
+    default: ""
+  python-version:
+    description: Python version used for ADR Kit's stdlib-only runtime.
+    required: false
+    default: "3.11"
+
+outputs:
+  blocking-count:
+    description: Number of explicitly linked implemented Proposed ADRs.
+    value: ${{ steps.readiness.outputs.blocking-count }}
+  blocking-adrs:
+    description: Compact JSON array of blocking ADR ids.
+    value: ${{ steps.readiness.outputs.blocking-adrs }}
+  advisory-count:
+    description: Number of non-blocking architecture review advisories.
+    value: ${{ steps.readiness.outputs.advisory-count }}
+  schema-version:
+    description: Readiness report schema version.
+    value: ${{ steps.readiness.outputs.schema-version }}
+  conclusion:
+    description: Either blocked or advisory-or-clean.
+    value: ${{ steps.readiness.outputs.conclusion }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Resolve and run ADR readiness
+      id: readiness
+      shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_HEAD: ${{ inputs.head }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        BASE_REF: ${{ github.base_ref }}
+        ADR_DIR: ${{ inputs.adr-dir }}
+      run: |
+        BASE="${INPUT_BASE:-${PR_BASE_SHA:-${BASE_REF:+origin/$BASE_REF}}}"
+        HEAD_REF="${INPUT_HEAD:-${PR_HEAD_SHA:-HEAD}}"
+        if [ -z "$BASE" ]; then
+          echo "::error title=ADR readiness infrastructure::No base ref or SHA is available."
+          exit 2
+        fi
+        RUNNER="${GITHUB_ACTION_PATH}/../../../bin/adr-readiness-ci"
+        python "$RUNNER" \
+          --repo-root "$GITHUB_WORKSPACE" \
+          --adr-dir "$ADR_DIR" \
+          --base "$BASE" \
+          --head "$HEAD_REF" \
+          --summary-file "$GITHUB_STEP_SUMMARY" \
+          --output-file "$GITHUB_OUTPUT"

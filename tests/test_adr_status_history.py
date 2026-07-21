@@ -248,9 +248,10 @@ def test_audit_gate_checks_bold_inline_status_after_migration(tmp_path):
 
 def test_parse_and_append_meet_small_set_budget(tmp_path):
     path = write_adr(tmp_path, adr_text("Accepted", history_block(entry("2026-04-01"))))
+    text = path.read_text(encoding="utf-8")
     start = time.perf_counter()
     for _ in range(30):
-        JUDGE["parse_status_history"](path.read_text(encoding="utf-8"))
+        JUDGE["parse_status_history"](text)
     parse_elapsed = time.perf_counter() - start
     start = time.perf_counter()
     assert JUDGE["append_to_status_history"](path, entry())

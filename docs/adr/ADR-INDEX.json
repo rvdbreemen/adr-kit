@@ -220,6 +220,29 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-011",
+      "title": "Adopt Deterministic Readiness and Human-Gated Grilling Across the ADR Lifecycle",
+      "path": "ADR-011-adopt-deterministic-readiness-and-human-gated-grilling-across-the-adr-lifecycle.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-20",
+      "decision_summary": "Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i...",
+      "scope": {
+        "path_globs": [
+          "clients/workflows.json",
+          "bin/adr-mcp"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -388,6 +411,36 @@
     {
       "source": "ADR-010",
       "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-011",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-011",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-011",
+      "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-011",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-011",
+      "target": "ADR-010",
       "type": "related",
       "resolved": true
     }

@@ -54,6 +54,11 @@ State one concrete chosen approach and its rationale.
 
 - Accepted cost or risk and its mitigation.
 
+## Open Questions
+
+List unresolved human decisions as unchecked tasks. Accepted ADRs must have no
+unresolved items.
+
 ## Related Decisions
 
 - None.

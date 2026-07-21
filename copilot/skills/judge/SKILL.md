@@ -13,6 +13,7 @@ local ADR Kit tools and follow this canonical workflow:
 
 1. Read the staged diff and stop clearly when it is empty.
 2. Call `adr-kit.adr_judge`; for each violation offer supersession, a narrow new decision, or the smallest compliant code change.
-3. Evaluate `llm_judge: true` rules in the active session and never send code to another provider without permission.
+3. When the diff implements a linked Proposed ADR or exposes an undocumented consequential decision, offer the exact client-native grill invocation without weakening Accepted ADR enforcement.
+4. Evaluate `llm_judge: true` rules in the active session and never send code to another provider without permission.
 
 Do not contact another model or mutate user-owned instructions.

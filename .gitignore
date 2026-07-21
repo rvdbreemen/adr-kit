@@ -54,4 +54,5 @@ out/
 docs/adr/.adr-kit-state.json
 .adr-kit-state.json.lock
 docs/adr/.adr-kit-state.json.lock
+docs/adr/.adr-kit-readiness.json
 .adr-kit-cache/

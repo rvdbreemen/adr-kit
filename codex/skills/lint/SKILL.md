@@ -12,6 +12,7 @@ Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
 1. Run `python <plugin-root>/bin/adr-lint --strict <path-or-docs/adr>`.
-2. Report PASS, ADVISORY, FAIL, and migration notices separately with file and line citations; do not edit ADRs.
+2. Report PASS, ADVISORY, FAIL, Open Questions, and migration notices separately with file and line citations; do not edit ADRs.
+3. For a Proposed ADR, translate actionable findings into the next client-native grill invocation.
 
 Do not contact another model or mutate user-owned instructions.

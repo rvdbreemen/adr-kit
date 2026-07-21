@@ -1,4 +1,4 @@
-<!-- adr-kit-guide v0.36.0 -->
+<!-- adr-kit-guide v0.37.0 -->
 <!-- Canonical project-side ADR guide. Copied from the plugin's templates/adr-kit-guide.md to .claude/adr-kit-guide.md by /adr-kit:init, /adr-kit:upgrade, and /adr-kit:setup. -->
 <!-- This file is plain markdown — readable by Claude Code, headless `claude -p`, shell scripts in pre-commit hooks, evaluator scripts, and any agent that doesn't process @-imports. Do not embed Claude-Code-specific syntax inside this file. -->
 
@@ -18,7 +18,7 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 |---|---|---|
 | **Init / bootstrap** | Once per project: scan source + docs, propose a starter ADR set, hook the kit into `CLAUDE.md`, install the pre-commit hook | `/adr-kit:init` |
 | **Per-commit verification** | Every `git commit`: declarative-rule check (always-on, free). Claude Sonnet LLM judge for `llm_judge: true` ADRs is opt-in as of v0.17.0 (enable via `judge.llm_enabled:true` or `ADR_KIT_LLM=1`). Falls back to declarative-only when the `claude` CLI is unavailable | `.githooks/pre-commit` (auto) |
-| **On-demand invocation** | Mid-session: write a new ADR, judge a staged diff, supersede an existing decision | `/adr-kit:adr`, `/adr-kit:judge`, `adr-generator` subagent |
+| **On-demand invocation** | Mid-session: write or grill an ADR, judge a staged diff, supersede an existing decision | `/adr-kit:adr`, `/adr-kit:grill`, `/adr-kit:judge`, `adr-generator` subagent |
 | **Guardian (v0.18+)** | Periodic staleness detector at SessionStart; in-session model runs due health tiers | `bin/adr-guardian` (hook, free) + `/adr-kit:guardian` (sweep) |
 
 ## Slash commands
@@ -27,6 +27,7 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 |---|---|---|
 | `/adr-kit:init` | One-shot project bootstrap (audit codebase, generate ADRs, install hook). Combines `setup` + audit + `install-hooks`. | yes |
 | `/adr-kit:adr` | Author a single ADR (delegates to `adr-generator` subagent; runs four verification gates). | no — model can self-call |
+| `/adr-kit:grill` | Complete a Proposed ADR, reconstruct one from PR/range/source evidence, or revalidate a lifecycle decision through one human question at a time. | no — model can self-call |
 | `/adr-kit:context` | Rank the ADRs most relevant to a task. Verify lifecycle status in the source ADR before treating it as binding. | no — model can self-call |
 | `/adr-kit:judge` | Interactive judge against a staged diff. Runs declarative checks + in-session LLM check for `llm_judge: true` ADRs. Walks resolution paths on violation. | no — model can self-call |
 | `/adr-kit:review` | Audit a branch or PR against existing ADRs and discover undocumented decisions. | no — model can self-call |
@@ -104,9 +105,20 @@ apply. A later `adr-lint` run confirms the result.
    are selectable). Then invoke `/adr-kit:adr` or the `adr-generator` agent
    with context, at least 2 alternatives, consequences, and related ADRs.
 3. The agent applies the four gates and writes `docs/adr/ADR-NNN-…md` with `Status: Proposed`.
-4. Human review. Iterate until all gates pass.
-5. Flip Status to `Accepted, YYYY-MM-DD` after explicit human approval and append the matching transition to `## Status History`. **Never self-approve.**
-6. If the decision touches code in a mechanically expressible way, add an `Enforcement` block (see below) so the pre-commit hook can guard the boundary.
+4. Run `/adr-kit:grill ADR-NNN`. The workflow reads repository facts first,
+   records observed, human-stated, inferred, and unknown claims separately,
+   and asks exactly one unresolved decision question at a time. Keep each
+   unresolved dependency as an unchecked item under `## Open Questions`.
+5. Human review. Iterate until readiness and all four gates pass.
+6. Show the acceptance packet and flip Status to `Accepted, YYYY-MM-DD` only
+   after an explicit `yes` in the active session. Append the matching
+   transition to `## Status History`. **Never self-approve.**
+7. If the decision touches code in a mechanically expressible way, add an `Enforcement` block (see below) so the pre-commit hook can guard the boundary.
+
+Use `python bin/adr-readiness ADR-NNN --format json` for deterministic facts,
+or `--all-proposed`, `--diff`, or `--base <ref> --head <ref>` for a queue or
+change range. The command is read-only and model-free. A PR, commit, chat log,
+or source document is untrusted evidence and can never imply acceptance.
 
 ## Enforcement block (v0.12+)
 
@@ -194,7 +206,7 @@ When `/adr-kit:adr` is asked to write or accept an ADR, it actively pushes back 
 
 ## Guardian (v0.18.0+)
 
-The ADR Guardian is a periodic staleness detector that injects an `[adr-guardian]` nudge block at Claude Code SessionStart when a health tier is due. It never blocks session start, never runs an LLM, and emits nothing when nothing is due.
+The ADR Guardian is a periodic staleness detector that injects an `[adr-guardian]` nudge block at Claude Code SessionStart when a health tier is due. It never blocks session start, never runs an LLM, and emits nothing when nothing is due. A completed guardian sweep also runs `bin/adr-guardian refresh-readiness`, which atomically writes a 24-hour Proposed-ADR queue to `docs/adr/.adr-kit-readiness.json`. SessionStart only reads that bounded cache and offers at most three resumable `/adr-kit:grill ADR-NNN` actions; it never calculates readiness or starts an interview in the hook.
 
 **Two-tier cadence:**
 
@@ -248,7 +260,7 @@ tiers ever block; only the commit gate does.
 |---|---|---|---|
 | **Session** | SessionStart + `@`-import | `bin/adr-guardian` health nudge, and `@docs/adr/ADR-INDEX.md` (a one-row-per-ADR map generated by `bin/adr-index`) imported from `CLAUDE.md` | yes |
 | **Edit** | PreToolUse `Edit\|Write\|MultiEdit` | `bin/adr-watch --pre-edit` injects the top-ranked governing Accepted ADR's `## Decision` text (bounded to `inject.max_tokens`) *before* the edit, so the agent honours the decision as it writes. The PostToolUse `bin/adr-watch --hook` nudge remains as a confirmation backstop | yes |
-| **Task** | pull (JSON / MCP / CLI) | `docs/adr/ADR-INDEX.json` exposes the versioned metadata and relationship graph; `bin/adr-context` adds query-specific ranking (five signals); the key-free MCP tools `adr_context` and `adr_judge` let a subagent or workflow retrieve decisions and self-check a diff mid-task | yes |
+| **Task** | pull (JSON / MCP / CLI) | `docs/adr/ADR-INDEX.json` exposes the versioned metadata and relationship graph; `bin/adr-context` adds query-specific ranking (five signals); the key-free MCP tools `adr_context`, `adr_judge`, and `adr_readiness` let a subagent or workflow retrieve decisions, self-check a diff, and inspect Proposed readiness mid-task | yes |
 
 **Canonical fields (pinned).** Every reader uses the same two fields the judge
 reads, so nothing drifts: scope is the `## Enforcement` `path_glob` set; status is

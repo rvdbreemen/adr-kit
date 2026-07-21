@@ -12,7 +12,8 @@ Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
 1. Run the setup workflow, preview legacy ADR migration, and audit the workspace.
-2. Present decisions in small batches and create only approved records.
-3. Install the ADR Kit-owned pre-commit gate and finish with `adr-doctor --fix-index docs/adr/`.
+2. Create selected reconstruction candidates as Proposed and present them in small batches.
+3. Use a compact confirmation grill only when the chosen decision, rationale, alternatives, and consequences have direct cited evidence; otherwise use the full grill and confirm each ADR separately.
+4. Install the ADR Kit-owned pre-commit gate and finish with `adr-doctor --fix-index docs/adr/`.
 
 Do not contact another model or mutate user-owned instructions.

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "review_outcomes": [
+    "ordinary-code",
+    "accepted-conflict",
+    "suspected-decision",
+    "linked-proposed"
+  ],
+  "init_cases": [
+    {"id": "full-evidence", "depth": "compact", "status": "Proposed"},
+    {"id": "partial-evidence", "depth": "deep", "status": "Proposed"},
+    {"id": "conflict", "depth": "deep", "status": "Proposed"},
+    {"id": "duplicate", "outcome": "merge-or-link"},
+    {"id": "interrupted-batch", "outcome": "resume"}
+  ],
+  "revalidation_outcomes": [
+    "unchanged",
+    "successor",
+    "reject-candidate",
+    "defer"
+  ]
+}

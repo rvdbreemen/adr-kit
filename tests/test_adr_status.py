@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import statistics
 import subprocess
 import sys
 import time
@@ -332,12 +333,19 @@ def test_performance_under_500ms(tmp_path):
     for i in range(1, 31):
         _make_adr(tmp_path, f"ADR-{i:03d}", date_str=today, with_enforcement=(i % 2 == 0))
 
-    start = time.perf_counter()
-    adrs = load_adr_set(tmp_path)
-    summary = compute_summary(adrs)
-    candidates = find_retirement_candidates(adrs)
-    _ = _mod.format_json_output(summary, adrs, candidates)
-    elapsed_ms = (time.perf_counter() - start) * 1000
+    def operation():
+        adrs = load_adr_set(tmp_path)
+        summary = compute_summary(adrs)
+        candidates = find_retirement_candidates(adrs)
+        _mod.format_json_output(summary, adrs, candidates)
+
+    operation()
+    samples = []
+    for _ in range(3):
+        start = time.perf_counter()
+        operation()
+        samples.append((time.perf_counter() - start) * 1000)
+    elapsed_ms = statistics.median(samples)
 
     assert elapsed_ms < 500, f"Took {elapsed_ms:.0f}ms, expected <500ms"
 

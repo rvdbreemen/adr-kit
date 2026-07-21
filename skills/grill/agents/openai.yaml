@@ -1,0 +1,4 @@
+interface:
+  display_name: "ADR Grilling"
+  short_description: "Complete and revalidate ADR decisions interactively"
+  default_prompt: "Use $adr-kit:grill to ground an ADR in repository facts, ask one decision question at a time, and preserve explicit human lifecycle confirmation."

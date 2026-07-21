@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
 import stat
 import tempfile
-from pathlib import Path, PurePosixPath
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Iterable
 
 from client_generation_model import (
@@ -20,19 +22,24 @@ from client_generation_model import (
 
 
 def _safe_release_path(path: str, allowlist: dict) -> bool:
-    pure = PurePosixPath(path.replace("\\", "/"))
-    normalized = pure.as_posix()
+    normalized = path.replace("\\", "/")
     if normalized.startswith("./"):
         normalized = normalized[2:]
-    segments = set(pure.parts)
+    segments = set(normalized.split("/"))
     for forbidden in allowlist.get("forbidden_segments", []):
-        token = PurePosixPath(forbidden)
-        if len(token.parts) == 1 and token.as_posix() in segments:
+        token = forbidden.replace("\\", "/").strip("/")
+        if "/" not in token and token in segments:
             return False
-        if normalized == token.as_posix() or normalized.startswith(token.as_posix() + "/"):
+        if normalized == token or normalized.startswith(token + "/"):
             return False
-    if any(pure.match(pattern) for pattern in allowlist.get("forbidden_globs", [])):
-        return False
+    for pattern in allowlist.get("forbidden_globs", []):
+        portable = pattern.replace("\\", "/")
+        if fnmatch.fnmatchcase(normalized, portable):
+            return False
+        if portable.startswith("**/") and fnmatch.fnmatchcase(
+            normalized, portable[3:]
+        ):
+            return False
     return any(
         normalized == item or normalized.startswith(item.rstrip("/") + "/")
         for item in allowlist.get("include_roots", [])
@@ -90,18 +97,19 @@ def _source_stamps(source_root: Path, source_paths: list[Path]) -> list[list[obj
         )
     )
     paths.extend(source_paths)
-    stamps = []
-    for path in sorted(set(paths), key=lambda item: item.as_posix()):
+    ordered = sorted(set(paths), key=lambda item: item.as_posix())
+
+    def stamp(path: Path) -> list[object]:
         info = path.stat()
-        stamps.append(
-            [
-                path.relative_to(source_root).as_posix(),
-                info.st_size,
-                info.st_mtime_ns,
-                stat.S_IMODE(info.st_mode),
-            ]
-        )
-    return stamps
+        return [
+            path.relative_to(source_root).as_posix(),
+            info.st_size,
+            info.st_mtime_ns,
+            stat.S_IMODE(info.st_mode),
+        ]
+
+    with ThreadPoolExecutor(max_workers=min(16, max(1, len(ordered)))) as pool:
+        return list(pool.map(stamp, ordered))
 
 
 def load_early_state(
@@ -119,14 +127,27 @@ def load_early_state(
         files = state.get("files")
         if not isinstance(files, dict):
             return False
-        for relative, recorded in files.items():
-            current = (output_root / relative).stat()
-            if [
+        ordered_files = sorted(files.items())
+
+        def current_stamp(item: tuple[str, object]) -> list[object]:
+            current = (output_root / item[0]).stat()
+            return [
                 current.st_size,
                 current.st_mtime_ns,
                 stat.S_IMODE(current.st_mode),
-            ] != recorded:
-                return False
+            ]
+
+        with ThreadPoolExecutor(
+            max_workers=min(16, max(1, len(ordered_files)))
+        ) as pool:
+            current_stamps = list(pool.map(current_stamp, ordered_files))
+        if any(
+            current != recorded
+            for current, (_relative, recorded) in zip(
+                current_stamps, ordered_files
+            )
+        ):
+            return False
         directories = state.get("directories")
         if not isinstance(directories, dict):
             return False
