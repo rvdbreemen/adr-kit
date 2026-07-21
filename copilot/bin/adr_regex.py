@@ -59,13 +59,16 @@ class RegexEvaluator:
             bufsize=1,
         )
         assert self._process.stdout is not None
+        # Capture stdout and the response queue as locals so that if the
+        # evaluator is restarted (e.g. after a timeout), the old reader thread
+        # puts its sentinel None into the *old* queue rather than the new one.
+        _stdout = self._process.stdout
+        _responses: "queue.Queue[Optional[str]]" = self._responses
 
         def _read() -> None:
-            assert self._process is not None
-            assert self._process.stdout is not None
-            for response in self._process.stdout:
-                self._responses.put(response)
-            self._responses.put(None)
+            for response in _stdout:
+                _responses.put(response)
+            _responses.put(None)
 
         threading.Thread(target=_read, daemon=True).start()
 
