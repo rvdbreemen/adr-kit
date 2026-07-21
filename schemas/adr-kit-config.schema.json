@@ -279,6 +279,33 @@
         }
       }
     },
+    "lifecycle": {
+      "type": "object",
+      "description": "Configuration for lifecycle commands in bin/adr (introduced in adr-kit v0.37.0).",
+      "additionalProperties": false,
+      "properties": {
+        "auto_accept": {
+          "type": "object",
+          "description": "Default options for `adr accept --auto`.",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["auto", "assist"],
+              "default": "assist",
+              "description": "When set to 'assist' (default), `adr accept --auto` reports eligibility without mutating until rerun with --confirm. Set to 'auto' to keep legacy immediate transition behavior."
+            },
+            "quality_threshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0.7,
+              "description": "Minimum overall score required from `adr-quality` before auto-accept can proceed."
+            }
+          }
+        }
+      }
+    },
     "guardian": {
       "type": "object",
       "description": "Configuration for the ADR Guardian (bin/adr-guardian + /adr-kit:guardian skill), introduced in adr-kit v0.18.0. The guardian is a periodic ADR-set health detector that injects a staleness nudge at Claude Code SessionStart when a health tier is due. Detection is free (no LLM) and default-on. The LLM tier (adr-suggest + audit) always asks before spending unless llm_autorun is explicitly set true.",
