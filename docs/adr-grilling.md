@@ -1,4 +1,4 @@
-# ADR Grilling user guide
+<!-- # ADR Grilling user guide -->
 
 ADR Grilling helps an engineer or architect turn incomplete evidence into a
 reviewable Architecture Decision Record. It combines two deliberately separate
