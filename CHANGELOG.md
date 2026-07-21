@@ -4,6 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-07-21
+
 ### Added
 
 - **ADR Grilling across the full lifecycle.** The new `grill` workflow for
@@ -934,7 +936,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.2...v0.35.0
 [0.34.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.1...v0.34.2
