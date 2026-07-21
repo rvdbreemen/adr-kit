@@ -147,7 +147,7 @@ def load_early_state(
                 current_stamps, ordered_files
             )
         ):
-                return False
+            return False
         directories = state.get("directories")
         if not isinstance(directories, dict):
             return False
