@@ -15,6 +15,8 @@ MAX_INPUT_BYTES = 64 * 1024
 MAX_PARENT_CHARS = 8 * 1024
 MAX_CONTEXT_CHARS = 4 * 1024
 MAX_RESULTS = 3
+QUEUE_CACHE_NAME = ".adr-kit-readiness.json"
+QUEUE_MAX_BYTES = 256 * 1024
 WRITE_TOOLS = {
     "edit",
     "multiedit",
@@ -170,7 +172,7 @@ def _index_path(workspace: Path) -> Path | None:
     return None
 
 
-def load_records(workspace: Path) -> list[dict[str, Any]]:
+def load_index_records(workspace: Path) -> list[dict[str, Any]]:
     path = _index_path(workspace)
     if path is None or path.stat().st_size > 2 * 1024 * 1024:
         return []
@@ -179,11 +181,54 @@ def load_records(workspace: Path) -> list[dict[str, Any]]:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return []
     records = payload.get("adrs", []) if isinstance(payload, dict) else []
+    return [item for item in records if isinstance(item, dict)]
+
+
+def load_records(workspace: Path) -> list[dict[str, Any]]:
     return [
-        item
-        for item in records
-        if isinstance(item, dict) and item.get("status") == "Accepted"
+        item for item in load_index_records(workspace) if item.get("status") == "Accepted"
     ]
+
+
+def load_queue_context(workspace: Path) -> str:
+    """Read the prepared Proposed queue only; missing/stale/corrupt fails open."""
+    path = workspace / "docs" / "adr" / QUEUE_CACHE_NAME
+    try:
+        if not path.is_file() or path.stat().st_size > QUEUE_MAX_BYTES:
+            return ""
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+            return ""
+        from datetime import datetime, timezone
+
+        expires_at = datetime.fromisoformat(str(payload["expires_at"]))
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) >= expires_at.astimezone(timezone.utc):
+            return ""
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return ""
+    lines = ["Proposed ADR decision queue (derived, non-authoritative):"]
+    count = 0
+    for item in payload.get("actions", []):
+        if not isinstance(item, dict):
+            continue
+        adr_id = str(item.get("adr_id", ""))
+        command = str(item.get("command", ""))
+        if not re.fullmatch(r"ADR-\d{3,4}", adr_id):
+            continue
+        if command != f"/adr-kit:grill {adr_id}":
+            continue
+        reasons = [
+            re.sub(r"[\r\n]+", " ", str(reason))[:160]
+            for reason in item.get("reasons", [])
+            if str(reason)
+        ][:2]
+        lines.append(f"- {adr_id}: {', '.join(reasons)} -> {command}")
+        count += 1
+        if count == MAX_RESULTS:
+            break
+    return "\n".join(lines)[:MAX_CONTEXT_CHARS] if count else ""
 
 
 def _tokens(text: str) -> set[str]:
@@ -261,15 +306,82 @@ def _render(records: list[dict[str, Any]], heading: str) -> str:
     return "\n".join(lines)[:MAX_CONTEXT_CHARS]
 
 
+def _client_grill(client: str, arguments: str) -> str:
+    prefix = {
+        "claude-code-cli": "/adr-kit:grill",
+        "codex-cli": "$adr-kit:grill",
+        "github-copilot-cli": "adr-kit:grill",
+    }.get(client, "adr-kit:grill")
+    return f"{prefix} {arguments}"
+
+
+def _safe_source_argument(path: str) -> str | None:
+    if not re.fullmatch(r"[A-Za-z0-9_./\\ -]{1,4096}", path):
+        return None
+    return '"' + path.replace("\\", "/").replace('"', '\\"') + '"'
+
+
+def _proposed_advisory(
+    proposed: list[dict[str, Any]],
+    relative: str,
+    client: str,
+) -> str:
+    linked = []
+    for record in proposed:
+        metadata = record.get("metadata", {})
+        verified = metadata.get("verified_in", []) if isinstance(metadata, dict) else []
+        scope = record.get("scope", {})
+        globs = scope.get("path_globs", []) if isinstance(scope, dict) else []
+        if any(
+            fnmatch.fnmatchcase(relative.casefold(), str(value).casefold())
+            or relative.casefold() == str(value).replace("\\", "/").casefold()
+            for value in list(verified) + list(globs)
+        ):
+            linked.append(record)
+    lines = []
+    for record in sorted(linked, key=lambda item: str(item.get("id", "")))[:MAX_RESULTS]:
+        adr_id = str(record.get("id", ""))
+        if re.fullmatch(r"ADR-\d{3,4}", adr_id):
+            lines.append(
+                f"Proposed ADR implementation link: {adr_id} -> "
+                f"{_client_grill(client, adr_id)}"
+            )
+    if not lines and re.search(
+        r"(^|/)(?:architecture|infra(?:structure)?|migrations?|schemas?|"
+        r"api|contracts?|config|deploy|security)(?:/|[-_.])|"
+        r"(^|/)(?:dockerfile|compose\.ya?ml|pyproject\.toml|package\.json|"
+        r"Cargo\.toml|go\.mod)$",
+        relative,
+        re.IGNORECASE,
+    ):
+        quoted = _safe_source_argument(relative)
+        if quoted:
+            lines.append(
+                "Possible durable architecture decision -> "
+                + _client_grill(client, f"--source {quoted}")
+            )
+    return "\n".join(lines)[:MAX_CONTEXT_CHARS]
+
+
 def evaluate(envelope: Envelope) -> tuple[str, str]:
     compact_event = re.sub(r"[^a-z]", "", envelope.event.lower())
     if compact_event in NOOP_EVENTS:
         return "", "noop"
-    records = load_records(envelope.workspace)
-    if not records:
-        return "", "noop"
+    all_records = load_index_records(envelope.workspace)
+    records = [item for item in all_records if item.get("status") == "Accepted"]
+    proposed = [item for item in all_records if item.get("status") == "Proposed"]
     if envelope.event == "SessionStart":
-        return _render(records[:MAX_RESULTS], "Relevant Accepted ADR orientation:"), "session"
+        parts = [
+            part
+            for part in (
+                _render(records[:MAX_RESULTS], "Relevant Accepted ADR orientation:"),
+                load_queue_context(envelope.workspace),
+            )
+            if part
+        ]
+        return ("\n\n".join(parts)[:MAX_CONTEXT_CHARS], "session") if parts else ("", "noop")
+    if not records and envelope.event not in {"PreToolUse", "PostToolUse"}:
+        return "", "noop"
     if envelope.event == "UserPromptSubmit":
         return _render(
             rank(records, envelope.prompt or ""),
@@ -288,7 +400,17 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
             if envelope.event == "PreToolUse"
             else "Post-edit ADR backstop; verify this change against:"
         )
-        return _render(selected, heading), (
+        context_parts = [
+            part
+            for part in (
+                _render(selected, heading),
+                _proposed_advisory(
+                    proposed, path.relative_to(envelope.workspace).as_posix(), envelope.client
+                ),
+            )
+            if part
+        ]
+        return "\n".join(context_parts)[:MAX_CONTEXT_CHARS], (
             "pre-edit" if envelope.event == "PreToolUse" else "post-edit"
         )
     if envelope.event == "SubagentStart":

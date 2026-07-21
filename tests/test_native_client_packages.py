@@ -36,7 +36,7 @@ def test_native_contract_fixtures_match_manifests_skills_and_hooks():
         "github-copilot-cli",
     ]
     for name, (doctor_name, skills) in CLIENTS.items():
-        assert len(list(skills.glob("*/SKILL.md"))) == 14
+        assert len(list(skills.glob("*/SKILL.md"))) == 15
         result = check_hook_package(ROOT, doctor_name)
         assert result["status"] == "healthy", result
         assert result["evidence"][0]["events"] == sorted(fixtures[name]["events"])

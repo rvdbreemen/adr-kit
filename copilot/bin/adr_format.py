@@ -69,6 +69,7 @@ PROFILE_HEADINGS: Dict[str, Dict[str, str]] = {
         "references": "References",
         "enforcement": "Enforcement",
         "confirmation": "Confirmation",
+        "open_questions": "Open Questions",
     },
     "nygard": {
         "status": "Status",
@@ -82,6 +83,7 @@ PROFILE_HEADINGS: Dict[str, Dict[str, str]] = {
         "references": "References",
         "enforcement": "Enforcement",
         "confirmation": "Confirmation",
+        "open_questions": "Open Questions",
     },
     "canonical": {
         "status": "Status",
@@ -95,6 +97,7 @@ PROFILE_HEADINGS: Dict[str, Dict[str, str]] = {
         "references": "References",
         "enforcement": "Enforcement",
         "confirmation": "Confirmation",
+        "open_questions": "Open Questions",
     },
 }
 
@@ -272,6 +275,41 @@ def h2_headings(text: str) -> List[str]:
         if match:
             headings.append(match.group(1).strip())
     return headings
+
+
+def unresolved_open_questions(text: str) -> List[str]:
+    """Return stable unresolved items from the optional Open Questions role."""
+    section = section_text(text, "open_questions")
+    if not section:
+        return []
+    questions: List[str] = []
+    for raw_line in section.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("```", "<!--", "-->")):
+            continue
+        normalized = re.sub(r"^\s*[-*+]\s+", "", line).strip()
+        if normalized.casefold().rstrip(".") in {
+            "none",
+            "no open questions",
+            "no unresolved questions",
+        }:
+            continue
+        if re.match(r"^\[[xX]\]\s+", normalized):
+            continue
+        if re.match(r"^(?:answered|resolved)\s*:", normalized, re.IGNORECASE):
+            continue
+        unchecked = re.match(r"^\[\s\]\s+(.+)$", normalized)
+        if unchecked:
+            candidate = unchecked.group(1)
+        elif re.match(r"^[-*+]\s+", line) or normalized.endswith("?"):
+            candidate = normalized
+        else:
+            continue
+        candidate = re.sub(r"[`*_]", "", candidate)
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        if candidate:
+            questions.append(candidate)
+    return sorted(dict.fromkeys(questions), key=str.casefold)
 
 
 def detect_profile(text: str) -> str:

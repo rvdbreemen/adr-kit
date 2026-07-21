@@ -60,6 +60,7 @@ from adr_format import (
     migration_notice,
     required_headings,
     section_text,
+    unresolved_open_questions,
 )
 
 CANONICAL_REQUIRED_SECTIONS = [
@@ -1149,6 +1150,24 @@ def lint_file(
                 "gate": "completeness", "level": level,
                 "details": [s.replace("## ", "") for s in miss],
                 "summary": f"missing sections: {[s.replace('## ', '') for s in miss]}",
+            })
+        open_questions = unresolved_open_questions(text)
+        if open_questions:
+            current_status = (_current_status(text) or "").casefold()
+            level = "FAIL" if current_status == "accepted" else "ADVISORY"
+            findings.append({
+                "gate": "completeness",
+                "level": level,
+                "code": "OPEN_QUESTIONS_UNRESOLVED",
+                "details": open_questions,
+                "summary": (
+                    f"{len(open_questions)} unresolved Open Questions; "
+                    + (
+                        "Accepted ADRs cannot contain unresolved questions"
+                        if current_status == "accepted"
+                        else "resolve, reject, or explicitly defer before acceptance"
+                    )
+                ),
             })
 
     if "audit" in enabled_gates and "audit" not in skip_gates:

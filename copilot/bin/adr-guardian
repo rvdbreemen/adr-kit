@@ -46,6 +46,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,11 @@ if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
 from adr_state import load_state, update_state
+from adr_guardian_queue import (
+    QUEUE_CACHE_NAME,
+    build_queue_cache,
+    write_queue_cache,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -810,6 +816,74 @@ def cmd_state(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_refresh_readiness(args: argparse.Namespace) -> int:
+    """Calculate the Proposed work queue outside SessionStart and cache it."""
+    project_root = Path(args.project_root or Path.cwd()).expanduser().resolve()
+    adr_dir = (
+        Path(args.adr_dir).expanduser().resolve()
+        if args.adr_dir
+        else project_root / "docs" / "adr"
+    )
+    if not project_root.is_dir() or not adr_dir.is_dir():
+        sys.stderr.write("[adr-guardian] readiness refresh skipped: ADR directory missing\n")
+        return 0
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve().with_name("adr-readiness")),
+        "--all-proposed",
+        "--format",
+        "json",
+        "--repo-root",
+        str(project_root),
+        "--adr-dir",
+        str(adr_dir),
+    ]
+    if args.today:
+        command.extend(["--today", args.today])
+    if args.diff:
+        command.append("--diff")
+    if args.base or args.head:
+        if not (args.base and args.head):
+            sys.stderr.write("[adr-guardian] readiness refresh requires --base and --head together\n")
+            return 0
+        command.extend(["--base", args.base, "--head", args.head])
+    try:
+        result = subprocess.run(
+            command,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        if result.returncode != 0:
+            sys.stderr.write(
+                "[adr-guardian] readiness refresh skipped: "
+                + (result.stderr.strip() or f"exit {result.returncode}")
+                + "\n"
+            )
+            return 0
+        report = json.loads(result.stdout)
+        generated_at = (
+            datetime.fromisoformat(args.generated_at)
+            if args.generated_at
+            else _now_utc()
+        )
+        payload = build_queue_cache(
+            report, generated_at=generated_at, ttl_hours=args.ttl_hours
+        )
+        cache_path = adr_dir / QUEUE_CACHE_NAME
+        write_queue_cache(cache_path, payload)
+        sys.stdout.write(
+            f"[adr-guardian] cached {len(payload['actions'])} of "
+            f"{payload['total_proposed']} Proposed ADR action(s)\n"
+        )
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+        sys.stderr.write(f"[adr-guardian] readiness refresh skipped: {exc}\n")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -889,6 +963,19 @@ def main() -> int:
     artifacts_p.add_argument("--format", choices=["human", "json"], default="human",
                              help="Output format (default: human).")
 
+    refresh_p = sub.add_parser(
+        "refresh-readiness",
+        help="Calculate Proposed ADR readiness outside hooks and atomically cache three actions.",
+    )
+    refresh_p.add_argument("--project-root", default=None)
+    refresh_p.add_argument("--adr-dir", default=None)
+    refresh_p.add_argument("--diff", action="store_true")
+    refresh_p.add_argument("--base", default=None)
+    refresh_p.add_argument("--head", default=None)
+    refresh_p.add_argument("--today", default=None)
+    refresh_p.add_argument("--generated-at", default=None)
+    refresh_p.add_argument("--ttl-hours", type=int, default=24)
+
     args = p.parse_args()
 
     if args.command is None:
@@ -908,6 +995,8 @@ def main() -> int:
             return cmd_state(args)
         elif args.command == "artifacts":
             return cmd_artifacts(args)
+        elif args.command == "refresh-readiness":
+            return cmd_refresh_readiness(args)
     except KeyboardInterrupt:
         return 0
     except Exception:

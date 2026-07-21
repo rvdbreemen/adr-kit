@@ -154,6 +154,8 @@ def test_document_then_auto_accept_with_verified_evidence(tmp_path):
         "accept",
         "1",
         "--auto",
+        "--auto-mode",
+        "auto",
         "--adr-dir",
         str(adr_dir),
         "--repo-root",
@@ -240,4 +242,33 @@ def test_assist_mode_reports_eligibility_without_confirmation_or_mutation(tmp_pa
     assert "rerun with --confirm" in result.stdout
     data, _body_text = _frontmatter(path)
     assert data["status"] == "Proposed"
+
+
+def test_unspecified_mode_defaults_to_assist_without_rewriting_config(tmp_path):
+    adr_dir = _repo(tmp_path)
+    path = _write_adr(
+        adr_dir,
+        documents_shipped=True,
+        verified_in=["src/app.py:shipped_symbol"],
+    )
+    config = adr_dir / ".adr-kit.json"
+    config.write_text('{"lifecycle": {"auto_accept": {"quality_threshold": 0.7}}}\n')
+    before_config = config.read_bytes()
+
+    result = _run_adr(
+        "accept",
+        "1",
+        "--auto",
+        "--adr-dir",
+        str(adr_dir),
+        "--repo-root",
+        str(tmp_path),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "assist:" in result.stdout
+    assert "rerun with --confirm" in result.stdout
+    data, _body_text = _frontmatter(path)
+    assert data["status"] == "Proposed"
+    assert config.read_bytes() == before_config
 

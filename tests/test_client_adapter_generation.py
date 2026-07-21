@@ -52,7 +52,7 @@ def test_registry_and_workflows_are_exactly_three_clients():
 
     assert capabilities["program_scope"]["first_class_clients"] == list(GEN.CLIENT_IDS)
     assert list(workflows["clients"]) == list(GEN.CLIENT_IDS)
-    assert len(workflows["workflows"]) == 14
+    assert len(workflows["workflows"]) == 15
     assert [item["id"] for item in workflows["workflows"]] == sorted(
         item["id"] for item in workflows["workflows"]
     )

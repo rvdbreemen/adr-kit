@@ -5,7 +5,7 @@
   "manifest": "copilot/plugin.json",
   "component_roots": ["copilot/skills", "copilot/hooks.json", "copilot/.mcp.json", "copilot/bin"],
   "events": ["sessionStart", "userPromptSubmitted", "postToolUse"],
-  "workflow_count": 14,
+  "workflow_count": 15,
   "invocation": "/skills",
   "degradations": ["PreToolUse cannot inject arbitrary model context; PostToolUse and pre-commit are the edit backstops"],
   "windows_required": true,

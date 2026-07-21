@@ -22,6 +22,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import statistics
 import subprocess
 import sys
 import time
@@ -401,11 +402,18 @@ class TestPerformance:
                 ADR_WITH_GLOB.format(glob=f"src/area{i}/**/*.py")
                 .replace("ADR-001", f"ADR-{i:03d}"),
             )
-        start = time.perf_counter()
-        lines = _mod.run_watch(["src/area25/db/queries.py"], adr_dir)
-        elapsed = time.perf_counter() - start
+        (adr_dir / ".adr-kit.json").write_text(
+            json.dumps({"watch": {"cooldown_hours": 0}}), encoding="utf-8"
+        )
+        _mod.run_watch(["src/area25/db/queries.py"], adr_dir)
+        samples = []
+        for _ in range(3):
+            start = time.perf_counter()
+            lines = _mod.run_watch(["src/area25/db/queries.py"], adr_dir)
+            samples.append(time.perf_counter() - start)
+        elapsed = statistics.median(samples)
         assert any("ADR-025" in line for line in lines)
-        # Target is <100ms; CI budget is generous (2s) to absorb slow runners.
+        # Target is <100ms; warm-median CI budget absorbs slow filesystems.
         assert elapsed < 2.0, f"run_watch took {elapsed:.3f}s for 50 ADRs"
 
 

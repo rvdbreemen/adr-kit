@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Run PR readiness and publish GitHub summary, annotations, and outputs."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from adr_readiness_ci import annotations, output_values, render_summary, write_outputs
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--adr-dir", default="docs/adr")
+    parser.add_argument("--base", required=True)
+    parser.add_argument("--head", required=True)
+    parser.add_argument("--today", default=None)
+    parser.add_argument("--summary-file", default=None)
+    parser.add_argument("--output-file", default=None)
+    args = parser.parse_args()
+    root = Path(args.repo_root).expanduser().resolve()
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve().with_name("adr-readiness")),
+        "--all-proposed",
+        "--base",
+        args.base,
+        "--head",
+        args.head,
+        "--repo-root",
+        str(root),
+        "--adr-dir",
+        args.adr_dir,
+        "--format",
+        "json",
+    ]
+    if args.today:
+        command.extend(["--today", args.today])
+    try:
+        result = subprocess.run(
+            command,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip() or f"adr-readiness exited {result.returncode}"
+            print(f"::error title=ADR readiness infrastructure::{message}")
+            return 2
+        report = json.loads(result.stdout)
+        summary = render_summary(report)
+        if args.summary_file:
+            with Path(args.summary_file).open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(summary)
+        else:
+            print(summary, end="")
+        if args.output_file:
+            write_outputs(Path(args.output_file), output_values(report))
+        for line in annotations(report):
+            print(line)
+        return 1 if report.get("summary", {}).get("blocking_count", 0) else 0
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        subprocess.TimeoutExpired,
+    ) as exc:
+        print(f"::error title=ADR readiness infrastructure::{exc}")
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

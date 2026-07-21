@@ -12,5 +12,6 @@ Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
 1. Run `adr-retire docs/adr/ --format json`, show each signal, and leave Deprecated, Superseded, or keep decisions to a human.
+2. Use the client-native grill revalidation entry point to resolve changed forces, remaining implementation, and human intent before any lifecycle mutation.
 
 Do not contact another model or mutate user-owned instructions.

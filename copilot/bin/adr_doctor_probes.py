@@ -222,7 +222,13 @@ def _mcp_deep(root: Path, plugin_root: Path) -> dict:
         called = responses[3]["result"].get("isError") is not True
         healthy = (
             result.returncode == 0
-            and {"adr_context", "adr_judge", "adr_status", "adr_quality"} == tools
+            and {
+                "adr_context",
+                "adr_judge",
+                "adr_status",
+                "adr_quality",
+                "adr_readiness",
+            } == tools
             and called
         )
     except (

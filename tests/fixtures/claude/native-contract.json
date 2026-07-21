@@ -5,7 +5,7 @@
   "manifest": ".claude-plugin/plugin.json",
   "component_roots": ["skills", "hooks/hooks.json", ".mcp.json", "agents", "bin"],
   "events": ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "PreCompact"],
-  "workflow_count": 14,
+  "workflow_count": 15,
   "invocation": "/adr-kit:{workflow}",
   "windows_required": true,
   "best_effort": ["macos", "linux"]

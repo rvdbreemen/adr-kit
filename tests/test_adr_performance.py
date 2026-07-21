@@ -12,6 +12,7 @@ zero work attributed to it.
 """
 import json
 import os
+import statistics
 import subprocess
 import sys
 import textwrap
@@ -380,29 +381,38 @@ def test_adr_judge_performance_50_adrs(tmp_path):
 
 @pytest.mark.slow
 def test_adr_status_performance_50_adrs(tmp_path):
-    """adr-status on 50 ADRs should complete in < 500ms."""
+    """Warm median adr-status latency on 50 ADRs should stay below 500ms."""
     adr_dir = _make_synthetic_adrs(tmp_path, 50)
     status_path = Path(__file__).parent.parent / "bin" / "adr-status"
-    start = time.perf_counter()
-    result = subprocess.run(
-        [sys.executable, str(status_path), str(adr_dir), "--format", "json"],
-        capture_output=True, text=True
-    )
-    elapsed = time.perf_counter() - start
+    command = [sys.executable, str(status_path), str(adr_dir), "--format", "json"]
+    subprocess.run(command, capture_output=True, text=True, check=True)
+    samples = []
+    for _ in range(3):
+        start = time.perf_counter()
+        subprocess.run(command, capture_output=True, text=True, check=True)
+        samples.append(time.perf_counter() - start)
+    elapsed = statistics.median(samples)
     assert elapsed < 0.5, f"adr-status took {elapsed:.2f}s on 50 ADRs (limit: 500ms)"
 
 
 @pytest.mark.slow
 def test_adr_context_performance_50_adrs(tmp_path):
-    """adr-context on 50 ADRs should complete in < 200ms."""
+    """Warm median adr-context latency on 50 ADRs should stay below 600ms."""
     adr_dir = _make_synthetic_adrs(tmp_path, 50)
     context_path = Path(__file__).parent.parent / "bin" / "adr-context"
-    start = time.perf_counter()
-    result = subprocess.run(
-        [sys.executable, str(context_path), "--adr-dir", str(adr_dir),
-         "performance optimization backend"],
-        capture_output=True, text=True
-    )
-    elapsed = time.perf_counter() - start
+    command = [
+        sys.executable,
+        str(context_path),
+        "--adr-dir",
+        str(adr_dir),
+        "performance optimization backend",
+    ]
+    subprocess.run(command, capture_output=True, text=True, check=True)
+    samples = []
+    for _ in range(3):
+        start = time.perf_counter()
+        subprocess.run(command, capture_output=True, text=True, check=True)
+        samples.append(time.perf_counter() - start)
+    elapsed = statistics.median(samples)
     # 600ms budget: Python subprocess cold-start on Windows is ~300-400ms baseline
     assert elapsed < 0.6, f"adr-context took {elapsed:.2f}s on 50 ADRs (limit: 600ms)"

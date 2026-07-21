@@ -5,9 +5,14 @@ ADR Kit supports Codex CLI through `codex/.codex-plugin/plugin.json`, root
 
 Install with `python scripts/install-agent-envs.py --clients codex`. Workflows
 are discoverable skills; invoke them explicitly with names such as
-`$adr-kit:context`. Deprecated local custom prompts are not advertised as a
-plugin command surface. Project setup adds a concise managed `AGENTS.md` block
-and keeps the detailed guide separate.
+`$adr-kit:context` and `$adr-kit:grill ADR-NNN`. Deprecated local custom prompts
+are not advertised as a plugin command surface. Project setup adds a concise
+managed `AGENTS.md` block and keeps the detailed guide separate.
+
+The package exposes the five key-free MCP tools `adr_context`, `adr_judge`,
+`adr_status`, `adr_quality`, and read-only `adr_readiness`. The
+[ADR Grilling user guide](../adr-grilling.md) documents the complete
+Proposed-to-Accepted flow.
 
 Codex receives SessionStart, UserPromptSubmit, PreToolUse, PostToolUse,
 SubagentStart, and PreCompact through its native hook file. Changed command

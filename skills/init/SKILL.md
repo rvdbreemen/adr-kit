@@ -16,7 +16,7 @@ You are running the one-shot project bootstrap for adr-kit. Your job is to take 
 1. Hook the kit into the project's `CLAUDE.md` and drop the canonical guide at `.claude/adr-kit-guide.md`.
    New ADRs use MADR unless `docs/adr/.adr-kit.json` selects
    `template.profile: "nygard"` or `"canonical"`.
-2. Discover decision-shaped artefacts in the source and documentation, propose a starter set of ADRs reflecting decisions already in effect, and let the user accept them in batches.
+2. Discover decision-shaped artefacts in the source and documentation, create a starter work queue of Proposed ADRs, and confirm each decision independently.
 3. Install the pre-commit hook so future commits are guarded against ADR drift.
 4. Lint everything to confirm the resulting ADR set passes the four verification gates.
 
@@ -222,7 +222,23 @@ Process candidates in **batches of 5–10**. For each batch:
 
 1. Print a numbered list with: candidate id, your proposed classification, your reasoning (one sentence), and (for `keep`) the proposed ADR title and decision_type.
 2. Ask the user: `Approve all [yes] | reject specific (list ids) | drop classification suggestion (id → drop) | refine title/type (id → ...)`.
-3. Apply the user's choices. For `keep` candidates: invoke the `adr-generator` subagent with the title, decision context (drawn from the evidence files), and at least two alternatives. The agent assigns the next sequential ADR number, writes `docs/adr/ADR-NNN-<kebab-title>.md` with `Status: Accepted, <today>`, and runs the four verification gates. Per ADR, **prompt the agent to include an `## Enforcement` block** if the rule can be expressed declaratively, or `llm_judge: true` if it cannot, or omit the section if the decision has no code surface.
+3. Apply the user's choices. For every `keep` candidate, use the lifecycle
+   command to create `docs/adr/ADR-NNN-<kebab-title>.md` with
+   `Status: Proposed, <today>`. Never silently accept reconstructed history.
+   Include an `## Enforcement` block when the rule is declarative,
+   `llm_judge: true` when it is not, or omit the section when no code surface
+   exists.
+4. Explain and select grill depth per candidate:
+   - **compact confirmation** only when chosen decision, rationale,
+     alternatives, and consequences each have direct cited evidence;
+   - **deep grill** when any of those fields, ownership, or conflict resolution
+     is missing or inferred.
+   Resolve duplicates and conflicts by merging, linking, rejecting, or
+   escalating before acceptance.
+5. Confirm each ADR separately. A batch response may select candidates but
+   cannot accept multiple decisions. On interruption, retain valid Proposed
+   records, Open Questions, a consistent index, and one
+   `/adr-kit:grill ADR-NNN` resume command per unfinished record.
 
 Do not race ahead. Wait for the user's response per batch.
 
@@ -351,7 +367,9 @@ Suggest a first commit: `git add docs/adr/ .claude/adr-kit-guide.md CLAUDE.md .g
 ## Constraints
 
 - **Do not skip steps.** Each step has an idempotency story; running them in order produces a consistent project state.
-- **Batch user approval.** Do not silently mass-generate ADRs. Five to ten candidates per round, one round at a time.
+- **Batch selection, individual acceptance.** Do not silently mass-generate or
+  accept ADRs. Five to ten candidates may be triaged per round, but every
+  decision receives its own grill and explicit acceptance.
 - **Resolve the plugin path dynamically.** The kit lives at `~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/<version>/`. Use the `ls | sort -V | tail -1` resolver above; do not hardcode a version.
 - **Preserve user CLAUDE.md content.** Only the marked stub block (or a v0.11-style `## ADR Kit Rules` section being replaced) may be modified. Everything else stays byte-exact.
 - **Re-runnable.** A second invocation on a project where init already succeeded should detect the existing footprint and either skip or refresh, not regenerate.

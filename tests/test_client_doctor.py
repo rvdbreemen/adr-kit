@@ -22,7 +22,7 @@ for value in (str(ROOT), str(BIN), str(ROOT / "scripts")):
 
 from adr_doctor_checks import check_mcp_launcher
 from adr_doctor_models import benchmark_extension
-from adr_doctor_probes import classify_model_probe
+from adr_doctor_probes import _mcp_deep, classify_model_probe
 
 
 def _doctor(
@@ -139,6 +139,20 @@ def test_deep_extension_contract_is_versioned_and_unpopulated_safely():
         "p95_ms": None,
         "max_ms": None,
     }
+
+
+def test_deep_mcp_probe_accepts_complete_five_tool_contract():
+    result = _mcp_deep(ROOT, ROOT)
+
+    assert result["status"] == "healthy"
+    assert result["evidence"][0]["call_ok"]
+    assert result["evidence"][0]["tools"] == [
+        "adr_context",
+        "adr_judge",
+        "adr_quality",
+        "adr_readiness",
+        "adr_status",
+    ]
 
 
 @pytest.mark.parametrize(

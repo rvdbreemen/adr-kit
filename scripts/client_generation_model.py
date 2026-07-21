@@ -13,6 +13,7 @@ CLIENT_IDS = ("claude-code-cli", "codex-cli", "github-copilot-cli")
 WORKFLOW_IDS = (
     "adr",
     "context",
+    "grill",
     "guardian",
     "init",
     "install-hooks",
@@ -37,6 +38,7 @@ HOOK_RUNTIME_FILES = (
     "hooks/adapters/claude.py",
     "hooks/adapters/codex.py",
     "hooks/adapters/copilot.py",
+    "hooks/bin/windows-x64/adr-hook.exe",
 )
 SOURCE_FILES = (
     "clients/capabilities.json",

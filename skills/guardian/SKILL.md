@@ -178,6 +178,20 @@ If the cheap tier did not run in this sweep, read `summary.coverage_pct` from
 
 ## Step 4 — Wrap-up
 
+Refresh the disposable Proposed decision queue after the deterministic sweep,
+outside SessionStart:
+
+```bash
+"$ADR_KIT/bin/adr-guardian" refresh-readiness \
+  --project-root "$(git rev-parse --show-toplevel)" --diff
+```
+
+Then report at most the first three cached actions. The queue ranks active
+implementation links, shipped-but-Proposed records, ready-for-confirmation
+records, open human questions, age, and lowest quality in that order. Each
+action must use `/adr-kit:grill ADR-NNN`. The cache is derived, expiring,
+gitignored, safe to delete, and never authoritative for acceptance.
+
 Print a summary:
 
 ```

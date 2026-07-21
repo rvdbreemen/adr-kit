@@ -4,17 +4,17 @@
     "warm": 150.0
   },
   "clean": {
-    "bytes_read": 817445,
-    "bytes_written": 1365642,
+    "bytes_read": 1357874,
+    "bytes_written": 1961611,
     "elapsed_ms": {
-      "max": 735.485,
-      "p50": 713.408,
-      "p95": 735.485
+      "max": 925.082,
+      "p50": 845.074,
+      "p95": 896.896
     },
-    "files_read": 83,
-    "files_written": 193,
+    "files_read": 94,
+    "files_written": 218,
     "process_startup_included": true,
-    "sample_count": 11,
+    "sample_count": 30,
     "state": "clean-full"
   },
   "methodology": {
@@ -30,7 +30,7 @@
     "warm_state": "persistent Python host, stat-validated fingerprint no-op"
   },
   "passed": true,
-  "peak_memory_bytes": 157095,
+  "peak_memory_bytes": 617105,
   "platform": {
     "os": "nt",
     "python": "3.12.9",
@@ -40,22 +40,22 @@
   "regressions": [],
   "schema_version": 1,
   "standalone_python_startup": {
-    "p50_ms": 121.663,
-    "p95_ms": 137.438,
-    "sample_count": 11
+    "p50_ms": 161.551,
+    "p95_ms": 192.647,
+    "sample_count": 30
   },
   "warm": {
     "bytes_read": 0,
     "bytes_written": 0,
     "elapsed_ms": {
-      "max": 60.974,
-      "p50": 34.965,
-      "p95": 60.974
+      "max": 141.799,
+      "p50": 112.585,
+      "p95": 128.694
     },
     "files_read": 0,
     "files_written": 0,
     "process_startup_included": false,
-    "sample_count": 11,
+    "sample_count": 30,
     "state": "warm-unchanged"
   }
 }

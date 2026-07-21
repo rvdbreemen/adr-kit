@@ -8,13 +8,15 @@ The protocol surface is deliberately tiny (initialize, initialized,
 tools/list, tools/call, ping); the dispatch table in serve() is shaped so
 swapping in the official `mcp` SDK later is a local change.
 
-Exposes exactly 4 tools, each a subprocess call into a sibling bin/ script:
+Exposes exactly 5 tools, each a subprocess call into a sibling bin/ script:
 
   adr_context   {query, limit?}  -> bin/adr-context --format json
   adr_judge     {diff}           -> bin/adr-judge --json (declarative pass
                                     only, never --llm: key-free by design)
   adr_status    {}               -> bin/adr-status --format json
   adr_quality   {adr_id?}        -> bin/adr-quality --format json per ADR
+  adr_readiness {adr_id?, all_proposed?, base?, head?, today?}
+                                  -> bin/adr-readiness --format json
 
 adr-suggest is intentionally NOT exposed: it is an LLM-only advisory (its
 deterministic part is just a docs-only skip filter), and this server stays
@@ -164,6 +166,39 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                 "adr_id": {
                     "type": "string",
                     "description": "ADR identifier such as 'ADR-001', '001' or '1'. Omit to score all ADRs.",
+                },
+                **WORKSPACE_PROPERTIES,
+            },
+        },
+    },
+    {
+        "name": "adr_readiness",
+        "description": (
+            "Inspect ADR lifecycle readiness and explicit implementation links. "
+            "Read-only, deterministic, key-free, and incapable of accepting ADRs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "adr_id": {
+                    "type": "string",
+                    "description": "Optional ADR identifier such as ADR-011.",
+                },
+                "all_proposed": {
+                    "type": "boolean",
+                    "description": "Return every Proposed ADR.",
+                },
+                "base": {
+                    "type": "string",
+                    "description": "Optional git base ref; requires head.",
+                },
+                "head": {
+                    "type": "string",
+                    "description": "Optional git head ref; requires base.",
+                },
+                "today": {
+                    "type": "string",
+                    "description": "Optional deterministic YYYY-MM-DD evaluation date.",
                 },
                 **WORKSPACE_PROPERTIES,
             },
@@ -362,11 +397,73 @@ def tool_adr_quality(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Di
     return _text_result(payload)
 
 
+def tool_adr_readiness(
+    arguments: Dict[str, Any], root: Path, adr_dir: Path
+) -> Dict[str, Any]:
+    try:
+        root, adr_dir = _call_paths(arguments, root, adr_dir)
+    except ValueError as exc:
+        return _text_result(f"adr_readiness: {exc}", is_error=True)
+    cli_args = [
+        "--format",
+        "json",
+        "--repo-root",
+        str(root),
+        "--adr-dir",
+        str(adr_dir),
+    ]
+    adr_id = arguments.get("adr_id")
+    if adr_id is not None:
+        if not isinstance(adr_id, str) or not adr_id.strip():
+            return _text_result(
+                "adr_readiness: 'adr_id' must be a non-empty string",
+                is_error=True,
+            )
+        cli_args.append(adr_id)
+    if arguments.get("all_proposed") is True:
+        cli_args.append("--all-proposed")
+    elif arguments.get("all_proposed") not in {None, False}:
+        return _text_result(
+            "adr_readiness: 'all_proposed' must be a boolean",
+            is_error=True,
+        )
+    base = arguments.get("base")
+    head = arguments.get("head")
+    if (base is None) != (head is None):
+        return _text_result(
+            "adr_readiness: 'base' and 'head' must be supplied together",
+            is_error=True,
+        )
+    if base is not None:
+        if not all(isinstance(value, str) and value.strip() for value in (base, head)):
+            return _text_result(
+                "adr_readiness: 'base' and 'head' must be non-empty strings",
+                is_error=True,
+            )
+        cli_args.extend(["--base", base, "--head", head])
+    today = arguments.get("today")
+    if today is not None:
+        if not isinstance(today, str) or not today.strip():
+            return _text_result(
+                "adr_readiness: 'today' must be a non-empty string",
+                is_error=True,
+            )
+        cli_args.extend(["--today", today])
+    rc, out, err = run_cli("adr-readiness", cli_args, root)
+    if rc != 0:
+        return _text_result(
+            f"adr-readiness exited {rc}: {err.strip() or out.strip()}",
+            is_error=True,
+        )
+    return _text_result(_parse_json_or_raw(out))
+
+
 TOOL_HANDLERS = {
     "adr_context": tool_adr_context,
     "adr_judge": tool_adr_judge,
     "adr_status": tool_adr_status,
     "adr_quality": tool_adr_quality,
+    "adr_readiness": tool_adr_readiness,
 }
 
 

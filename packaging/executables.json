@@ -49,6 +49,14 @@
       "provenance": "declared bin entrypoint"
     },
     {
+      "path": "bin/adr-grill-signal",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-grill-signal command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
       "path": "bin/adr-guardian",
       "ownership": "runtime",
       "purpose": "ADR Kit adr-guardian command",
@@ -108,6 +116,22 @@
       "path": "bin/adr-quality",
       "ownership": "runtime",
       "purpose": "ADR Kit adr-quality command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
+      "path": "bin/adr-readiness",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-readiness command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
+      "path": "bin/adr-readiness-ci",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-readiness-ci command",
       "invocation": "direct-or-python",
       "expected_mode": "100755",
       "provenance": "declared bin entrypoint"

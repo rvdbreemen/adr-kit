@@ -79,6 +79,7 @@ fi
 
 ADR_JUDGE=""
 ADR_SUGGEST=""
+ADR_GRILL_SIGNAL=""
 _plugin_roots=()
 shopt -s nullglob
 _plugin_roots+=(
@@ -131,6 +132,11 @@ for _plugin_root in "${_plugin_roots[@]}"; do
       ADR_SUGGEST="$_plugin_root/bin/adr-suggest"
     else
       ADR_SUGGEST=""
+    fi
+    if [ -f "$_plugin_root/bin/adr-grill-signal" ]; then
+      ADR_GRILL_SIGNAL="$_plugin_root/bin/adr-grill-signal"
+    else
+      ADR_GRILL_SIGNAL=""
     fi
   fi
 done
@@ -213,6 +219,17 @@ if [ "$ADR_EXIT" -eq 2 ]; then
   echo "[adr-kit] Commit with ADR_KIT_HOOK_DISABLE=1 to bypass this check." >&2
 fi
 [ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"
+
+# Bounded, index-only ADR grilling advisories. This is a single fail-open
+# subprocess: no readiness sweep, per-ADR subprocess loop, model, network, or
+# provider credential. adr-judge above remains the only local blocking path.
+if [ -n "$ADR_GRILL_SIGNAL" ] && [ -f "$ADR_GRILL_SIGNAL" ]; then
+  GRILL_OUT=$(
+    "$_PYTHON3" "$ADR_GRILL_SIGNAL" \
+      --staged --repo-root "$ROOT" --shell posix --format human 2>/dev/null || true
+  )
+  printf '%s\n' "$GRILL_OUT" | grep -aE "^\[adr-grill\] (STRONG|ADVISORY) " >&2 || true
+fi
 
 # --- Advisory ADR-suggestion pass (adr-suggest, v0.16.0+; opt-in as of v0.17.0) -
 # Distinct from adr-judge above: adr-judge ENFORCES existing ADRs and can block

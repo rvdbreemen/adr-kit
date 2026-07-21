@@ -63,7 +63,7 @@ def validate_workflows(value: object) -> dict:
     ids = [item.get("id") for item in workflows]
     if tuple(ids) != WORKFLOW_IDS:
         raise GenerationError(
-            "workflow ids must match the complete canonical 14-workflow set"
+            "workflow ids must match the complete canonical 15-workflow set"
         )
     for item in workflows:
         if not re.fullmatch(r"[a-z][a-z0-9-]*", str(item.get("id", ""))):

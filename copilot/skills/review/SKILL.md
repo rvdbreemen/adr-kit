@@ -12,6 +12,7 @@ Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
 1. Judge the merge-base range diff and audit the workspace for decision-shaped evidence.
-2. Report enforcement and discovery separately; draft Proposed ADRs only for candidates the user selects.
+2. Report ordinary code findings, Accepted ADR conflicts, suspected undocumented decisions, and linked Proposed implementations separately.
+3. Draft Proposed ADRs only for candidates the user selects, update an existing Proposed record instead of duplicating it, and offer the exact client-native grill invocation.
 
 Do not contact another model or mutate user-owned instructions.

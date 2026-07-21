@@ -111,7 +111,9 @@ def generate(
 
     for relative in HOOK_RUNTIME_FILES:
         source = source_root / relative
-        content = read(source, stats).replace(b"\r\n", b"\n")
+        content = read(source, stats)
+        if source.suffix.casefold() not in {".exe", ".dll"}:
+            content = content.replace(b"\r\n", b"\n")
         suffix = relative.removeprefix("hooks/")
         mode = stat.S_IMODE(source.stat().st_mode)
         for client_dir in GENERATED_CLIENTS.values():
@@ -160,12 +162,17 @@ def generate(
         except FileNotFoundError:
             return None
 
-    # Windows file-open latency dominates the warm path. Reads are independent,
-    # bounded to declared outputs, and joined in deterministic path order.
-    with ThreadPoolExecutor(
-        max_workers=min(16, max(1, len(ordered_outputs)))
-    ) as pool:
-        actual_outputs = list(pool.map(read_output, ordered_outputs))
+    if output_root.exists():
+        # Windows file-open latency dominates existing-output validation. Reads
+        # are independent, bounded, and joined in deterministic path order.
+        with ThreadPoolExecutor(
+            max_workers=min(16, max(1, len(ordered_outputs)))
+        ) as pool:
+            actual_outputs = list(pool.map(read_output, ordered_outputs))
+    else:
+        # A clean destination cannot contain an output. Avoid creating and
+        # joining a thread pool only to raise FileNotFoundError for every path.
+        actual_outputs = [None] * len(ordered_outputs)
 
     drift: list[str] = []
     pending_writes: list[tuple[Path, bytes, int | None]] = []

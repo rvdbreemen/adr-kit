@@ -12,10 +12,13 @@ registers the local marketplace, and installs `adr-kit@rvdbreemen-adr-kit`.
 Project setup preserves bytes outside its managed `CLAUDE.md` markers and
 writes the generated guide under `.adr-kit/`.
 
-Claude discovers 14 namespaced skills such as `/adr-kit:context`,
-`/adr-kit:judge`, and `/adr-kit:setup`. Skill descriptions carry the trigger
-catalog; `$ARGUMENTS` carries explicit slash-command input. Side-effecting or
-deliberately timed workflows use `disable-model-invocation: true`.
+Claude discovers 15 namespaced skills such as `/adr-kit:context`,
+`/adr-kit:grill`, `/adr-kit:judge`, and `/adr-kit:setup`. Skill descriptions
+carry the trigger catalog; `$ARGUMENTS` carries explicit slash-command input.
+Side-effecting or deliberately timed workflows use
+`disable-model-invocation: true`. The
+[ADR Grilling user guide](../adr-grilling.md) documents the complete
+Proposed-to-Accepted flow.
 
 ## Hooks and MCP
 
@@ -25,9 +28,9 @@ fail open. On Windows the dispatcher prefers the bundled native host; macOS and
 Linux use a native host when shipped and otherwise fall back to the prepared
 Python runtime. Stop-like and unsupported events are successful no-ops.
 
-The root `.mcp.json` exposes `adr_context`, `adr_judge`, `adr_quality`, and
-`adr_status`. Model-visible hook context is advisory; the git pre-commit gate
-remains the deterministic enforcement floor.
+The root `.mcp.json` exposes `adr_context`, `adr_judge`, `adr_quality`,
+`adr_status`, and read-only `adr_readiness`. Model-visible hook context is
+advisory; the git pre-commit gate remains the deterministic enforcement floor.
 
 ## Doctor, updates, and removal
 

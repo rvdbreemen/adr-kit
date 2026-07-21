@@ -4,6 +4,34 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **ADR Grilling across the full lifecycle.** The new `grill` workflow for
+  Claude Code, Codex, and Copilot completes Proposed ADRs through one
+  evidence-backed human question at a time, reconstructs decisions from PRs,
+  ranges, chat logs, and documents, and revalidates supersession or retirement
+  candidates. It never treats source material as acceptance authority. The
+  [user guide](docs/adr-grilling.md) includes runnable authoring, reconstruction,
+  queue, lifecycle, migration, and CI examples.
+- **Deterministic readiness contract.** `bin/adr-readiness`, schema v1, and the
+  fifth key-free MCP tool `adr_readiness` separate mechanical defects from
+  unresolved human decisions and detect explicit implementation links.
+- **Active Proposed queue and bounded automation.** Guardian refreshes a
+  24-hour, three-item readiness cache outside hook hot paths. Edit hooks and
+  pre-commit surface advisory grill commands without models or network calls.
+  The new `adr-readiness` composite action blocks only implementation explicitly
+  linked to a Proposed ADR and publishes sanitized summaries and outputs.
+
+### Changed
+
+- All three client packages now expose 15 canonical workflows. ADR creation,
+  init reconstruction, review, judge, supersede, and retire route unresolved
+  decisions through the shared grilling protocol.
+- Unspecified after-the-fact acceptance now defaults to `assist`: eligibility
+  is reported first and mutation requires confirmation. Projects that depend
+  on the legacy behavior can explicitly set
+  `lifecycle.auto_accept.mode: "auto"`.
+
 ## [0.36.0] - 2026-07-20
 
 ### Added

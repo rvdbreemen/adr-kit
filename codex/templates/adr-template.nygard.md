@@ -56,6 +56,11 @@ adr-kit extension for deterministic completeness:
 - **Alternative A.** Rejection reason.
 - **Alternative B.** Rejection reason.
 
+## Open Questions
+
+List unresolved human decisions as unchecked tasks. Accepted ADRs must have no
+unresolved items.
+
 ## Related Decisions
 
 - None.
