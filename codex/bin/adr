@@ -373,6 +373,14 @@ def _auto_accept_config(args, adr_dir: Path) -> Tuple[str, float]:
 
 def _run_json_tool(command: List[str]) -> Tuple[int, Dict]:
     result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0 and not result.stdout.strip():
+        # A non-zero exit with no stdout is a crash, not a gate verdict: the
+        # tool never reached its JSON writer. Surface stderr instead of
+        # swallowing it behind an empty payload (which read as "{}" downstream).
+        stderr = result.stderr.strip() or "<no stderr>"
+        raise AdrLifecycleError(
+            f"tool crashed (exit {result.returncode}): {' '.join(command)}: {stderr}"
+        )
     try:
         payload = json.loads(result.stdout) if result.stdout.strip() else {}
     except json.JSONDecodeError as exc:

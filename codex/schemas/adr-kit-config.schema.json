@@ -281,26 +281,26 @@
     },
     "lifecycle": {
       "type": "object",
-      "description": "Configuration for lifecycle commands in bin/adr (introduced in adr-kit v0.37.0).",
+      "description": "Configuration for the ADR lifecycle commands (bin/adr document, bin/adr accept --auto), introduced in adr-kit v0.37.0. Controls the auto-accept gate defaults that apply when --auto is used without explicit flags.",
       "additionalProperties": false,
       "properties": {
         "auto_accept": {
           "type": "object",
-          "description": "Default options for `adr accept --auto`.",
+          "description": "Defaults for 'adr accept --auto'. All keys are optional; CLI flags override config values.",
           "additionalProperties": false,
           "properties": {
             "mode": {
               "type": "string",
               "enum": ["auto", "assist"],
-              "default": "assist",
-              "description": "When set to 'assist' (default), `adr accept --auto` reports eligibility without mutating until rerun with --confirm. Set to 'auto' to keep legacy immediate transition behavior."
+              "description": "Default operating mode for 'adr accept --auto'. 'assist' (default) reports eligibility without mutating the file; 'auto' immediately accepts and rewrites the ADR when all gates pass. Overridden by --auto-mode on the command line.",
+              "default": "assist"
             },
             "quality_threshold": {
               "type": "number",
               "minimum": 0,
               "maximum": 1,
-              "default": 0.7,
-              "description": "Minimum overall score required from `adr-quality` before auto-accept can proceed."
+              "description": "Minimum quality score (0.0–1.0) required before auto-accept proceeds. Overridden by --quality-threshold on the command line. Default 0.70.",
+              "default": 0.7
             }
           }
         }
