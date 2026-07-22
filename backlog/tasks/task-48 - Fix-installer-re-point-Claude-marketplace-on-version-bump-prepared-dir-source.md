@@ -3,11 +3,11 @@ id: TASK-48
 title: >-
   Fix installer: re-point Claude marketplace on version bump (prepared-dir
   source)
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-07-22 18:46'
-updated_date: '2026-07-22 18:46'
+updated_date: '2026-07-22 19:54'
 labels:
   - bug
   - installer
@@ -24,8 +24,14 @@ install-agent-envs.py did not advance Claude Code from 0.36.0 to 0.37.0. Root ca
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 claude_marketplace_source_matches re-points when the registered directory path differs from the new prepared source
-- [ ] #2 Path-less directory registration still matches via the prepared marker (existing behavior preserved)
-- [ ] #3 Regression test covers the version-bump re-point case
-- [ ] #4 Installer test suite green (except pre-existing codex adapter drift, tracked separately)
+- [x] #1 claude_marketplace_source_matches re-points when the registered directory path differs from the new prepared source
+- [x] #2 Path-less directory registration still matches via the prepared marker (existing behavior preserved)
+- [x] #3 Regression test covers the version-bump re-point case
+- [x] #4 Installer test suite green (except pre-existing codex adapter drift, tracked separately)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed claude_marketplace_source_matches(): the prepared-marker fallback matched ANY directory-backed marketplace, so install_claude never re-pointed Claude from an older version directory and plugin update kept pulling the stale payload (0.36.0 did not advance to 0.37.0). A path mismatch is now authoritative; the marker fallback applies only when the registration exposes no path. Regression test added. Verified live on the 0.38.0 release: Claude re-pointed to marketplaces
+<!-- SECTION:FINAL_SUMMARY:END -->
