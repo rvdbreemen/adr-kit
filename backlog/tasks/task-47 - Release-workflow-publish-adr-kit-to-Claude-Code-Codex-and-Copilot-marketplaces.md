@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-07-22 18:36'
-updated_date: '2026-07-22 18:36'
+updated_date: '2026-07-22 18:49'
 labels:
   - release
   - tooling
@@ -29,4 +29,5 @@ The three coding-agent marketplaces resolve from the public rvdbreemen/adr-kit r
 - [ ] #3 Workflow runs build-client-adapters --check, adr-lint --strict, adr-index --check and pytest
 - [ ] #4 Workflow creates a GitHub Release from the CHANGELOG section
 - [ ] #5 Local install-agent-envs.py --clients all step is documented as the per-machine prepared-dir publish
+- [ ] #6 ADR authored (Proposed) for the marketplace release/publish decision
 <!-- AC:END -->
