@@ -197,15 +197,20 @@ def _write_site(root: Path, site: dict, version: str) -> bool:
         if not _pointer_set(doc, site["pointer"], version):
             raise VersionSiteError(f"pointer {site['pointer']} not found in {site['path']}")
         updated = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
-    else:
+    elif kind in {"regex", "regex_all"}:
         pattern = re.compile(site["pattern"])
         if not pattern.search(original):
             raise VersionSiteError(
                 f"pattern for {site['label']} did not match anything in {site['path']}"
             )
         count = 0 if kind == "regex_all" else 1
-        updated = pattern.sub(lambda m: f"{m.group(1)}{version}{m.group(3) if m.lastindex and m.lastindex >= 3 else ''}", original, count=count)
-
+        updated = pattern.sub(
+            lambda m: f"{m.group(1)}{version}{m.group(3) if m.lastindex and m.lastindex >= 3 else ''}",
+            original,
+            count=count,
+        )
+    else:
+        raise VersionSiteError(f"unknown site kind {kind!r} for {site['path']}")
     if updated == original:
         return False
     path.write_text(updated, encoding="utf-8", newline="\n")
