@@ -64,8 +64,18 @@ Do not proceed while any gate fails.
 
 ## 4. Land and tag (publishes the public git-source marketplaces)
 
-- Open a PR from the branch into `main` and merge it (respect the repo's review policy).
-- On the merge commit, tag and push:
+- Open a PR from the branch into `main` and wait for CI to go green.
+
+  **Maintainer checkpoint: `main` is a protected branch.** Merging is the
+  maintainer's action, not the agent's. Do not merge with `--admin` and do not
+  otherwise bypass branch protection: report that the PR is green and hand off. If
+  the PR picks up extra commits after the first CI run (for example applied
+  code-scanning autofixes), review those commits and confirm CI is green for the
+  final head before handing off.
+
+- After the maintainer merges, pull `main`, confirm it carries the release version
+  with `python scripts/check-release-version.py --expect v$ARGUMENTS`, then tag and
+  push:
 
 ```bash
 git tag v$ARGUMENTS

@@ -108,8 +108,16 @@ python -m pytest -q
 
 ### 3. Land on the public repo and tag
 
+`main` is a protected branch, so **merging is the maintainer's action**. An agent
+running this runbook reports that the PR is green and hands off; it must not merge
+with `--admin` or otherwise bypass branch protection. If the PR gains extra commits
+after the first CI run (applied code-scanning autofixes, for example), review them
+and confirm CI is green for the final head before merging.
+
 ```bash
-# open a PR from your branch into main, merge it, then on the merge commit:
+# after the maintainer merged the PR, on main:
+git pull origin main
+python scripts/check-release-version.py --expect vX.Y.Z   # main really carries it
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
@@ -139,6 +147,17 @@ python scripts/install-agent-envs.py --clients all
 This rebuilds `.../adr-kit/marketplaces/<version>` and re-registers all three
 client CLIs against it. It is idempotent and machine-local, so it cannot run in
 CI; it is a per-machine step for each maintainer environment.
+
+**Always verify per client afterwards**, because a combined run can leave one client
+half-done (the 0.39.0 publish registered the Copilot marketplace but did not install
+the plugin, and the completion line silently listed only the other two):
+
+```bash
+claude plugin list ; codex plugin list ; copilot plugin list   # each must show the new version
+```
+
+If one lags, re-run the installer for that client alone
+(`python scripts/install-agent-envs.py --clients copilot`). Tracked as TASK-51.
 
 ## Why there is no fully-automated "publish to marketplace" job
 
