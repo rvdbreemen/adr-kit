@@ -95,6 +95,8 @@ def _pointer_set(doc: object, pointer: str, value: str) -> bool:
             return False
         node[int(last)] = value
     elif isinstance(node, dict):
+        if last not in node:
+            return False
         node[last] = value
     else:
         return False
