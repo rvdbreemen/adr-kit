@@ -269,7 +269,7 @@
       "title": "Declare Version Sites in One Registry and Bump by Writing",
       "path": "ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-07-22",
       "decision_summary": "Chosen: the declarative registry with a writer.",
       "scope": {

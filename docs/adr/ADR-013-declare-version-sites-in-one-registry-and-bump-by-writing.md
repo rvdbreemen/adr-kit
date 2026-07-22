@@ -1,7 +1,7 @@
 ---
 id: "ADR-013"
 title: "Declare Version Sites in One Registry and Bump by Writing"
-status: "Proposed"
+status: "Accepted"
 date: "2026-07-22"
 binding: false
 gate: null
@@ -18,7 +18,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-07-22.
+Accepted, 2026-07-22.
 
 ## Status History
 
@@ -29,6 +29,11 @@ status_history:
     changed_by: Claude
     reason: Amends ADR-012 after the 0.38.0 release needed nine hand-edits across four discovery rounds
     changed_via: adr-kit
+  - date: 2026-07-22
+    status: Accepted
+    changed_by: adr-kit
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
