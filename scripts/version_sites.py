@@ -190,7 +190,10 @@ def _write_site(root: Path, site: dict, version: str) -> bool:
     kind = site["kind"]
 
     if kind == "json":
-        doc = json.loads(original)
+        try:
+            doc = json.loads(original)
+        except json.JSONDecodeError as exc:
+            raise VersionSiteError(f"invalid JSON in {site['path']}: {exc}") from exc
         if not _pointer_set(doc, site["pointer"], version):
             raise VersionSiteError(f"pointer {site['pointer']} not found in {site['path']}")
         updated = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
