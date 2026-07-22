@@ -19,7 +19,10 @@ desktop.ini
 *.sublime-workspace
 
 # Claude Code local state (per-machine, never committed)
-.claude/
+# Ignore the contents, not the directory itself, so shared tooling can opt back in.
+.claude/*
+# ...except repo-level project commands, which are shared tooling
+!.claude/commands/
 
 # Python helpers (if added later)
 __pycache__/
