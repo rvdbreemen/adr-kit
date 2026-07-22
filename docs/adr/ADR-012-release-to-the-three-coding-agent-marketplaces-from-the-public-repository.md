@@ -1,7 +1,7 @@
 ---
 id: "ADR-012"
 title: "Release to the Three Coding-Agent Marketplaces From the Public Repository"
-status: "Proposed"
+status: "Accepted"
 date: "2026-07-22"
 binding: false
 gate: null
@@ -18,7 +18,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-07-22.
+Accepted, 2026-07-22.
 
 ## Status History
 
@@ -29,6 +29,11 @@ status_history:
     changed_by: Claude
     reason: Formalizes how a version is published to the Claude Code, Codex and Copilot marketplaces after a release lagged (0.37.0 shipped to main but a machine stayed on 0.36.0)
     changed_via: adr-kit
+  - date: 2026-07-22
+    status: Accepted
+    changed_by: adr-kit
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
