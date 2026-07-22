@@ -43,32 +43,48 @@ verbs against the same public repo.
    on this source stays on the old version until the installer is re-run. (This is
    exactly why 0.37.0 shipped to `main` yet a maintainer machine stayed on 0.36.0.)
 
-## Version sites (single release version, six places)
+## Version sites (one version, one registry)
 
 A release is only coherent when the version is identical everywhere.
-`scripts/check-release-version.py --expect vX.Y.Z` enforces this:
+`packaging/version-sites.json` is the single registry that declares every
+version-bearing file and how to read and write it. Four tools read that one file:
 
-- `.claude-plugin/plugin.json` -> `version`
-- `codex/.codex-plugin/plugin.json` -> `version`
-- `copilot/plugin.json` -> `version`
-- `.claude-plugin/marketplace.json` -> `plugins[0].version`
-- `.github/plugin/marketplace.json` -> `plugins[0].version`
-- `CHANGELOG.md` -> first `## [X.Y.Z]` heading
-- plus the git tag `vX.Y.Z`
+| Tool | Uses the registry to |
+|---|---|
+| `scripts/bump-version.py` | write the version to every site |
+| `scripts/check-release-version.py` | fail the release on any mismatch |
+| `scripts/build-client-adapters.py` | refuse to generate against stale manifests |
+| `tests/test_version_sites.py` | keep the registry and the repo honest |
 
-`.agents/plugins/marketplace.json` (Codex) has no version field by design: it
-points at the local `./codex` source whose version lives in the Codex plugin
-manifest, so it is not a version site.
+Currently declared: the CHANGELOG release heading (canonical), the three client
+plugin manifests, the two versioned marketplace manifests, the pre-commit /
+guardian-entry / guide template stamps, and the two README version pins. The git
+tag is compared against them at release time.
+
+`.agents/plugins/marketplace.json` (Codex) carries no version by design: it points
+at the local `./codex` source whose version lives in the Codex plugin manifest, so
+the registry asserts it stays absent. README history markers such as "introduced
+in v0.31.0" are deliberately not sites: they record when a feature landed and must
+never move.
+
+Every check reports *all* mismatches in one pass, so a bump surfaces its complete
+work list immediately instead of one error per tool run.
 
 ## Release steps
 
 ### 1. Prepare the version, release notes and README on a branch
 
 ```bash
-# bump the canonical version, then regenerate the three client adapters so all
-# manifests move together (never hand-edit the generated adapters):
-python scripts/build-client-adapters.py            # regenerate adapters/manifests
+python scripts/bump-version.py X.Y.Z                # writes EVERY version site
+python scripts/build-client-adapters.py             # regenerate codex/ and copilot/
 ```
+
+`bump-version.py` is the only place a version is typed. It writes the CHANGELOG
+release heading, the three client plugin manifests, the two versioned marketplace
+manifests, the template version stamps and the README version pins, all from the
+declarative registry in `packaging/version-sites.json`. Never hand-edit a version:
+if a file is missing from the bump, declare it in the registry instead, and every
+tool (writer, gate, generator, tests) learns about it at once.
 
 - **Release notes**: add the `## [X.Y.Z] - YYYY-MM-DD` section at the top of
   `CHANGELOG.md`, written to release-note quality (grouped `### Added`/`### Changed`/

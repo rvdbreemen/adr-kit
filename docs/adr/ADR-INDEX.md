@@ -18,3 +18,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-010 | Accepted | `schemas/client-capabilities.schema.json` | Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce... |
 | ADR-011 | Accepted | `clients/workflows.json`, `bin/adr-mcp` | Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i... |
 | ADR-012 | Accepted | - | Chosen: the documented-runbook-plus-tag-triggered-gate option. |
+| ADR-013 | Proposed | - | Chosen: the declarative registry with a writer. |

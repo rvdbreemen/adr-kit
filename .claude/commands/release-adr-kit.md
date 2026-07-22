@@ -19,9 +19,20 @@ order. Stop and report if any step fails.
 
 ## 2. Prepare the version, release notes and README
 
-- Bump the version in the canonical source and run `python scripts/build-client-adapters.py`
-  so all three plugin manifests and the two versioned marketplace manifests move together.
-  Never hand-edit the generated adapters.
+- Bump every version site with one command, then regenerate the client trees:
+
+  ```bash
+  python scripts/bump-version.py $ARGUMENTS
+  python scripts/build-client-adapters.py
+  ```
+
+  `bump-version.py` is the only place a version is typed. It writes the CHANGELOG
+  heading, the three plugin manifests, the two versioned marketplace manifests, the
+  template version stamps and the README version pins, all from
+  `packaging/version-sites.json`. Never hand-edit a version, and never hand-edit the
+  generated adapters. If some file still carries an old version, declare it in the
+  registry instead of patching it by hand, so the writer, the gate, the generator and
+  the tests all learn about it at once.
 
 - **Release notes (`CHANGELOG.md`).** Add a `## [$ARGUMENTS] - <today>` section at the top.
   Write it to release-note quality, not a raw commit log: group changes under
@@ -31,16 +42,11 @@ order. Stop and report if any step fails.
   the GitHub Release body, so it must read as the release announcement. Follow Keep a
   Changelog; no emoji.
 
-- **README (`README.md`).** Bring the README in line with the release:
-  - Update every version-pinned usage example to `$ARGUMENTS` so users copy the current
-    version. Find them with:
-    ```bash
-    grep -nE "adr-kit@v[0-9]|adr-judge@v[0-9]|rev: v[0-9]|adr-kit/.*@v[0-9]" README.md
-    ```
-    (the GitHub release badge is automatic; leave it. Historical "introduced in vN"
-    feature markers are history: leave them too.)
-  - If this release adds, changes or removes a user-facing capability, update the
-    matching feature/usage section so the README describes what actually ships.
+- **README (`README.md`).** The version-pinned usage examples are already moved by
+  `bump-version.py` (the release badge is automatic and historical "introduced in vN"
+  markers stay put by design). What still needs judgement: if this release adds,
+  changes or removes a user-facing capability, update the matching feature/usage
+  section so the README describes what actually ships.
 
 ## 3. Verify locally (the same gates CI enforces)
 

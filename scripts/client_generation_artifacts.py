@@ -96,12 +96,22 @@ def _marketplace_version(value: object, path: str) -> str | None:
 
 
 def validate_manifests(inputs: dict[str, object], version: str) -> None:
+    # Collect every stale manifest before failing: aborting on the first one turns
+    # a bump into a fix-one-rerun loop. packaging/version-sites.json is the shared
+    # registry; scripts/bump-version.py writes them all in one command.
+    stale: list[str] = []
     for path in (".claude-plugin/plugin.json", "codex/.codex-plugin/plugin.json", "copilot/plugin.json"):
         if _manifest_version(inputs[path], path) != version:
-            raise GenerationError(f"stale version reference: {path}")
+            stale.append(path)
     for path in (".claude-plugin/marketplace.json", ".github/plugin/marketplace.json"):
         if _marketplace_version(inputs[path], path) != version:
-            raise GenerationError(f"stale version reference: {path}")
+            stale.append(path)
+    if stale:
+        raise GenerationError(
+            "stale version reference: "
+            + ", ".join(stale)
+            + f" (fix them all: python scripts/bump-version.py {version})"
+        )
     if _marketplace_version(inputs[".agents/plugins/marketplace.json"], ".agents/plugins/marketplace.json") is not None:
         raise GenerationError("Codex local marketplace must inherit plugin version")
     claude = inputs[".claude-plugin/plugin.json"]
