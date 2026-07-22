@@ -62,14 +62,23 @@ manifest, so it is not a version site.
 
 ## Release steps
 
-### 1. Prepare the version on a branch
+### 1. Prepare the version, release notes and README on a branch
 
 ```bash
 # bump the canonical version, then regenerate the three client adapters so all
 # manifests move together (never hand-edit the generated adapters):
 python scripts/build-client-adapters.py            # regenerate adapters/manifests
-# add the new "## [X.Y.Z] - YYYY-MM-DD" section at the top of CHANGELOG.md
 ```
+
+- **Release notes**: add the `## [X.Y.Z] - YYYY-MM-DD` section at the top of
+  `CHANGELOG.md`, written to release-note quality (grouped `### Added`/`### Changed`/
+  `### Fixed`, user-facing impact, upgrade + breaking-change notes; Keep a Changelog,
+  no emoji). `release-publish.yml` publishes this section verbatim as the GitHub
+  Release body, so it *is* the release notes.
+- **README**: update the version-pinned usage examples so users copy the current
+  version (`grep -nE "adr-judge@v[0-9]|rev: v[0-9]|adr-kit/.*@v[0-9]" README.md`); the
+  release badge is automatic and historical "introduced in vN" markers stay. Update
+  any feature/usage section that this release changes.
 
 ### 2. Verify locally (the same gates CI runs)
 

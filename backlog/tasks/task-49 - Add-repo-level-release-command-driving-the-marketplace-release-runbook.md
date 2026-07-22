@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-07-22 18:54'
-updated_date: '2026-07-22 18:54'
+updated_date: '2026-07-22 19:00'
 labels:
   - release
   - tooling
@@ -25,4 +25,5 @@ Provide a repository-scoped Claude Code slash command (.claude/commands/release.
 - [ ] #1 .claude/commands/release.md exists and is invocable as /release in this repo
 - [ ] #2 The command drives the documented runbook steps and calls check-release-version.py, build-client-adapters.py --check, adr-lint --strict, adr-index --check, pytest
 - [ ] #3 The command tags + pushes to trigger release-publish.yml and runs the local install-agent-envs.py step
+- [ ] #4 C:/Program Files/Git/release prepares CHANGELOG release notes (grouped, GitHub Release body) and updates README version-pinned examples
 <!-- AC:END -->

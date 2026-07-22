@@ -17,12 +17,30 @@ order. Stop and report if any step fails.
 - Ensure a backlog task exists for this release (create one if not); set it In Progress.
 - Work on a branch, never commit the release directly to `main`.
 
-## 2. Prepare the version
+## 2. Prepare the version, release notes and README
 
 - Bump the version in the canonical source and run `python scripts/build-client-adapters.py`
   so all three plugin manifests and the two versioned marketplace manifests move together.
   Never hand-edit the generated adapters.
-- Add a `## [$ARGUMENTS] - <today>` section at the top of `CHANGELOG.md` describing the release.
+
+- **Release notes (`CHANGELOG.md`).** Add a `## [$ARGUMENTS] - <today>` section at the top.
+  Write it to release-note quality, not a raw commit log: group changes under
+  `### Added` / `### Changed` / `### Fixed` / `### Removed`, name user-facing impact,
+  and call out upgrade steps and breaking changes explicitly. This section is the
+  single source for the release notes: `release-publish.yml` publishes it verbatim as
+  the GitHub Release body, so it must read as the release announcement. Follow Keep a
+  Changelog; no emoji.
+
+- **README (`README.md`).** Bring the README in line with the release:
+  - Update every version-pinned usage example to `$ARGUMENTS` so users copy the current
+    version. Find them with:
+    ```bash
+    grep -nE "adr-kit@v[0-9]|adr-judge@v[0-9]|rev: v[0-9]|adr-kit/.*@v[0-9]" README.md
+    ```
+    (the GitHub release badge is automatic; leave it. Historical "introduced in vN"
+    feature markers are history: leave them too.)
+  - If this release adds, changes or removes a user-facing capability, update the
+    matching feature/usage section so the README describes what actually ships.
 
 ## 3. Verify locally (the same gates CI enforces)
 
