@@ -4,6 +4,44 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.39.0] - 2026-07-22
+
+### Added
+
+- **One place to declare where the release version lives.**
+  [`packaging/version-sites.json`](packaging/version-sites.json) is a declarative
+  registry of every version-bearing file with an explicit read/write strategy: the
+  CHANGELOG release heading, the three client plugin manifests, the two versioned
+  marketplace manifests, the pre-commit / guardian-entry / guide template stamps,
+  and the README version pins. It also records the negative invariant that the Codex
+  local marketplace must inherit its version, and that README history markers such
+  as "introduced in v0.31.0" are deliberately not sites. Decision recorded in
+  [ADR-013](docs/adr/ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md),
+  which amends ADR-012.
+- **`scripts/bump-version.py X.Y.Z` writes the version everywhere in one command**,
+  and creates the CHANGELOG release heading if it is missing. Releasing 0.38.0 took
+  nine hand-edits spread over four discovery rounds; this release took one command.
+  `--check` reports drift without changing anything.
+- **`scripts/version_sites.py`**, the shared implementation that the bump writer, the
+  release gate, the client-adapter generator and the test suite all read, so a new
+  version-bearing file is declared once instead of being taught to three tools that
+  can drift apart. `tests/test_version_sites.py` asserts the registry still covers the
+  manifests the generator independently validates.
+
+### Changed
+
+- **`scripts/check-release-version.py` is registry-driven** and now also gates the
+  three template version stamps and the README version pins. Those stamps were
+  previously caught only by a five-minute test run, and the README pins by nothing at
+  all: they had silently pointed at v0.34.0 while 0.37.0 shipped.
+- **Stale versions are all reported in one pass.** The client-adapter generator used
+  to abort on the first stale manifest, turning a bump into a fix-one-and-rerun loop.
+  It now lists every stale manifest together with the exact command that fixes them.
+- **The release runbook and `/release-adr-kit` start from `bump-version.py`.** Versions
+  are declared and written, never hand-edited; if a file still carries an old version,
+  the fix is a registry line, not a manual patch.
+
 ## [0.38.0] - 2026-07-22
 
 ### Added

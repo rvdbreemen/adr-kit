@@ -263,6 +263,26 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-013",
+      "title": "Declare Version Sites in One Registry and Bump by Writing",
+      "path": "ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-22",
+      "decision_summary": "Chosen: the declarative registry with a writer.",
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -473,6 +493,12 @@
     {
       "source": "ADR-012",
       "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-013",
+      "target": "ADR-012",
       "type": "related",
       "resolved": true
     }
