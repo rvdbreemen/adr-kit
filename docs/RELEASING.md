@@ -135,6 +135,7 @@ local command rather than a CI job.
 
 | Artifact | Purpose |
 |---|---|
+| `/release-adr-kit` (`.claude/commands/release-adr-kit.md`) | Repo-level command that drives this runbook locally end to end |
 | `scripts/check-release-version.py` | Fails unless all six version sites equal the tag |
 | `.github/workflows/release-publish.yml` | Tag-triggered gate + GitHub Release (the release flow) |
 | `.github/workflows/release-candidate.yml` | Optional three-client native certification |
