@@ -4,6 +4,42 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-07-22
+
+### Added
+
+- **A documented, enforced release process for all three coding-agent
+  marketplaces.** [docs/RELEASING.md](docs/RELEASING.md) is now the authoritative
+  runbook: it explains that Claude Code, Codex, and GitHub Copilot all resolve
+  adr-kit from the public repository, names each client's marketplace manifest,
+  and separates the git-source path (end users, served by the tag) from the
+  version-pinned prepared-directory path (maintainer machines, advanced with
+  `scripts/install-agent-envs.py`). The decision behind it is recorded in
+  [ADR-012](docs/adr/ADR-012-release-to-the-three-coding-agent-marketplaces-from-the-public-repository.md).
+- **`scripts/check-release-version.py`** fails a release unless one version is
+  identical across every publish surface: the three client plugin manifests, the
+  two versioned marketplace manifests, the top CHANGELOG heading, and the git tag.
+- **`.github/workflows/release-publish.yml`** runs on a `v*` tag: it re-runs the
+  version-consistency check, the client-adapter drift check, `adr-lint --strict`,
+  `adr-index --check` and the test suite, then publishes the GitHub Release using
+  this CHANGELOG section as the release notes.
+- **Repo-level `/release-adr-kit` command** (`.claude/commands/release-adr-kit.md`)
+  that drives the whole runbook locally: prepare the version, release notes and
+  README, run every gate, tag and push, then advance this machine's prepared
+  marketplace and verify each client.
+
+### Fixed
+
+- **The installer now re-points the Claude marketplace when the version changes.**
+  `claude_marketplace_source_matches()` treated any directory-backed marketplace as
+  already matching the new prepared source whenever that source carried the
+  prepared marker, even when the registration still pointed at an older version
+  directory. `install_claude` therefore skipped the remove-and-add, so
+  `claude plugin update` kept pulling from the stale directory and the client never
+  advanced (0.36.0 stayed on 0.36.0 after 0.37.0 shipped). A path mismatch is now
+  authoritative; the marker fallback applies only when the registration exposes no
+  path at all. Codex and Copilot were unaffected.
+
 ## [0.37.0] - 2026-07-21
 
 ### Added
