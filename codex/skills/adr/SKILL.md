@@ -11,7 +11,7 @@ Invoke explicitly with `$adr-kit:adr` when needed.
 Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
-1. Retrieve relevant Accepted ADRs before writing and report conflicts.
+1. Query the generated ADR index for relevant Accepted ADRs before writing, open only returned sources, and report conflicts.
 2. Run `python <plugin-root>/bin/adr profiles --format json`; use only a returned profile with `available: true`.
 3. Use `madr` as the default; support `nygard` and `canonical` only when returned as available, and never invent a profile or template.
 4. Qualify `<subject>` as a consequential, difficult-to-reverse decision before creating a record; do not create an ADR for an ordinary reversible implementation choice.

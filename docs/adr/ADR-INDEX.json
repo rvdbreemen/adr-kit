@@ -1,6 +1,6 @@
 {
   "$schema": "../../schemas/adr-index.schema.json",
-  "schema_version": 1,
+  "schema_version": 2,
   "adrs": [
     {
       "id": "ADR-001",
@@ -10,6 +10,17 @@
       "status": "Accepted",
       "date": "2026-05-31",
       "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": []
       },
@@ -30,6 +41,17 @@
       "status": "Accepted",
       "date": "2026-05-31",
       "decision_summary": "Implement the ADR Guardian as a dumb SessionStart detector plus in-session smart sweep, with two-tier cadence and no...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": []
       },
@@ -50,6 +72,17 @@
       "status": "Superseded",
       "date": "2026-07-18",
       "decision_summary": "Keep the canonical seven-section template as the only storage format.",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": []
       },
@@ -70,6 +103,17 @@
       "status": "Accepted",
       "date": "2026-07-05",
       "decision_summary": "Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": []
       },
@@ -90,6 +134,17 @@
       "status": "Accepted",
       "date": "2026-07-18",
       "decision_summary": "Chosen option: support selectable madr, nygard, and canonical body profiles through one semantic format registry, and...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": [
           "schemas/adr-kit-config.schema.json"
@@ -114,6 +169,17 @@
       "status": "Accepted",
       "date": "2026-07-18",
       "decision_summary": "Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": []
       },
@@ -132,8 +198,19 @@
       "path": "ADR-007-json-adr-graph-index-for-agent-retrieval.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-18",
+      "date": "2026-07-23",
       "decision_summary": "Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": [
           "docs/adr/ADR-INDEX.json"
@@ -156,6 +233,17 @@
       "status": "Accepted",
       "date": "2026-07-20",
       "decision_summary": "Chosen option: add the checkout as another candidate root, ranked by manifest version like every other root, because...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": [
           "templates/githooks/pre-commit"
@@ -180,6 +268,17 @@
       "status": "Accepted",
       "date": "2026-07-18",
       "decision_summary": "Chosen option: bound the gate to the region and vocabulary where a finding is actionable, because it restores the gat...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": [
           "bin/adr-lint"
@@ -202,8 +301,32 @@
       "path": "ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-20",
+      "date": "2026-07-23",
       "decision_summary": "Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce...",
+      "topics": [
+        "client parity",
+        "lifecycle hooks",
+        "release certification"
+      ],
+      "aliases": [
+        "native client contract",
+        "three-client release"
+      ],
+      "components": [
+        "client adapters",
+        "release certification"
+      ],
+      "symbols": [
+        "client-capabilities",
+        "support_matrix"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": [
           "schemas/client-capabilities.schema.json"
@@ -229,6 +352,17 @@
       "status": "Accepted",
       "date": "2026-07-20",
       "decision_summary": "Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i...",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": [
           "clients/workflows.json",
@@ -252,6 +386,17 @@
       "status": "Accepted",
       "date": "2026-07-22",
       "decision_summary": "Chosen: the documented-runbook-plus-tag-triggered-gate option.",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": []
       },
@@ -272,6 +417,17 @@
       "status": "Accepted",
       "date": "2026-07-22",
       "decision_summary": "Chosen: the declarative registry with a writer.",
+      "topics": [],
+      "aliases": [],
+      "components": [],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
+      },
       "scope": {
         "path_globs": []
       },
@@ -280,6 +436,79 @@
         "gate": null,
         "documents_shipped": false,
         "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-014",
+      "title": "Use the Generated ADR Graph as the Selective-Context Query Engine",
+      "path": "ADR-014-use-the-generated-adr-graph-as-the-selective-context-query-engine.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-23",
+      "decision_summary": "Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain...",
+      "topics": [
+        "ADR retrieval",
+        "architecture governance",
+        "selective context"
+      ],
+      "aliases": [
+        "ADR index",
+        "index-first retrieval"
+      ],
+      "components": [
+        "adr-context",
+        "ADR-INDEX.json",
+        "adr-mcp",
+        "lifecycle hooks"
+      ],
+      "symbols": [
+        "index-first-retrieval"
+      ],
+      "context_scope": "global",
+      "decision_contract": {
+        "must": [
+          "Keep Markdown ADRs authoritative and all index content generated.",
+          "Use a healthy supported graph as the primary runtime retrieval projection.",
+          "Separate lifecycle authority from relevance and explain positive matches.",
+          "Keep query and hook hot paths local, deterministic, bounded, stdlib-first, model-free, and key-free.",
+          "Preserve fail-open context injection and fail-closed judge enforcement."
+        ],
+        "must_not": [
+          "Hand-edit generated retrieval metadata in ADR-INDEX.json.",
+          "Treat Proposed or historical ADRs as governing Accepted decisions.",
+          "Parse every Markdown ADR during a healthy normal index query.",
+          "Introduce a hosted service, database, embedding model, or language-model call into the default query or hook path."
+        ],
+        "exceptions": [
+          "A clearly reported compatibility fallback may parse Markdown when the graph is missing, invalid, unsupported, or stale.",
+          "An explicit historical query may return non-governing superseded, rejected, or deprecated records."
+        ],
+        "verification": [
+          "versioned frontmatter and graph schemas plus deterministic generation tests;",
+          "equivalent retrieval records across MADR, Nygard, canonical, and legacy fixtures;",
+          "shared query fixtures for CLI, MCP, Python hooks, native hooks, Claude, Codex, and Copilot;",
+          "lifecycle-authority, historical-exclusion, supersession, no-match, and fallback tests;",
+          "project retrieval probes with required top-k inclusions and exclusions;",
+          "end-to-end performance and graph-size budgets on small and representative large ADR sets;",
+          "strict ADR lint, doctor, generated artifact checks, client payload synchronization, native certification, focused tests, and the full supported regression suite; and",
+          "a literal index-first-retrieval verification anchor in shipped non-document source before this binding ADR can be Accepted."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "index-first-retrieval",
+        "documents_shipped": false,
+        "verified_in": [
+          "bin/adr_query.py:INDEX_FIRST_RETRIEVAL_GATE",
+          "tests/test_adr_query.py",
+          "tests/test_adr_retrieval_health.py",
+          "hooks/adr_hook_core.py"
+        ],
         "supersedes": [],
         "superseded_by": null
       }
@@ -374,6 +603,12 @@
       "source": "ADR-007",
       "target": "ADR-005",
       "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-007",
+      "target": "ADR-014",
+      "type": "amended-by",
       "resolved": true
     },
     {
@@ -499,6 +734,42 @@
     {
       "source": "ADR-013",
       "target": "ADR-012",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-014",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-014",
+      "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-014",
+      "target": "ADR-007",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-014",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-014",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-014",
+      "target": "ADR-011",
       "type": "related",
       "resolved": true
     }

@@ -105,6 +105,7 @@ def test_every_profile_has_a_deterministic_template_and_semantic_roles(tmp_path)
         assert all(heading in text for heading in required_headings(profile))
         assert section_text(text, "context")
         assert section_text(text, "decision")
+        assert section_text(text, "decision_contract")
         assert section_text(text, "alternatives")
         assert section_text(text, "consequences")
 
@@ -300,9 +301,14 @@ def test_lint_index_context_and_judge_read_every_profile(tmp_path):
         "graph",
     )
     graph = json.loads(graph_result.stdout)
-    assert graph["schema_version"] == 1
+    assert graph["schema_version"] == 2
     assert {node["format"] for node in graph["adrs"]} == set(SUPPORTED_PROFILES)
     assert all(node["decision_summary"] for node in graph["adrs"])
+    assert all(
+        set(node["decision_contract"])
+        == {"must", "must_not", "exceptions", "verification"}
+        for node in graph["adrs"]
+    )
 
     context = run(
         str(BIN / "adr-context"),

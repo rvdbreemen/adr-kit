@@ -19,3 +19,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-011 | Accepted | `clients/workflows.json`, `bin/adr-mcp` | Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i... |
 | ADR-012 | Accepted | - | Chosen: the documented-runbook-plus-tag-triggered-gate option. |
 | ADR-013 | Accepted | - | Chosen: the declarative registry with a writer. |
+| ADR-014 | Accepted | - | Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain... |

@@ -10,7 +10,9 @@ swapping in the official `mcp` SDK later is a local change.
 
 Exposes exactly 5 tools, each a subprocess call into a sibling bin/ script:
 
-  adr_context   {query, limit?}  -> bin/adr-context --format json
+  adr_context   {query, limit?, paths?, components?, symbols?, topics?,
+                 statuses?, authorities?, include_history?, strict_index?}
+                                    -> bin/adr-context --format json
   adr_judge     {diff}           -> bin/adr-judge --json (declarative pass
                                     only, never --llm: key-free by design)
   adr_status    {}               -> bin/adr-status --format json
@@ -104,7 +106,9 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "name": "adr_context",
         "description": (
             "Find the Architecture Decision Records most relevant to a task "
-            "query. Heuristic ranking, no LLM. Returns ranked ADRs as JSON."
+            "through the local generated index. Deterministic, key-free, and "
+            "read-only; returns authority-labelled explained matches as JSON. "
+            f"The bounded subprocess timeout is {CLI_TIMEOUT_S} seconds."
         ),
         "inputSchema": {
             "type": "object",
@@ -117,6 +121,64 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                     "type": "integer",
                     "description": "Maximum number of ADRs to return.",
                     "minimum": 1,
+                    "maximum": 100,
+                },
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 240},
+                    "maxItems": 32,
+                    "description": "Target or changed paths used for Enforcement scope matching.",
+                },
+                "components": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 240},
+                    "maxItems": 32,
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 240},
+                    "maxItems": 32,
+                },
+                "topics": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 240},
+                    "maxItems": 32,
+                },
+                "statuses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "Accepted", "Proposed", "Superseded", "Rejected",
+                            "Deprecated", "Amended", "Unknown"
+                        ],
+                    },
+                    "uniqueItems": True,
+                    "maxItems": 7,
+                    "description": "Optional lifecycle-status filter.",
+                },
+                "authorities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["governing", "advisory", "historical"],
+                    },
+                    "uniqueItems": True,
+                    "maxItems": 3,
+                    "description": "Optional authority filter.",
+                },
+                "include_history": {
+                    "type": "boolean",
+                    "description": "Permit historical ADRs; false by default.",
+                },
+                "strict_index": {
+                    "type": "boolean",
+                    "description": "Fail instead of using Markdown fallback.",
+                },
+                "min_score": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
                 },
                 **WORKSPACE_PROPERTIES,
             },
@@ -269,6 +331,8 @@ def _call_paths(
     raw_root = arguments.get("project_root")
     if raw_root is not None and (not isinstance(raw_root, str) or not raw_root.strip()):
         raise ValueError("'project_root' must be a non-empty string")
+    if raw_root and not Path(raw_root).expanduser().is_absolute():
+        raise ValueError("'project_root' must be an absolute path")
     root = Path(raw_root).expanduser().resolve() if raw_root else default_root
     if not root.is_dir():
         raise ValueError(f"project root not found: {root}")
@@ -285,6 +349,10 @@ def _call_paths(
         adr_dir = root / "docs" / "adr"
     else:
         adr_dir = default_adr_dir
+    try:
+        adr_dir.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"ADR directory must stay within project root: {adr_dir}") from exc
     return root, adr_dir
 
 
@@ -303,9 +371,81 @@ def tool_adr_context(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Di
     args = ["--format", "json", "--adr-dir", str(adr_dir)]
     limit = arguments.get("limit")
     if limit is not None:
-        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-            return _text_result("adr_context: 'limit' must be a positive integer", is_error=True)
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 100
+        ):
+            return _text_result(
+                "adr_context: 'limit' must be an integer between 1 and 100",
+                is_error=True,
+            )
         args += ["--limit", str(limit)]
+    list_options = {
+        "paths": "--path",
+        "components": "--component",
+        "symbols": "--symbol",
+        "topics": "--topic",
+        "statuses": "--status",
+        "authorities": "--authority",
+    }
+    allowed_values = {
+        "statuses": {
+            "Accepted", "Proposed", "Superseded", "Rejected",
+            "Deprecated", "Amended", "Unknown",
+        },
+        "authorities": {"governing", "advisory", "historical"},
+    }
+    for field, option in list_options.items():
+        values = arguments.get(field, [])
+        if (
+            not isinstance(values, list)
+            or len(values) > 32
+            or any(
+                not isinstance(value, str)
+                or not value.strip()
+                or len(value) > 240
+                for value in values
+            )
+        ):
+            return _text_result(
+                f"adr_context: '{field}' must be an array of at most 32 "
+                "non-empty strings",
+                is_error=True,
+            )
+        if field in allowed_values and any(
+            value not in allowed_values[field] for value in values
+        ):
+            return _text_result(
+                f"adr_context: '{field}' contains an unsupported value",
+                is_error=True,
+            )
+        for value in values:
+            args += [option, value]
+    for field, option in (
+        ("include_history", "--include-history"),
+        ("strict_index", "--strict-index"),
+    ):
+        value = arguments.get(field, False)
+        if not isinstance(value, bool):
+            return _text_result(
+                f"adr_context: '{field}' must be a boolean",
+                is_error=True,
+            )
+        if value:
+            args.append(option)
+    min_score = arguments.get("min_score")
+    if min_score is not None:
+        if (
+            not isinstance(min_score, (int, float))
+            or isinstance(min_score, bool)
+            or not 0 <= float(min_score) <= 1
+        ):
+            return _text_result(
+                "adr_context: 'min_score' must be a number between 0 and 1",
+                is_error=True,
+            )
+        args += ["--min-score", str(min_score)]
     args.append(query)
     rc, out, err = run_cli("adr-context", args, root)
     if rc != 0:

@@ -11,7 +11,8 @@ Select `adr-kit:context` from `/skills`, or ask Copilot to use the `context` ADR
 Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
-1. Take a short task topic and call the `adr-kit.adr_context` MCP tool with the absolute project root and limit 5.
-2. Summarize returned decisions with source paths and relevance; never invent a constraint when results are empty.
+1. Take a short task topic and call the `adr-kit.adr_context` MCP tool with the absolute project root and limit 5; include known paths, components, symbols, topics, lifecycle, or authority filters.
+2. Treat governing Accepted and advisory Proposed records separately, summarize explainable matches with source paths, and open only returned source ADRs before stating a binding constraint.
+3. Never invent a constraint when results are empty; report index fallback or strict-index failure explicitly.
 
 Do not contact another model or mutate user-owned instructions.

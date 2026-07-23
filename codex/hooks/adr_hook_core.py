@@ -7,9 +7,16 @@ import json
 import os
 import re
 import tempfile
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+_BIN_DIR = Path(__file__).resolve().parents[1] / "bin"
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+from adr_query import IndexQueryError, query_adr_context
 
 MAX_INPUT_BYTES = 64 * 1024
 MAX_PARENT_CHARS = 8 * 1024
@@ -263,6 +270,35 @@ def rank(records: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
     return (positive or [item[2] for item in scored])[:MAX_RESULTS]
 
 
+def _query(
+    workspace: Path,
+    query: str,
+    *,
+    path: str | None = None,
+) -> list[dict[str, Any]]:
+    """Use the shared index-first outcome contract and fail open on any fault."""
+    index = _index_path(workspace)
+    if index is None:
+        return []
+    try:
+        outcome = query_adr_context(
+            query,
+            index.parent,
+            limit=MAX_RESULTS,
+            strict_index=True,
+            include_history=False,
+            statuses=("Accepted", "Proposed"),
+            paths=(path,) if path else (),
+        )
+    except (IndexQueryError, OSError, UnicodeError, ValueError):
+        return []
+    return [
+        item
+        for item in outcome["results"]
+        if item.get("status") in {"Accepted", "Proposed"}
+    ][:MAX_RESULTS]
+
+
 def _safe_edit_path(envelope: Envelope) -> Path | None:
     value = _first(
         envelope.tool_input, "file_path", "filePath", "path", "notebook_path"
@@ -298,9 +334,11 @@ def _render(records: list[dict[str, Any]], heading: str) -> str:
         return ""
     lines = [heading]
     for record in records[:MAX_RESULTS]:
-        source = f"docs/adr/{record.get('path', '')}"
+        raw_path = str(record.get("path", ""))
+        source = f"docs/adr/{Path(raw_path).name}"
+        adr_id = record.get("id") or record.get("adr_id")
         lines.append(
-            f"- {record.get('id')}: {record.get('title')} — "
+            f"- {adr_id}: {record.get('title')} — "
             f"{record.get('decision_summary')} (source: {source})"
         )
     return "\n".join(lines)[:MAX_CONTEXT_CHARS]
@@ -367,14 +405,31 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
     compact_event = re.sub(r"[^a-z]", "", envelope.event.lower())
     if compact_event in NOOP_EVENTS:
         return "", "noop"
+    if envelope.event == "SubagentStart":
+        context = (envelope.parent_context or "")[:MAX_CONTEXT_CHARS]
+        return (context, "subagent") if context else ("", "noop")
+    if envelope.event == "PreCompact":
+        context = (envelope.parent_context or "")[:MAX_CONTEXT_CHARS]
+        return (context, "compact") if context else ("", "noop")
     all_records = load_index_records(envelope.workspace)
     records = [item for item in all_records if item.get("status") == "Accepted"]
     proposed = [item for item in all_records if item.get("status") == "Proposed"]
     if envelope.event == "SessionStart":
+        global_records = sorted(
+            (
+                item
+                for item in records
+                if item.get("context_scope") == "global"
+            ),
+            key=lambda item: str(item.get("id", "")),
+        )
         parts = [
             part
             for part in (
-                _render(records[:MAX_RESULTS], "Relevant Accepted ADR orientation:"),
+                _render(
+                    global_records[:MAX_RESULTS],
+                    "Global Accepted ADR orientation:",
+                ),
                 load_queue_context(envelope.workspace),
             )
             if part
@@ -383,10 +438,18 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
     if not records and envelope.event not in {"PreToolUse", "PostToolUse"}:
         return "", "noop"
     if envelope.event == "UserPromptSubmit":
-        return _render(
-            rank(records, envelope.prompt or ""),
-            "Accepted ADRs relevant to this prompt:",
-        ), "prompt"
+        selected = _query(envelope.workspace, envelope.prompt or "")
+        governing = [item for item in selected if item.get("status") == "Accepted"]
+        advisory = [item for item in selected if item.get("status") == "Proposed"]
+        parts = [
+            part
+            for part in (
+                _render(governing, "Governing Accepted ADRs relevant to this prompt:"),
+                _render(advisory, "Advisory Proposed ADRs relevant to this prompt:"),
+            )
+            if part
+        ]
+        return ("\n".join(parts)[:MAX_CONTEXT_CHARS], "prompt") if parts else ("", "noop")
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")
         if tool not in WRITE_TOOLS:
@@ -394,7 +457,10 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
         path = _safe_edit_path(envelope)
         if path is None:
             return "", "noop"
-        selected = _matching_path_records(records, envelope.workspace, path)
+        relative = path.relative_to(envelope.workspace).as_posix()
+        selected = _query(envelope.workspace, relative, path=relative)
+        governing = [item for item in selected if item.get("status") == "Accepted"]
+        advisory = [item for item in selected if item.get("status") == "Proposed"]
         heading = (
             "Governing Accepted ADRs before this edit:"
             if envelope.event == "PreToolUse"
@@ -403,9 +469,10 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
         context_parts = [
             part
             for part in (
-                _render(selected, heading),
+                _render(governing, heading),
+                _render(advisory, "Advisory Proposed ADRs for this edit:"),
                 _proposed_advisory(
-                    proposed, path.relative_to(envelope.workspace).as_posix(), envelope.client
+                    proposed, relative, envelope.client
                 ),
             )
             if part
@@ -413,14 +480,4 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
         return "\n".join(context_parts)[:MAX_CONTEXT_CHARS], (
             "pre-edit" if envelope.event == "PreToolUse" else "post-edit"
         )
-    if envelope.event == "SubagentStart":
-        return (
-            (envelope.parent_context or "")[:MAX_CONTEXT_CHARS],
-            "subagent",
-        )
-    if envelope.event == "PreCompact":
-        return _render(
-            records[:MAX_RESULTS],
-            "ADR continuity for context compaction:",
-        ), "compact"
     return "", "noop"

@@ -33,11 +33,13 @@ python <absolute-adr-kit-checkout>/bin/adr-index --check <absolute-target-projec
 python <absolute-adr-kit-checkout>/bin/adr-context --format json --adr-dir <absolute-target-project>/docs/adr "<current task>"
 ```
 
-`docs/adr/ADR-INDEX.json` is a versioned node-and-edge catalog with lifecycle
-metadata, decision summaries, enforcement scope, and declared ADR links.
-Agents use it to shortlist records and then read the linked Markdown ADRs;
-Markdown remains authoritative. `ADR-INDEX.md`, `ADR-INDEX.json`, and the
-generated README block must never be hand-edited.
+`docs/adr/ADR-INDEX.json` is the versioned local selective-context query
+database. It contains lifecycle state, summaries, retrieval metadata,
+Decision Contracts, enforcement scope, fingerprints, and declared ADR links.
+Agents query it to shortlist records and then read only the linked Markdown
+ADRs; Markdown remains authoritative. `ADR-INDEX.md`, `ADR-INDEX.json`, and
+the generated README block must never be hand-edited. See
+[docs/selective-context.md](docs/selective-context.md).
 
 ## Safety and prerequisites
 
@@ -158,6 +160,15 @@ Y-Statements, Tyree/Akerman records, arc42 decision sections, hybrids, and
 unknown shapes, invoke the reported migrate skill and review the mapping.
 Never apply a migration merely because installation detected it.
 
+Preview retrieval metadata and Decision Contract candidates independently:
+
+```bash
+python <absolute-adr-kit-checkout>/bin/adr-migrate --suggest-retrieval --dry-run <absolute-target-project>/docs/adr
+```
+
+This mode is read-only and requires human review. After approved metadata is
+applied, rebuild the index and run `adr-context --check-probes`.
+
 ## 5. Validate registration and runtime
 
 Use the commands for every installed client:
@@ -265,6 +276,7 @@ checkout and target placeholders with absolute paths:
 python <absolute-adr-kit-checkout>/bin/adr new "Short imperative title" --adr-dir <absolute-target-project>/docs/adr
 python <absolute-adr-kit-checkout>/bin/adr profiles --format json
 python <absolute-adr-kit-checkout>/bin/adr-context --adr-dir <absolute-target-project>/docs/adr --format json "current task"
+python <absolute-adr-kit-checkout>/bin/adr-context --adr-dir <absolute-target-project>/docs/adr --check-probes
 python <absolute-adr-kit-checkout>/bin/adr-migrate --plan <absolute-target-project>/docs/adr
 python <absolute-adr-kit-checkout>/bin/adr-lint --strict <absolute-target-project>/docs/adr
 python <absolute-adr-kit-checkout>/bin/adr-index --check <absolute-target-project>/docs/adr
