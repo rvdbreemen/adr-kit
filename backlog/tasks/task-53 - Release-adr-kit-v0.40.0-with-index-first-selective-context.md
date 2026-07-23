@@ -1,11 +1,11 @@
 ---
 id: TASK-53
 title: Release adr-kit v0.40.0 with index-first selective context
-status: In Progress
+status: Done
 assignee:
   - '@Codex'
 created_date: '2026-07-23 19:53'
-updated_date: '2026-07-23 20:41'
+updated_date: '2026-07-23 20:57'
 labels:
   - release
   - marketplace
@@ -53,7 +53,7 @@ Bump the completed TASK-52 implementation to v0.40.0, prepare release-quality no
 - [x] #3 Release gates pass: version registry, generated adapters, strict ADR lint, generated index freshness, git diff check, and the full supported pytest suite.
 - [x] #4 A release branch is committed and pushed, a PR to protected main is opened, and final-head CI is green without bypassing branch protection.
 - [x] #5 After maintainer merge, main is pulled and verified, tag v0.40.0 is pushed, and the tag-triggered GitHub Release workflow completes successfully.
-- [ ] #6 The local prepared-directory marketplace is advanced and Claude, Codex, and Copilot installations are individually verified at 0.40.0.
+- [x] #6 The local prepared-directory marketplace is advanced and Claude, Codex, and Copilot installations are individually verified at 0.40.0.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -78,4 +78,12 @@ PR #36 final-head CI for commit 423dfcd is green: declarative ADR enforcement, a
 Maintainer merged PR #36 as 9dddfbee1fe1a9436e6d0354eadb9bcb2eca0a14. Post-merge main workflows passed, tag v0.40.0 points to that merge, release-publish run 30042881197 passed, and GitHub Release https://github.com/rvdbreemen/adr-kit/releases/tag/v0.40.0 is published (not draft or prerelease).
 
 Prepared marketplace C:/Users/rvdbr/AppData/Local/adr-kit/marketplaces/0.40.0 passed MCP and Claude hook validation. Claude reports adr-kit 0.40.0 enabled; Copilot reports v0.40.0 installed. Codex remains at 0.39.0 because this active Codex process holds its plugin cache open, so native removal failed with Windows os error 32. AC #6 remains open until Codex is restarted, the Codex-only installer is rerun, and codex plugin list confirms 0.40.0.
+
+Final local verification succeeded after stopping only the stale ADR Kit MCP child process owned by the active Codex process. The supported Codex-only installer then removed 0.39.0, registered prepared marketplace 0.40.0, installed the plugin, and passed validation. Independent final lists confirm Claude 0.40.0 enabled, Codex 0.40.0 installed/enabled, and Copilot v0.40.0 installed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Released adr-kit v0.40.0 from protected main. PR #36 merged with all CI green; tag v0.40.0 and release-publish run 30042881197 succeeded; the public GitHub Release is live. The CI-only jsonschema collection failure was fixed dependency-free by using the stdlib probe loader in Python tests and AJV for complete probe-schema validation. The local prepared marketplace was advanced and Claude, Codex, and Copilot were each verified at 0.40.0.
+<!-- SECTION:FINAL_SUMMARY:END -->
