@@ -12,6 +12,12 @@
       "fixture": "clients/fixtures/copilot-pretool-context-limit.json",
       "rationale": "Copilot cannot inject arbitrary model context at PreToolUse.",
       "user_effect": "Proactive deterministic checks and PostToolUse verification replace pre-edit context injection."
+    },
+    {
+      "id": "copilot-lifecycle-event-limit",
+      "fixture": "clients/fixtures/copilot-lifecycle-event-limit.json",
+      "rationale": "Copilot CLI does not expose SubagentStart or PreCompact lifecycle hooks.",
+      "user_effect": "Session and prompt context stay native, while generated workflow guidance requires selected ADR context to be carried forward without broadening."
     }
   ]
 }

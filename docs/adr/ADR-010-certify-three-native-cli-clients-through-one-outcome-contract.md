@@ -2,7 +2,7 @@
 id: "ADR-010"
 title: "Certify Three Native CLI Clients Through One Outcome Contract"
 status: "Accepted"
-date: "2026-07-20"
+date: "2026-07-23"
 binding: true
 gate: "three-client-release"
 documents_shipped: false
@@ -11,6 +11,20 @@ verified_in:
   - "tests/test_client_capabilities_schema.py"
 supersedes: []
 superseded_by: null
+topics:
+  - "client parity"
+  - "release certification"
+  - "lifecycle hooks"
+aliases:
+  - "three-client release"
+  - "native client contract"
+components:
+  - "client adapters"
+  - "release certification"
+symbols:
+  - "support_matrix"
+  - "client-capabilities"
+context_scope: "selective"
 format: "madr"
 ---
 
@@ -20,7 +34,7 @@ format: "madr"
 
 ## Status
 
-Accepted, 2026-07-20.
+Accepted, 2026-07-23.
 
 ## Status History
 
@@ -35,6 +49,11 @@ status_history:
     status: Accepted
     changed_by: Robert van den Breemen
     reason: Maintainer approved the three-client contract and authorized the v0.36.0 release candidate
+    changed_via: adr-kit lifecycle
+  - date: 2026-07-23
+    status: Accepted
+    changed_by: Codex for Robert
+    reason: Revalidated after TASK-52 extended lifecycle retrieval metadata and client capability coverage without changing the three-client outcome contract
     changed_via: adr-kit lifecycle
 ```
 

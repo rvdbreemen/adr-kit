@@ -10,6 +10,11 @@ verified_in: []
 supersedes: []
 superseded_by: null
 format: "canonical"
+topics: []
+aliases: []
+components: []
+symbols: []
+context_scope: "selective"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -38,6 +43,24 @@ State the problem, constraints, and concrete evidence.
 ## Decision
 
 State one concrete chosen approach and its rationale.
+
+## Decision Contract
+
+### Must
+
+- State required implementation constraints.
+
+### Must Not
+
+- State prohibited implementation choices.
+
+### Exceptions
+
+- State explicit exceptions, or `None`.
+
+### Verification
+
+- Name the test, command, or source anchor that verifies this decision.
 
 ## Alternatives Considered
 

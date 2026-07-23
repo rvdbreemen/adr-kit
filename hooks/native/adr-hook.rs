@@ -6,6 +6,7 @@
 //! without output; deterministic pre-commit enforcement remains separate.
 
 use std::cmp::Reverse;
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -25,8 +26,14 @@ struct Record {
     path: String,
     status: String,
     summary: String,
+    context_scope: String,
     globs: Vec<String>,
     verified: Vec<String>,
+    topics: Vec<String>,
+    aliases: Vec<String>,
+    components: Vec<String>,
+    symbols: Vec<String>,
+    contract: Vec<String>,
 }
 
 fn json_string(input: &str, key: &str) -> Option<String> {
@@ -185,8 +192,16 @@ fn load_records(workspace: &Path) -> Vec<Record> {
             path: json_string(object, "path").unwrap_or_default(),
             status: json_string(object, "status").unwrap_or_default(),
             summary: json_string(object, "decision_summary").unwrap_or_default(),
+            context_scope: json_string(object, "context_scope").unwrap_or_else(|| "selective".to_string()),
             globs: string_array(object, "path_globs"),
             verified: string_array(object, "verified_in"),
+            topics: string_array(object, "topics"),
+            aliases: string_array(object, "aliases"),
+            components: string_array(object, "components"),
+            symbols: string_array(object, "symbols"),
+            contract: ["must", "must_not", "exceptions", "verification"].iter()
+                .flat_map(|key| string_array(object, key))
+                .collect(),
         })
     }).collect()
 }
@@ -242,20 +257,30 @@ fn tokens(value: &str) -> Vec<String> {
 }
 
 fn rank(records: &[Record], query: &str) -> Vec<Record> {
-    let query_tokens = tokens(query);
+    let query_tokens: HashSet<String> = tokens(query).into_iter().collect();
+    let overlap = |values: &[String]| -> usize {
+        let value_tokens: HashSet<String> = values.iter()
+            .flat_map(|value| tokens(value))
+            .collect();
+        query_tokens.intersection(&value_tokens).count()
+    };
     let mut scored: Vec<(usize, String, Record)> = records.iter().map(|record| {
-        let text = format!("{} {} {} {}", record.id, record.title, record.summary, record.globs.join(" "));
-        let record_tokens = tokens(&text);
-        let score = query_tokens.iter().filter(|token| record_tokens.contains(token)).count();
+        let score =
+            overlap(&record.symbols) * 95
+            + overlap(&record.components) * 90
+            + overlap(&record.topics) * 75
+            + overlap(&record.aliases) * 70
+            + overlap(&[record.title.clone()]) * 60
+            + overlap(&record.contract) * 50
+            + overlap(&[record.summary.clone()]) * 40;
         (score, record.id.clone(), record.clone())
     }).collect();
     scored.sort_by_key(|(score, id, _)| (Reverse(*score), id.clone()));
-    let positive: Vec<Record> = scored.iter().filter(|item| item.0 > 0).map(|item| item.2.clone()).take(MAX_RESULTS).collect();
-    if positive.is_empty() {
-        scored.into_iter().map(|item| item.2).take(MAX_RESULTS).collect()
-    } else {
-        positive
-    }
+    scored.into_iter()
+        .filter(|item| item.0 > 0)
+        .map(|item| item.2)
+        .take(MAX_RESULTS)
+        .collect()
 }
 
 fn glob_match(pattern: &[u8], value: &[u8]) -> bool {
@@ -490,7 +515,7 @@ fn run() -> Option<String> {
         .or_else(|| json_string(&payload, "workspace_root"))
         .unwrap_or_else(|| env::current_dir().unwrap_or_default().to_string_lossy().to_string());
     let workspace = fs::canonicalize(&workspace_text).unwrap_or_else(|_| PathBuf::from(workspace_text));
-    if event == "SubagentStart" {
+    if event == "SubagentStart" || event == "PreCompact" {
         let parent = json_string(&payload, "parent_context")
             .or_else(|| json_string(&payload, "parentContext"))
             .or_else(|| json_string(&payload, "adr_context"))
@@ -507,7 +532,11 @@ fn run() -> Option<String> {
         return None;
     }
     let (context, pre_edit) = if event == "SessionStart" {
-        let orientation = render(&records, "Relevant Accepted ADR orientation:");
+        let global: Vec<Record> = records.iter()
+            .filter(|record| record.context_scope == "global")
+            .cloned()
+            .collect();
+        let orientation = render(&global, "Global Accepted ADR orientation:");
         let queue = load_queue_context(&workspace);
         let context = match (orientation.is_empty(), queue.is_empty()) {
             (false, false) => format!("{}\n\n{}", orientation, queue),
@@ -521,7 +550,24 @@ fn run() -> Option<String> {
             .or_else(|| json_string(&payload, "user_prompt"))
             .or_else(|| json_string(&payload, "userPrompt"))
             .unwrap_or_default();
-        (render(&rank(&records, &prompt), "Accepted ADRs relevant to this prompt:"), false)
+        let current: Vec<Record> = all_records.iter()
+            .filter(|record| matches!(record.status.as_str(), "Accepted" | "Proposed"))
+            .cloned()
+            .collect();
+        let selected = rank(&current, &prompt);
+        let governing: Vec<Record> = selected.iter()
+            .filter(|record| record.status == "Accepted").cloned().collect();
+        let advisory: Vec<Record> = selected.iter()
+            .filter(|record| record.status == "Proposed").cloned().collect();
+        let governed = render(&governing, "Governing Accepted ADRs relevant to this prompt:");
+        let advised = render(&advisory, "Advisory Proposed ADRs relevant to this prompt:");
+        let context = match (governed.is_empty(), advised.is_empty()) {
+            (false, false) => format!("{}\n{}", governed, advised),
+            (false, true) => governed,
+            (true, false) => advised,
+            (true, true) => return None,
+        };
+        (context, false)
     } else if event == "PreToolUse" || event == "PostToolUse" {
         let tool = json_string(&payload, "tool_name")
             .or_else(|| json_string(&payload, "toolName"))
@@ -536,17 +582,32 @@ fn run() -> Option<String> {
             .or_else(|| json_string(&payload, "notebook_path"))
             .or_else(|| json_string(&payload, "path"))?;
         let relative = safe_relative(&workspace, &path)?;
-        let scoped: Vec<Record> = records.iter().filter(|record| {
+        let current: Vec<Record> = all_records.iter()
+            .filter(|record| matches!(record.status.as_str(), "Accepted" | "Proposed"))
+            .cloned()
+            .collect();
+        let scoped: Vec<Record> = current.iter().filter(|record| {
             record.globs.iter().any(|glob| glob_match(glob.as_bytes(), relative.as_bytes()))
         }).cloned().collect();
-        let selected = if scoped.is_empty() { rank(&records, &relative) } else { scoped };
+        let selected = if scoped.is_empty() { rank(&current, &relative) } else { scoped };
+        let governing: Vec<Record> = selected.iter()
+            .filter(|record| record.status == "Accepted").cloned().collect();
+        let advisory_records: Vec<Record> = selected.iter()
+            .filter(|record| record.status == "Proposed").cloned().collect();
         let heading = if event == "PreToolUse" {
             "Governing Accepted ADRs before this edit:"
         } else {
             "Post-edit ADR backstop; verify this change against:"
         };
-        let governed = render(&selected, heading);
-        let advisory = proposed_advisory(&proposed, &relative, client);
+        let governed = render(&governing, heading);
+        let proposed_context = render(&advisory_records, "Advisory Proposed ADRs for this edit:");
+        let grill = proposed_advisory(&proposed, &relative, client);
+        let advisory = match (proposed_context.is_empty(), grill.is_empty()) {
+            (false, false) => format!("{}\n{}", proposed_context, grill),
+            (false, true) => proposed_context,
+            (true, false) => grill,
+            (true, true) => String::new(),
+        };
         let context = match (governed.is_empty(), advisory.is_empty()) {
             (false, false) => format!("{}\n{}", governed, advisory),
             (false, true) => governed,
@@ -554,8 +615,6 @@ fn run() -> Option<String> {
             (true, true) => return None,
         };
         (context, event == "PreToolUse")
-    } else if event == "PreCompact" {
-        (render(&records, "ADR continuity for context compaction:"), false)
     } else {
         return None;
     };

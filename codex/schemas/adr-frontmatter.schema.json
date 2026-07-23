@@ -95,6 +95,42 @@
         "canonical"
       ],
       "description": "Optional ADR body profile discriminator. Legacy records may omit it and are detected from headings."
+    },
+    "topics": {
+      "$ref": "#/$defs/retrievalStrings",
+      "description": "Optional deterministic topic terms for selective ADR retrieval."
+    },
+    "aliases": {
+      "$ref": "#/$defs/retrievalStrings",
+      "description": "Optional alternative names and phrases for selective ADR retrieval."
+    },
+    "components": {
+      "$ref": "#/$defs/retrievalStrings",
+      "description": "Optional architectural components named by this decision."
+    },
+    "symbols": {
+      "$ref": "#/$defs/retrievalStrings",
+      "description": "Optional code symbols named by this decision."
+    },
+    "context_scope": {
+      "type": "string",
+      "enum": [
+        "global",
+        "selective"
+      ],
+      "description": "Whether the ADR is baseline context or requires positive selective evidence."
+    }
+  },
+  "$defs": {
+    "retrievalStrings": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      }
     }
   }
 }

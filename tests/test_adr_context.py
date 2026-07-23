@@ -201,8 +201,8 @@ def test_keyword_no_match(tmp_path):
 # 4. Acceptance status ranking
 # ---------------------------------------------------------------------------
 
-def test_accepted_ranked_higher_than_proposed(tmp_path):
-    """Accepted ADRs should score higher than Proposed for the same content."""
+def test_lifecycle_authority_does_not_change_relevance_score(tmp_path):
+    """Accepted and Proposed authority is separate from relevance."""
     _write_adr(tmp_path, 1, "Database Connection Pooling",
                status="Accepted", date_str="2025-06-01",
                decision="We use a connection pool for database access.")
@@ -213,9 +213,10 @@ def test_accepted_ranked_higher_than_proposed(tmp_path):
     assert len(results) == 2
     accepted = next(r for r in results if "ADR-001" in r["adr_id"])
     proposed = next(r for r in results if "ADR-002" in r["adr_id"])
-    assert accepted["score"] > proposed["score"], (
-        f"Accepted ({accepted['score']}) should beat Proposed ({proposed['score']})"
-    )
+    assert accepted["score"] == proposed["score"]
+    assert accepted["authority"] == "governing"
+    assert proposed["authority"] == "advisory"
+    assert [item["adr_id"] for item in results] == ["ADR-001", "ADR-002"]
 
 
 # ---------------------------------------------------------------------------
@@ -260,8 +261,8 @@ def test_json_output_format(tmp_path):
     assert isinstance(data, list)
 
 
-def test_json_has_signals(tmp_path):
-    """JSON output items must include a 'signals' dict with all 5 signal keys."""
+def test_json_has_positive_field_signals_only(tmp_path):
+    """JSON signals must explain fields without lifecycle or age boosts."""
     _write_adr(tmp_path, 1, "JWT Authentication",
                status="Accepted", date_str="2025-03-01",
                decision="We use JWT tokens for authentication and authorization.")
@@ -273,11 +274,18 @@ def test_json_has_signals(tmp_path):
     item = data[0]
     assert "signals" in item, "Missing 'signals' key in JSON output"
     signals = item["signals"]
-    expected_keys = {"exact_keyword", "domain_tag", "related_decisions",
-                     "acceptance_status", "recency"}
-    assert expected_keys <= set(signals.keys()), (
-        f"Missing signal keys: {expected_keys - set(signals.keys())}"
-    )
+    assert {"title", "decision_summary"} <= set(signals)
+    assert {
+        "exact_keyword",
+        "domain_tag",
+        "related_decisions",
+        "acceptance_status",
+        "recency",
+    }.isdisjoint(signals)
+    assert {match["field"] for match in item["matches"]} >= {
+        "title",
+        "decision_summary",
+    }
 
 
 def test_json_results_include_actionable_catalog_metadata(tmp_path):
@@ -323,6 +331,11 @@ def test_json_results_include_actionable_catalog_metadata(tmp_path):
         "metadata",
         "score",
         "signals",
+        "authority",
+        "role",
+        "matches",
+        "source",
+        "schema_version",
     } <= set(item)
     assert item["path"].endswith("ADR-001-jwt-authentication.md")
     assert item["status"] == "Accepted"
@@ -351,7 +364,7 @@ def test_text_output_format(tmp_path):
     assert lines, "Expected at least one output line"
     assert "ADR-042" in lines[0]
     assert "status: Accepted" in lines[0]
-    assert "binding context" in lines[0]
+    assert "governing primary" in lines[0]
     assert "relevance:" in lines[0]
 
 
@@ -387,7 +400,7 @@ def test_proposed_result_is_explicitly_non_binding(tmp_path):
         "candidate session cache",
     )
     assert "status: Proposed" in text_result.stdout
-    assert "non-binding context" in text_result.stdout
+    assert "advisory primary" in text_result.stdout
 
 
 def test_min_score_filter(tmp_path):

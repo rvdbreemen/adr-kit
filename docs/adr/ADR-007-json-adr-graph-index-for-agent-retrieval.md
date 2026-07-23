@@ -2,7 +2,7 @@
 id: "ADR-007"
 title: "JSON ADR Graph Index for Agent Retrieval"
 status: "Accepted"
-date: "2026-07-18"
+date: "2026-07-23"
 binding: false
 gate: null
 documents_shipped: false
@@ -18,7 +18,7 @@ format: "madr"
 
 ## Status
 
-Accepted, 2026-07-18.
+Accepted, 2026-07-23.
 
 ## Status History
 
@@ -33,6 +33,11 @@ status_history:
     status: Accepted
     changed_by: Robert van den Breemen
     reason: Human approval for the v0.34.0 release; ADR-INDEX.json ships as a generated artifact
+    changed_via: adr-kit lifecycle
+  - date: 2026-07-23
+    status: Accepted
+    changed_by: Codex for Robert
+    reason: Amended by ADR-014: advance the generated graph enforcement gate from schema version 1 to schema version 2 while retaining ADR-007's graph foundation and Markdown-authority rules
     changed_via: adr-kit lifecycle
 ```
 
@@ -219,9 +224,9 @@ Confirm the decision with:
   "forbid_import": [],
   "require_pattern": [
     {
-      "pattern": "\"schema_version\"\\s*:\\s*1",
+      "pattern": "\"schema_version\"\\s*:\\s*2",
       "path_glob": "docs/adr/ADR-INDEX.json",
-      "message": "The generated ADR graph must declare schema_version 1."
+      "message": "The generated ADR graph must declare schema_version 2 per ADR-014."
     },
     {
       "pattern": "\"relationships\"\\s*:",

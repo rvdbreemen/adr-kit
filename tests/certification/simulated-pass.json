@@ -66,7 +66,7 @@
       "native_smoke": {"install": true, "list": true, "workflow-discovery": true, "workflow-invocation": true, "instructions": true, "hook-outcomes": true, "mcp-initialize": true, "mcp-list": true, "mcp-call": true, "second-install-noop": true, "verified-update": true, "rollback": true, "doctor": true, "uninstall-preserves-user-state": true},
       "platforms": {"windows": {"status": "pass", "reason": "simulated contract"}, "macos": {"status": "not-run", "reason": "best-effort fixture"}, "linux": {"status": "not-run", "reason": "best-effort fixture"}},
       "benchmarks": [{"method_id": "client-generation-v1", "state": "cold", "samples": 11, "p50_ms": 727.431, "p95_ms": 838.449, "max_ms": 838.449, "hard_timeout_ms": 5000, "timed_out": false, "baseline_p95_ms": 2000, "writes": 167}, {"method_id": "client-generation-v1", "state": "warm", "samples": 11, "p50_ms": 45.998, "p95_ms": 68.576, "max_ms": 68.576, "hard_timeout_ms": 1000, "timed_out": false, "baseline_p95_ms": 500, "writes": 0}],
-      "degradations": ["copilot-pretool-context-limit"],
+      "degradations": ["copilot-pretool-context-limit", "copilot-lifecycle-event-limit"],
       "lifecycle_preservation": {"unrelated-config": true, "instruction-bytes-outside-markers": true, "local-guide": true, "previous-healthy-payload": true, "source-checkout": true},
       "native_optimization": {"native-manifest-layout": true, "native-discovery-syntax": true, "client-skill-metadata": true, "concise-prompt-behavior": true, "native-hook-shape": true, "no-deprecated-prompt-claim": true, "deprecated-prompt-first-class": false},
       "inventory": {"bin_baseline": 27, "scripts_baseline": 3, "task_40_added": 4, "exception": null},

@@ -33,7 +33,17 @@ FRONTMATTER_FIELD_ORDER = (
     "superseded_by",
 )
 
+OPTIONAL_FRONTMATTER_FIELD_ORDER = (
+    "topics",
+    "aliases",
+    "components",
+    "symbols",
+    "context_scope",
+    "format",
+)
+
 VALID_STATUSES = {"Proposed", "Accepted", "Deprecated", "Superseded", "Amended", "Rejected"}
+VALID_CONTEXT_SCOPES = {"global", "selective"}
 
 ADR_ID_RE = re.compile(r"\bADR-(\d{1,4})\b", re.IGNORECASE)
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
@@ -224,6 +234,19 @@ def render_frontmatter(data: Dict) -> str:
                 lines.append(f"{key}: []")
         else:
             lines.append(f"{key}: {_render_scalar(value)}")
+    for key in OPTIONAL_FRONTMATTER_FIELD_ORDER:
+        if key not in data:
+            continue
+        value = data[key]
+        rendered.add(key)
+        if isinstance(value, list):
+            if value:
+                lines.append(f"{key}:")
+                lines.extend(f"  - {_render_scalar(item)}" for item in value)
+            else:
+                lines.append(f"{key}: []")
+        else:
+            lines.append(f"{key}: {_render_scalar(value)}")
     for key in sorted(k for k in data if k not in rendered):
         value = data[key]
         if isinstance(value, list):
@@ -337,6 +360,29 @@ def validate_frontmatter(data: Dict) -> List[str]:
     profile = data.get("format")
     if profile is not None and profile not in SUPPORTED_PROFILES:
         issues.append("format must be one of: " + ", ".join(SUPPORTED_PROFILES))
+
+    for list_key in ("topics", "aliases", "components", "symbols"):
+        value = data.get(list_key)
+        if value is None:
+            continue
+        if (
+            not isinstance(value, list)
+            or not all(
+                isinstance(item, str) and 0 < len(item.strip()) <= 120
+                for item in value
+            )
+            or len(value) > 32
+        ):
+            issues.append(
+                f"{list_key} must be a list of at most 32 non-empty strings "
+                "of at most 120 characters"
+            )
+        elif len({item.casefold() for item in value}) != len(value):
+            issues.append(f"{list_key} entries must be unique ignoring case")
+
+    context_scope = data.get("context_scope")
+    if context_scope is not None and context_scope not in VALID_CONTEXT_SCOPES:
+        issues.append("context_scope must be one of: global, selective")
 
     return issues
 

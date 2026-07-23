@@ -131,12 +131,22 @@ def validate_manifests(inputs: dict[str, object], version: str) -> None:
             raise GenerationError(f"missing required MCP artifact: {path}")
 
 
+def _runner_timeout(event: dict) -> int:
+    value = event.get("runner_timeout_sec", 1)
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 30:
+        raise GenerationError(
+            f"hook {event.get('id', '<unknown>')} runner_timeout_sec must be an integer from 1 to 30"
+        )
+    return value
+
+
 def _nested_hook_config(manifest: dict, client_id: str) -> dict:
     hooks: dict[str, list[dict]] = {}
     for event in manifest.get("events", []):
         native = event.get("clients", {}).get(client_id)
         if not native:
             continue
+        runner_timeout = _runner_timeout(event)
         if client_id == "claude-code-cli":
             handler = {
                 "type": "command",
@@ -144,7 +154,7 @@ def _nested_hook_config(manifest: dict, client_id: str) -> dict:
                     '"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" '
                     f'{event["command"]} claude-code-cli'
                 ),
-                "timeout": 1,
+                "timeout": runner_timeout,
             }
         else:
             handler = {
@@ -157,7 +167,7 @@ def _nested_hook_config(manifest: dict, client_id: str) -> dict:
                     '"%PLUGIN_ROOT%\\hooks\\run-hook.cmd" '
                     f'{event["command"]} codex-cli'
                 ),
-                "timeout": 1,
+                "timeout": runner_timeout,
             }
         entry: dict[str, object] = {"hooks": [handler]}
         if event.get("matcher"):
@@ -176,6 +186,7 @@ def _copilot_hook_config(manifest: dict) -> dict:
         if not native:
             continue
         command = event["command"]
+        runner_timeout = _runner_timeout(event)
         hooks.setdefault(native, []).append({
             "type": "command",
             "bash": (
@@ -190,7 +201,7 @@ def _copilot_hook_config(manifest: dict) -> dict:
                 f"--client github-copilot-cli --event {command} }} }}; exit 0"
             ),
             "cwd": "${PLUGIN_ROOT}",
-            "timeoutSec": 1,
+            "timeoutSec": runner_timeout,
         })
     return {"version": 1, "hooks": hooks}
 

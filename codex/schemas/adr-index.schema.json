@@ -17,7 +17,7 @@
       "minLength": 1
     },
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "adrs": {
       "type": "array",
@@ -58,6 +58,12 @@
         "status",
         "date",
         "decision_summary",
+        "topics",
+        "aliases",
+        "components",
+        "symbols",
+        "context_scope",
+        "decision_contract",
         "scope",
         "metadata"
       ],
@@ -106,6 +112,28 @@
         "decision_summary": {
           "type": "string",
           "maxLength": 120
+        },
+        "topics": {
+          "$ref": "#/$defs/retrievalStrings"
+        },
+        "aliases": {
+          "$ref": "#/$defs/retrievalStrings"
+        },
+        "components": {
+          "$ref": "#/$defs/retrievalStrings"
+        },
+        "symbols": {
+          "$ref": "#/$defs/retrievalStrings"
+        },
+        "context_scope": {
+          "type": "string",
+          "enum": [
+            "global",
+            "selective"
+          ]
+        },
+        "decision_contract": {
+          "$ref": "#/$defs/decisionContract"
         },
         "scope": {
           "type": "object",
@@ -167,6 +195,50 @@
               "$ref": "#/$defs/nullableAdrId"
             }
           }
+        }
+      }
+    },
+    "retrievalStrings": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      }
+    },
+    "contractStrings": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240
+      }
+    },
+    "decisionContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "must",
+        "must_not",
+        "exceptions",
+        "verification"
+      ],
+      "properties": {
+        "must": {
+          "$ref": "#/$defs/contractStrings"
+        },
+        "must_not": {
+          "$ref": "#/$defs/contractStrings"
+        },
+        "exceptions": {
+          "$ref": "#/$defs/contractStrings"
+        },
+        "verification": {
+          "$ref": "#/$defs/contractStrings"
         }
       }
     },

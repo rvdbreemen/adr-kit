@@ -130,6 +130,10 @@ def test_native_hook_shapes_are_generated_from_the_canonical_hook_manifest():
     assert codex["hooks"]["PreToolUse"][0]["hooks"][0][
         "command_windows"
     ].startswith('"%PLUGIN_ROOT%\\hooks\\run-hook.cmd"')
+    assert claude["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
+    assert codex["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
+    assert copilot["hooks"]["userPromptSubmitted"][0]["timeoutSec"] == 5
+    assert claude["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] == 1
     assert set(copilot["hooks"]) == {
         "sessionStart",
         "userPromptSubmitted",
@@ -140,6 +144,13 @@ def test_native_hook_shapes_are_generated_from_the_canonical_hook_manifest():
         for handlers in copilot["hooks"].values()
         for handler in handlers
     )
+    invalid = json.loads(json.dumps(hooks))
+    invalid["events"][0]["runner_timeout_sec"] = 0
+    with pytest.raises(GEN.GenerationError, match="integer from 1 to 30"):
+        GEN._native_hook_config(invalid, "codex-cli")
+    invalid["events"][0]["runner_timeout_sec"] = True
+    with pytest.raises(GEN.GenerationError, match="integer from 1 to 30"):
+        GEN._native_hook_config(invalid, "github-copilot-cli")
 
 
 def test_exceptions_have_rationale_effect_and_real_fixtures():

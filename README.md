@@ -17,13 +17,14 @@ use its returned shipped template path. ADR Kit currently ships complete
 templates for `madr`, `nygard`, and `canonical`; never invent a profile name
 or synthesize an unregistered template.
 
-**Agent finding the ADRs for a task?** Read
-`docs/adr/ADR-INDEX.json` first, or run
-`python bin/adr-context --format json "<task>"`. Use its status, scope,
-relationship graph, relevance signals, and source paths to shortlist records;
-then open the referenced Markdown ADRs before applying a constraint. Regenerate
-all indexes with `python bin/adr-index docs/adr` and verify them with
-`python bin/adr-index --check docs/adr`. Never hand-edit either generated index.
+**Agent finding the ADRs for a task?** Run
+`python bin/adr-context --format json "<task>"`. It queries the generated
+`docs/adr/ADR-INDEX.json` rather than opening the entire ADR set, and returns
+explainable matches from lifecycle, scope, paths, components, symbols, topics,
+and relationships. Open only the returned Markdown ADRs before applying a
+constraint. Regenerate all indexes with `python bin/adr-index docs/adr` and
+verify them with `python bin/adr-index --check docs/adr`. Never hand-edit
+either generated index. See [Selective ADR context](docs/selective-context.md).
 
 `adr-kit` turns Architecture Decision Records from passive documentation into active guardrails. Your agent gets the relevant decisions injected while it codes, every commit is checked against the accepted decisions, and a guardian watches for decisions that go stale. One toolkit covers the whole lifecycle: capture, enforce, maintain, retire.
 
@@ -220,7 +221,9 @@ Three layers, each with a clear path:
   and the older adr-kit canonical profile remains valid without rewriting.
   `bin/adr-migrate --plan docs/adr` detects metadata/filename upgrades and
   common external formats without writing. It prints deterministic dry-run
-  commands where safe and guided migration instructions otherwise.
+  commands where safe and guided migration instructions otherwise. Preview
+  retrieval metadata and Decision Contract candidates separately with
+  `bin/adr-migrate --suggest-retrieval --dry-run docs/adr`; it never writes.
 
 ## The lifecycle: capture, guard, maintain
 
@@ -248,7 +251,7 @@ Three layers, each with a clear path:
 
 ### Guard the agent while it works
 
-- **Context lookup (`/adr-kit:context`, `bin/adr-context`)**: give it a topic ("mqtt discovery", "caching") and it returns the 3 to 5 most relevant ADRs with path, status, format, one-line decision, enforcement scope, declared relationships, invariant metadata, and five explainable ranking signals. Proposed ADRs can appear, so treat the result as a shortlist and open each source ADR before applying it.
+- **Context lookup (`/adr-kit:context`, `bin/adr-context`)**: give it a task plus optional paths, components, symbols, topics, status, and authority filters. The shared schema-v2 index engine returns a bounded, explainable shortlist without scanning every Markdown ADR. Historical records are excluded unless requested; governing Accepted and advisory Proposed records remain distinct. Open each returned source ADR before applying it. See [Selective ADR context](docs/selective-context.md).
 - **In-flight nudges (`bin/adr-watch`, v0.24.0+)**: a PostToolUse hook fires after every Edit/Write in Claude Code and checks the touched file against the Accepted ADRs (Enforcement path globs first, keyword relevance second):
 
   ```
@@ -257,7 +260,7 @@ Three layers, each with a clear path:
 
   Deterministic, key-free, under 100ms, never blocks, and a per-session cooldown keeps it from nagging. This closes the gap between session-start context and commit-time enforcement: the agent is corrected **while the file is still open**.
 - **Edit-tier injection (`bin/adr-watch --pre-edit`, v0.31.0+)**: a PreToolUse hook fires *before* every Edit/Write and injects the top-ranked governing ADR's `## Decision` text (bounded to a token budget), so the agent honours the decision **as it writes**, not after. The PostToolUse nudge above stays as a confirmation backstop. Same deterministic matcher, key-free, exits 0. Formalised in [ADR-004](docs/adr/ADR-004-layered-adr-context-injection.md).
-- **Decision indexes (`bin/adr-index`)**: generates two deterministic, timestamp-free views from the same format-aware records. `docs/adr/ADR-INDEX.md` is the compact one-row-per-ADR session map imported by `CLAUDE.md`; `docs/adr/ADR-INDEX.json` is the versioned agent graph containing semantic metadata and sorted declared relationship edges. Markdown ADRs remain authoritative.
+- **Decision indexes (`bin/adr-index`)**: generates two deterministic, timestamp-free views from the same format-aware records. `docs/adr/ADR-INDEX.md` is the compact one-row-per-ADR session map imported by `CLAUDE.md`; schema-v2 `docs/adr/ADR-INDEX.json` is the actual selective-context query database, with source fingerprints, retrieval metadata, decision contracts, and sorted relationship edges. Markdown ADRs remain authoritative.
 - **Commit-time enforcement (`bin/adr-judge` + pre-commit hook)**: every ADR can carry a fenced JSON `## Enforcement` block with declarative rules (`forbid_pattern`, `forbid_import`, `require_pattern`, each optionally scoped by `path_glob`). On every `git commit` the hook runs those rules against the staged diff with file:line citations. Fast, deterministic, no LLM, no API key. ADRs whose rules are too nuanced for regex can set `llm_judge: true` for an opt-in model-reviewed pass instead.
 - **PR-time enforcement in CI**: the same judge can run as a composite GitHub Action or through the `pre-commit` framework, giving local and CI workflows the same deterministic rule set. See [CI integration](#ci-integration) and the audit notice above for current limitations.
 - **Audited escape hatch**: hotfix has to land despite a FAIL? `ADR_KIT_OVERRIDE="ADR-003: hotfix for incident 42" git commit ...` downgrades that one ADR's violations to loud warnings, refuses an empty reason, logs the override locally, and pairs with an `ADR-Override:` commit trailer convention you can reconcile later with `adr-judge --audit-overrides`. Guardrails with a paper trail instead of `--no-verify` folklore.
@@ -267,10 +270,10 @@ Three layers, each with a clear path:
 - **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart reads only that local 24-hour cache and offers at most three next actions; it never scans or starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
   - **Team mode (v0.22.0+)**: a weekly CI cron sweep maintains a single "ADR guardian audit" tracking issue (created on findings, updated, closed when clean) so the whole team sees ADR health, not just whoever opened a session today. Copy `templates/github-workflows/adr-guardian-audit.yml` into your repo.
   - **Trend history (v0.29.0+)**: every sweep appends to a 52-entry trend log, and the nudge shows the delta: `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`. A KPI with memory, not a snapshot.
-- **Health dashboard (`bin/adr-status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, and since v0.29.0 the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
+- **Health dashboard (`bin/adr-status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, retrieval probe results, Accepted-binding metadata completeness, and the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
 - **Quality scoring (`bin/adr-quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
 - **Generated index refresh (`bin/adr-index docs/adr/`)**: atomically rebuilds the sentinel-owned `docs/adr/README.md` block plus `ADR-INDEX.md` and `ADR-INDEX.json`. `--check` exits non-zero when any generated view is missing or stale, or duplicate ADR ids exist. Use `--format graph --adr-dir docs/adr` to inspect the graph without writing.
-- **Local doctor (`bin/adr-doctor`)**: fast mode checks ADR/index state, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
+- **Local doctor (`bin/adr-doctor`)**: fast mode checks ADR/index state, retrieval probes and metadata completeness, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Probe failures block; metadata completeness is advisory unless configured strict. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
 - **Lifecycle commands (`bin/adr`, v0.32.0+)**: local `propose`, `accept`, `supersede`, `reject`, and `document` commands update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated README index.
 - **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then verify strict lint, quality, and human readiness. The default `assist` mode reports eligibility without mutating; acceptance requires `--confirm` after the engineer reviews the packet. Existing projects that intentionally require the legacy automatic transition can explicitly configure `lifecycle.auto_accept.mode: "auto"`.
 - **Retirement audit (`/adr-kit:retire`, `bin/adr-retire`)**: ranks Accepted ADRs for retirement using four deterministic signals (status age, technology removal, supersession, policy drift). Read-only; a recommendation always needs a human.
@@ -288,7 +291,7 @@ client. Five tools, all key-free:
 
 | Tool | Arguments | Wraps |
 | --- | --- | --- |
-| `adr_context` | `query` (string), `limit?` (int) | `adr-context --format json` |
+| `adr_context` | `query`, `limit?`, `paths?`, `components?`, `symbols?`, `topics?`, `statuses?`, `authorities?`, `history?`, `strict_index?`, `min_score?` | shared schema-v2 index query |
 | `adr_judge` | `diff` (string) | `adr-judge` (declarative pass only) |
 | `adr_status` | none | `adr-status --format json` |
 | `adr_quality` | `adr_id?` (string) | `adr-quality --format json` per ADR |
@@ -513,7 +516,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.39.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.40.0
         with:
           adr-dir: docs/adr/
 ```
@@ -525,7 +528,7 @@ Declarative-only by default: no LLM, no secrets, no API key. Exit codes: `0` cle
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.39.0
+    rev: v0.40.0
     hooks:
       - id: adr-judge
 ```

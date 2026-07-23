@@ -5,6 +5,62 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.40.0] - 2026-07-23
+
+### Added
+
+- **`ADR-INDEX.json` schema v2 is now the local selective-context query
+  database.** The CLI, MCP server, lifecycle hooks, status, doctor, and
+  guardian share one deterministic engine with bounded text, path, component,
+  symbol, topic, lifecycle, authority, history, score, and result-limit inputs.
+  Results explain why each ADR matched, while source Markdown remains the
+  decision authority.
+- **ADRs can carry retrieval metadata and a compact Decision Contract.**
+  Frontmatter supports topics, aliases, components, symbols, and global versus
+  selective context scope. `Must`, `Must Not`, `Exceptions`, and
+  `Verification` sections give agents a bounded view that is reviewed during
+  human grilling rather than silently inferred as new authority.
+- **Project-specific retrieval probes and health reporting.**
+  `adr-context --check-probes`, `adr-status`, `adr-doctor`, and
+  `adr-guardian retrieval-health` report expected inclusions, exclusions, and
+  Accepted-binding metadata completeness without invoking a model.
+- **Safe metadata adoption for existing ADR sets.**
+  `adr-migrate --suggest-retrieval --dry-run` proposes retrieval metadata and
+  Decision Contract candidates without changing source ADRs. Applying a
+  candidate always remains an explicit, human-reviewed action.
+
+### Changed
+
+- **Healthy index-first retrieval replaces full-set Markdown discovery.**
+  Accepted ADRs govern, Proposed ADRs are labelled advisory, and historical
+  ADRs are opt-in. A visible Markdown fallback handles missing, stale,
+  unsupported, or schema-v1 indexes unless strict-index mode is enabled.
+- **Lifecycle context is narrower and authority-aware.** Session hooks inject
+  only explicit global Accepted context; prompt and edit hooks separate
+  governing Accepted records from advisory Proposed records; subagent and
+  compaction hooks preserve parent context without broadening it.
+- **Upgrade:** update ADR Kit, run `python bin/adr-index docs/adr`, and add
+  retrieval probes before enabling strict index or strict completeness policy.
+  Projects without retrieval metadata continue to work, and completeness is
+  advisory by default. No ADR body profile or lifecycle transition changed.
+
+### Fixed
+
+- **Intermittent `UserPromptSubmit` timeout warnings on Windows.** The client
+  runner now allows a five-second cold-start safety margin while preserving the
+  separate 250 ms p95 and 500 ms semantic retrieval budgets. The hook remains
+  deterministic, model-free, key-free, bounded, and fail-open.
+
+### Deprecated
+
+- **Reading every Markdown ADR to discover relevance is no longer the preferred
+  workflow.** Query the generated index first, then open only returned sources.
+  Schema-v1 fallback, stable result fields, older client payloads, and legacy
+  scoring-weight call signatures remain compatible for one minor release;
+  legacy weights no longer alter positive-evidence ranking. To roll back,
+  disable strict index/completeness settings, revert approved metadata edits,
+  and regenerate the previous index.
+
 ## [0.39.0] - 2026-07-22
 
 ### Added
