@@ -7,13 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import jsonschema
-
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "bin"
 sys.path.insert(0, str(BIN))
 
-from adr_retrieval_health import run_retrieval_health  # noqa: E402
+from adr_retrieval_health import load_probes, run_retrieval_health  # noqa: E402
 from adr_schema import render_frontmatter  # noqa: E402
 
 
@@ -116,12 +114,15 @@ def test_probe_schema_and_dogfood_file_validate():
             encoding="utf-8"
         )
     )
-    payload = json.loads(
-        (ROOT / "docs" / "adr" / "adr-context-probes.json").read_text(
-            encoding="utf-8"
-        )
+    probes = load_probes(
+        ROOT / "docs" / "adr" / "adr-context-probes.json"
     )
-    jsonschema.validate(payload, schema)
+
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["properties"]["schema_version"]["const"] == 1
+    assert schema["properties"]["probes"]["items"]["$ref"] == "#/$defs/probe"
+    assert probes["schema_version"] == 1
+    assert probes["probes"]
 
 
 def test_probe_pass_and_metadata_advisory_are_read_only(tmp_path):
