@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@Codex'
 created_date: '2026-07-23 19:53'
-updated_date: '2026-07-23 20:34'
+updated_date: '2026-07-23 20:41'
 labels:
   - release
   - marketplace
@@ -52,7 +52,7 @@ Bump the completed TASK-52 implementation to v0.40.0, prepare release-quality no
 - [x] #2 The 0.40.0 CHANGELOG section provides user-facing release notes, upgrade guidance, compatibility behavior, risks, and rollback guidance.
 - [x] #3 Release gates pass: version registry, generated adapters, strict ADR lint, generated index freshness, git diff check, and the full supported pytest suite.
 - [x] #4 A release branch is committed and pushed, a PR to protected main is opened, and final-head CI is green without bypassing branch protection.
-- [ ] #5 After maintainer merge, main is pulled and verified, tag v0.40.0 is pushed, and the tag-triggered GitHub Release workflow completes successfully.
+- [x] #5 After maintainer merge, main is pulled and verified, tag v0.40.0 is pushed, and the tag-triggered GitHub Release workflow completes successfully.
 - [ ] #6 The local prepared-directory marketplace is advanced and Claude, Codex, and Copilot installations are individually verified at 0.40.0.
 <!-- AC:END -->
 
@@ -74,4 +74,8 @@ PR #36 CI diagnosis: all six Python compatibility jobs failed during collection 
 Approved CI correction verification: retrieval-health module 8 passed locally and 8 passed again in a fresh virtual environment with only pytest installed; the exact AJV draft-2020 command validates docs/adr/adr-context-probes.json; release version registry, generated adapters, strict ADR lint (14/14), index freshness, and git diff checks all pass; full regression suite 867 passed, 10 skipped in 428.72 seconds.
 
 PR #36 final-head CI for commit 423dfcd is green: declarative ADR enforcement, adr-readiness, generated-index freshness, lint smoke, validate/AJV, pytest, and the six Python 3.10/3.12 compatibility jobs across Ubuntu, macOS, and Windows all passed. Branch protection was not bypassed.
+
+Maintainer merged PR #36 as 9dddfbee1fe1a9436e6d0354eadb9bcb2eca0a14. Post-merge main workflows passed, tag v0.40.0 points to that merge, release-publish run 30042881197 passed, and GitHub Release https://github.com/rvdbreemen/adr-kit/releases/tag/v0.40.0 is published (not draft or prerelease).
+
+Prepared marketplace C:/Users/rvdbr/AppData/Local/adr-kit/marketplaces/0.40.0 passed MCP and Claude hook validation. Claude reports adr-kit 0.40.0 enabled; Copilot reports v0.40.0 installed. Codex remains at 0.39.0 because this active Codex process holds its plugin cache open, so native removal failed with Windows os error 32. AC #6 remains open until Codex is restarted, the Codex-only installer is rerun, and codex plugin list confirms 0.40.0.
 <!-- SECTION:NOTES:END -->
