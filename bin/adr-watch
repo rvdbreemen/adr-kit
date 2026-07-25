@@ -50,13 +50,17 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_catalog import adr_status as _adr_status
+from adr_catalog import enforcement_globs as _parse_enforcement_globs
 from adr_format import section_text
+from adr_config import load_json_config as _load_config
+from adr_state import find_project_adr_dir as _find_adr_dir
 from adr_state import load_state, update_state
 
 # ---------------------------------------------------------------------------
@@ -78,21 +82,6 @@ _CHARS_PER_TOKEN = 4  # coarse estimate, matches the OpenWolf prose heuristic
 # Precompiled regexes (all linear-time; reused from adr-judge / adr-context)
 # ---------------------------------------------------------------------------
 
-# Same pattern as adr-judge ENFORCEMENT_BLOCK_RE (post-ReDoS-fix form).
-ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
-STATUS_HEADING_RE = re.compile(
-    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
-)
-STATUS_LINE_RE = re.compile(
-    r"^\s*Status\s*:\s*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
-)
-STATUS_BOLD_INLINE_RE = re.compile(
-    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
-    re.IGNORECASE | re.MULTILINE,
-)
 TITLE_RE = re.compile(r"^#\s+ADR-\d+[:\s]\s*(.+)$", re.MULTILINE)
 DECISION_SECTION_RE = re.compile(
     r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
@@ -177,40 +166,9 @@ def _project_root() -> Path:
     return Path.cwd()
 
 
-def _find_adr_dir() -> Optional[Path]:
-    """Return docs/adr/ with at least one ADR-*.md, or None (self-guard)."""
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or ""
-    candidates = []
-    if project_dir:
-        candidates.append(Path(project_dir) / "docs" / "adr")
-    candidates.append(Path.cwd() / "docs" / "adr")
-
-    for adr_dir in candidates:
-        if adr_dir.is_dir():
-            try:
-                has_adrs = any(True for _ in adr_dir.glob("ADR-*.md"))
-            except OSError:
-                continue
-            if has_adrs:
-                return adr_dir
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Config (watch block of .adr-kit.json)
 # ---------------------------------------------------------------------------
-
-def _load_config(config_path: Path) -> Dict:
-    if not config_path.exists():
-        return {}
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return {}
-        return data
-    except (json.JSONDecodeError, OSError):
-        return {}
-
 
 def watch_config(cfg: Dict) -> Dict:
     """Return the watch sub-block with defaults filled in."""
@@ -305,53 +263,6 @@ def _prune_nudges(nudges: Dict[str, str], cooldown_hours: float,
 # ---------------------------------------------------------------------------
 # ADR loading (one read per file)
 # ---------------------------------------------------------------------------
-
-def _adr_status(text: str) -> Optional[str]:
-    """Return the ADR status word, recognising the same forms as adr-judge."""
-    m = STATUS_HEADING_RE.search(text)
-    if m:
-        wm = re.match(r"\s*([A-Za-z]+)", m.group(1))
-        return wm.group(1) if wm else None
-    m = STATUS_BOLD_INLINE_RE.search(text)
-    if m:
-        return m.group(1) or m.group(2)
-    m = STATUS_LINE_RE.search(text)
-    if m:
-        return m.group(1)
-    return None
-
-
-def _parse_enforcement_globs(text: str) -> List[str]:
-    """Return all path_glob strings from the ADR's Enforcement block.
-
-    Tolerant: malformed JSON or unexpected shapes yield an empty list.
-    A rule without a path_glob applies everywhere; we represent that as "**".
-    """
-    m = ENFORCEMENT_BLOCK_RE.search(text)
-    if not m:
-        return []
-    try:
-        data = json.loads(m.group(1))
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, dict):
-        return []
-    globs: List[str] = []
-    for kind in ("forbid_pattern", "forbid_import", "require_pattern"):
-        rules = data.get(kind)
-        if not isinstance(rules, list):
-            continue
-        for rule in rules:
-            if not isinstance(rule, dict):
-                continue
-            glob = rule.get("path_glob")
-            if isinstance(glob, str) and glob:
-                globs.append(glob)
-            else:
-                # Rule with no path_glob applies to every file.
-                globs.append("**")
-    return globs
-
 
 def load_adrs(adr_dir: Path) -> List[Dict]:
     """Load Accepted ADRs from adr_dir. Each file is read exactly once."""

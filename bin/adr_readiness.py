@@ -6,7 +6,7 @@ import fnmatch
 import re
 from datetime import date
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from adr_catalog import build_relationships, load_adr_records, normalize_adr_id
 
@@ -60,18 +60,6 @@ def normalize_path(value: str) -> str:
 def explicit_adr_ids(text: str) -> List[str]:
     return sorted(
         {f"ADR-{int(match.group(1)):03d}" for match in _ADR_TOKEN_RE.finditer(text)}
-    )
-
-
-def _path_matches(path: str, pattern: str) -> bool:
-    path = normalize_path(path)
-    pattern = normalize_path(pattern)
-    if not pattern:
-        return False
-    if any(char in pattern for char in "*?["):
-        return fnmatch.fnmatchcase(path.casefold(), pattern.casefold())
-    return path.casefold() == pattern.casefold() or path.casefold().startswith(
-        pattern.rstrip("/").casefold() + "/"
     )
 
 

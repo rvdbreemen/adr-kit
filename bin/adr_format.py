@@ -8,6 +8,7 @@ stdlib-only so every bundled CLI and generated client payload can import it.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -315,6 +316,7 @@ def unresolved_open_questions(text: str) -> List[str]:
     return sorted(dict.fromkeys(questions), key=str.casefold)
 
 
+@lru_cache(maxsize=256)
 def detect_profile(text: str) -> str:
     declared = declared_profile(text)
     if declared is not None:

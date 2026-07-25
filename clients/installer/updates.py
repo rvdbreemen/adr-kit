@@ -27,17 +27,6 @@ def update_decision(values: dict, version: str, *, now: float | None = None, las
     }
 
 
-def read_update_state(state_root: Path, client: str) -> dict:
-    path = state_root / "updates" / f"{client}.json"
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def record_update_state(state_root: Path, client: str, *, version: str, trigger: str) -> Path:
     path = state_root / "updates" / f"{client}.json"
     path.parent.mkdir(parents=True, exist_ok=True)

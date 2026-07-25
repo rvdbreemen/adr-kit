@@ -57,6 +57,8 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_config import load_json_config as _load_config
+from adr_state import find_project_adr_dir as _find_adr_dir
 from adr_state import load_state, update_state
 from adr_guardian_queue import (
     QUEUE_CACHE_NAME,
@@ -129,19 +131,6 @@ def _update_state(state_path: Path, mutation):
     )
 
 
-def _load_config(config_path: Path) -> Dict:
-    """Read .adr-kit.json. Returns {} when missing or invalid."""
-    if not config_path.exists():
-        return {}
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return {}
-        return data
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
 def _guardian_config(cfg: Dict) -> Dict:
     """Return the guardian sub-block with defaults filled in."""
     defaults = {
@@ -195,31 +184,6 @@ def _days_since(ts: Optional[datetime]) -> Optional[float]:
 # ---------------------------------------------------------------------------
 # CWD guard
 # ---------------------------------------------------------------------------
-
-def _find_adr_dir() -> Optional[Path]:
-    """Return docs/adr/ relative to the project root, or None if absent/empty.
-
-    Checks CLAUDE_PROJECT_DIR first (set by Claude Code for plugin-level hooks),
-    then falls back to cwd. A directory is valid when it exists and contains at
-    least one ADR-*.md file.
-    """
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or ""
-    candidates = []
-    if project_dir:
-        candidates.append(Path(project_dir) / "docs" / "adr")
-    candidates.append(Path.cwd() / "docs" / "adr")
-
-    for adr_dir in candidates:
-        if adr_dir.is_dir():
-            # Quick check: at least one ADR file present.
-            try:
-                has_adrs = any(True for _ in adr_dir.glob("ADR-*.md"))
-            except OSError:
-                continue
-            if has_adrs:
-                return adr_dir
-    return None
-
 
 def _count_adrs(adr_dir: Path) -> int:
     """Count ADR-*.md files in adr_dir."""

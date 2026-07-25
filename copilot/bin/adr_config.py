@@ -144,3 +144,32 @@ def load_project_config(path: Path, schema_path: Path) -> Dict[str, Any]:
         return validate_project_config(config, schema_path)
     except ConfigValidationError as exc:
         raise ConfigValidationError(f"{path}: schema validation failed: {exc}") from exc
+
+
+DEFAULT_CONFIG_SCHEMA = (
+    Path(__file__).resolve().parent.parent / "schemas" / "adr-kit-config.schema.json"
+)
+
+
+def load_validated_config(path: Path | None) -> Dict[str, Any]:
+    """Read and schema-validate .adr-kit.json against the shipped schema.
+
+    Callers that need their own error type catch ConfigValidationError and
+    re-raise. A missing path or file yields defaults.
+    """
+    if path is None:
+        return {}
+    return load_project_config(path, DEFAULT_CONFIG_SCHEMA)
+
+
+def load_json_config(path: Path) -> Dict[str, Any]:
+    """Read a JSON config object tolerantly; anything unusable yields {}.
+
+    The fail-open reader used by the advisory hook entry points, where a broken
+    config must never interrupt an edit or a session start.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}

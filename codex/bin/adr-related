@@ -35,7 +35,6 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
-from adr_format import section_text
 from adr_catalog import load_adr_record
 
 
@@ -50,33 +49,6 @@ _ADR_TOKEN_RE = re.compile(r"\bADR-(\d{1,4})\b", re.IGNORECASE)
 
 # ADR id from a filename (no trailing \b: filenames continue with "-slug").
 _ADR_FILENAME_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
-
-# Title: first heading line, stripping the ADR-XXX prefix.
-_TITLE_RE = re.compile(r"^#\s+(?:ADR-\d+\s+)?(.+)$", re.MULTILINE)
-
-# Status word: "## Status" (not "## Status History") followed by a word.
-_STATUS_SECTION_RE = re.compile(
-    r"^##\s+Status(?!\s+History)\s*$\s+([A-Za-z]+)",
-    re.IGNORECASE | re.MULTILINE,
-)
-
-# Related Decisions section body (up to the next ## heading or EOF).
-_RELATED_SECTION_RE = re.compile(
-    r"^##\s+Related Decisions(.*?)(?=^##|\Z)",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
-
-# Supersession / amendment references. "Supersedes" (claim) does not match
-# "Superseded by" because of the literal spelling difference.
-_SUPERSEDES_CLAIM_RE = re.compile(
-    r"\bSupersedes\s+ADR-(\d{1,4})\b", re.IGNORECASE
-)
-_SUPERSEDED_BY_RE = re.compile(
-    r"\bSuperseded\s+by\s+ADR-(\d{1,4})\b", re.IGNORECASE
-)
-_AMENDED_BY_RE = re.compile(
-    r"\bAmended\s+by\s+ADR-(\d{1,4})\b", re.IGNORECASE
-)
 
 
 # Reference kinds, in display order (most specific first).

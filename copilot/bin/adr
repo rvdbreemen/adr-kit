@@ -398,7 +398,6 @@ def _assert_auto_accept_eligible(path: Path, args, threshold: float) -> Dict:
         raise AdrLifecycleError("auto accept requires at least one verified_in pointer")
 
     lint_summary = _assert_acceptance_gates(path, args)
-    root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd().resolve()
     quality_script = Path(__file__).resolve().with_name("adr-quality")
     _quality_code, quality_payload = _run_json_tool(
         [sys.executable, str(quality_script), "--format", "json", str(path)]

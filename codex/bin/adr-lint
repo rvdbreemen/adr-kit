@@ -52,8 +52,14 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_catalog import (
+    ENFORCEMENT_BLOCK_RE,
+    STATUS_BOLD_INLINE_RE,
+    STATUS_HEADING_RE,
+    STATUS_LINE_RE,
+    adr_status,
+)
 from adr_format import (
-    DETECTED_PROFILES,
     SUPPORTED_PROFILES,
     detect_profile,
     is_migration_candidate,
@@ -130,11 +136,6 @@ ALL_GATES = [
 ]
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
 
-ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
-
 ENFORCEMENT_KNOWN_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern", "llm_judge"})
 ENFORCEMENT_ARRAY_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern"})
 
@@ -142,13 +143,6 @@ MARKER_RE = re.compile(r"<!--\s*adr-kit-lint:\s*([^>]+?)\s*-->", re.IGNORECASE)
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
 CANONICAL_FILENAME_RE = re.compile(r"^ADR-\d{3}-[a-z0-9-]+\.md$")
 HEADING_NUMBER_RE = re.compile(r"^#\s+(?i:ADR)-(\d{1,4})\b")
-STATUS_HEADING_RE = re.compile(r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE)
-STATUS_LINE_RE = re.compile(r"^Status\s*:?\s*(\w+)", re.IGNORECASE | re.MULTILINE)
-STATUS_BOLD_INLINE_RE = re.compile(
-    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)"
-    r"|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
-    re.IGNORECASE | re.MULTILINE,
-)
 STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
 STATUS_HISTORY_ITEM_RE = re.compile(r"^\s*-\s*([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
 STATUS_HISTORY_FIELD_RE = re.compile(r"^\s+([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
@@ -415,15 +409,7 @@ def _status_history(text: str) -> Tuple[bool, List[Dict[str, str]]]:
 
 
 def _current_status(text: str) -> Optional[str]:
-    match = STATUS_HEADING_RE.search(text)
-    if match:
-        current = re.match(r"\s*([A-Za-z]+)", match.group(1))
-        return current.group(1) if current else None
-    match = STATUS_BOLD_INLINE_RE.search(text)
-    if match:
-        return match.group(1) or match.group(2)
-    match = STATUS_LINE_RE.search(text)
-    return match.group(1) if match else None
+    return adr_status(text)
 
 
 def gate_audit(text: str) -> Optional[List[str]]:

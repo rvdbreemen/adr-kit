@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -15,7 +14,7 @@ from adr_settings import (
     local_judgment_state,
     resolve_settings,
 )
-from clients.installer.contracts import CLIENT_IDS, SPECS
+from clients.installer.contracts import CLIENT_IDS
 from clients.installer.detection import detect_clients
 from client_generation import GenerationError, generate
 from project_setup import (
@@ -25,7 +24,6 @@ from project_setup import (
     validate_markers,
 )
 
-SAFE_REPAIRS = frozenset({"generated-adapters"})
 HOOK_EVENTS = {
     "claude": {
         "SessionStart",

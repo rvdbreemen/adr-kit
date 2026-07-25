@@ -19,23 +19,20 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+# Report against the same readers the enforcement gate uses, so a status or
+# coverage figure can never claim more (or less) than adr-judge actually acts on.
+from adr_catalog import ENFORCEMENT_BLOCK_RE as _ENFORCEMENT_BLOCK_RE
+from adr_catalog import adr_status as _adr_status
 from adr_retrieval_health import run_retrieval_health
 
 
 # ---------------------------------------------------------------------------
 # Module-level compiled regexes (hoisted from per-call usage)
 # ---------------------------------------------------------------------------
-
-# Status section: "## Status" (not "## Status History") followed by a status word
-_STATUS_SECTION_RE = re.compile(
-    r"^##\s+Status(?!\s+History)\s*$\s+([A-Za-z]+)",
-    re.IGNORECASE | re.MULTILINE,
-)
-# Bold inline: **Status:** Accepted  or  **Status: Accepted**
-_STATUS_BOLD_RE = re.compile(
-    r"\*\*Status\s*:?\*\*\s*:?\s*([A-Za-z]+)",
-    re.IGNORECASE,
-)
 
 # Date patterns
 _DATE_ISO_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
@@ -48,11 +45,6 @@ _DATE_LONG_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Enforcement block: "## Enforcement" followed by ```json {...} ```
-_ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$.*?```(?:json)?\s*(\{.*?\})\s*```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
 
 # Title: first heading line, stripping the ADR-XXX prefix
 _TITLE_RE = re.compile(r"^#\s+(?:ADR-\d+\s+)?(.+)$", re.MULTILINE)
@@ -110,22 +102,14 @@ class AdrRecord:
 # ---------------------------------------------------------------------------
 
 def extract_status(content: str) -> str:
-    """Extract first status word from ADR content.
+    """Extract the first status word from ADR content, or 'Unknown'.
 
-    Supports:
-    - ## Status\\n\\nAccepted, ...
-    - **Status:** Accepted
-    - **Status: Accepted**
-
-    Returns 'Unknown' if nothing found.
+    Delegates to the shared adr_catalog reader so the report agrees with the
+    gate: the '## Status' heading body, bold-inline forms including
+    '**Status: Accepted**', and a plain 'Status: Accepted' line all resolve the
+    same way here as in adr-judge and adr-lint.
     """
-    m = _STATUS_SECTION_RE.search(content)
-    if m:
-        return m.group(1).capitalize()
-    m = _STATUS_BOLD_RE.search(content)
-    if m:
-        return m.group(1).capitalize()
-    return "Unknown"
+    return (_adr_status(content) or "Unknown").capitalize()
 
 
 def extract_date(content: str) -> Optional[str]:

@@ -5,6 +5,72 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.41.0] - 2026-07-25
+
+A correctness and consolidation release. Three tools that read an ADR's status
+or Enforcement block disagreed with the pre-commit gate, so this release makes
+every reader the same reader and fixes the disagreements that had already
+appeared. There are no new commands or configuration keys, and no ADR that
+`adr-judge` treats as Accepted today changes status.
+
+### Fixed
+
+- **Isolated regex worker no longer mixes responses after a restart.** When
+  `RegexEvaluator` was restarted (for example after a pattern hit its
+  wall-clock budget), the reader thread of the retired worker could deliver its
+  end-of-stream sentinel into the *new* worker's response queue. A subsequent
+  `require_pattern` or `forbid_pattern` evaluation could then read that stale
+  sentinel and fail closed with "worker exited unexpectedly", blocking a commit
+  that had no violation. The reader now binds its own stdout and queue, so a
+  retired worker can only ever write to the queue it was started with.
+- **Cross-tool status agreement.** `adr-index`, `adr-watch`, `adr-judge`,
+  `adr-lint`, and `adr-retire` now read an ADR's status through a single shared
+  `adr_catalog.adr_status` reader. Previously two forked single-line regexes
+  disagreed, so the same ADR could read as Accepted by one tool and Unknown by
+  another (for example `  Status: Accepted` or `Status Accepted`). The unified
+  line form is a superset of both prior variants, so no ADR that any tool read
+  as Accepted changes status.
+- **`adr-status` now reports what the gate enforces.** The dashboard shared
+  neither reader with `adr-judge`, so it disagreed in two ways. It had no
+  plain-line status tier, reporting an ADR the gate enforces as `Accepted`
+  under `unknown` (and it never matched the `**Status: Accepted**` form its own
+  docstring advertised). Its Enforcement detector also accepted untagged
+  ``` fences that the gate ignores, so coverage figures claimed enforcement
+  that never ran. Both readers are now the shared ones.
+- **Upgrade:** no action is required, but `adr-status` output can legitimately
+  move. An ADR whose Enforcement block sits in an untagged fence now reports as
+  having no enforcement, which lowers the coverage percentage. That is the
+  accurate figure: `adr-judge` never enforced those blocks. To enforce such an
+  ADR, tag its fence as ` ```json ` and re-run `bin/adr-status`.
+
+### Changed
+
+- **Single readers for shared ADR parsing.** The Enforcement block regex (five
+  identical copies), `enforcement_globs`, `adr_id_from_filename` with
+  `ADR_FILENAME_RE` (six copies), project `docs/adr` discovery, and the two
+  config loaders now each live in one module and are imported by every caller.
+  This removes the drift that produced the status and enforcement bugs above.
+  The shared `docs/adr` discovery lives in the stdlib-only `adr_state` module so
+  hook entry points pay no extra import cost.
+
+- **Hot-path performance.** `bin/adr-judge` now caches snapshot file reads for
+  the duration of one pre-commit pass, so a file governed by several
+  `require_pattern` rules or multiple ADRs is fetched from git once instead of
+  re-spawning `git show` per rule. `adr_format.detect_profile` is memoized and
+  `adr_catalog.load_adr_record` extracts the Decision section a single time,
+  removing a repeated full-document parse per ADR across `adr-index`,
+  `adr-context`, `adr-related`, and lint. Behavior is preserved; the isolated
+  regex safety budget and reporting output are unchanged.
+
+### Removed
+
+- **Dead code cleanup.** Removed unreferenced helper functions
+  (`load_readme_records`, `decision_oneline`, `render_queue_actions`,
+  `_path_matches`, `require_client_id`, `read_update_state`, `_run_version`),
+  stale precompiled patterns left behind by earlier refactors in `adr-context`
+  and `adr-related`, dead module constants, unused imports, and leftover local
+  bindings. No public workflow, CLI surface, or behavior changed.
+
 ## [0.40.0] - 2026-07-23
 
 ### Added

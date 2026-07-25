@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import re
 
 CLIENTS = ("claude-code-cli", "codex-cli", "github-copilot-cli")

@@ -143,3 +143,41 @@ def test_explicit_modified_diff_fails_closed_when_post_image_is_incomplete(
     finding = json.loads(result.stdout)["findings"][0]
     assert "does not contain a complete post-image" in finding["message"]
     assert "failed closed" in finding["message"]
+
+
+def test_snapshot_cache_short_circuits_repeated_reads():
+    """The per-run snapshot cache dedups by (snapshot_mode, path).
+
+    A file targeted by several require_pattern rules, or by several ADRs, is
+    fetched once per pre-commit pass instead of re-reading its snapshot per
+    rule. Uses the git-free ``diff`` reconstruction path so the assertions are
+    deterministic, and proves a cache hit is returned verbatim (the read is
+    skipped) via a poisoned entry. Guards the hot-path optimization against
+    silent regression.
+    """
+    DiffFile = JUDGE_NS["DiffFile"]
+    read_snapshot_content = JUDGE_NS["read_snapshot_content"]
+
+    diff_file = DiffFile(
+        path="src/new.txt", old_path=None, added=[(1, "REQUIRED")], is_new=True
+    )
+    key = ("diff", "src/new.txt")
+    cache: dict = {}
+
+    first = read_snapshot_content(diff_file, ROOT, "diff", cache)
+    assert first == ("present", "REQUIRED\n")
+    # A miss populates the cache under the (snapshot_mode, path) key.
+    assert cache[key] == ("present", "REQUIRED\n")
+
+    # A hit returns the stored value verbatim, so the read is genuinely skipped.
+    cache[key] = ("present", "SENTINEL-not-recomputed")
+    assert read_snapshot_content(diff_file, ROOT, "diff", cache) == (
+        "present",
+        "SENTINEL-not-recomputed",
+    )
+
+    # No cache means no hidden global sharing: the read always runs.
+    assert read_snapshot_content(diff_file, ROOT, "diff", None) == (
+        "present",
+        "REQUIRED\n",
+    )

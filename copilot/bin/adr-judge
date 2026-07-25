@@ -36,7 +36,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import hashlib
 import json
 import os
@@ -55,8 +54,9 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_catalog import ENFORCEMENT_BLOCK_RE, adr_id_from_filename, adr_status
 from adr_format import section_text
-from adr_config import ConfigValidationError, load_project_config
+from adr_config import ConfigValidationError, load_validated_config
 from adr_regex import RegexEvaluationError, bounded_regex_search
 
 # Default LLM invocation. Overridable via --llm-cmd, ADR_KIT_LLM_CMD env, or
@@ -141,24 +141,6 @@ def _split_cmd(cmd_str: str) -> List[str]:
 
 # ---------- ADR / diff parsing ----------
 
-ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
-STATUS_LINE_RE = re.compile(r"^Status\s*:?\s*(\w+)", re.IGNORECASE | re.MULTILINE)
-STATUS_HEADING_RE = re.compile(
-    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
-)
-# Legacy bold-inline Status format used by many pre-canonical ADR sets:
-#   **Status:** Accepted
-#   **Status**: Proposed
-#   **Status: Accepted**
-# adr-lint flags these on Completeness (no '## Status' heading), which is
-# correct — but adr-judge only needs the *value* to decide whether to enforce.
-# Recognising the bold-inline form here means a project mid-migration still
-# gets diff-vs-Enforcement coverage on its Accepted ADRs without first having
-# to run /adr-kit:migrate. See v0.12.1 changelog.
-STATUS_BOLD_INLINE_RE = re.compile(
-    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
-    re.IGNORECASE | re.MULTILINE,
-)
 STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
 STATUS_HISTORY_ITEM_RE = re.compile(r"^\s*-\s*([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
 STATUS_HISTORY_FIELD_RE = re.compile(r"^\s+([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
@@ -169,44 +151,11 @@ STATUS_HISTORY_REQUIRED_FIELDS = (
     "reason",
     "changed_via",
 )
-ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
 HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
 class JudgeError(Exception):
     """Raised on configuration / input errors (exit code 2)."""
-
-
-def adr_status(text: str) -> Optional[str]:
-    """Return the ADR's status (Accepted/Proposed/Deprecated/Superseded) or None.
-
-    Handles all of these (case-insensitive):
-      Status: Accepted, 2026-04-25.       (single-line plain, anywhere)
-      ## Status\n\nAccepted, 2026-04-25.  (heading + body, comma form)
-      ## Status\n\nAccepted. Date: 2026-04-25.  (heading + body, period form)
-      ## Status\n\nSuperseded by ADR-099, 2026-05-01.
-      **Status:** Accepted                (bold-inline, since v0.12.1)
-      **Status**: Proposed                (bold-inline, alt punctuation)
-      **Status: Accepted**                (bold-inline, fully bracketed)
-
-    Returns the first alphabetic word it finds in the status line. Trailing
-    punctuation is stripped so 'Accepted.' becomes 'Accepted'.
-    """
-    m = STATUS_HEADING_RE.search(text)
-    if m:
-        line = m.group(1).strip()
-        wm = re.match(r"\s*([A-Za-z]+)", line)
-        return wm.group(1) if wm else None
-    m = STATUS_BOLD_INLINE_RE.search(text)
-    if m:
-        return m.group(1) or m.group(2)
-    m = STATUS_LINE_RE.search(text)
-    if m:
-        return m.group(1)
-    return None
 
 
 def _yaml_scalar(value: str) -> str:
@@ -675,6 +624,7 @@ def apply_rules_to_diff(
     skip_files: List[str],
     llm_mode_active: bool = False,
     snapshot_mode: str = "diff",
+    snapshot_cache: Optional[Dict[Tuple[str, str], Tuple[str, Optional[str]]]] = None,
 ) -> List[Dict]:
     """Apply one ADR's Enforcement block to the parsed diff. Returns findings.
 
@@ -758,7 +708,7 @@ def apply_rules_to_diff(
             if not path_matches(path, path_glob):
                 continue
             state, content = read_snapshot_content(
-                diff_file, repo_root, snapshot_mode
+                diff_file, repo_root, snapshot_mode, snapshot_cache
             )
             if state != "present":
                 detail = (
@@ -861,8 +811,27 @@ def read_snapshot_content(
     diff_file: DiffFile,
     repo_root: Path,
     snapshot_mode: str,
+    cache: Optional[Dict[Tuple[str, str], Tuple[str, Optional[str]]]] = None,
 ) -> Tuple[str, Optional[str]]:
-    """Return (present|missing|unknown, content) for one post-diff file."""
+    """Return (present|missing|unknown, content) for one post-diff file.
+
+    A per-run ``cache`` keyed by (snapshot_mode, path) avoids re-spawning
+    ``git show`` for a file targeted by several require rules or ADRs; the
+    staged/worktree content is immutable during a single read-only judge pass.
+    """
+    if cache is None:
+        return _read_snapshot_content(diff_file, repo_root, snapshot_mode)
+    key = (snapshot_mode, diff_file.path)
+    if key not in cache:
+        cache[key] = _read_snapshot_content(diff_file, repo_root, snapshot_mode)
+    return cache[key]
+
+
+def _read_snapshot_content(
+    diff_file: DiffFile,
+    repo_root: Path,
+    snapshot_mode: str,
+) -> Tuple[str, Optional[str]]:
     safe_path = _safe_repo_path(repo_root, diff_file.path)
     if safe_path is None:
         return "unknown", None
@@ -1527,24 +1496,10 @@ class ProfileCollector:
 
 def load_config(path: Optional[Path]) -> Dict:
     """Read and schema-validate .adr-kit.json; return defaults when missing."""
-    if path is None:
-        return {}
     try:
-        schema_path = (
-            Path(__file__).resolve().parent.parent
-            / "schemas"
-            / "adr-kit-config.schema.json"
-        )
-        return load_project_config(path, schema_path)
+        return load_validated_config(path)
     except ConfigValidationError as exc:
         raise JudgeError(str(exc)) from exc
-
-
-def adr_id_from_filename(name: str) -> Optional[str]:
-    m = ADR_FILENAME_RE.match(name)
-    if not m:
-        return None
-    return f"ADR-{int(m.group(1)):03d}"
 
 
 def collect_adrs(
@@ -1865,6 +1820,7 @@ def main() -> int:
 
         all_findings: List[Dict] = []
         adrs_with_enforcement = 0
+        snapshot_cache: Dict[Tuple[str, str], Tuple[str, Optional[str]]] = {}
         for adr_id, adr_path, body in adrs:
             # --dry-run-enforcement: skip every ADR that isn't the target.
             if dry_run_target is not None and adr_id != dry_run_target:
@@ -1895,6 +1851,7 @@ def main() -> int:
                     skip_files,
                     llm_mode_active=llm_mode_active,
                     snapshot_mode=args.snapshot,
+                    snapshot_cache=snapshot_cache,
                 )
             )
             profiler.stop_declarative()
@@ -1903,7 +1860,6 @@ def main() -> int:
         # Failures here log a warning and fall through; they NEVER block the
         # commit, because a missing CLI or transient API hiccup must not break
         # legitimate work.
-        llm_findings_emitted = 0
         if llm_mode_active:
             # When dry-run-enforcement is active, limit LLM targets to the one ADR.
             llm_adrs = (
@@ -1923,7 +1879,6 @@ def main() -> int:
                 profiler.stop_llm()
                 if llm_findings is not None:
                     all_findings.extend(llm_findings)
-                    llm_findings_emitted = len(llm_findings)
 
         # Override pass (task-10): a valid ADR_KIT_OVERRIDE downgrades FAILs of
         # ONE named ADR to loudly printed WARN advisories and appends a record
