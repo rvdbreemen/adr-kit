@@ -27,19 +27,13 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_catalog import adr_status as extract_status
 from adr_format import section_text
 
 # Safety cap for repo-wide file scans (tech-removal signal).
 MAX_FILES = 50_000
 
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
-STATUS_HEADING_RE = re.compile(r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE)
-STATUS_LINE_RE = re.compile(r"^Status\s*:?\s*(\w+)", re.IGNORECASE | re.MULTILINE)
-STATUS_BOLD_RE = re.compile(
-    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)"
-    r"|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
-    re.IGNORECASE | re.MULTILINE,
-)
 JSON_FENCE_RE = re.compile(r"```json\s*\n(.*?)\n```", re.IGNORECASE | re.DOTALL)
 STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
 HISTORY_DATE_RE = re.compile(r"^\s*(?:-\s*)?date\s*:\s*[\"']?(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
@@ -71,19 +65,6 @@ def load_adr_set(adr_dir: Path) -> List[Tuple[str, Path, str]]:
         except OSError as exc:
             print(f"[adr-retire] WARN: {file}: {exc}", file=sys.stderr)
     return adrs
-
-
-def extract_status(text: str) -> Optional[str]:
-    """Extract the leading ADR status word from canonical or legacy shapes."""
-    match = STATUS_HEADING_RE.search(text)
-    if match:
-        word = re.match(r"\s*([A-Za-z]+)", match.group(1))
-        return word.group(1) if word else None
-    match = STATUS_BOLD_RE.search(text)
-    if match:
-        return match.group(1) or match.group(2)
-    match = STATUS_LINE_RE.search(text)
-    return match.group(1) if match else None
 
 
 def extract_section(text: str, heading: str) -> str:

@@ -4,6 +4,16 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cross-tool status agreement.** `adr-index`, `adr-watch`, `adr-judge`,
+  `adr-lint`, and `adr-retire` now read an ADR's status through a single shared
+  `adr_catalog.adr_status` reader. Previously two forked single-line regexes
+  disagreed, so the same ADR could read as Accepted by one tool and Unknown by
+  another (for example `  Status: Accepted` or `Status Accepted`). The unified
+  line form is a superset of both prior variants, so no ADR that any tool read
+  as Accepted changes status.
+
 ### Changed
 
 - **Hot-path performance.** `bin/adr-judge` now caches snapshot file reads for

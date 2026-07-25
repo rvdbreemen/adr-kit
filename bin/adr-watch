@@ -56,6 +56,7 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_catalog import adr_status as _adr_status
 from adr_format import section_text
 from adr_state import load_state, update_state
 
@@ -82,16 +83,6 @@ _CHARS_PER_TOKEN = 4  # coarse estimate, matches the OpenWolf prose heuristic
 ENFORCEMENT_BLOCK_RE = re.compile(
     r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
-STATUS_HEADING_RE = re.compile(
-    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
-)
-STATUS_LINE_RE = re.compile(
-    r"^\s*Status\s*:\s*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
-)
-STATUS_BOLD_INLINE_RE = re.compile(
-    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
-    re.IGNORECASE | re.MULTILINE,
 )
 TITLE_RE = re.compile(r"^#\s+ADR-\d+[:\s]\s*(.+)$", re.MULTILINE)
 DECISION_SECTION_RE = re.compile(
@@ -305,21 +296,6 @@ def _prune_nudges(nudges: Dict[str, str], cooldown_hours: float,
 # ---------------------------------------------------------------------------
 # ADR loading (one read per file)
 # ---------------------------------------------------------------------------
-
-def _adr_status(text: str) -> Optional[str]:
-    """Return the ADR status word, recognising the same forms as adr-judge."""
-    m = STATUS_HEADING_RE.search(text)
-    if m:
-        wm = re.match(r"\s*([A-Za-z]+)", m.group(1))
-        return wm.group(1) if wm else None
-    m = STATUS_BOLD_INLINE_RE.search(text)
-    if m:
-        return m.group(1) or m.group(2)
-    m = STATUS_LINE_RE.search(text)
-    if m:
-        return m.group(1)
-    return None
-
 
 def _parse_enforcement_globs(text: str) -> List[str]:
     """Return all path_glob strings from the ADR's Enforcement block.

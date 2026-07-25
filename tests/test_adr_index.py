@@ -29,6 +29,10 @@ def _load(name: str, path: Path):
 _index = _load("adr_index", INDEX)
 _watch = _load("adr_watch", WATCH)
 _schema = _load("adr_schema_for_test", SCHEMA_PATH)
+_judge = _load("adr_judge_for_index_test", REPO_ROOT / "bin" / "adr-judge")
+_lint = _load("adr_lint_for_index_test", REPO_ROOT / "bin" / "adr-lint")
+_retire = _load("adr_retire_for_index_test", REPO_ROOT / "bin" / "adr-retire")
+_catalog = _load("adr_catalog_for_index_test", REPO_ROOT / "bin" / "adr_catalog.py")
 
 
 def _run(args, cwd):
@@ -217,14 +221,60 @@ class TestNoDriftWithWatch:
     SAMPLES = [ADR_GLOB, ADR_PROPOSED, ADR_MANUAL]
 
     def test_status_reader_matches_watch(self):
+        # adr-index derives status from the authoritative load_adr_records path;
+        # the lightweight regex reader now lives once in adr_catalog, and every
+        # tool (including watch) delegates to it, so they cannot drift.
         for text in self.SAMPLES:
-            assert _index.adr_status(text) == _watch._adr_status(text)
+            assert _watch._adr_status(text) == _catalog.adr_status(text)
 
     def test_enforcement_glob_reader_matches_watch(self):
         for text in self.SAMPLES:
             assert _index.enforcement_globs(text) == list(
                 dict.fromkeys(_watch._parse_enforcement_globs(text))
             )
+
+
+class TestStatusReaderUnification:
+    """All five status readers share one canonical extractor (adr_catalog).
+
+    Follow-up to the forked-regex finding documented in PR #38: the two
+    pre-canonical single-line 'Status: X' variants disagreed, so the same ADR
+    could read as Accepted by one tool and Unknown by another. Every reader now
+    delegates to adr_catalog.adr_status, so they can never diverge again.
+    """
+
+    # (input, expected status word or None). The first two are the exact forms
+    # that used to split the tools: leading indent (old judge/lint/retire form
+    # missed it) and a missing colon (old index/watch form missed it).
+    CASES = [
+        ("  Status: Accepted", "accepted"),
+        ("Status Accepted", "accepted"),
+        ("Status: Accepted", "accepted"),
+        ("## Status\n\nProposed, 2026-01-01.\n", "proposed"),
+        ("**Status:** Deprecated", "deprecated"),
+        ("## Status History\n\n- date: 2026-01-01\n", None),
+    ]
+
+    # adr-index reads status through the authoritative load_adr_records path,
+    # so it has no lightweight regex reader; the canonical adr_catalog reader is
+    # the reference every other tool must match.
+    READERS = (
+        ("catalog", lambda t: _catalog.adr_status(t)),
+        ("watch", lambda t: _watch._adr_status(t)),
+        ("judge", lambda t: _judge.adr_status(t)),
+        ("lint", lambda t: _lint._current_status(t)),
+        ("retire", lambda t: _retire.extract_status(t)),
+    )
+
+    def test_all_tools_agree_on_status(self):
+        for text, expected in self.CASES:
+            values = {name: reader(text) for name, reader in self.READERS}
+            normalized = {
+                None if value is None else value.lower() for value in values.values()
+            }
+            assert len(normalized) == 1, (text, values)
+            got = next(iter(normalized))
+            assert got == expected, (text, values)
 
 
 def _body(num: int, title: str) -> str:

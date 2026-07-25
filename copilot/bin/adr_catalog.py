@@ -38,6 +38,45 @@ ENFORCEMENT_BLOCK_RE = re.compile(
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
 
+STATUS_HEADING_RE = re.compile(
+    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
+)
+STATUS_BOLD_INLINE_RE = re.compile(
+    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)"
+    r"|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Superset of the two historical single-line variants so every tool agrees on
+# whether an ADR is Accepted: colon optional, leading indentation tolerated,
+# same line only. Recognizes "Status: Accepted", "  Status: Accepted", and
+# "Status Accepted"; it never captures the "## Status History" heading.
+STATUS_LINE_RE = re.compile(
+    r"^[ \t]*Status[ \t]*:?[ \t]*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
+)
+_STATUS_LEADING_WORD_RE = re.compile(r"\s*([A-Za-z]+)")
+
+
+def adr_status(text: str) -> Optional[str]:
+    """Return the leading ADR status word, or None.
+
+    The single cross-tool status reader used by adr-index, adr-judge, adr-lint,
+    adr-retire, and adr-watch. A ``## Status`` heading body wins, then a
+    bold-inline ``**Status:** X`` form, then a plain ``Status: X`` line. The
+    line form is a deliberate superset of the older per-tool regexes so those
+    tools can never disagree on an ADR's status. Authoritative lifecycle status
+    still comes from the status_history chain in ``load_adr_record``; this is
+    the lightweight reader used by gates and listings.
+    """
+    match = STATUS_HEADING_RE.search(text)
+    if match:
+        word = _STATUS_LEADING_WORD_RE.match(match.group(1))
+        return word.group(1) if word else None
+    match = STATUS_BOLD_INLINE_RE.search(text)
+    if match:
+        return match.group(1) or match.group(2)
+    match = STATUS_LINE_RE.search(text)
+    return match.group(1) if match else None
+
 
 def normalize_adr_id(raw: object) -> Optional[str]:
     match = ADR_TOKEN_RE.search(str(raw))
