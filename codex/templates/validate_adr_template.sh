@@ -1,5 +1,9 @@
 #!/bin/bash
-# validate_adr_template.sh — reference template used by adr-generate-scripts.
+# validate_adr_template.sh — reference sample of adr-generate-scripts output.
+#
+# The generator does not read this file; it emits its scripts from built-in
+# templates. This file exists so a human can see the expected shape without
+# running the generator, so keep it in step with bin/adr-generate-scripts.
 #
 # This file documents the shape of generated shell validation scripts.
 # It is NOT runnable as-is; {PLACEHOLDERS} are replaced by the generator.

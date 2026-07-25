@@ -490,3 +490,40 @@ def test_retirement_candidates_sorted_by_confidence(tmp_path):
     confidences = [c["confidence"] for c in candidates]
     # high should come before medium
     assert confidences.index("high") < confidences.index("medium")
+
+
+# ---------------------------------------------------------------------------
+# Tests: the dashboard reads what the enforcement gate reads
+# ---------------------------------------------------------------------------
+
+def test_status_reader_matches_the_gate_on_plain_and_bracketed_forms():
+    """adr-status shares adr_catalog.adr_status with adr-judge and adr-lint.
+
+    Before unification the dashboard had no plain-line tier, so an ADR the gate
+    enforces as Accepted was reported as Unknown, and the bold form its own
+    docstring advertised ("**Status: Accepted**") did not match either.
+    """
+    assert extract_status("Status: Accepted, 2026-01-01.\n") == "Accepted"
+    assert extract_status("  Status: Accepted\n") == "Accepted"
+    assert extract_status("Status Accepted\n") == "Accepted"
+    assert extract_status("**Status: Accepted**\n") == "Accepted"
+    assert extract_status("**Status:** Deprecated\n") == "Deprecated"
+    assert extract_status("## Status\n\nProposed, 2026-01-01.\n") == "Proposed"
+    assert extract_status("## Context\n\nNo status here.\n") == "Unknown"
+
+
+def test_enforcement_detection_ignores_untagged_fences_like_the_gate():
+    """A bare ``` block is not enforced by adr-judge, so it must not count here.
+
+    Reporting it as enforced was false assurance: the dashboard claimed coverage
+    the commit gate never applied.
+    """
+    untagged = (
+        "## Enforcement\n\n"
+        "```\n"
+        '{"forbid_pattern": [{"pattern": "Foo"}]}\n'
+        "```\n"
+    )
+    tagged = untagged.replace("```\n{", "```json\n{", 1)
+    assert has_enforcement(untagged) is False
+    assert has_enforcement(tagged) is True

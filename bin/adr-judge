@@ -54,9 +54,9 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
-from adr_catalog import adr_status
+from adr_catalog import ENFORCEMENT_BLOCK_RE, adr_id_from_filename, adr_status
 from adr_format import section_text
-from adr_config import ConfigValidationError, load_project_config
+from adr_config import ConfigValidationError, load_validated_config
 from adr_regex import RegexEvaluationError, bounded_regex_search
 
 # Default LLM invocation. Overridable via --llm-cmd, ADR_KIT_LLM_CMD env, or
@@ -141,7 +141,6 @@ def _split_cmd(cmd_str: str) -> List[str]:
 
 # ---------- ADR / diff parsing ----------
 
-ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
 STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
 STATUS_HISTORY_ITEM_RE = re.compile(r"^\s*-\s*([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
 STATUS_HISTORY_FIELD_RE = re.compile(r"^\s+([a-z_]+)\s*:\s*(.*?)\s*$", re.IGNORECASE)
@@ -151,10 +150,6 @@ STATUS_HISTORY_REQUIRED_FIELDS = (
     "changed_by",
     "reason",
     "changed_via",
-)
-ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
 HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
@@ -1501,24 +1496,10 @@ class ProfileCollector:
 
 def load_config(path: Optional[Path]) -> Dict:
     """Read and schema-validate .adr-kit.json; return defaults when missing."""
-    if path is None:
-        return {}
     try:
-        schema_path = (
-            Path(__file__).resolve().parent.parent
-            / "schemas"
-            / "adr-kit-config.schema.json"
-        )
-        return load_project_config(path, schema_path)
+        return load_validated_config(path)
     except ConfigValidationError as exc:
         raise JudgeError(str(exc)) from exc
-
-
-def adr_id_from_filename(name: str) -> Optional[str]:
-    m = ADR_FILENAME_RE.match(name)
-    if not m:
-        return None
-    return f"ADR-{int(m.group(1)):03d}"
 
 
 def collect_adrs(

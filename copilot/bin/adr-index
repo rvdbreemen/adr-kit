@@ -50,7 +50,6 @@ TITLE_RE = re.compile(r"^#\s+ADR-\d+[:\s]\s*(.+)$", re.MULTILINE)
 DECISION_SECTION_RE = re.compile(
     r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
 )
-ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
 
 
 def _ensure_utf8_streams() -> None:

@@ -23,21 +23,13 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Mirrors adr-judge's ENFORCEMENT_BLOCK_RE exactly so extraction is consistent.
-ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
 
-ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
-
-
-def adr_id_from_filename(name: str) -> Optional[str]:
-    """Return normalised ADR-NNN id from a filename, or None."""
-    m = ADR_FILENAME_RE.match(name)
-    if not m:
-        return None
-    return f"ADR-{int(m.group(1)):03d}"
+# The generated scripts stay dependency-free; the generator itself shares the
+# repository's single Enforcement and filename readers.
+from adr_catalog import ENFORCEMENT_BLOCK_RE, adr_id_from_filename
 
 
 def extract_enforcement(content: str) -> Optional[Dict]:
