@@ -45,8 +45,9 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_catalog import adr_id_from_filename
 from adr_format import section_text
-from adr_config import ConfigValidationError, load_project_config
+from adr_config import ConfigValidationError, load_validated_config
 
 # Default LLM invocation — identical shape to adr-judge. Overridable via
 # --llm-cmd, ADR_KIT_LLM_CMD env, or .adr-kit.json suggest.llm_cmd / judge.llm_cmd.
@@ -111,7 +112,6 @@ class SuggestError(Exception):
 # hack, we copy the minimal helpers verbatim so adr-suggest runs anywhere
 # adr-judge does. Keep these in sync if adr-judge's equivalents change.
 
-ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 DECISION_SECTION_RE = re.compile(
     r"^##\s+Decision\s*$\n+(.*?)(?=^##\s|\Z)",
@@ -225,13 +225,6 @@ def parse_diff(text: str) -> Dict[str, List[Tuple[int, str]]]:
     return files
 
 
-def adr_id_from_filename(name: str) -> Optional[str]:
-    m = ADR_FILENAME_RE.match(name)
-    if not m:
-        return None
-    return f"ADR-{int(m.group(1)):03d}"
-
-
 def extract_title(body: str) -> str:
     """Return the ADR's `# ADR-NNN Title` line text, or '' if absent."""
     m = TITLE_RE.search(body)
@@ -245,15 +238,8 @@ def extract_decision(body: str) -> str:
 
 def load_config(path: Optional[Path]) -> Dict:
     """Read and schema-validate .adr-kit.json; return defaults when missing."""
-    if path is None:
-        return {}
     try:
-        schema_path = (
-            Path(__file__).resolve().parent.parent
-            / "schemas"
-            / "adr-kit-config.schema.json"
-        )
-        return load_project_config(path, schema_path)
+        return load_validated_config(path)
     except ConfigValidationError as exc:
         raise SuggestError(str(exc)) from exc
 

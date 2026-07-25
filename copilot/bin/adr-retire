@@ -27,13 +27,13 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+from adr_catalog import ADR_FILENAME_RE
 from adr_catalog import adr_status as extract_status
 from adr_format import section_text
 
 # Safety cap for repo-wide file scans (tech-removal signal).
 MAX_FILES = 50_000
 
-ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
 JSON_FENCE_RE = re.compile(r"```json\s*\n(.*?)\n```", re.IGNORECASE | re.DOTALL)
 STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
 HISTORY_DATE_RE = re.compile(r"^\s*(?:-\s*)?date\s*:\s*[\"']?(\d{4}-\d{2}-\d{2})", re.IGNORECASE)

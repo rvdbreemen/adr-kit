@@ -85,6 +85,18 @@ def normalize_adr_id(raw: object) -> Optional[str]:
     return f"ADR-{int(match.group(1)):03d}"
 
 
+def adr_id_from_filename(name: str) -> Optional[str]:
+    """Return the normalized ADR-NNN id for an adr-kit filename, or None.
+
+    Anchored at the filename start, unlike ``normalize_adr_id``, which accepts
+    an ADR token anywhere in arbitrary text.
+    """
+    match = ADR_FILENAME_RE.match(name)
+    if not match:
+        return None
+    return f"ADR-{int(match.group(1)):03d}"
+
+
 def discover_adr_files(adr_dir: Path) -> List[Path]:
     if not adr_dir.is_dir():
         return []

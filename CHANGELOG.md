@@ -13,8 +13,23 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   another (for example `  Status: Accepted` or `Status Accepted`). The unified
   line form is a superset of both prior variants, so no ADR that any tool read
   as Accepted changes status.
+- **`adr-status` now reports what the gate enforces.** The dashboard shared
+  neither reader with `adr-judge`, so it disagreed in two ways. It had no
+  plain-line status tier, reporting an ADR the gate enforces as `Accepted`
+  under `unknown` (and it never matched the `**Status: Accepted**` form its own
+  docstring advertised). Its Enforcement detector also accepted untagged
+  ``` fences that the gate ignores, so coverage figures claimed enforcement
+  that never ran. Both readers are now the shared ones.
 
 ### Changed
+
+- **Single readers for shared ADR parsing.** The Enforcement block regex (five
+  identical copies), `enforcement_globs`, `adr_id_from_filename` with
+  `ADR_FILENAME_RE` (six copies), project `docs/adr` discovery, and the two
+  config loaders now each live in one module and are imported by every caller.
+  This removes the drift that produced the status and enforcement bugs above.
+  The shared `docs/adr` discovery lives in the stdlib-only `adr_state` module so
+  hook entry points pay no extra import cost.
 
 - **Hot-path performance.** `bin/adr-judge` now caches snapshot file reads for
   the duration of one pre-commit pass, so a file governed by several

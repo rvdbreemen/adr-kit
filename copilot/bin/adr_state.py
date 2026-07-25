@@ -15,6 +15,33 @@ T = TypeVar("T")
 StateMutation = Callable[[Dict], Tuple[bool, T]]
 
 
+def find_project_adr_dir() -> Optional[Path]:
+    """Return the project's docs/adr/ directory, or None when absent or empty.
+
+    Checks CLAUDE_PROJECT_DIR first (set by Claude Code for plugin-level hooks),
+    then falls back to the working directory. A candidate counts only when it
+    exists and holds at least one ADR-*.md file, so hook-side callers can
+    self-guard on a repository that does not use adr-kit. Shared by adr-guardian
+    and adr-watch; kept in this stdlib-only module so hook entry points pay no
+    extra import cost.
+    """
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    candidates = []
+    if project_dir:
+        candidates.append(Path(project_dir) / "docs" / "adr")
+    candidates.append(Path.cwd() / "docs" / "adr")
+
+    for adr_dir in candidates:
+        if adr_dir.is_dir():
+            try:
+                has_adrs = any(True for _ in adr_dir.glob("ADR-*.md"))
+            except OSError:
+                continue
+            if has_adrs:
+                return adr_dir
+    return None
+
+
 class StateLockTimeout(OSError):
     """Raised when a state transaction cannot acquire its cross-process lock."""
 

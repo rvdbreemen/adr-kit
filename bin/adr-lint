@@ -53,6 +53,7 @@ if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
 from adr_catalog import (
+    ENFORCEMENT_BLOCK_RE,
     STATUS_BOLD_INLINE_RE,
     STATUS_HEADING_RE,
     STATUS_LINE_RE,
@@ -134,11 +135,6 @@ ALL_GATES = [
     "quality",
 ]
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
-
-ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
 
 ENFORCEMENT_KNOWN_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern", "llm_judge"})
 ENFORCEMENT_ARRAY_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern"})
