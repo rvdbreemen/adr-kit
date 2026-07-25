@@ -19,7 +19,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -27,7 +27,6 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
-from adr_format import section_text
 from adr_catalog import discover_adr_files, load_adr_record
 
 
@@ -79,26 +78,6 @@ _DOMAIN_RE: Dict[str, re.Pattern] = {
     )
     for domain, keywords in _DOMAIN_KEYWORDS.items()
 }
-
-
-# Precompiled metadata extraction patterns (used by extract_adr_metadata).
-_TITLE_RE = re.compile(r"^#\s+ADR-\d+\s+(.+)$", re.MULTILINE)
-_STATUS_WORD_RE = re.compile(
-    r"^##\s+Status.*?\n+([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
-)
-_STATUS_SECTION_RE = re.compile(
-    r"^##\s+Status(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
-)
-_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
-_DECISION_SECTION_RE = re.compile(
-    r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
-)
-_RELATED_SECTION_RE = re.compile(
-    r"^##\s+Related Decisions(.*?)(?=^##|\Z)",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
-_ADR_REF_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
-_ADR_FILENAME_RE = re.compile(r"ADR-(\d{1,4})", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import hashlib
 import json
 import os
@@ -675,6 +674,7 @@ def apply_rules_to_diff(
     skip_files: List[str],
     llm_mode_active: bool = False,
     snapshot_mode: str = "diff",
+    snapshot_cache: Optional[Dict[Tuple[str, str], Tuple[str, Optional[str]]]] = None,
 ) -> List[Dict]:
     """Apply one ADR's Enforcement block to the parsed diff. Returns findings.
 
@@ -758,7 +758,7 @@ def apply_rules_to_diff(
             if not path_matches(path, path_glob):
                 continue
             state, content = read_snapshot_content(
-                diff_file, repo_root, snapshot_mode
+                diff_file, repo_root, snapshot_mode, snapshot_cache
             )
             if state != "present":
                 detail = (
@@ -861,8 +861,27 @@ def read_snapshot_content(
     diff_file: DiffFile,
     repo_root: Path,
     snapshot_mode: str,
+    cache: Optional[Dict[Tuple[str, str], Tuple[str, Optional[str]]]] = None,
 ) -> Tuple[str, Optional[str]]:
-    """Return (present|missing|unknown, content) for one post-diff file."""
+    """Return (present|missing|unknown, content) for one post-diff file.
+
+    A per-run ``cache`` keyed by (snapshot_mode, path) avoids re-spawning
+    ``git show`` for a file targeted by several require rules or ADRs; the
+    staged/worktree content is immutable during a single read-only judge pass.
+    """
+    if cache is None:
+        return _read_snapshot_content(diff_file, repo_root, snapshot_mode)
+    key = (snapshot_mode, diff_file.path)
+    if key not in cache:
+        cache[key] = _read_snapshot_content(diff_file, repo_root, snapshot_mode)
+    return cache[key]
+
+
+def _read_snapshot_content(
+    diff_file: DiffFile,
+    repo_root: Path,
+    snapshot_mode: str,
+) -> Tuple[str, Optional[str]]:
     safe_path = _safe_repo_path(repo_root, diff_file.path)
     if safe_path is None:
         return "unknown", None
@@ -1865,6 +1884,7 @@ def main() -> int:
 
         all_findings: List[Dict] = []
         adrs_with_enforcement = 0
+        snapshot_cache: Dict[Tuple[str, str], Tuple[str, Optional[str]]] = {}
         for adr_id, adr_path, body in adrs:
             # --dry-run-enforcement: skip every ADR that isn't the target.
             if dry_run_target is not None and adr_id != dry_run_target:
@@ -1895,6 +1915,7 @@ def main() -> int:
                     skip_files,
                     llm_mode_active=llm_mode_active,
                     snapshot_mode=args.snapshot,
+                    snapshot_cache=snapshot_cache,
                 )
             )
             profiler.stop_declarative()
@@ -1903,7 +1924,6 @@ def main() -> int:
         # Failures here log a warning and fall through; they NEVER block the
         # commit, because a missing CLI or transient API hiccup must not break
         # legitimate work.
-        llm_findings_emitted = 0
         if llm_mode_active:
             # When dry-run-enforcement is active, limit LLM targets to the one ADR.
             llm_adrs = (
@@ -1923,7 +1943,6 @@ def main() -> int:
                 profiler.stop_llm()
                 if llm_findings is not None:
                     all_findings.extend(llm_findings)
-                    llm_findings_emitted = len(llm_findings)
 
         # Override pass (task-10): a valid ADR_KIT_OVERRIDE downgrades FAILs of
         # ONE named ADR to loudly printed WARN advisories and appends a record

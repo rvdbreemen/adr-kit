@@ -9,7 +9,6 @@ import threading
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Sequence
 
 
 QUEUE_SCHEMA_VERSION = 1
@@ -188,13 +187,3 @@ def load_queue_actions(
         if len(safe) == QUEUE_MAX_ACTIONS:
             break
     return safe
-
-
-def render_queue_actions(actions: Sequence[dict]) -> str:
-    if not actions:
-        return ""
-    lines = ["Proposed ADR decision queue (derived, non-authoritative):"]
-    for item in actions[:QUEUE_MAX_ACTIONS]:
-        reason = ", ".join(item.get("reasons", [])[:2])
-        lines.append(f"- {item['adr_id']}: {reason} -> {item['command']}")
-    return "\n".join(lines)

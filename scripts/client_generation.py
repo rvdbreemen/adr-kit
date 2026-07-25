@@ -52,7 +52,6 @@ _validate_workflows = validate_workflows
 _validate_manifests = validate_manifests
 _native_hook_config = native_hook_config
 _render_skill = render_skill
-_render_prompt = render_prompt
 
 
 def generate(

@@ -27,7 +27,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -35,10 +35,8 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
-from adr_format import section_text
 from adr_catalog import (
     build_graph_document,
-    decision_summary,
     discover_adr_files,
     enforcement_globs as catalog_enforcement_globs,
     load_adr_records,
@@ -48,10 +46,6 @@ from adr_catalog import (
 BEGIN = "<!-- adr-kit-index:begin -->"
 END = "<!-- adr-kit-index:end -->"
 
-ENFORCEMENT_BLOCK_RE = re.compile(
-    r"^##\s+Enforcement\s*$\n+.*?```json\s*\n(.*?)\n```",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
-)
 STATUS_HEADING_RE = re.compile(
     r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
 )
@@ -67,8 +61,6 @@ DECISION_SECTION_RE = re.compile(
     r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
 )
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
-
-DECISION_ONELINE_MAX = 120
 
 
 def _ensure_utf8_streams() -> None:
@@ -107,11 +99,6 @@ def adr_status(text: str) -> Optional[str]:
 def enforcement_globs(text: str) -> List[str]:
     """Return all path_glob strings from the ADR's Enforcement block."""
     return catalog_enforcement_globs(text)
-
-
-def decision_oneline(text: str) -> str:
-    """One-line summary of the Decision section: first meaningful sentence."""
-    return decision_summary(text)
 
 
 def discover_files(adr_dir: Path) -> List[Path]:
@@ -195,20 +182,6 @@ def _readme_record(record: Dict) -> Dict:
         "superseded_by": record["superseded_by"],
         "file": record["path"],
     }
-
-
-def load_readme_records(adr_dir: Path) -> Tuple[List[Dict], List[str]]:
-    records = [_readme_record(record) for record in load_index(adr_dir)]
-    grouped: Dict[str, List[str]] = {}
-    for record in records:
-        grouped.setdefault(record["id"], []).append(record["file"])
-    duplicate_issues = [
-        f"{adr_id} appears in multiple files: {', '.join(files)}"
-        for adr_id, files in sorted(grouped.items())
-        if len(files) > 1
-    ]
-    records.sort(key=lambda row: int(re.search(r"\d+", row["id"]).group(0)))
-    return records, duplicate_issues
 
 
 def _supersession_note(record: Dict) -> str:

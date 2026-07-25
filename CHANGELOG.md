@@ -4,6 +4,26 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Hot-path performance.** `bin/adr-judge` now caches snapshot file reads for
+  the duration of one pre-commit pass, so a file governed by several
+  `require_pattern` rules or multiple ADRs is fetched from git once instead of
+  re-spawning `git show` per rule. `adr_format.detect_profile` is memoized and
+  `adr_catalog.load_adr_record` extracts the Decision section a single time,
+  removing a repeated full-document parse per ADR across `adr-index`,
+  `adr-context`, `adr-related`, and lint. Behavior is preserved; the isolated
+  regex safety budget and reporting output are unchanged.
+
+### Removed
+
+- **Dead code cleanup.** Removed unreferenced helper functions
+  (`load_readme_records`, `decision_oneline`, `render_queue_actions`,
+  `_path_matches`, `require_client_id`, `read_update_state`, `_run_version`),
+  stale precompiled patterns left behind by earlier refactors in `adr-context`
+  and `adr-related`, dead module constants, unused imports, and leftover local
+  bindings. No public workflow, CLI surface, or behavior changed.
+
 ## [0.37.0] - 2026-07-21
 
 ### Added

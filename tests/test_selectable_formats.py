@@ -544,3 +544,31 @@ def test_unknown_declared_profile_is_rejected_by_strict_lint(tmp_path):
     payload = json.loads(lint.stdout)
     findings = payload["files"][0]["findings"]
     assert any("format is unknown" in finding["summary"] for finding in findings)
+
+
+def test_detect_profile_is_memoized_for_repeated_document_scans():
+    """detect_profile is a pure whole-document scan invoked several times per
+    ADR (directly and through section_text). Memoizing it removes that
+    redundant parse; this guards the hot-path win so it cannot silently regress
+    into re-parsing on every call.
+    """
+    text = (
+        "---\nformat: madr\n---\n\n"
+        "# ADR-001 Memoized scan\n\n"
+        "## Status\n\nAccepted\n\n"
+        "## Context and Problem Statement\n\nWhy.\n\n"
+        "## Decision Outcome\n\nDo it.\n"
+    )
+
+    detect_profile.cache_clear()
+    first = detect_profile(text)
+    after_first = detect_profile.cache_info()
+    second = detect_profile(text)
+    after_second = detect_profile.cache_info()
+
+    assert first == second == "madr"
+    # The first call was a miss; the repeat is served from cache with no
+    # additional whole-document parse.
+    assert after_first.misses == 1
+    assert after_second.hits == after_first.hits + 1
+    assert after_second.misses == after_first.misses

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
 
 from adr_format import (
     SUPPORTED_PROFILES,
@@ -92,9 +92,10 @@ def _plain_markdown(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def decision_summary(text: str) -> str:
+def decision_summary(text: str, *, decision: Optional[str] = None) -> str:
     """Return the first meaningful decision paragraph as bounded plain text."""
-    decision = section_text(text, "decision")
+    if decision is None:
+        decision = section_text(text, "decision")
     if not decision:
         return ""
 
@@ -242,7 +243,7 @@ def load_adr_record(path: Path) -> Dict:
         "format": profile,
         "status": status,
         "date": str(status_date) if status_date else None,
-        "decision": decision_summary(text),
+        "decision": decision_summary(text, decision=decision_text),
         "decision_text": decision_text,
         "scope": enforcement_globs(text),
         "binding": bool(metadata.get("binding", False)),

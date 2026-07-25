@@ -50,7 +50,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
