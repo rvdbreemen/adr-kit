@@ -46,16 +46,6 @@ from adr_catalog import (
 BEGIN = "<!-- adr-kit-index:begin -->"
 END = "<!-- adr-kit-index:end -->"
 
-STATUS_HEADING_RE = re.compile(
-    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
-)
-STATUS_LINE_RE = re.compile(
-    r"^\s*Status\s*:\s*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
-)
-STATUS_BOLD_INLINE_RE = re.compile(
-    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
-    re.IGNORECASE | re.MULTILINE,
-)
 TITLE_RE = re.compile(r"^#\s+ADR-\d+[:\s]\s*(.+)$", re.MULTILINE)
 DECISION_SECTION_RE = re.compile(
     r"^##\s+Decision(.*?)(?=^##|\Z)", re.IGNORECASE | re.MULTILINE | re.DOTALL
@@ -79,21 +69,6 @@ def _ensure_utf8_streams() -> None:
             )
         except (AttributeError, ValueError):
             pass
-
-
-def adr_status(text: str) -> Optional[str]:
-    """Return the ADR status word, recognising the same forms as adr-watch."""
-    match = STATUS_HEADING_RE.search(text)
-    if match:
-        word = re.match(r"\s*([A-Za-z]+)", match.group(1))
-        return word.group(1) if word else None
-    match = STATUS_BOLD_INLINE_RE.search(text)
-    if match:
-        return match.group(1) or match.group(2)
-    match = STATUS_LINE_RE.search(text)
-    if match:
-        return match.group(1)
-    return None
 
 
 def enforcement_globs(text: str) -> List[str]:
