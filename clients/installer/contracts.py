@@ -115,9 +115,3 @@ class ClientResult:
 
     def as_dict(self) -> dict:
         return asdict(self)
-
-
-def require_client_id(value: str) -> ClientId:
-    if value not in SPECS:
-        raise ValueError(f"unsupported client: {value}")
-    return value  # type: ignore[return-value]

@@ -17,7 +17,7 @@ for import_root in (ROOT, ROOT / "scripts"):
 
 from adr_settings import SettingsError, resolve_settings
 from project_setup import apply_changes, plan_uninstall
-from clients.installer.contracts import CLIENT_IDS, SPECS
+from clients.installer.contracts import CLIENT_IDS
 from clients.installer.detection import (
     Client,
     detect_client,
@@ -54,17 +54,11 @@ from clients.installer.planning import build_plan, render_plan
 from clients.installer.transaction import run_transaction
 from clients.installer.updates import record_update_state, update_decision
 SUPPORTED = CLIENT_IDS
-VERSION_MARKERS = {name: SPECS[name].version_marker for name in CLIENT_IDS}
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(command), capture_output=True, text=True, encoding="utf-8",
         errors="replace", timeout=120,
-    )
-def _run_version(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        list(command), capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=10,
     )
 def _display_command(command: Sequence[str], system: str | None = None) -> str:
     return display_command(command, system)

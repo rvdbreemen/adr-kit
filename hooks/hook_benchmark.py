@@ -113,7 +113,7 @@ def measure(
             ).encode("utf-8")
             started = time.perf_counter()
             try:
-                completed = subprocess.run(
+                subprocess.run(
                     command,
                     input=encoded,
                     capture_output=True,
