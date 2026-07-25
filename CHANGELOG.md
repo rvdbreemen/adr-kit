@@ -4,6 +4,14 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Release payload validation now fails when a file carries a maintainer home
+  directory, and holds compiled artifacts to the stricter rule that they may
+  not reference a Windows drive at all. The scan reads the resolved release
+  file set as bytes, so the shipped Windows hook binaries are covered rather
+  than skipped as binary. Redaction placeholders such as `C:\Users\...` stay
+  legal so existing documentation comments continue to pass.
 
 ## [0.41.0] - 2026-07-25
 
