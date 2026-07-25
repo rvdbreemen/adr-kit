@@ -222,7 +222,23 @@
           "additionalProperties": false
         },
         "default_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
-        "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.1}
+        "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.1},
+        "strict_index": {
+          "type": "boolean",
+          "default": false,
+          "description": "Fail queries instead of using the visible Markdown compatibility fallback when the generated index is unavailable, stale, invalid, or unsupported."
+        },
+        "probes_file": {
+          "type": "string",
+          "minLength": 1,
+          "default": "adr-context-probes.json",
+          "description": "Project-relative retrieval probe file, resolved from the ADR directory."
+        },
+        "retrieval_completeness": {
+          "enum": ["off", "advisory", "strict"],
+          "default": "advisory",
+          "description": "Metadata completeness policy for Accepted binding ADRs. Strict is opt-in after migration."
+        }
       },
       "additionalProperties": false
     },

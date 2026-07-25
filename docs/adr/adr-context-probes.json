@@ -1,0 +1,27 @@
+{
+  "$schema": "../../schemas/adr-context-probes.schema.json",
+  "schema_version": 1,
+  "probes": [
+    {
+      "id": "index-first-query-engine",
+      "query": "schema v2 selective ADR retrieval metadata",
+      "components": ["adr-context"],
+      "symbols": ["query_adr_context"],
+      "limit": 3,
+      "expect": {
+        "include": ["ADR-014"],
+        "exclude": []
+      }
+    },
+    {
+      "id": "lifecycle-context-injection",
+      "query": "fail open lifecycle hook context injection",
+      "components": ["hooks"],
+      "limit": 3,
+      "expect": {
+        "include": ["ADR-004"],
+        "exclude": []
+      }
+    }
+  ]
+}

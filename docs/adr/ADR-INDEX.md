@@ -17,3 +17,6 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-009 | Accepted | `bin/adr-lint` | Chosen option: bound the gate to the region and vocabulary where a finding is actionable, because it restores the gat... |
 | ADR-010 | Accepted | `schemas/client-capabilities.schema.json` | Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce... |
 | ADR-011 | Accepted | `clients/workflows.json`, `bin/adr-mcp` | Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i... |
+| ADR-012 | Accepted | - | Chosen: the documented-runbook-plus-tag-triggered-gate option. |
+| ADR-013 | Accepted | - | Chosen: the declarative registry with a writer. |
+| ADR-014 | Accepted | - | Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain... |

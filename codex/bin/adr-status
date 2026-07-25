@@ -27,6 +27,7 @@ if str(_BIN_DIR) not in sys.path:
 # coverage figure can never claim more (or less) than adr-judge actually acts on.
 from adr_catalog import ENFORCEMENT_BLOCK_RE as _ENFORCEMENT_BLOCK_RE
 from adr_catalog import adr_status as _adr_status
+from adr_retrieval_health import run_retrieval_health
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +435,7 @@ def format_table(
     candidates: List[Dict[str, Any]],
     adr_dir: Path,
     limit: Optional[int] = None,
+    retrieval: Optional[Dict[str, Any]] = None,
 ) -> str:
     today = date.today().isoformat()
     lines = [
@@ -477,6 +479,14 @@ def format_table(
         f"{summary['accepted_manual_review']} manual-review, "
         f"{summary['accepted_no_enforcement']} no block"
     )
+    if retrieval is not None:
+        probes = retrieval["probes"]["summary"]
+        lines.append(
+            "Retrieval health:  "
+            f"{retrieval['status']} "
+            f"({probes['pass']} pass/{probes['fail']} fail probes; "
+            f"{len(retrieval.get('metadata_findings', []))} metadata finding(s))"
+        )
 
     lines.append("")
 
@@ -528,6 +538,7 @@ def format_markdown(
     candidates: List[Dict[str, Any]],
     adr_dir: Path,
     limit: Optional[int] = None,
+    retrieval: Optional[Dict[str, Any]] = None,
 ) -> str:
     today = date.today().isoformat()
     bs = summary["by_status"]
@@ -566,6 +577,14 @@ def format_markdown(
         "| ADR | Title | Status | Age | Enforcement | Health |",
         "|-----|-------|--------|-----|-------------|--------|",
     ]
+    if retrieval is not None:
+        probes = retrieval["probes"]["summary"]
+        lines.insert(
+            lines.index("## ADR List") - 1,
+            f"| Selective-context retrieval | {retrieval['status']}; "
+            f"{probes['pass']} pass/{probes['fail']} fail probes; "
+            f"{len(retrieval.get('metadata_findings', []))} metadata finding(s) |",
+        )
 
     display_adrs = adrs[:limit] if limit is not None else adrs
     for rec in display_adrs:
@@ -596,6 +615,7 @@ def format_json_output(
     summary: Dict[str, Any],
     adrs: List[AdrRecord],
     candidates: List[Dict[str, Any]],
+    retrieval: Optional[Dict[str, Any]] = None,
 ) -> str:
     adr_list = []
     for rec in adrs:
@@ -614,6 +634,7 @@ def format_json_output(
         "summary": summary,
         "adrs": adr_list,
         "retirement_candidates": candidates,
+        "retrieval": retrieval,
     }
     return json.dumps(data, indent=2)
 
@@ -685,13 +706,32 @@ def main() -> None:
     adrs = load_adr_set(adr_dir)
     summary = compute_summary(adrs)
     candidates = find_retirement_candidates(adrs)
+    retrieval = run_retrieval_health(adr_dir)
 
     if args.format == "json":
-        print(format_json_output(summary, adrs, candidates))
+        print(format_json_output(summary, adrs, candidates, retrieval))
     elif args.format == "markdown":
-        print(format_markdown(summary, adrs, candidates, adr_dir, limit=args.limit))
+        print(
+            format_markdown(
+                summary,
+                adrs,
+                candidates,
+                adr_dir,
+                limit=args.limit,
+                retrieval=retrieval,
+            )
+        )
     else:
-        print(format_table(summary, adrs, candidates, adr_dir, limit=args.limit))
+        print(
+            format_table(
+                summary,
+                adrs,
+                candidates,
+                adr_dir,
+                limit=args.limit,
+                retrieval=retrieval,
+            )
+        )
 
 
 if __name__ == "__main__":

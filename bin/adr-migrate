@@ -36,9 +36,20 @@ from adr_format import (
     normalize_profile,
 )
 from adr_schema import migrate_text
+from adr_catalog import load_adr_record
 
 
 ADR_FILE_RE = re.compile(r"(?i)^ADR-\d{1,4}-.*\.md$")
+SUGGESTION_STOP_WORDS = {
+    "adopt",
+    "and",
+    "for",
+    "from",
+    "into",
+    "the",
+    "use",
+    "with",
+}
 
 
 def discover_files(target: Path) -> List[Path]:
@@ -219,6 +230,117 @@ def render_plan_text(target: Path, scanned: List[Dict]) -> str:
     return "\n".join(lines)
 
 
+def suggest_retrieval_file(path: Path) -> Dict:
+    """Derive review-only retrieval candidates from existing ADR evidence."""
+    try:
+        record = load_adr_record(path)
+    except (OSError, UnicodeError, ValueError) as exc:
+        return {
+            "file": str(path),
+            "ok": False,
+            "issues": [str(exc)],
+            "requires_human_approval": True,
+            "writes_automatically": False,
+        }
+    title_topics = [
+        token
+        for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9_.-]{2,}", record["title"])
+        if token.casefold() not in SUGGESTION_STOP_WORDS
+    ][:8]
+    path_components = []
+    symbol_candidates = []
+    for pointer in record.get("verified_in", []):
+        path_part, separator, symbol = pointer.partition(":")
+        if separator and symbol and not re.match(r"^[A-Za-z]$", path_part):
+            symbol_candidates.append(symbol)
+        parts = Path(path_part.replace("\\", "/")).parts
+        if parts:
+            path_components.append(parts[0])
+    for pattern in record.get("scope", []):
+        parts = Path(pattern.replace("\\", "/")).parts
+        if parts and not parts[0].startswith("*"):
+            path_components.append(parts[0])
+    existing = {
+        field: list(record.get(field, []))
+        for field in ("topics", "aliases", "components", "symbols")
+    }
+    contract = record.get("decision_contract", {})
+    has_contract = any(contract.get(key) for key in contract)
+    candidates = {
+        "topics": existing["topics"] or sorted(
+            set(title_topics), key=lambda value: (value.casefold(), value)
+        ),
+        "aliases": existing["aliases"],
+        "components": existing["components"] or sorted(
+            set(path_components), key=lambda value: (value.casefold(), value)
+        )[:8],
+        "symbols": existing["symbols"] or sorted(
+            set(symbol_candidates), key=lambda value: (value.casefold(), value)
+        )[:8],
+        "context_scope": record.get("context_scope", "selective"),
+    }
+    decision_contract = contract if has_contract else {
+        "must": [record["decision"]] if record.get("decision") else [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": [
+            *(
+                [f"Run the named gate: {record['gate']}"]
+                if record.get("gate")
+                else []
+            ),
+            *[f"Verify: {pointer}" for pointer in record.get("verified_in", [])[:8]],
+        ],
+    }
+    return {
+        "file": str(path),
+        "adr_id": record["adr_id"],
+        "ok": True,
+        "status": record["status"],
+        "binding": record["binding"],
+        "existing": {**existing, "decision_contract": contract},
+        "suggested": {
+            **candidates,
+            "decision_contract": decision_contract,
+        },
+        "source_evidence": {
+            "title": record["title"],
+            "decision_summary": record["decision"],
+            "scope": record["scope"],
+            "verified_in": record["verified_in"],
+            "gate": record["gate"],
+        },
+        "requires_human_approval": True,
+        "writes_automatically": False,
+        "warning": (
+            "Candidates are derived from existing text and paths; a human must "
+            "confirm meaning before editing the ADR."
+        ),
+    }
+
+
+def render_retrieval_suggestions(target: Path, results: List[Dict]) -> str:
+    lines = [
+        f"adr-migrate retrieval dry-run: {target}",
+        f"Files: {len(results)}; suggestions: {sum(item.get('ok', False) for item in results)}",
+    ]
+    for item in results:
+        if not item.get("ok"):
+            lines.append(f"  failed: {item['file']}: {item.get('issues', [])}")
+            continue
+        suggested = item["suggested"]
+        lines.append(f"  {item['adr_id']}: {item['file']}")
+        lines.append(f"    topics: {suggested['topics']}")
+        lines.append(f"    components: {suggested['components']}")
+        lines.append(f"    symbols: {suggested['symbols']}")
+        lines.append(
+            "    Decision Contract candidate items: "
+            + str(sum(len(values) for values in suggested["decision_contract"].values()))
+        )
+    lines.append("No files changed. Every candidate requires human approval.")
+    return "\n".join(lines)
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="adr-migrate",
@@ -263,14 +385,33 @@ def main(argv: List[str] | None = None) -> int:
         default=None,
         help="explicit source profile for an unknown or hybrid document",
     )
+    parser.add_argument(
+        "--suggest-retrieval",
+        action="store_true",
+        help=(
+            "with --dry-run, suggest selective metadata and Decision Contract "
+            "candidates from existing ADR evidence; never writes"
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.plan and (
         args.check or args.dry_run or args.to_profile or args.from_profile
+        or args.suggest_retrieval
     ):
         parser.error(
             "--plan cannot be combined with --check, --dry-run, "
             "--to-profile, or --from-profile"
+        )
+    if args.suggest_retrieval and (
+        not args.dry_run
+        or args.check
+        or args.to_profile
+        or args.from_profile
+    ):
+        parser.error(
+            "--suggest-retrieval requires --dry-run and cannot be combined "
+            "with --check, --to-profile, or --from-profile"
         )
 
     target = Path(args.path)
@@ -303,6 +444,30 @@ def main(argv: List[str] | None = None) -> int:
         else:
             print(render_plan_text(target, scanned))
         return 0
+
+    if args.suggest_retrieval:
+        results = [
+            suggest_retrieval_file(path)
+            for path in discover_files(target)
+        ]
+        payload = {
+            "target": str(target),
+            "mode": "retrieval-suggestions",
+            "read_only": True,
+            "requires_human_approval": True,
+            "writes_automatically": False,
+            "summary": {
+                "total": len(results),
+                "suggestions": sum(item.get("ok", False) for item in results),
+                "failed": sum(not item.get("ok", False) for item in results),
+            },
+            "files": results,
+        }
+        if args.format == "json":
+            print(json.dumps(payload, indent=2))
+        else:
+            print(render_retrieval_suggestions(target, results))
+        return 2 if payload["summary"]["failed"] else 0
 
     files = discover_files(target)
     write = not args.check and not args.dry_run

@@ -10,6 +10,11 @@ verified_in: []
 supersedes: []
 superseded_by: null
 format: "nygard"
+topics: []
+aliases: []
+components: []
+symbols: []
+context_scope: "selective"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -38,6 +43,24 @@ Describe the forces at play in value-neutral language with concrete evidence.
 ## Decision
 
 State the response to those forces in active voice: "We will ...".
+
+## Decision Contract
+
+### Must
+
+- State required implementation constraints.
+
+### Must Not
+
+- State prohibited implementation choices.
+
+### Exceptions
+
+- State explicit exceptions, or `None`.
+
+### Verification
+
+- Name the test, command, or source anchor that verifies this decision.
 
 ## Consequences
 

@@ -2,7 +2,7 @@
   "_comment": "ADR Guardian SessionStart hook entry for .claude/settings.json",
   "_note": "Add this entry under hooks.SessionStart[0].hooks[] in the project's .claude/settings.json.",
   "_remove_marker": "adr-guardian-session-start",
-  "_wrapper_version": "0.37.0",
+  "_wrapper_version": "0.40.0",
   "type": "command",
   "command": "ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1) && [ -n \"$ADR_KIT\" ] && _PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
   "timeout": 10

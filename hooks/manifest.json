@@ -25,6 +25,7 @@
       "command": "user-prompt-submit",
       "matcher": null,
       "outcome": "task-context",
+      "runner_timeout_sec": 5,
       "latency_budget_ms": 500,
       "latency": {"p50_ms": 75, "p95_ms": 250, "hard_timeout_ms": 500},
       "clients": {

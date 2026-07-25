@@ -5,8 +5,8 @@ It exists to make contribution and prioritisation decisions predictable.
 
 ## Status
 
-`adr-kit` is at v0.34.0 and remains pre-1.0. The Claude, Codex, and standalone
-Copilot distributions, 14 workflows, local ADR lifecycle, deterministic
+`adr-kit` is at v0.39.0 and remains pre-1.0. The Claude, Codex, and standalone
+Copilot distributions, 15 workflows, local ADR lifecycle, deterministic
 enforcement, context injection, guardian, MCP server, and generated indexes are
 all shipped. File layout and conventions may still change before v1.0.0.
 
@@ -51,6 +51,10 @@ Priority is shaped by user evidence:
 
 ## Recently landed
 
+- **TASK-52:** schema-v2 `ADR-INDEX.json` became the shared local
+  selective-context query engine. CLI, MCP, lifecycle hooks, health probes,
+  doctor, status, and guardian now use one explainable retrieval contract;
+  metadata enrichment stays dry-run-first and human-approved.
 - **TASK-32:** source-audit closure: bounded regex workers, schema-validated
   runtime config, exact Git snapshot semantics, rollback-safe lifecycle and
   release mutations, cross-process state transactions, executable release

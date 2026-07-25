@@ -18,6 +18,18 @@ The harness fixes:
 The native host is the certified Windows path. Python is a fail-open portable
 fallback and is not eligible for the edit-hook latency certification.
 
+## Client runner timeout
+
+`hooks/manifest.json` is the source of truth for client runner timeouts.
+Events use a one-second runner timeout by default. `UserPromptSubmit` uses five
+seconds so a cold Windows process launch, filesystem scan, or antivirus delay
+does not terminate an otherwise healthy context lookup. This outer safety
+margin does not relax the hook's 250 ms p95 target or 500 ms semantic hard
+timeout: benchmark and doctor output must still surface slow retrieval.
+
+Runner timeouts are bounded to integer values from 1 through 30 seconds. Hooks
+remain local, deterministic, model-free, key-free, and fail-open.
+
 Run the focused evidence:
 
 ```bash

@@ -16,7 +16,7 @@
         "bash": "python3 \"${PLUGIN_ROOT}/hooks/adr-hook.py\" --client github-copilot-cli --event user-prompt-submit || true",
         "powershell": "$native = \"${PLUGIN_ROOT}/hooks/bin/windows-x64/adr-hook.exe\"; if (Test-Path $native) { & $native --client github-copilot-cli --event user-prompt-submit } else { $python = Get-Command python -ErrorAction SilentlyContinue; if ($python) { & $python.Source \"${PLUGIN_ROOT}/hooks/adr-hook.py\" --client github-copilot-cli --event user-prompt-submit } }; exit 0",
         "cwd": "${PLUGIN_ROOT}",
-        "timeoutSec": 1
+        "timeoutSec": 5
       }
     ],
     "postToolUse": [

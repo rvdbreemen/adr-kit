@@ -65,6 +65,7 @@ from adr_guardian_queue import (
     build_queue_cache,
     write_queue_cache,
 )
+from adr_retrieval_health import render_retrieval_health, run_retrieval_health
 
 
 # ---------------------------------------------------------------------------
@@ -657,6 +658,22 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_retrieval_health(args: argparse.Namespace) -> int:
+    """Report selective-context health without editing state or blocking."""
+    adr_dir = Path(args.adr_dir) if args.adr_dir else _find_adr_dir()
+    if adr_dir is None:
+        return 0
+    probe_path = Path(args.probes_file) if args.probes_file else None
+    if probe_path is not None and not probe_path.is_absolute():
+        probe_path = adr_dir / probe_path
+    payload = run_retrieval_health(adr_dir, probe_path=probe_path)
+    if args.format == "json":
+        sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    else:
+        sys.stdout.write(render_retrieval_health(payload) + "\n")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Subcommand: stamp
 # ---------------------------------------------------------------------------
@@ -940,6 +957,21 @@ def main() -> int:
     refresh_p.add_argument("--generated-at", default=None)
     refresh_p.add_argument("--ttl-hours", type=int, default=24)
 
+    retrieval_p = sub.add_parser(
+        "retrieval-health",
+        help=(
+            "Report deterministic selective-context probes and metadata health. "
+            "Read-only and always exits 0."
+        ),
+    )
+    retrieval_p.add_argument("--adr-dir", default=None)
+    retrieval_p.add_argument("--probes-file", default=None)
+    retrieval_p.add_argument(
+        "--format",
+        choices=["human", "json"],
+        default="human",
+    )
+
     args = p.parse_args()
 
     if args.command is None:
@@ -961,6 +993,8 @@ def main() -> int:
             return cmd_artifacts(args)
         elif args.command == "refresh-readiness":
             return cmd_refresh_readiness(args)
+        elif args.command == "retrieval-health":
+            return cmd_retrieval_health(args)
     except KeyboardInterrupt:
         return 0
     except Exception:
