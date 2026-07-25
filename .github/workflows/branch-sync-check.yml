@@ -1,0 +1,57 @@
+# Branch sync check: has the release branch been merged back into dev?
+#
+# Releases land on `main` (protected, tagged, published by release-publish.yml)
+# while ongoing work continues on `dev`. Nothing in the release flow moves those
+# release commits back, so `dev` drifts behind silently once per release.
+#
+# It has already happened twice. By v0.40.0, `dev` was 32 commits behind `main`,
+# still declared 0.37.0, and was missing the very release toolchain it is meant
+# to run. Cutting a release from `dev` in that state would have reverted three
+# published versions.
+#
+# Invariants:
+#   - Read-only: no pushes, no issues, no merges. It reports and fails.
+#   - Not triggered on push to main. The merge-back legitimately trails the
+#     release by minutes to hours, so a push trigger would false-alarm on every
+#     single release and train everyone to ignore it. The daily schedule gives
+#     the merge-back a natural grace period and still catches a drift that is
+#     never resolved.
+#   - Exit 2 (bad ref, broken checkout) is an infrastructure error and is
+#     surfaced as a failure too, so a silently broken check is not mistaken for
+#     a passing one.
+#
+# Remediation is printed by the check itself and documented in
+# docs/RELEASING.md step 4.
+
+name: Branch sync check
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  branch-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Explicit and complete. A partial fetch is what hid the 0.37.0 drift in
+      # the first place: origin/main looked current while it was 32 commits stale.
+      - name: Fetch both branches and all tags
+        run: |
+          git fetch --prune --tags origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            '+refs/heads/dev:refs/remotes/origin/dev'
+
+      - name: Check that dev contains every release commit
+        run: python scripts/check-branch-sync.py

@@ -89,7 +89,29 @@ workflow went green before continuing.
 **Checkpoint:** tagging + pushing is outward-facing. Confirm with the maintainer
 before pushing the tag unless already authorized.
 
-## 5. Publish to this machine's prepared-directory marketplace
+## 5. Merge the release back into `dev`
+
+The release is on `main`; `dev` does not have it yet and nothing else will move
+it. Skipping this step is silent at the time and arms the next release to revert
+this one. It has already gone wrong twice: `dev` reached 32 commits behind and
+lost the release toolchain itself.
+
+```bash
+git fetch origin
+git checkout -b sync/release-to-dev origin/dev
+git merge origin/main
+python scripts/check-branch-sync.py
+```
+
+Resolve conflicts by treating `main` as authoritative for anything a release
+touches (version sites, generated `codex/` and `copilot/` adapters, manifests),
+and in `CHANGELOG.md` keep `dev`'s `[Unreleased]` entries above `main`'s
+published sections. Re-run the step 3 gates on the merge result, then open a PR
+into `dev`.
+
+Merging that PR is the maintainer's action, same as step 4.
+
+## 6. Publish to this machine's prepared-directory marketplace
 
 End users on the git source are already served by step 4. Advance the local
 prepared-directory source and re-register all three clients:
@@ -102,7 +124,8 @@ Then remind the maintainer to restart each client (Claude Code / Codex / Copilot
 to load the new version. Verify with `claude plugin list`, `codex plugin list`,
 `copilot plugin list` that each shows adr-kit at v$ARGUMENTS.
 
-## 6. Report
+## 7. Report
 
-Summarize: version, gate results, tag + Release URL, and the local install +
-per-client version confirmation. Close the release task.
+Summarize: version, gate results, tag + Release URL, the merge-back PR into
+`dev`, and the local install + per-client version confirmation. Close the release
+task.

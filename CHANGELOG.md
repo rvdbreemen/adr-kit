@@ -4,6 +4,21 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Release branches are checked for merge-back drift.** New
+  `scripts/check-branch-sync.py` fails when `dev` is missing commits that are on
+  `main`, and names the released versions that never made it back rather than
+  reporting a bare commit count. `.github/workflows/branch-sync-check.yml` runs
+  it daily. Releases land on `main` while work continues on `dev`, and nothing
+  moved those commits back, so `dev` drifted one release at a time: by v0.40.0 it
+  was 32 commits behind, still declared 0.37.0, and had lost the release
+  toolchain it is meant to run (`bump-version.py`, `check-release-version.py`,
+  `packaging/version-sites.json`, `docs/RELEASING.md`, `release-publish.yml`)
+  along with ADR-012, ADR-013 and ADR-014. Cutting a release from `dev` in that
+  state would have reverted three published versions. The runbook and
+  `/release-adr-kit` now carry the merge-back as an explicit numbered step.
+
 ### Fixed
 
 - **Cross-tool status agreement.** `adr-index`, `adr-watch`, `adr-judge`,
