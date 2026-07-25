@@ -9,6 +9,8 @@ tests deadlock-free without threads.
 from __future__ import annotations
 
 import json
+import importlib.machinery
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -225,6 +227,23 @@ def test_tools_list(project: Path):
         assert tool["inputSchema"]["type"] == "object"
     # Deliberately thin: adr-suggest (LLM-only) is not exposed.
     assert "adr_suggest" not in {t["name"] for t in tools}
+    context = next(tool for tool in tools if tool["name"] == "adr_context")
+    properties = context["inputSchema"]["properties"]
+    assert {
+        "query",
+        "limit",
+        "paths",
+        "components",
+        "symbols",
+        "topics",
+        "statuses",
+        "authorities",
+        "include_history",
+        "strict_index",
+        "min_score",
+        "project_root",
+        "adr_dir",
+    } <= set(properties)
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +310,138 @@ def test_adr_context_ranks_adrs(project: Path):
     assert resp["result"].get("isError") is not True
     # Output must at least be parseable JSON from adr-context --format json.
     json.loads(tool_text(resp))
+
+
+def test_adr_context_cli_mcp_outcome_parity(project: Path):
+    build = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-index"), "docs/adr"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert build.returncode == 0, build.stderr
+    arguments = {
+        "query": "heap allocation Foo",
+        "limit": 3,
+        "paths": [r"src\app\main.py"],
+        "statuses": ["Accepted"],
+        "authorities": ["governing"],
+        "strict_index": True,
+    }
+    responses, _, _ = run_session(
+        project,
+        [INITIALIZE, INITIALIZED, call("adr_context", arguments, 19)],
+    )
+    mcp_payload = json.loads(tool_text(responses[19]))
+    cli = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "bin" / "adr-context"),
+            "--format",
+            "json",
+            "--adr-dir",
+            str(project / "docs" / "adr"),
+            "--limit",
+            "3",
+            "--path",
+            r"src\app\main.py",
+            "--status",
+            "Accepted",
+            "--authority",
+            "governing",
+            "--strict-index",
+            "heap allocation Foo",
+        ],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert cli.returncode == 0, cli.stderr
+    assert mcp_payload == json.loads(cli.stdout)
+    assert all(item["source"] == "index-v2" for item in mcp_payload)
+    assert all(item["engine"] == "index-first" for item in mcp_payload)
+
+
+def test_adr_context_no_result_is_an_explicit_empty_array(project: Path):
+    responses, _, _ = run_session(
+        project,
+        [
+            INITIALIZE,
+            INITIALIZED,
+            call("adr_context", {"query": "quantum satellite telemetry"}, 20),
+        ],
+    )
+    assert json.loads(tool_text(responses[20])) == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"query": "x", "limit": 0},
+        {"query": "x", "limit": 101},
+        {"query": "x", "paths": "src/app.py"},
+        {"query": "x", "components": [""]},
+        {"query": "x", "statuses": ["Imaginary"]},
+        {"query": "x", "authorities": ["binding"]},
+        {"query": "x", "include_history": "yes"},
+        {"query": "x", "min_score": 2},
+        {"query": "x", "project_root": "relative-project"},
+        {"query": "x", "adr_dir": "../outside"},
+    ],
+)
+def test_adr_context_malformed_or_unsafe_inputs_are_tool_errors(
+    project: Path, arguments
+):
+    responses, _, _ = run_session(
+        project,
+        [INITIALIZE, INITIALIZED, call("adr_context", arguments, 21)],
+    )
+    assert responses[21]["result"]["isError"] is True
+
+
+def test_adr_context_future_schema_strict_failure_is_explicit(project: Path):
+    index_path = project / "docs" / "adr" / "ADR-INDEX.json"
+    index_path.write_text(
+        json.dumps({"schema_version": 99, "adrs": [], "relationships": []}),
+        encoding="utf-8",
+    )
+    responses, _, _ = run_session(
+        project,
+        [
+            INITIALIZE,
+            INITIALIZED,
+            call(
+                "adr_context",
+                {"query": "Foo", "strict_index": True},
+                22,
+            ),
+        ],
+    )
+    result = responses[22]["result"]
+    assert result["isError"] is True
+    assert "unsupported" in tool_text(responses[22])
+
+
+def test_adr_context_timeout_is_explicit_and_bounded(project: Path, monkeypatch):
+    loader = importlib.machinery.SourceFileLoader("adr_mcp_timeout", str(ADR_MCP))
+    spec = importlib.util.spec_from_loader("adr_mcp_timeout", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+
+    def timed_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(["adr-context"], module.CLI_TIMEOUT_S)
+
+    monkeypatch.setattr(module, "run_cli", timed_out)
+    result = module.handle_tools_call(
+        {"name": "adr_context", "arguments": {"query": "Foo"}},
+        project,
+        project / "docs" / "adr",
+    )
+
+    assert result["isError"] is True
+    assert f"timed out after {module.CLI_TIMEOUT_S}s" in result["content"][0]["text"]
 
 
 def test_adr_quality_single_and_all(project: Path):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import uuid
@@ -39,27 +40,55 @@ def _project(tmp_path: Path) -> Path:
                         "id": "ADR-001",
                         "title": "Use bounded hooks",
                         "path": "ADR-001-hooks.md",
+                        "format": "madr",
                         "status": "Accepted",
+                        "date": "2026-07-23",
                         "decision_summary": "Hook work must remain deterministic and fail open.",
                         "scope": {"path_globs": ["src/hooks/**"]},
+                        "metadata": {},
+                        "context_scope": "global",
+                        "topics": ["deterministic lifecycle hooks"],
+                        "aliases": [],
+                        "components": ["hook runtime"],
+                        "symbols": [],
+                        "decision_contract": {},
                     },
                     {
                         "id": "ADR-002",
                         "title": "Use SQLite",
                         "path": "ADR-002-storage.md",
+                        "format": "madr",
                         "status": "Accepted",
+                        "date": "2026-07-23",
                         "decision_summary": "Store durable records in SQLite.",
                         "scope": {"path_globs": ["src/store/**"]},
+                        "metadata": {},
+                        "context_scope": "selective",
+                        "topics": ["sqlite storage"],
+                        "aliases": [],
+                        "components": ["storage"],
+                        "symbols": [],
+                        "decision_contract": {},
                     },
                     {
                         "id": "ADR-003",
-                        "title": "Ignore proposal",
+                        "title": "Candidate lifecycle hooks",
                         "path": "ADR-003-proposal.md",
+                        "format": "madr",
                         "status": "Proposed",
-                        "decision_summary": "Not governing.",
+                        "date": "2026-07-23",
+                        "decision_summary": "Candidate deterministic lifecycle hook behavior.",
                         "scope": {"path_globs": ["**"]},
+                        "metadata": {},
+                        "context_scope": "selective",
+                        "topics": ["deterministic lifecycle hooks"],
+                        "aliases": [],
+                        "components": ["hook runtime"],
+                        "symbols": [],
+                        "decision_contract": {},
                     },
                 ],
+                "relationships": [],
             }
         ),
         encoding="utf-8",
@@ -104,6 +133,9 @@ def test_prompt_ranking_is_deterministic_bounded_and_source_linked(tmp_path):
     assert first == second
     assert first[1] == "prompt"
     assert "ADR-001" in first[0]
+    assert "Governing Accepted" in first[0]
+    assert "ADR-003" in first[0]
+    assert "Advisory Proposed" in first[0]
     assert "source: docs/adr/ADR-001-hooks.md" in first[0]
     assert len(first[0]) <= MAX_CONTEXT_CHARS
 
@@ -166,7 +198,7 @@ def test_copilot_uses_post_edit_backstop_not_false_pre_context(tmp_path):
     )
 
 
-def test_subagent_reuses_parent_and_precompact_is_bounded(tmp_path):
+def test_subagent_and_precompact_preserve_only_selected_parent_context(tmp_path):
     project = _project(tmp_path)
     parent = "parent ADR bundle " * 1000
     subagent = parse_payload(
@@ -181,13 +213,41 @@ def test_subagent_reuses_parent_and_precompact_is_bounded(tmp_path):
     )
     compact = parse_payload(
         json.dumps(
-            {"cwd": str(project), "hook_event_name": "PreCompact"}
+            {
+                "cwd": str(project),
+                "hook_event_name": "PreCompact",
+                "parent_context": parent,
+            }
         ).encode(),
         "codex-cli",
     )
     assert subagent and compact
     assert evaluate(subagent)[0] == parent[:MAX_CONTEXT_CHARS]
-    assert len(evaluate(compact)[0]) <= MAX_CONTEXT_CHARS
+    assert evaluate(compact)[0] == parent[:MAX_CONTEXT_CHARS]
+
+    empty = parse_payload(
+        json.dumps(
+            {"cwd": str(project), "hook_event_name": "PreCompact"}
+        ).encode(),
+        "codex-cli",
+    )
+    assert empty and evaluate(empty) == ("", "noop")
+
+
+def test_session_orientation_uses_only_explicit_global_accepted_adrs(tmp_path):
+    project = _project(tmp_path)
+    envelope = parse_payload(
+        json.dumps(
+            {"cwd": str(project), "hook_event_name": "SessionStart"}
+        ).encode(),
+        "codex-cli",
+    )
+    assert envelope
+    context, kind = evaluate(envelope)
+    assert kind == "session"
+    assert "ADR-001" in context
+    assert "ADR-002" not in context
+    assert "ADR-003" not in context
 
 
 @pytest.mark.parametrize(
@@ -255,6 +315,13 @@ def test_native_host_matches_session_prompt_and_edit_outcomes(tmp_path):
         ),
     ]
     for event, payload, expected in cases:
+        envelope = parse_payload(
+            json.dumps(payload).encode(),
+            "claude-code-cli",
+            event,
+        )
+        assert envelope
+        python_context, _ = evaluate(envelope)
         result = subprocess.run(
             [
                 str(NATIVE),
@@ -271,7 +338,16 @@ def test_native_host_matches_session_prompt_and_edit_outcomes(tmp_path):
         )
         assert result.returncode == 0
         response = json.loads(result.stdout)
-        assert expected in response["hookSpecificOutput"]["additionalContext"]
+        native_context = response["hookSpecificOutput"]["additionalContext"]
+        assert expected in native_context
+        assert set(re.findall(r"ADR-\d{3,4}", native_context)) == set(
+            re.findall(r"ADR-\d{3,4}", python_context)
+        )
+        if event == "SessionStart":
+            assert "ADR-002" not in native_context
+        if event in {"UserPromptSubmit", "PreToolUse"}:
+            assert "Governing Accepted" in native_context
+            assert "Advisory Proposed" in native_context
 
 
 @pytest.mark.parametrize("native", [False, True])

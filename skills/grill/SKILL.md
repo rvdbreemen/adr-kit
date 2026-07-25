@@ -39,7 +39,12 @@ fenced as untrusted evidence.
    when possible. Never ask the user for a fact the repository can establish.
 7. Record the answer in the Proposed ADR immediately. Keep unresolved human
    decisions as unchecked items under `## Open Questions`.
-8. Recompute readiness and repeat until the record is ready, rejected, or
+8. Once the decision facts are settled, propose bounded `topics`, `aliases`,
+   `components`, `symbols`, `context_scope`, and `## Decision Contract`
+   content from those facts. Show them to the human as retrieval metadata, not
+   new decision authority; never invent constraints or silently enrich an
+   Accepted ADR.
+9. Recompute readiness and repeat until the record is ready, rejected, or
    explicitly deferred.
 
 An interrupted session must leave a valid Proposed ADR and a concrete resume
@@ -48,8 +53,9 @@ command.
 ## Lifecycle outcomes
 
 - **Accept:** show an acceptance packet containing decision, rationale,
-  alternatives, consequences, evidence, scope, conflicts, and lifecycle effect.
-  Require an explicit `yes` in the active session, then invoke `adr accept`.
+  alternatives, consequences, evidence, scope, conflicts, lifecycle effect,
+  retrieval metadata, and Decision Contract. Require an explicit `yes` in the
+  active session, then invoke `adr accept`.
 - **Reject:** invoke the existing reject lifecycle only after the user selects
   that outcome.
 - **Defer:** keep Proposed, record the reason plus a re-evaluation date or

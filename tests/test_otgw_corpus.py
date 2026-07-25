@@ -255,7 +255,7 @@ def test_index_context_related_and_lint_process_the_whole_corpus():
         "graph",
     )
     assert index_code == 0
-    assert graph["schema_version"] == 1
+    assert graph["schema_version"] == 2
     assert len(graph["adrs"]) == expected_count
     assert len({node["id"] for node in graph["adrs"]}) == expected_count
     assert all(ADR_NAME_RE.match(node["path"]) for node in graph["adrs"])

@@ -57,11 +57,22 @@ def marketplace_source_matches(value: object, source: Path) -> bool:
 
 
 def claude_marketplace_source_matches(value: object, source: Path) -> bool:
-    return marketplace_source_matches(value, source) or (
-        isinstance(value, dict)
-        and value.get("source") in {"directory", "local"}
-        and (source / PREPARED_MARKER).is_file()
-    )
+    if marketplace_source_matches(value, source):
+        return True
+    # Fallback for an older Claude CLI that reports a prepared directory source
+    # WITHOUT an explicit path: trust the prepared marker so we do not churn.
+    # If the registration DOES carry a path, the mismatch above is authoritative
+    # so a version bump (e.g. .../marketplaces/0.36.0 -> .../0.37.0) re-points
+    # instead of silently keeping the stale directory and never advancing.
+    if isinstance(value, dict) and value.get("source") in {"directory", "local"}:
+        has_path = any(
+            isinstance(v, str) and ("/" in v or "\\" in v)
+            for key, v in value.items()
+            if key in {"path", "installLocation", "root", "source"}
+        )
+        if not has_path and (source / PREPARED_MARKER).is_file():
+            return True
+    return False
 
 
 def invoke(

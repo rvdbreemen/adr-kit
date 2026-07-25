@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "schemas" / "client-capabilities.schema.json"
+CAPABILITIES = ROOT / "clients" / "capabilities.json"
 CLIENT_IDS = {
     "claude-code-cli",
     "codex-cli",
@@ -86,6 +87,32 @@ def test_client_contract_requires_scope_outcomes_events_and_lifecycle_probes():
         "remove",
         "doctor",
     }
+
+
+def test_selective_context_lifecycle_mappings_document_client_degradations():
+    payload = json.loads(CAPABILITIES.read_text(encoding="utf-8"))
+    clients = {item["id"]: item for item in payload["clients"]}
+
+    for client_id in ("claude-code-cli", "codex-cli"):
+        mappings = clients[client_id]["event_mappings"]
+        assert mappings["prompt-context"]["native_event"] == "UserPromptSubmit"
+        assert mappings["subagent-context"]["native_event"] == "SubagentStart"
+        assert mappings["compaction-context"]["native_event"] == "PreCompact"
+        assert all(
+            mappings[key]["mode"] == "native"
+            for key in ("prompt-context", "subagent-context", "compaction-context")
+        )
+
+    copilot = clients["github-copilot-cli"]
+    assert copilot["event_mappings"]["edit-governance"]["mode"] == "backstop"
+    assert copilot["event_mappings"]["prompt-context"]["native_event"] == (
+        "userPromptSubmitted"
+    )
+    assert copilot["event_mappings"]["subagent-context"]["mode"] == "unsupported"
+    assert copilot["event_mappings"]["compaction-context"]["mode"] == "unsupported"
+    assert {
+        item["id"] for item in copilot["degradations"]
+    } >= {"copilot-pretool-context-limit", "copilot-lifecycle-event-limit"}
 
 
 def test_platform_and_release_contract_is_windows_first():
