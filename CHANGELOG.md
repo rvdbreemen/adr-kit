@@ -4,8 +4,25 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.41.0] - 2026-07-25
+
+A correctness and consolidation release. Three tools that read an ADR's status
+or Enforcement block disagreed with the pre-commit gate, so this release makes
+every reader the same reader and fixes the disagreements that had already
+appeared. There are no new commands or configuration keys, and no ADR that
+`adr-judge` treats as Accepted today changes status.
+
 ### Fixed
 
+- **Isolated regex worker no longer mixes responses after a restart.** When
+  `RegexEvaluator` was restarted (for example after a pattern hit its
+  wall-clock budget), the reader thread of the retired worker could deliver its
+  end-of-stream sentinel into the *new* worker's response queue. A subsequent
+  `require_pattern` or `forbid_pattern` evaluation could then read that stale
+  sentinel and fail closed with "worker exited unexpectedly", blocking a commit
+  that had no violation. The reader now binds its own stdout and queue, so a
+  retired worker can only ever write to the queue it was started with.
 - **Cross-tool status agreement.** `adr-index`, `adr-watch`, `adr-judge`,
   `adr-lint`, and `adr-retire` now read an ADR's status through a single shared
   `adr_catalog.adr_status` reader. Previously two forked single-line regexes
@@ -20,6 +37,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   docstring advertised). Its Enforcement detector also accepted untagged
   ``` fences that the gate ignores, so coverage figures claimed enforcement
   that never ran. Both readers are now the shared ones.
+- **Upgrade:** no action is required, but `adr-status` output can legitimately
+  move. An ADR whose Enforcement block sits in an untagged fence now reports as
+  having no enforcement, which lowers the coverage percentage. That is the
+  accurate figure: `adr-judge` never enforced those blocks. To enforce such an
+  ADR, tag its fence as ` ```json ` and re-run `bin/adr-status`.
 
 ### Changed
 

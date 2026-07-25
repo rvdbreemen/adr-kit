@@ -516,7 +516,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.40.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.41.0
         with:
           adr-dir: docs/adr/
 ```
@@ -528,7 +528,7 @@ Declarative-only by default: no LLM, no secrets, no API key. Exit codes: `0` cle
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.40.0
+    rev: v0.41.0
     hooks:
       - id: adr-judge
 ```
