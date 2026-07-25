@@ -25,7 +25,9 @@ suggest a separate create command.
    the lifecycle command creates a `Proposed` record.
 3. Continue with `/adr-kit:grill ADR-NNN`. Cover context, decision,
    alternatives, consequences, evidence, scope, ownership, conflicts, and Open
-   Questions.
+   Questions. Also propose concise retrieval topics/components/symbols and a
+   Decision Contract from settled facts so future agents can query the record
+   selectively; the human reviews these candidates with the decision.
 4. Show an acceptance packet containing decision, rationale, alternatives,
    consequences, evidence, scope, conflicts, and lifecycle effect. Require an
    explicit `yes` in this active session.

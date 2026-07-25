@@ -146,7 +146,7 @@ class TestContextRows:
 
         assert result.returncode == 0, result.stderr
         graph = json.loads(result.stdout)
-        assert graph["schema_version"] == 1
+        assert graph["schema_version"] == 2
         assert graph["$schema"] == "../../schemas/adr-index.schema.json"
         assert [node["id"] for node in graph["adrs"]] == [
             "ADR-001",
@@ -156,6 +156,17 @@ class TestContextRows:
         node = graph["adrs"][0]
         assert node["scope"]["path_globs"] == ["src/**/*.py"]
         assert node["decision_summary"].startswith("All database access")
+        assert node["topics"] == []
+        assert node["aliases"] == []
+        assert node["components"] == []
+        assert node["symbols"] == []
+        assert node["context_scope"] == "selective"
+        assert node["decision_contract"] == {
+            "must": [],
+            "must_not": [],
+            "exceptions": [],
+            "verification": [],
+        }
         assert set(node["metadata"]) == {
             "binding",
             "gate",
@@ -183,6 +194,108 @@ class TestContextRows:
         )
         assert first.stdout == second.stdout
         assert "generated_at" not in first.stdout
+
+    def test_graph_projects_bounded_retrieval_metadata_and_contract(self, tmp_path):
+        adr_dir = tmp_path / "docs" / "adr"
+        adr_dir.mkdir(parents=True)
+        data = {
+            "id": "ADR-001",
+            "title": "Choose Indexed Retrieval",
+            "status": "Accepted",
+            "date": "2026-07-23",
+            "binding": False,
+            "gate": None,
+            "documents_shipped": False,
+            "verified_in": [],
+            "supersedes": [],
+            "superseded_by": None,
+            "format": "madr",
+            "topics": ["Selective context", "ADR retrieval"],
+            "aliases": ["index first"],
+            "components": ["adr-context"],
+            "symbols": ["load_graph"],
+            "context_scope": "global",
+        }
+        contract_items = "\n".join(
+            f"* Verification item {index}" for index in range(25)
+        )
+        body = """\
+# ADR-001 Choose Indexed Retrieval
+
+## Status
+
+Accepted, 2026-07-23.
+
+## Decision Outcome
+
+Use the generated graph for selective context.
+
+## Decision Contract
+
+### Must
+
+* Query the generated graph
+  without opening every Markdown ADR.
+
+### Must Not
+
+* Parse every source ADR.
+
+### Exceptions
+
+* Fall back visibly when the graph is unavailable.
+
+### Verification
+
+""" + contract_items
+        path = adr_dir / "ADR-001-choose-indexed-retrieval.md"
+        path.write_text(
+            _schema.render_frontmatter(data) + body,
+            encoding="utf-8",
+        )
+
+        result = _run(
+            ["--adr-dir", str(adr_dir), "--format", "graph"],
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 0, result.stderr
+        node = json.loads(result.stdout)["adrs"][0]
+        assert node["topics"] == ["ADR retrieval", "Selective context"]
+        assert node["aliases"] == ["index first"]
+        assert node["components"] == ["adr-context"]
+        assert node["symbols"] == ["load_graph"]
+        assert node["context_scope"] == "global"
+        assert node["decision_contract"]["must"] == [
+            "Query the generated graph without opening every Markdown ADR."
+        ]
+        assert node["decision_contract"]["must_not"] == [
+            "Parse every source ADR."
+        ]
+        assert len(node["decision_contract"]["verification"]) == 20
+
+    def test_malformed_optional_retrieval_metadata_is_rejected_by_schema_helper(self):
+        data = {
+            "id": "ADR-001",
+            "title": "Invalid Retrieval Metadata",
+            "status": "Proposed",
+            "date": "2026-07-23",
+            "binding": False,
+            "gate": None,
+            "documents_shipped": False,
+            "verified_in": [],
+            "supersedes": [],
+            "superseded_by": None,
+            "topics": "not-a-list",
+            "aliases": ["duplicate", "DUPLICATE"],
+            "context_scope": "sometimes",
+        }
+
+        issues = _schema.validate_frontmatter(data)
+
+        assert any("topics must be a list" in issue for issue in issues)
+        assert any("aliases entries must be unique" in issue for issue in issues)
+        assert "context_scope must be one of: global, selective" in issues
 
 
 class TestContextSelfGuard:
@@ -357,7 +470,7 @@ class TestReadmeMode:
         assert "ADR-002" in readme
         assert (adr_dir / "ADR-INDEX.md").exists()
         graph = json.loads((adr_dir / "ADR-INDEX.json").read_text(encoding="utf-8"))
-        assert graph["schema_version"] == 1
+        assert graph["schema_version"] == 2
         assert len(graph["adrs"]) == 2
 
     def test_index_check_fails_when_readme_missing_or_stale(self, tmp_path):
@@ -443,6 +556,13 @@ def test_repository_graph_matches_versioned_schema_surface():
     assert all(set(node) == adr_required for node in graph["adrs"])
     assert all(set(edge) == edge_required for edge in graph["relationships"])
     assert all(len(node["decision_summary"]) <= 120 for node in graph["adrs"])
+    graph_bytes = (REPO_ROOT / "docs" / "adr" / "ADR-INDEX.json").stat().st_size
+    markdown_bytes = sum(
+        path.stat().st_size
+        for path in (REPO_ROOT / "docs" / "adr").glob("ADR-*.md")
+    )
+    assert graph_bytes <= 16 * 1024 + 2 * 1024 * len(graph["adrs"])
+    assert graph_bytes <= markdown_bytes * 0.25
     assert graph["adrs"] == sorted(
         graph["adrs"],
         key=lambda node: int(node["id"].split("-")[1]),

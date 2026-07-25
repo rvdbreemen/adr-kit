@@ -29,6 +29,18 @@ when metadata and filename normalization are safe. Ambiguous, hybrid, and
 semantically lossy formats are routed to this guided workflow. `--plan` never
 writes, and detection never authorizes migration.
 
+Selective-context metadata is a separate, read-only preview:
+
+```text
+python bin/adr-migrate --suggest-retrieval --dry-run <path>
+```
+
+It proposes topics, components, symbols, and Decision Contract candidates from
+existing source facts. It never writes automatically. Review every candidate
+against the authoritative ADR, obtain explicit human approval, apply only the
+approved metadata deliberately, rebuild the generated index, and run the
+project retrieval probes. Do not combine this mode with profile conversion.
+
 Use the deterministic CLI whenever the source is already a supported profile:
 
 ```text

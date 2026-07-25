@@ -231,6 +231,30 @@ def test_marketplace_source_matching_is_separator_and_case_tolerant(tmp_path):
     )
 
 
+def test_claude_marketplace_repoints_on_version_bump(tmp_path):
+    # A prepared-directory registration that points at a DIFFERENT (older)
+    # version directory must NOT be treated as matching the new prepared source,
+    # otherwise install_claude skips the re-point and the version never advances
+    # (regression: 0.36.0 -> 0.37.0 stayed on 0.36.0).
+    new_source = tmp_path / "marketplaces" / "0.37.0"
+    new_source.mkdir(parents=True)
+    (new_source / installer.PREPARED_MARKER).write_text("{}\n", encoding="utf-8")
+    stale = {
+        "name": "rvdbreemen-adr-kit",
+        "source": "directory",
+        "path": str(tmp_path / "marketplaces" / "0.36.0"),
+        "installLocation": str(tmp_path / "marketplaces" / "0.36.0"),
+    }
+    assert not installer.claude_marketplace_source_matches(stale, new_source)
+    # The matching version directory still matches.
+    current = {
+        "name": "rvdbreemen-adr-kit",
+        "source": "directory",
+        "path": str(new_source),
+    }
+    assert installer.claude_marketplace_source_matches(current, new_source)
+
+
 def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
     version = installer.validate_source(ROOT)
     prepared = installer.prepare_install_source(

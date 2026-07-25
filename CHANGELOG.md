@@ -34,6 +34,135 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   and `adr-related`, dead module constants, unused imports, and leftover local
   bindings. No public workflow, CLI surface, or behavior changed.
 
+## [0.40.0] - 2026-07-23
+
+### Added
+
+- **`ADR-INDEX.json` schema v2 is now the local selective-context query
+  database.** The CLI, MCP server, lifecycle hooks, status, doctor, and
+  guardian share one deterministic engine with bounded text, path, component,
+  symbol, topic, lifecycle, authority, history, score, and result-limit inputs.
+  Results explain why each ADR matched, while source Markdown remains the
+  decision authority.
+- **ADRs can carry retrieval metadata and a compact Decision Contract.**
+  Frontmatter supports topics, aliases, components, symbols, and global versus
+  selective context scope. `Must`, `Must Not`, `Exceptions`, and
+  `Verification` sections give agents a bounded view that is reviewed during
+  human grilling rather than silently inferred as new authority.
+- **Project-specific retrieval probes and health reporting.**
+  `adr-context --check-probes`, `adr-status`, `adr-doctor`, and
+  `adr-guardian retrieval-health` report expected inclusions, exclusions, and
+  Accepted-binding metadata completeness without invoking a model.
+- **Safe metadata adoption for existing ADR sets.**
+  `adr-migrate --suggest-retrieval --dry-run` proposes retrieval metadata and
+  Decision Contract candidates without changing source ADRs. Applying a
+  candidate always remains an explicit, human-reviewed action.
+
+### Changed
+
+- **Healthy index-first retrieval replaces full-set Markdown discovery.**
+  Accepted ADRs govern, Proposed ADRs are labelled advisory, and historical
+  ADRs are opt-in. A visible Markdown fallback handles missing, stale,
+  unsupported, or schema-v1 indexes unless strict-index mode is enabled.
+- **Lifecycle context is narrower and authority-aware.** Session hooks inject
+  only explicit global Accepted context; prompt and edit hooks separate
+  governing Accepted records from advisory Proposed records; subagent and
+  compaction hooks preserve parent context without broadening it.
+- **Upgrade:** update ADR Kit, run `python bin/adr-index docs/adr`, and add
+  retrieval probes before enabling strict index or strict completeness policy.
+  Projects without retrieval metadata continue to work, and completeness is
+  advisory by default. No ADR body profile or lifecycle transition changed.
+
+### Fixed
+
+- **Intermittent `UserPromptSubmit` timeout warnings on Windows.** The client
+  runner now allows a five-second cold-start safety margin while preserving the
+  separate 250 ms p95 and 500 ms semantic retrieval budgets. The hook remains
+  deterministic, model-free, key-free, bounded, and fail-open.
+
+### Deprecated
+
+- **Reading every Markdown ADR to discover relevance is no longer the preferred
+  workflow.** Query the generated index first, then open only returned sources.
+  Schema-v1 fallback, stable result fields, older client payloads, and legacy
+  scoring-weight call signatures remain compatible for one minor release;
+  legacy weights no longer alter positive-evidence ranking. To roll back,
+  disable strict index/completeness settings, revert approved metadata edits,
+  and regenerate the previous index.
+
+## [0.39.0] - 2026-07-22
+
+### Added
+
+- **One place to declare where the release version lives.**
+  [`packaging/version-sites.json`](packaging/version-sites.json) is a declarative
+  registry of every version-bearing file with an explicit read/write strategy: the
+  CHANGELOG release heading, the three client plugin manifests, the two versioned
+  marketplace manifests, the pre-commit / guardian-entry / guide template stamps,
+  and the README version pins. It also records the negative invariant that the Codex
+  local marketplace must inherit its version, and that README history markers such
+  as "introduced in v0.31.0" are deliberately not sites. Decision recorded in
+  [ADR-013](docs/adr/ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md),
+  which amends ADR-012.
+- **`scripts/bump-version.py X.Y.Z` writes the version everywhere in one command**,
+  and creates the CHANGELOG release heading if it is missing. Releasing 0.38.0 took
+  nine hand-edits spread over four discovery rounds; this release took one command.
+  `--check` reports drift without changing anything.
+- **`scripts/version_sites.py`**, the shared implementation that the bump writer, the
+  release gate, the client-adapter generator and the test suite all read, so a new
+  version-bearing file is declared once instead of being taught to three tools that
+  can drift apart. `tests/test_version_sites.py` asserts the registry still covers the
+  manifests the generator independently validates.
+
+### Changed
+
+- **`scripts/check-release-version.py` is registry-driven** and now also gates the
+  three template version stamps and the README version pins. Those stamps were
+  previously caught only by a five-minute test run, and the README pins by nothing at
+  all: they had silently pointed at v0.34.0 while 0.37.0 shipped.
+- **Stale versions are all reported in one pass.** The client-adapter generator used
+  to abort on the first stale manifest, turning a bump into a fix-one-and-rerun loop.
+  It now lists every stale manifest together with the exact command that fixes them.
+- **The release runbook and `/release-adr-kit` start from `bump-version.py`.** Versions
+  are declared and written, never hand-edited; if a file still carries an old version,
+  the fix is a registry line, not a manual patch.
+
+## [0.38.0] - 2026-07-22
+
+### Added
+
+- **A documented, enforced release process for all three coding-agent
+  marketplaces.** [docs/RELEASING.md](docs/RELEASING.md) is now the authoritative
+  runbook: it explains that Claude Code, Codex, and GitHub Copilot all resolve
+  adr-kit from the public repository, names each client's marketplace manifest,
+  and separates the git-source path (end users, served by the tag) from the
+  version-pinned prepared-directory path (maintainer machines, advanced with
+  `scripts/install-agent-envs.py`). The decision behind it is recorded in
+  [ADR-012](docs/adr/ADR-012-release-to-the-three-coding-agent-marketplaces-from-the-public-repository.md).
+- **`scripts/check-release-version.py`** fails a release unless one version is
+  identical across every publish surface: the three client plugin manifests, the
+  two versioned marketplace manifests, the top CHANGELOG heading, and the git tag.
+- **`.github/workflows/release-publish.yml`** runs on a `v*` tag: it re-runs the
+  version-consistency check, the client-adapter drift check, `adr-lint --strict`,
+  `adr-index --check` and the test suite, then publishes the GitHub Release using
+  this CHANGELOG section as the release notes.
+- **Repo-level `/release-adr-kit` command** (`.claude/commands/release-adr-kit.md`)
+  that drives the whole runbook locally: prepare the version, release notes and
+  README, run every gate, tag and push, then advance this machine's prepared
+  marketplace and verify each client.
+
+### Fixed
+
+- **The installer now re-points the Claude marketplace when the version changes.**
+  `claude_marketplace_source_matches()` treated any directory-backed marketplace as
+  already matching the new prepared source whenever that source carried the
+  prepared marker, even when the registration still pointed at an older version
+  directory. `install_claude` therefore skipped the remove-and-add, so
+  `claude plugin update` kept pulling from the stale directory and the client never
+  advanced (0.36.0 stayed on 0.36.0 after 0.37.0 shipped). A path mismatch is now
+  authoritative; the marker fallback applies only when the registration exposes no
+  path at all. Codex and Copilot were unaffected.
+
 ## [0.37.0] - 2026-07-21
 
 ### Added

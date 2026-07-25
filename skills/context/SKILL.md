@@ -21,11 +21,10 @@ edits ADRs or code, so it is safe to call from parallel subagents.
 1. Take the topic from the argument. If none was given, ask the user for a short
    topic or task description (one phrase is enough).
 
-2. If `docs/adr/ADR-INDEX.json` exists, treat it as the generated machine
-   catalog for filtering and relationship exploration. Never treat it as the
-   decision authority or edit it by hand; the source Markdown ADR remains
-   authoritative. Run the bundled deterministic ranker from the project root to
-   calculate query-specific relevance, and keep the default limit of 5:
+2. Treat schema-v2 `docs/adr/ADR-INDEX.json` as the generated local query
+   database. Never treat it as the decision authority or edit it by hand; source
+   Markdown remains authoritative. Run the shared deterministic query engine
+   from the project root and keep the default limit of 5:
 
    ```bash
    python <adr-kit-plugin-path>/bin/adr-context --format json --limit 5 "<topic>"
@@ -35,8 +34,13 @@ edits ADRs or code, so it is safe to call from parallel subagents.
      `docs/adr/`.
    - Use `--min-score <0-1>` to tighten or loosen the relevance cutoff
      (default `0.1`).
-   - If the JSON graph is missing or stale, continue with the ranker and report
-     `python bin/adr-index docs/adr` as the deterministic repair command.
+   - Include known `--paths`, `--components`, `--symbols`, or `--topics`.
+     Filter with `--status` or `--authority`; use `--history` only when the
+     task needs Rejected, Superseded, or Deprecated rationale.
+   - Keep governing Accepted and advisory Proposed results separate.
+   - If the JSON graph is missing or stale, report the fallback and
+     `python bin/adr-index docs/adr` as the repair command. Use
+     `--strict-index` when fallback would be unsafe.
 
 3. **If the result is an empty list (`[]`)**: tell the user plainly —
    *"No ADRs match '<topic>'; all existing ADRs may apply, or none constrain
@@ -47,7 +51,7 @@ edits ADRs or code, so it is safe to call from parallel subagents.
 
    - **`ADR-NNN — <title>`** (relevance: `<score>`)
    - returned status and format;
-   - returned decision summary and matched scope;
+   - returned decision summary, authority, role, and matched signals;
    - declared related ADR ids when they explain the match;
    - file path, then `Read` that source ADR before stating a binding constraint.
 
@@ -66,6 +70,8 @@ edits ADRs or code, so it is safe to call from parallel subagents.
 - The ranker is a heuristic. If the user mentions a decision you do not see in
   the results, widen with a different topic or lower `--min-score` rather than
   assuming no ADR exists.
+- Query the index first and open only returned sources; do not scan every ADR
+  merely to discover relevance.
 - Loading context is not approval to violate a decision. If the task conflicts
   with an Accepted ADR, surface the conflict and use `/adr-kit:judge` or
   `/adr-kit:adr` to resolve it.

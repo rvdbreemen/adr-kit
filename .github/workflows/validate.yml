@@ -44,6 +44,9 @@ jobs:
       - name: Validate generated ADR graph against schema
         run: ajv validate -s schemas/adr-index.schema.json -d docs/adr/ADR-INDEX.json --spec=draft2020 -c ajv-formats
 
+      - name: Validate selective-context probes against schema
+        run: ajv validate -s schemas/adr-context-probes.schema.json -d docs/adr/adr-context-probes.json --spec=draft2020 -c ajv-formats
+
       - name: Verify required files exist
         run: |
           required_files=(
@@ -61,6 +64,7 @@ jobs:
             "schemas/marketplace.json.schema.json"
             "schemas/adr-kit-config.schema.json"
             "schemas/adr-index.schema.json"
+            "schemas/adr-context-probes.schema.json"
             "schemas/adr-enforcement.schema.json"
             "schemas/adr-readiness.schema.json"
             "skills/adr/SKILL.md"
@@ -100,6 +104,7 @@ jobs:
             "examples/ADR-template.md"
             "examples/.adr-kit.sample.json"
             "docs/adr/ADR-INDEX.json"
+            "docs/adr/adr-context-probes.json"
             "examples/ADR-sample-003-grandfathered-legacy.md"
             "README.md"
             "INSTALL.md"

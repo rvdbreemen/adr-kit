@@ -11,7 +11,7 @@ Invoke explicitly with `$adr-kit:guardian` when needed.
 Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
-1. Run `adr-doctor`, `adr-retire`, and `adr-status` against the active workspace and report drift first.
+1. Run `adr-doctor`, `adr-retire`, `adr-status`, and `adr-guardian retrieval-health` against the active workspace and report drift or failed retrieval probes first.
 2. Rank Proposed ADRs by active implementation link, shipped-but-Proposed, ready-for-confirmation, open human questions, age, and lowest quality; show at most three client-native grill invocations.
 3. Use local-model judgment automatically when configured; require explicit opt-in before a paid or cloud model.
 

@@ -26,9 +26,13 @@ from adr_schema import (
 )
 
 
-GRAPH_SCHEMA_VERSION = 1
+GRAPH_SCHEMA_VERSION = 2
 GRAPH_SCHEMA_REF = "../../schemas/adr-index.schema.json"
 DECISION_SUMMARY_MAX = 120
+RETRIEVAL_VALUE_MAX = 120
+RETRIEVAL_VALUE_LIMIT = 32
+CONTRACT_ITEM_MAX = 240
+CONTRACT_ITEM_LIMIT = 20
 
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-.*\.md$")
 ADR_TOKEN_RE = re.compile(r"\bADR-(\d{1,4})\b", re.IGNORECASE)
@@ -197,6 +201,107 @@ def _strings(values: object) -> List[str]:
     return [str(item) for item in items if str(item)]
 
 
+def _retrieval_strings(
+    metadata: Dict,
+    field: str,
+    findings: List[Dict[str, str]],
+) -> List[str]:
+    values = metadata.get(field)
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        findings.append(
+            {
+                "code": "RETRIEVAL_METADATA_INVALID",
+                "message": f"{field} must be a list of strings",
+            }
+        )
+        return []
+    normalized: Dict[str, str] = {}
+    invalid = len(values) > RETRIEVAL_VALUE_LIMIT
+    for value in values[:RETRIEVAL_VALUE_LIMIT]:
+        if not isinstance(value, str):
+            invalid = True
+            continue
+        item = re.sub(r"\s+", " ", value).strip()
+        if not item or len(item) > RETRIEVAL_VALUE_MAX:
+            invalid = True
+            continue
+        normalized.setdefault(item.casefold(), item)
+    if len(normalized) != len(values):
+        invalid = True
+    if invalid:
+        findings.append(
+            {
+                "code": "RETRIEVAL_METADATA_INVALID",
+                "message": (
+                    f"{field} must contain at most {RETRIEVAL_VALUE_LIMIT} "
+                    f"unique strings of at most {RETRIEVAL_VALUE_MAX} characters"
+                ),
+            }
+        )
+    return sorted(normalized.values(), key=lambda item: (item.casefold(), item))
+
+
+def decision_contract(text: str) -> Dict[str, List[str]]:
+    """Project the optional Decision Contract into bounded semantic lists."""
+    contract = {
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": [],
+    }
+    section = section_text(text, "decision_contract")
+    if not section:
+        return contract
+
+    headings = {
+        "must": "must",
+        "must not": "must_not",
+        "exceptions": "exceptions",
+        "verification": "verification",
+        "confirmation": "verification",
+    }
+    current: Optional[str] = None
+    pending: List[str] = []
+
+    def flush() -> None:
+        nonlocal pending
+        if current is None or not pending or len(contract[current]) >= CONTRACT_ITEM_LIMIT:
+            pending = []
+            return
+        item = _plain_markdown(" ".join(pending))
+        pending = []
+        if not item:
+            return
+        if len(item) > CONTRACT_ITEM_MAX:
+            item = item[: CONTRACT_ITEM_MAX - 3].rstrip() + "..."
+        if item.casefold() not in {value.casefold() for value in contract[current]}:
+            contract[current].append(item)
+
+    for raw_line in section.splitlines():
+        heading_match = re.match(r"^#{3,6}\s+(.+?)\s*#*\s*$", raw_line.strip())
+        if heading_match:
+            flush()
+            current = headings.get(heading_match.group(1).strip().casefold())
+            continue
+        if current is None:
+            continue
+        item_match = re.match(
+            r"^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.+?)\s*$",
+            raw_line,
+        )
+        if item_match:
+            flush()
+            pending = [item_match.group(1)]
+            continue
+        continuation = raw_line.strip()
+        if pending and continuation:
+            pending.append(continuation)
+    flush()
+    return contract
+
+
 def _related_ids(text: str) -> List[str]:
     related = section_text(text, "related")
     return sorted(
@@ -274,6 +379,19 @@ def load_adr_record(path: Path) -> Dict:
 
     decision_text = section_text(text, "decision")
     open_questions = unresolved_open_questions(text)
+    retrieval = {
+        field: _retrieval_strings(metadata, field, metadata_findings)
+        for field in ("topics", "aliases", "components", "symbols")
+    }
+    context_scope = metadata.get("context_scope", "selective")
+    if context_scope not in {"global", "selective"}:
+        metadata_findings.append(
+            {
+                "code": "RETRIEVAL_METADATA_INVALID",
+                "message": "context_scope must be global or selective",
+            }
+        )
+        context_scope = "selective"
     return {
         "num": int(re.search(r"\d+", adr_id).group(0)) if normalize_adr_id(adr_id) else 0,
         "adr_id": adr_id,
@@ -284,7 +402,10 @@ def load_adr_record(path: Path) -> Dict:
         "date": str(status_date) if status_date else None,
         "decision": decision_summary(text, decision=decision_text),
         "decision_text": decision_text,
+        "decision_contract": decision_contract(text),
         "scope": enforcement_globs(text),
+        **retrieval,
+        "context_scope": context_scope,
         "binding": bool(metadata.get("binding", False)),
         "gate": metadata.get("gate"),
         "documents_shipped": bool(metadata.get("documents_shipped", False)),
@@ -353,6 +474,12 @@ def public_adr_node(record: Dict) -> Dict:
         "status": record["status"],
         "date": record["date"],
         "decision_summary": record["decision"],
+        "topics": record["topics"],
+        "aliases": record["aliases"],
+        "components": record["components"],
+        "symbols": record["symbols"],
+        "context_scope": record["context_scope"],
+        "decision_contract": record["decision_contract"],
         "scope": {"path_globs": record["scope"]},
         "metadata": {
             "binding": record["binding"],

@@ -12,7 +12,8 @@ Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
 1. Run `adr-migrate --plan` first, then show `--dry-run` output.
-2. Use `--to-profile madr` by default; support `nygard` and `canonical`, and apply only after explicit confirmation.
-3. Preserve prose, frontmatter, history, links, references, and enforcement; verify with `--check` and lint.
+2. For selective-context enrichment, run `adr-migrate --suggest-retrieval --dry-run`; make clear that candidates are read-only and require human approval.
+3. Use `--to-profile madr` by default; support `nygard` and `canonical`, and apply only after explicit confirmation.
+4. Preserve prose, frontmatter, history, links, references, and enforcement; verify with `--check` and lint.
 
 Do not contact another model or mutate user-owned instructions.

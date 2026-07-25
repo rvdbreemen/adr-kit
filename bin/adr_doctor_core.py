@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from adr_schema import parse_frontmatter, split_frontmatter
+from adr_retrieval_health import run_retrieval_health
 
 
 ADR_FILENAME_RE = re.compile(r"(?i)^ADR-(\d{1,4})-")
@@ -235,6 +236,35 @@ def run_doctor(args) -> Dict:
     records = load_records(adr_dir)
     findings = staleness_findings(records, repo_root, stale_days)
     findings.extend(gate_findings_from_lint(lint_payload))
+    retrieval = run_retrieval_health(adr_dir, config=cfg)
+    if retrieval.get("probe_error"):
+        findings.append(
+            {
+                "type": "retrieval_probe_config",
+                "adr_id": "ADR-SET",
+                "file": Path(retrieval["probe_file"]).name,
+                "message": retrieval["probe_error"],
+            }
+        )
+    for probe in retrieval.get("probes", {}).get("results", []):
+        if probe.get("status") == "fail":
+            findings.append(
+                {
+                    "type": "retrieval_probe",
+                    "adr_id": "ADR-SET",
+                    "file": Path(retrieval["probe_file"]).name,
+                    "message": (
+                        f"probe {probe['id']} failed; missing={probe['missing']} "
+                        f"unexpected={probe['unexpected']}"
+                    ),
+                    "probe": probe,
+                }
+            )
+    findings.extend(
+        item
+        for item in retrieval.get("metadata_findings", [])
+        if item.get("level") == "FAIL"
+    )
     material_drift = [
         finding for finding in findings
         if finding.get("type") in MATERIAL_DRIFT_TYPES
@@ -257,10 +287,19 @@ def run_doctor(args) -> Dict:
             "index_ok": index_code == 0,
             "lint_ok": lint_code == 0,
             "findings": len(findings),
+            "retrieval_status": retrieval["status"],
+            "retrieval_advisories": sum(
+                item.get("level") == "ADVISORY"
+                for item in retrieval.get("metadata_findings", [])
+            ),
+            "retrieval_probe_failures": retrieval.get("probes", {})
+            .get("summary", {})
+            .get("fail", 0),
         },
         "index": index_payload.get("summary", {}),
         "lint": lint_payload.get("summary", {}),
         "findings": findings,
+        "retrieval": retrieval,
         "audit": audit_payload,
         "exit_code": 1 if index_code != 0 or lint_code != 0 or findings else 0,
     }

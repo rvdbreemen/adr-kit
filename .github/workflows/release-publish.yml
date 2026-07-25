@@ -1,0 +1,114 @@
+name: ADR Kit release publish
+
+# Publishes a tagged adr-kit version to the three coding-agent marketplaces.
+#
+# All three marketplaces (Claude Code, Codex, GitHub Copilot) resolve adr-kit
+# directly from this public repository, so "publishing" is: land version-consistent
+# manifests on the public repo and cut a tag + GitHub Release. This workflow is the
+# gate that proves the tagged commit is coherent across every publish surface before
+# the Release is created. It does NOT mutate any maintainer machine: the per-user
+# prepared-directory marketplace is advanced locally with
+# `python scripts/install-agent-envs.py --clients all` (see docs/RELEASING.md).
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)publish, e.g. v0.37.0
+        required: true
+        type: string
+
+permissions:
+  contents: write   # required to create the GitHub Release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) : ;;
+            *) echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH"; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Gate 1 - every publish surface (3 plugin.json, 2 marketplace.json,
+      # CHANGELOG) must equal the tag version. This is the check that would have
+      # caught the 0.37.0 marketplace lag.
+      - name: Version consistency across all three client marketplaces
+        run: python scripts/check-release-version.py --expect "${{ steps.tag.outputs.tag }}"
+
+      # Gate 2 - the generated client adapters must not have drifted from source.
+      - name: Client adapter drift check
+        run: python scripts/build-client-adapters.py --check
+
+      - name: Install test dependency
+        run: python -m pip install --quiet pytest
+
+      # Gate 3 - repository governance and tests are green.
+      - name: ADR lint (strict)
+        run: python bin/adr-lint --strict docs/adr
+
+      - name: ADR index check
+        run: python bin/adr-index --check docs/adr
+
+      - name: Unit tests
+        run: python -m pytest -q
+
+      # Extract the CHANGELOG section for this version as the Release body.
+      - name: Assemble release notes
+        id: notes
+        shell: bash
+        run: |
+          VER="${{ steps.tag.outputs.version }}"
+          awk -v ver="$VER" '
+            $0 ~ ("^## \\[" ver "\\]") { flag=1; next }
+            flag && /^## \[/ { exit }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG section found for [$VER]"; exit 1
+          fi
+          echo "Release notes for $VER:"; cat release-notes.md
+
+      # Publish: create (or update) the GitHub Release for the tag. End users on
+      # the public git-source marketplaces pull the new version from the tagged
+      # manifests; this Release is the human-visible publication record.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "adr-kit $TAG" --notes-file release-notes.md
+          else
+            gh release create "$TAG" --title "adr-kit $TAG" --notes-file release-notes.md
+          fi
+
+      - name: Local-machine publish reminder
+        run: |
+          echo "::notice::Public git-source marketplaces now serve ${{ steps.tag.outputs.tag }}."
+          echo "::notice::Maintainer machines using the prepared-directory source must run:"
+          echo "::notice::  python scripts/install-agent-envs.py --clients all   (then restart each client)"

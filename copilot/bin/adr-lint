@@ -1034,6 +1034,51 @@ def check_quality_gate(content: str, adr_id: str) -> List[Dict]:
     return findings
 
 
+def check_retrieval_metadata(content: str, cfg: Dict) -> Optional[Dict]:
+    """Find under-specified binding Accepted ADRs without forcing migration."""
+    mode = cfg.get("context", {}).get("retrieval_completeness", "advisory")
+    if mode == "off":
+        return None
+    raw, _body = split_frontmatter(content)
+    if raw is None:
+        return None
+    try:
+        data = parse_frontmatter(raw)
+    except FrontmatterError:
+        return None
+    if data.get("status") != "Accepted" or data.get("binding") is not True:
+        return None
+    if data.get("context_scope") == "global":
+        return None
+    if any(data.get(field) for field in ("topics", "aliases", "components", "symbols")):
+        return None
+    contract = re.search(
+        r"^##\s+Decision Contract\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        content,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if contract and re.search(
+        r"^\s*[-*]\s+(?!None\.?\s*$)\S",
+        contract.group(1),
+        re.MULTILINE,
+    ):
+        return None
+    return {
+        "gate": "policy",
+        "level": "FAIL" if mode == "strict" else "ADVISORY",
+        "code": "SELECTIVE_CONTEXT_METADATA",
+        "details": [
+            "Add topics, aliases, components, symbols, a Decision Contract, "
+            "or explicitly mark context_scope: global"
+        ],
+        "summary": (
+            "Accepted binding ADR has no selective retrieval metadata; add "
+            "topics, aliases, components, symbols, a Decision Contract, or "
+            "explicitly mark context_scope: global"
+        ),
+    }
+
+
 def lint_file(
     fp: Path,
     cfg: Dict,
@@ -1232,6 +1277,9 @@ def lint_file(
                 "details": [pf["message"]],
                 "summary": pf["message"],
             })
+        retrieval_finding = check_retrieval_metadata(text, cfg)
+        if retrieval_finding:
+            findings.append(retrieval_finding)
 
     if "quality" in enabled_gates and "quality" not in skip_gates:
         quality_findings = check_quality_gate(text, adr_id)
@@ -1480,6 +1528,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     config_summary["template.profile"] = cfg.get("template", {}).get(
         "profile", "madr"
     )
+    config_summary["context.retrieval_completeness"] = cfg.get(
+        "context", {}
+    ).get("retrieval_completeness", "advisory")
 
     result = {
         "target": str(target),

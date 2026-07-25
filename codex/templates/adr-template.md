@@ -10,6 +10,11 @@ verified_in: []
 supersedes: []
 superseded_by: null
 format: "madr"
+topics: []
+aliases: []
+components: []
+symbols: []
+context_scope: "selective"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -53,6 +58,24 @@ Chosen option: **Option A**, because state the decisive rationale.
 ### Confirmation
 
 State how implementation of the decision will be verified.
+
+## Decision Contract
+
+### Must
+
+* State required implementation constraints.
+
+### Must Not
+
+* State prohibited implementation choices.
+
+### Exceptions
+
+* State explicit exceptions, or `None`.
+
+### Verification
+
+* Name the test, command, or source anchor that verifies this decision.
 
 ## Consequences
 

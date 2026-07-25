@@ -116,6 +116,21 @@
           "outcome": "task-context",
           "mode": "native",
           "native_event": "SessionStart"
+        },
+        "prompt-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "UserPromptSubmit"
+        },
+        "subagent-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "SubagentStart"
+        },
+        "compaction-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "PreCompact"
         }
       },
       "degradations": [
@@ -173,6 +188,21 @@
           "outcome": "task-context",
           "mode": "native",
           "native_event": "SessionStart"
+        },
+        "prompt-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "UserPromptSubmit"
+        },
+        "subagent-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "SubagentStart"
+        },
+        "compaction-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "PreCompact"
         }
       },
       "degradations": [],
@@ -222,6 +252,23 @@
           "outcome": "task-context",
           "mode": "native",
           "native_event": "SessionStart"
+        },
+        "prompt-context": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "userPromptSubmitted"
+        },
+        "subagent-context": {
+          "outcome": "task-context",
+          "mode": "unsupported",
+          "native_event": null,
+          "degradation_id": "copilot-lifecycle-event-limit"
+        },
+        "compaction-context": {
+          "outcome": "task-context",
+          "mode": "unsupported",
+          "native_event": null,
+          "degradation_id": "copilot-lifecycle-event-limit"
         }
       },
       "degradations": [
@@ -231,6 +278,14 @@
           "reason": "Copilot PreToolUse cannot inject arbitrary model context.",
           "user_effect": "The same deterministic guard runs proactively and PostToolUse verifies the result.",
           "backstop": "Generated workflow prompts require context lookup before edits and PostToolUse records drift.",
+          "blocks_certification": false
+        },
+        {
+          "id": "copilot-lifecycle-event-limit",
+          "outcome": "task-context",
+          "reason": "Copilot CLI does not expose SubagentStart or PreCompact lifecycle hooks.",
+          "user_effect": "Selected ADR context cannot be re-injected at those unavailable event boundaries.",
+          "backstop": "Session and prompt context remain native; generated workflow instructions require agents to carry the selected ADR bundle forward without broadening it.",
           "blocks_certification": false
         }
       ],

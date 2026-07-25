@@ -27,7 +27,144 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
-from adr_catalog import discover_adr_files, load_adr_record
+from adr_query import (
+    IndexQueryError,
+    SUPPORTED_AUTHORITIES,
+    SUPPORTED_STATUSES,
+    query_adr_context,
+    score_record,
+)
+
+
+def _index_first_cli() -> int:
+    """Run the healthy CLI path before loading legacy scoring compatibility."""
+    parser = argparse.ArgumentParser(
+        description="Find relevant ADRs through the generated ADR graph.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("query", nargs="?", help="Task description or question")
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--format", choices=["json", "text"], default="text")
+    parser.add_argument("--adr-dir", default=None)
+    parser.add_argument("--min-score", type=float, default=None)
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--strict-index", action="store_true")
+    parser.add_argument("--include-history", action="store_true")
+    parser.add_argument(
+        "--status",
+        action="append",
+        choices=sorted(SUPPORTED_STATUSES),
+        default=[],
+    )
+    parser.add_argument(
+        "--authority",
+        action="append",
+        choices=sorted(SUPPORTED_AUTHORITIES),
+        default=[],
+    )
+    parser.add_argument("--path", action="append", default=[])
+    parser.add_argument("--symbol", action="append", default=[])
+    parser.add_argument("--component", action="append", default=[])
+    parser.add_argument("--topic", action="append", default=[])
+    parser.add_argument(
+        "--check-probes",
+        action="store_true",
+        help="Evaluate the project's deterministic selective-context probes",
+    )
+    parser.add_argument(
+        "--probes-file",
+        default=None,
+        help="Override the retrieval probe JSON path",
+    )
+    args = parser.parse_args()
+
+    adr_dir = Path(args.adr_dir or "docs/adr")
+    if not adr_dir.exists():
+        if args.format == "json":
+            print("[]")
+        return 0
+
+    config: Dict = {}
+    candidates = [Path(args.config)] if args.config else []
+    if not candidates:
+        current = adr_dir.resolve()
+        for _ in range(5):
+            candidates.append(current / ".adr-kit.json")
+            if current.parent == current:
+                break
+            current = current.parent
+    for path in candidates:
+        try:
+            if path.is_file():
+                config = json.loads(path.read_text(encoding="utf-8"))
+                break
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+    ctx_cfg = config.get("context", {}) if isinstance(config, dict) else {}
+    if args.check_probes:
+        from adr_retrieval_health import (
+            render_retrieval_health,
+            run_retrieval_health,
+        )
+
+        probe_path = Path(args.probes_file) if args.probes_file else None
+        if probe_path is not None and not probe_path.is_absolute():
+            probe_path = adr_dir / probe_path
+        health = run_retrieval_health(
+            adr_dir,
+            probe_path=probe_path,
+            config=config,
+        )
+        if args.format == "json":
+            print(json.dumps(health, indent=2))
+        else:
+            print(render_retrieval_health(health))
+        return 1 if health["status"] in {"fail", "degraded"} else 0
+    if not args.query:
+        parser.error("query is required unless --check-probes is used")
+    limit = args.limit if args.limit is not None else ctx_cfg.get("default_limit", 5)
+    min_score = (
+        args.min_score
+        if args.min_score is not None
+        else ctx_cfg.get("min_score", 0.1)
+    )
+    try:
+        outcome = query_adr_context(
+            args.query,
+            adr_dir,
+            limit=limit,
+            min_score=min_score,
+            strict_index=args.strict_index or bool(ctx_cfg.get("strict_index", False)),
+            include_history=args.include_history,
+            statuses=tuple(args.status),
+            authorities=tuple(args.authority),
+            paths=tuple(args.path),
+            symbols=tuple(args.symbol),
+            components=tuple(args.component),
+            topics=tuple(args.topic),
+        )
+    except (IndexQueryError, ValueError) as exc:
+        print(f"[adr-context] ERROR: {exc}", file=sys.stderr)
+        return 2
+    for warning in outcome["warnings"]:
+        print(warning, file=sys.stderr)
+    results = outcome["results"]
+    if args.format == "json":
+        print(json.dumps(results, indent=2))
+    else:
+        for result in results:
+            print(
+                f"{result['adr_id']}: {result['title']} "
+                f"(status: {result['status']}; "
+                f"{result['authority']} {result['role']}; "
+                f"relevance: {result['score']}; path: {result['path']})"
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_index_first_cli())
 
 
 # ---------------------------------------------------------------------------
@@ -69,15 +206,21 @@ _DOMAIN_KEYWORDS: Dict[str, List[str]] = {
 }
 
 
-# Precompiled per-domain regex: one alternation per domain.
-# Word-boundaries prevent false hits like "cidr" matching "ci".
-_DOMAIN_RE: Dict[str, re.Pattern] = {
-    domain: re.compile(
-        r"\b(?:" + "|".join(map(re.escape, keywords)) + r")\b",
-        re.IGNORECASE,
-    )
-    for domain, keywords in _DOMAIN_KEYWORDS.items()
-}
+_DOMAIN_RE: Optional[Dict[str, re.Pattern]] = None
+
+
+def _domain_patterns() -> Dict[str, re.Pattern]:
+    """Compile legacy domain helpers only when compatibility callers use them."""
+    global _DOMAIN_RE
+    if _DOMAIN_RE is None:
+        _DOMAIN_RE = {
+            domain: re.compile(
+                r"\b(?:" + "|".join(map(re.escape, keywords)) + r")\b",
+                re.IGNORECASE,
+            )
+            for domain, keywords in _DOMAIN_KEYWORDS.items()
+        }
+    return _DOMAIN_RE
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +251,7 @@ def infer_task_domain(text: str) -> Optional[str]:
     ``None`` result as "domain unknown" and award no domain_tag signal credit.
     """
     scores: Dict[str, int] = {}
-    for domain, pattern in _DOMAIN_RE.items():
+    for domain, pattern in _domain_patterns().items():
         count = len(pattern.findall(text))
         if count > 0:
             scores[domain] = count
@@ -126,7 +269,7 @@ def _domain_has_signal(text: str) -> bool:
     Used to avoid awarding domain_tag credit when neither query nor ADR has
     any concrete domain evidence.
     """
-    for pattern in _DOMAIN_RE.values():
+    for pattern in _domain_patterns().values():
         if pattern.search(text):
             return True
     return False
@@ -148,6 +291,8 @@ def extract_adr_metadata(adr_file: Path) -> Dict:
       - date: datetime.date or None (from ## Status section)
       - decision_text: raw text of ## Decision section (for keyword + domain scoring)
     """
+    from adr_catalog import load_adr_record
+
     record = load_adr_record(adr_file)
     adr_date: Optional[date] = None
     if record["date"]:
@@ -173,6 +318,12 @@ def extract_adr_metadata(adr_file: Path) -> Dict:
         "date": adr_date,
         "decision_text": record["decision_text"],
         "decision_summary": record["decision"],
+        "topics": record["topics"],
+        "aliases": record["aliases"],
+        "components": record["components"],
+        "symbols": record["symbols"],
+        "context_scope": record["context_scope"],
+        "decision_contract": record["decision_contract"],
         "scope": record["scope"],
         "metadata": {
             "binding": record["binding"],
@@ -191,107 +342,24 @@ def extract_adr_metadata(adr_file: Path) -> Dict:
 
 def score_adr(query: str, keywords: List[str], domain: Optional[str], metadata: Dict,
               weights: Optional[Dict[str, float]] = None) -> Dict:
-    """Calculate 5-signal relevance score for an ADR.
+    """Compatibility wrapper over the index-first positive-evidence scorer.
 
-    Returns a dict with:
-      - total: float 0.0-1.0 (weighted sum, clamped)
-      - signals: dict with per-signal contribution
-
-    Signal definitions:
-      exact_keyword (weight 0.40): fraction of query keywords that appear in
-        the ADR title or decision text, multiplied by the weight. Each keyword
-        hit contributes weight / len(keywords). If no keywords, 0.
-      domain_tag (weight 0.25): full weight if query domain matches ADR domain
-        AND at least one domain keyword was found in the ADR text. No credit
-        when both sides default to "backend" without keyword evidence.
-      related_decisions (weight 0.15): awarded proportionally to how many
-        related ADR IDs the ADR references (more references = more central).
-        Capped at weight when >= 3 related refs present.
-      acceptance_status (weight 0.10): Accepted=full, Proposed=half, else=0.
-      recency (weight 0.10): linear decay over 5 years from today.
-        No date -> 0.
+    ``keywords``, ``domain``, and legacy ``weights`` remain accepted for one
+    compatibility window, but status, age, domain, and relationship count no
+    longer contribute relevance.
     """
-    if weights is None:
-        weights = {
-            "exact_keyword": 0.40,
-            "domain_tag": 0.25,
-            "related_decisions": 0.15,
-            "acceptance_status": 0.10,
-            "recency": 0.10,
-        }
-
-    w_kw = weights.get("exact_keyword", 0.40)
-    w_dom = weights.get("domain_tag", 0.25)
-    w_rel = weights.get("related_decisions", 0.15)
-    w_acc = weights.get("acceptance_status", 0.10)
-    w_rec = weights.get("recency", 0.10)
-
-    signals: Dict[str, float] = {}
-
-    # --- exact_keyword signal ---
-    if keywords:
-        search_text = f"{metadata['title']} {metadata['decision_text']}".lower()
-        hits = sum(1 for kw in keywords if kw in search_text)
-        signals["exact_keyword"] = round(w_kw * (hits / len(keywords)), 4)
-    else:
-        signals["exact_keyword"] = 0.0
-
-    # --- domain_tag signal ---
-    # No credit when the query has no recognisable domain (domain is None) —
-    # avoids awarding fake matches for unknown-vs-unknown.
-    query_domain_has_signal = _domain_has_signal(query)
-    adr_domain_has_keywords = metadata.get("domain_has_keywords", False)
-    adr_domain = metadata.get("domain_tags")
-    if (domain is not None
-            and adr_domain is not None
-            and domain == adr_domain
-            and query_domain_has_signal
-            and adr_domain_has_keywords):
-        signals["domain_tag"] = round(w_dom, 4)
-    else:
-        signals["domain_tag"] = 0.0
-
-    # --- related_decisions signal ---
-    # ADRs with more cross-references are more central to the architecture.
-    # We cap at 3 references for full credit.
-    num_related = len(metadata["related_ids"])
-    if num_related >= 3:
-        rel_fraction = 1.0
-    elif num_related > 0:
-        rel_fraction = num_related / 3.0
-    else:
-        rel_fraction = 0.0
-    signals["related_decisions"] = round(w_rel * rel_fraction, 4)
-
-    # --- acceptance_status signal ---
-    status_lower = metadata["status"].lower()
-    if status_lower == "accepted":
-        signals["acceptance_status"] = round(w_acc, 4)
-    elif status_lower == "proposed":
-        signals["acceptance_status"] = round(w_acc * 0.5, 4)
-    else:
-        signals["acceptance_status"] = 0.0
-
-    # --- recency signal ---
-    adr_date = metadata.get("date")
-    if adr_date is not None:
-        today = date.today()
-        age_days = (today - adr_date).days
-        max_age_days = 5 * 365  # 5 years
-        if age_days <= 0:
-            recency_fraction = 1.0
-        elif age_days >= max_age_days:
-            recency_fraction = 0.0
-        else:
-            recency_fraction = 1.0 - (age_days / max_age_days)
-        signals["recency"] = round(w_rec * recency_fraction, 4)
-    else:
-        signals["recency"] = 0.0
-
-    total = sum(signals.values())
-    total = round(min(1.0, max(0.0, total)), 4)
-
-    return {"total": total, "signals": signals}
+    record = {
+        "title": metadata.get("title", ""),
+        "decision_summary": metadata.get("decision_summary")
+        or metadata.get("decision_text", ""),
+        "scope": {"path_globs": metadata.get("scope", [])},
+        "topics": metadata.get("topics", []),
+        "aliases": metadata.get("aliases", []),
+        "components": metadata.get("components", []),
+        "symbols": metadata.get("symbols", []),
+        "decision_contract": metadata.get("decision_contract", {}),
+    }
+    return score_record(record, query)
 
 
 # ---------------------------------------------------------------------------
@@ -304,47 +372,34 @@ def load_adr_context(
     limit: int = 5,
     min_score: float = 0.1,
     config: Optional[Dict] = None,
+    strict_index: bool = False,
+    include_history: bool = False,
+    statuses: tuple[str, ...] = (),
+    authorities: tuple[str, ...] = (),
+    paths: tuple[str, ...] = (),
+    symbols: tuple[str, ...] = (),
+    components: tuple[str, ...] = (),
+    topics: tuple[str, ...] = (),
 ) -> List[Dict]:
-    """Return top N ADRs sorted by relevance score (descending), filtered by min_score.
-
-    Config may contain a "context" key with "weights" and other settings.
-    ADRs with score < min_score are excluded. Results are capped to `limit`.
-    """
-    weights = None
-    if config and "context" in config and "weights" in config["context"]:
-        weights = config["context"]["weights"]
-
-    keywords = extract_keywords(query)
-    domain = infer_task_domain(query)
-
-    results: List[Dict] = []
-
-    for adr_file in discover_adr_files(adr_dir):
-        try:
-            metadata = extract_adr_metadata(adr_file)
-            score_result = score_adr(query, keywords, domain, metadata, weights)
-            total = score_result["total"]
-            if total >= min_score:
-                results.append({
-                    "adr_id": metadata["adr_id"],
-                    "title": metadata["title"],
-                    "path": metadata["path"],
-                    "status": metadata["status"],
-                    "is_accepted": metadata["status"].casefold() == "accepted",
-                    "format": metadata["format"],
-                    "decision_summary": metadata["decision_summary"],
-                    "scope": metadata["scope"],
-                    "related_ids": metadata["related_ids"],
-                    "metadata": metadata["metadata"],
-                    "score": total,
-                    "signals": score_result["signals"],
-                })
-        except Exception as e:
-            # Skip unparseable ADR files but warn so problems are visible.
-            print(f"[adr-context] WARN: {adr_file.name}: {e}", file=sys.stderr)
-
-    results.sort(key=lambda x: x["score"], reverse=True)
-    return results[:limit]
+    """Return ranked ADRs from the graph, with visible Markdown fallback."""
+    ctx_cfg = config.get("context", {}) if isinstance(config, dict) else {}
+    outcome = query_adr_context(
+        query,
+        adr_dir,
+        limit=limit,
+        min_score=min_score,
+        strict_index=strict_index or bool(ctx_cfg.get("strict_index", False)),
+        include_history=include_history,
+        statuses=statuses,
+        authorities=authorities,
+        paths=paths,
+        symbols=symbols,
+        components=components,
+        topics=topics,
+    )
+    for warning in outcome["warnings"]:
+        print(warning, file=sys.stderr)
+    return outcome["results"]
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +440,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("query", help="Task description or question")
+    parser.add_argument("query", nargs="?", help="Task description or question")
     parser.add_argument("--limit", type=int, default=None,
                         help="Maximum number of results (default: 5 or from config)")
     parser.add_argument("--format", choices=["json", "text"], default="text",
@@ -396,6 +451,28 @@ def main() -> None:
                         help="Minimum relevance score threshold (default: 0.1 or from config)")
     parser.add_argument("--config", default=None,
                         help="Path to .adr-kit.json config file")
+    parser.add_argument("--strict-index", action="store_true",
+                        help="Fail instead of using the Markdown compatibility fallback")
+    parser.add_argument("--include-history", action="store_true",
+                        help="Include non-governing historical ADR statuses")
+    parser.add_argument("--status", action="append",
+                        choices=sorted(SUPPORTED_STATUSES), default=[],
+                        help="Lifecycle status filter; may be repeated")
+    parser.add_argument("--authority", action="append",
+                        choices=sorted(SUPPORTED_AUTHORITIES), default=[],
+                        help="Authority filter; may be repeated")
+    parser.add_argument("--path", action="append", default=[],
+                        help="Changed or target path; may be repeated")
+    parser.add_argument("--symbol", action="append", default=[],
+                        help="Code symbol; may be repeated")
+    parser.add_argument("--component", action="append", default=[],
+                        help="Architectural component; may be repeated")
+    parser.add_argument("--topic", action="append", default=[],
+                        help="Explicit retrieval topic; may be repeated")
+    parser.add_argument("--check-probes", action="store_true",
+                        help="Evaluate deterministic selective-context probes")
+    parser.add_argument("--probes-file", default=None,
+                        help="Override the retrieval probe JSON path")
 
     args = parser.parse_args()
 
@@ -406,6 +483,26 @@ def main() -> None:
 
     config = load_config(config_path, adr_dir)
     ctx_cfg = config.get("context", {})
+    if args.check_probes:
+        from adr_retrieval_health import (
+            render_retrieval_health,
+            run_retrieval_health,
+        )
+        probe_path = Path(args.probes_file) if args.probes_file else None
+        if probe_path is not None and not probe_path.is_absolute():
+            probe_path = adr_dir / probe_path
+        health = run_retrieval_health(
+            adr_dir,
+            probe_path=probe_path,
+            config=config,
+        )
+        if args.format == "json":
+            print(json.dumps(health, indent=2))
+        else:
+            print(render_retrieval_health(health))
+        sys.exit(1 if health["status"] in {"fail", "degraded"} else 0)
+    if not args.query:
+        parser.error("query is required unless --check-probes is used")
 
     # Apply config defaults, CLI flags take priority
     limit = args.limit if args.limit is not None else ctx_cfg.get("default_limit", 5)
@@ -419,39 +516,33 @@ def main() -> None:
         # In text mode, print nothing for a missing directory
         sys.exit(0)
 
-    results = load_adr_context(
-        query=args.query,
-        adr_dir=adr_dir,
-        limit=limit,
-        min_score=min_score,
-        config=config,
-    )
+    try:
+        results = load_adr_context(
+            query=args.query,
+            adr_dir=adr_dir,
+            limit=limit,
+            min_score=min_score,
+            config=config,
+            strict_index=args.strict_index,
+            include_history=args.include_history,
+            statuses=tuple(args.status),
+            authorities=tuple(args.authority),
+            paths=tuple(args.path),
+            symbols=tuple(args.symbol),
+            components=tuple(args.component),
+            topics=tuple(args.topic),
+        )
+    except (IndexQueryError, ValueError) as exc:
+        print(f"[adr-context] ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
 
     if args.format == "json":
-        output = [
-            {
-                "adr_id": r["adr_id"],
-                "title": r["title"],
-                "path": r["path"],
-                "status": r["status"],
-                "is_accepted": r["is_accepted"],
-                "format": r["format"],
-                "decision_summary": r["decision_summary"],
-                "scope": r["scope"],
-                "related_ids": r["related_ids"],
-                "metadata": r["metadata"],
-                "score": r["score"],
-                "signals": r["signals"],
-            }
-            for r in results
-        ]
-        print(json.dumps(output, indent=2))
+        print(json.dumps(results, indent=2))
     else:
         for r in results:
-            authority = "binding context" if r["is_accepted"] else "non-binding context"
             print(
                 f"{r['adr_id']}: {r['title']} "
-                f"(status: {r['status']}; {authority}; "
+                f"(status: {r['status']}; {r['authority']} {r['role']}; "
                 f"relevance: {r['score']}; path: {r['path']})"
             )
 

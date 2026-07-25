@@ -96,12 +96,22 @@ def _marketplace_version(value: object, path: str) -> str | None:
 
 
 def validate_manifests(inputs: dict[str, object], version: str) -> None:
+    # Collect every stale manifest before failing: aborting on the first one turns
+    # a bump into a fix-one-rerun loop. packaging/version-sites.json is the shared
+    # registry; scripts/bump-version.py writes them all in one command.
+    stale: list[str] = []
     for path in (".claude-plugin/plugin.json", "codex/.codex-plugin/plugin.json", "copilot/plugin.json"):
         if _manifest_version(inputs[path], path) != version:
-            raise GenerationError(f"stale version reference: {path}")
+            stale.append(path)
     for path in (".claude-plugin/marketplace.json", ".github/plugin/marketplace.json"):
         if _marketplace_version(inputs[path], path) != version:
-            raise GenerationError(f"stale version reference: {path}")
+            stale.append(path)
+    if stale:
+        raise GenerationError(
+            "stale version reference: "
+            + ", ".join(stale)
+            + f" (fix them all: python scripts/bump-version.py {version})"
+        )
     if _marketplace_version(inputs[".agents/plugins/marketplace.json"], ".agents/plugins/marketplace.json") is not None:
         raise GenerationError("Codex local marketplace must inherit plugin version")
     claude = inputs[".claude-plugin/plugin.json"]
@@ -121,12 +131,22 @@ def validate_manifests(inputs: dict[str, object], version: str) -> None:
             raise GenerationError(f"missing required MCP artifact: {path}")
 
 
+def _runner_timeout(event: dict) -> int:
+    value = event.get("runner_timeout_sec", 1)
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 30:
+        raise GenerationError(
+            f"hook {event.get('id', '<unknown>')} runner_timeout_sec must be an integer from 1 to 30"
+        )
+    return value
+
+
 def _nested_hook_config(manifest: dict, client_id: str) -> dict:
     hooks: dict[str, list[dict]] = {}
     for event in manifest.get("events", []):
         native = event.get("clients", {}).get(client_id)
         if not native:
             continue
+        runner_timeout = _runner_timeout(event)
         if client_id == "claude-code-cli":
             handler = {
                 "type": "command",
@@ -134,7 +154,7 @@ def _nested_hook_config(manifest: dict, client_id: str) -> dict:
                     '"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" '
                     f'{event["command"]} claude-code-cli'
                 ),
-                "timeout": 1,
+                "timeout": runner_timeout,
             }
         else:
             handler = {
@@ -147,7 +167,7 @@ def _nested_hook_config(manifest: dict, client_id: str) -> dict:
                     '"%PLUGIN_ROOT%\\hooks\\run-hook.cmd" '
                     f'{event["command"]} codex-cli'
                 ),
-                "timeout": 1,
+                "timeout": runner_timeout,
             }
         entry: dict[str, object] = {"hooks": [handler]}
         if event.get("matcher"):
@@ -166,6 +186,7 @@ def _copilot_hook_config(manifest: dict) -> dict:
         if not native:
             continue
         command = event["command"]
+        runner_timeout = _runner_timeout(event)
         hooks.setdefault(native, []).append({
             "type": "command",
             "bash": (
@@ -180,7 +201,7 @@ def _copilot_hook_config(manifest: dict) -> dict:
                 f"--client github-copilot-cli --event {command} }} }}; exit 0"
             ),
             "cwd": "${PLUGIN_ROOT}",
-            "timeoutSec": 1,
+            "timeoutSec": runner_timeout,
         })
     return {"version": 1, "hooks": hooks}
 
