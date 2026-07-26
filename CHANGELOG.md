@@ -4,8 +4,54 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.42.0] - 2026-07-26
+
+A performance and release-safety release. The two deterministic CLI paths that
+could keep a user waiting past two seconds are now single-pass, the SessionStart
+hook gets a hardened timeout, and two new guards protect the release process
+itself: a daily merge-back drift check and a payload path-leak gate. No command
+surface or configuration key changes; no action is required to upgrade.
+
+### Changed
+
+- **`adr-lint` and `adr-retire` scan the repository once, not once per ADR.**
+  `adr-retire` walked the full tree from `detect_tech_removal` for every ADR it
+  scored, which made its runtime linear in ADR count (measured 5.2 s at 100
+  ADRs); it now memoizes the walk and resolves every ADR's technology terms in
+  one early-exit pass (560 ms at 100 ADRs, flat). `adr-lint` re-read up to 5000
+  files for every named frontmatter gate; it now resolves all gates in a single
+  pass over the scan set. Both scanners also stop descending into nested
+  checkouts (any directory carrying a `.git` entry, such as agent worktrees
+  under `.claude/worktrees/`), which are not project source. Output is
+  byte-identical before and after on an unchanged tree; the 2-second user-wait
+  budgets and the measured evidence ship in
+  `tests/fixtures/cli/latency-corpus.json`, guarded by
+  `tests/test_cli_performance.py`.
+
+### Fixed
+
+- **SessionStart hook no longer risks tripping its own runner timeout.** The
+  shipped `hooks.json` for all three clients raises the SessionStart runner
+  timeout from 1 to 5 seconds (now also declared as `runner_timeout_sec` in the
+  hook manifest), so a cold start on the Python fallback host degrades to a
+  skipped nudge instead of a client-visible hook error. The hook itself remains
+  fail-open.
+
 ### Added
 
+- **Release branches are checked for merge-back drift.** New
+  `scripts/check-branch-sync.py` fails when `dev` is missing commits that are on
+  `main`, and names the released versions that never made it back rather than
+  reporting a bare commit count. `.github/workflows/branch-sync-check.yml` runs
+  it daily. Releases land on `main` while work continues on `dev`, and nothing
+  moved those commits back, so `dev` drifted one release at a time: by v0.40.0 it
+  was 32 commits behind, still declared 0.37.0, and had lost the release
+  toolchain it is meant to run (`bump-version.py`, `check-release-version.py`,
+  `packaging/version-sites.json`, `docs/RELEASING.md`, `release-publish.yml`)
+  along with ADR-012, ADR-013 and ADR-014. Cutting a release from `dev` in that
+  state would have reverted three published versions. The runbook and
+  `/release-adr-kit` now carry the merge-back as an explicit numbered step.
 - Release payload validation now fails when a file carries a maintainer home
   directory, and holds compiled artifacts to the stricter rule that they may
   not reference a Windows drive at all. The scan reads the resolved release
@@ -52,6 +98,26 @@ appeared. There are no new commands or configuration keys, and no ADR that
   ADR, tag its fence as ` ```json ` and re-run `bin/adr-status`.
 
 ### Changed
+
+- **The README leads with what the project is for.** It opened with three
+  agent-directed instruction blocks before stating the problem it solves. It
+  now opens with intent, then splits what changes for the agent from what
+  changes for the human, and routes readers through a "Start here" table and a
+  three-rule agent contract. A new "What's new" section covers the nine
+  releases from 2026-07-18 to 2026-07-23 (index-first selective context, ADR
+  grilling, three-client certification, the release runbook and version
+  registry, selectable formats) with links to the guide behind each one. The
+  repository map, comparison table, project resources, and the FAQ answer that
+  pinned the filename contract to a stale version are refreshed.
+  `ROADMAP.md` records v0.35.0 through v0.40.0 as landed, and `CONTRIBUTING.md`
+  points its release section at `docs/RELEASING.md`, the registry bump writer,
+  the tag-triggered publish workflow, and the merge-back step.
+
+- **New `docs/README.md` documentation index.** One map of every guide, split
+  by audience: which four documents a coding agent needs and the invariants
+  that hold across them, then the human-facing getting-started, day-to-day,
+  direction, and contributing sets. It also lists which files are generated and
+  by which command, so no one hand-edits a generated view.
 
 - **Single readers for shared ADR parsing.** The Enforcement block regex (five
   identical copies), `enforcement_globs`, `adr_id_from_filename` with

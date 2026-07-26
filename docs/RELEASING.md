@@ -127,14 +127,48 @@ flow), which re-runs every gate above and creates the GitHub Release from the
 CHANGELOG section. If any version site disagrees, the workflow fails before the
 Release is cut.
 
-### 4. Optional: three-client native certification
+### 4. Merge the release back into `dev`
+
+**Do not skip this, and do not leave it for later.** Releases land on `main`, but
+day-to-day work continues on `dev`, and nothing else moves the release commits
+back. Skipping it does not cause an error at the time; it silently arms the next
+release to revert this one.
+
+This has already gone wrong twice. By v0.40.0 the `dev` branch was 32 commits
+behind `main`, still declared version 0.37.0, and was missing `bump-version.py`,
+`check-release-version.py`, `packaging/version-sites.json`, this runbook and
+`release-publish.yml`, plus ADR-012, ADR-013 and ADR-014. Every one of those is
+machinery a release is supposed to run, so `dev` had quietly become unable to cut
+a correct release at all.
+
+```bash
+git fetch origin
+git checkout -b sync/release-to-dev origin/dev
+git merge origin/main
+```
+
+Resolve any conflicts, then run the step 2 gates on the merge result before
+opening a PR into `dev`. Treat the release branch as authoritative for anything a
+release touches (version sites, generated `codex/` and `copilot/` adapters,
+manifests). In `CHANGELOG.md`, keep the `[Unreleased]` entries from `dev` on top
+and the published release sections from `main` below them.
+
+`.github/workflows/branch-sync-check.yml` runs daily and fails when `dev` is
+behind `main`, naming the released versions that never made it back. To check at
+any time:
+
+```bash
+python scripts/check-branch-sync.py
+```
+
+### 5. Optional: three-client native certification
 
 `.github/workflows/release-candidate.yml` (manual `workflow_dispatch`) certifies a
 candidate SHA against redacted native Windows evidence for all three clients. Run
 it when the release needs the certified-support artifact; it validates and uploads
 evidence but does not publish.
 
-### 5. Publish to maintainer machines (prepared-directory source)
+### 6. Publish to maintainer machines (prepared-directory source)
 
 End users on the git source are already served by step 3. Machines on the local
 prepared-directory source must advance explicitly:
@@ -162,7 +196,7 @@ If one lags, re-run the installer for that client alone
 ## Why there is no fully-automated "publish to marketplace" job
 
 The public repo *is* the marketplace, so the tag + Release in step 3 is the
-publication for git-source users. The only remaining action, step 5, mutates
+publication for git-source users. The only remaining action, step 6, mutates
 per-user client installs on a specific machine and therefore stays a documented
 local command rather than a CI job.
 
@@ -174,4 +208,6 @@ local command rather than a CI job.
 | `scripts/check-release-version.py` | Fails unless all six version sites equal the tag |
 | `.github/workflows/release-publish.yml` | Tag-triggered gate + GitHub Release (the release flow) |
 | `.github/workflows/release-candidate.yml` | Optional three-client native certification |
+| `scripts/check-branch-sync.py` | Fails when `dev` is missing release commits from `main` |
+| `.github/workflows/branch-sync-check.yml` | Daily guard that the merge-back in step 4 actually happened |
 | `scripts/install-agent-envs.py` | Per-machine prepared-directory publish + client registration |
