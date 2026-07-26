@@ -512,6 +512,77 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-015",
+      "title": "Enforce a Two-Second Deterministic Latency Budget as a Test Fixture Contract",
+      "path": "ADR-015-enforce-a-two-second-deterministic-latency-budget-as-a-test-fixture-contract.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-26",
+      "decision_summary": "Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool...",
+      "topics": [
+        "latency budget",
+        "non-functional requirement",
+        "performance",
+        "regression guard"
+      ],
+      "aliases": [
+        "2s budget",
+        "latency corpus",
+        "user-wait ceiling"
+      ],
+      "components": [
+        "adr-lint",
+        "adr-retire",
+        "hooks",
+        "tests"
+      ],
+      "symbols": [
+        "_resolve_gates_locally",
+        "_WALK_CACHE",
+        "latency-corpus.json",
+        "reference-corpus.json",
+        "resolve_present_terms"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every deterministic user-facing CLI or hook path keeps a p50/p95/hard-budget entry in a committed latency fixture with measured evidence.",
+          "Latency-critical scan mechanisms are guarded by machine-independent structural tests, not only by wall-clock assertions.",
+          "Repo scanners prune any directory containing a .git entry (nested checkouts are not project source)."
+        ],
+        "must_not": [
+          "No deterministic user-facing path may carry a hard budget above 2000 ms.",
+          "Repo scanners must not re-walk or re-read the tree once per scored item (per ADR, per gate, per term); needle resolution is single-pass.",
+          "Budgets must not be relaxed to make a failing test pass; a budget change requires superseding or amending this ADR."
+        ],
+        "exceptions": [
+          "Opt-in LLM passes (adr-judge --llm, guardian LLM tier) are excluded: their latency is network- and model-bound and covered by ADR-001's opt-in gate.",
+          "The ~124 ms Python interpreter spawn floor per CLI invocation is accepted as irreducible for the subprocess-per-call design on Windows."
+        ],
+        "verification": [
+          "tests/testcliperformance.py (structural guards + 2 s ceiling smoke, method adr-kit-cli-latency-v1).",
+          "tests/testhookperformance.py (hook budgets, method adr-kit-hook-latency-v1).",
+          "Evidence: tests/fixtures/cli/latency-corpus.json, tests/fixtures/hooks/reference-corpus.json."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "tests/fixtures/cli/latency-corpus.json"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-kit-cli-latency-v1",
+        "documents_shipped": false,
+        "verified_in": [
+          "tests/test_cli_performance.py",
+          "tests/test_hook_performance.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -770,6 +841,24 @@
     {
       "source": "ADR-014",
       "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-015",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-015",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-015",
+      "target": "ADR-010",
       "type": "related",
       "resolved": true
     }
