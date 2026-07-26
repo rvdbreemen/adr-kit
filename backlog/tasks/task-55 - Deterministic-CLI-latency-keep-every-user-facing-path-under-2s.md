@@ -1,10 +1,10 @@
 ---
 id: TASK-55
 title: 'Deterministic CLI latency: keep every user-facing path under 2s'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-26 08:45'
-updated_date: '2026-07-26 10:15'
+updated_date: '2026-07-26 10:21'
 labels:
   - performance
   - cli
@@ -62,3 +62,17 @@ Evidence files: tests/fixtures/cli/latency-corpus.json (committed) + scratchpad 
 
 Confirmation run complete: 881 passed, 5 skipped (872 pre-existing + 9 new perf-regression tests), exit 0.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed the O(ADRs x files) and O(gates x files) repeated-walk bugs in bin/adr-retire and bin/adr-lint, plus nested-checkout pruning (.git-entry check) in both scanners. Client mirrors (codex/, copilot/) synced.
+
+Proof: adr-retire p95 2607ms -> 472ms on the contaminated tree, 5229ms -> 560ms at 100 ADRs (linear -> flat); adr-lint p95 2032ms -> 1278ms. Output byte-identical before/after on an unmodified clone; 881 tests passed, 5 skipped.
+
+Guarded by tests/fixtures/cli/latency-corpus.json (2s budgets + measured evidence) and tests/test_cli_performance.py (9 tests: structural single-pass/memoization/nested-checkout guards + live 2s-ceiling smoke).
+
+Criterion #5 (jsonschema) intentionally not changed: the import is already lazy and performs real config validation raising PolicyError; removing it would trade correctness for a fixed ~243ms.
+
+Committed as d2d0ccc on fix/claude-hook-resilience.
+<!-- SECTION:FINAL_SUMMARY:END -->

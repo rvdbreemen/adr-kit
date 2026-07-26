@@ -4,6 +4,40 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.42.0] - 2026-07-26
+
+A performance and release-safety release. The two deterministic CLI paths that
+could keep a user waiting past two seconds are now single-pass, the SessionStart
+hook gets a hardened timeout, and two new guards protect the release process
+itself: a daily merge-back drift check and a payload path-leak gate. No command
+surface or configuration key changes; no action is required to upgrade.
+
+### Changed
+
+- **`adr-lint` and `adr-retire` scan the repository once, not once per ADR.**
+  `adr-retire` walked the full tree from `detect_tech_removal` for every ADR it
+  scored, which made its runtime linear in ADR count (measured 5.2 s at 100
+  ADRs); it now memoizes the walk and resolves every ADR's technology terms in
+  one early-exit pass (560 ms at 100 ADRs, flat). `adr-lint` re-read up to 5000
+  files for every named frontmatter gate; it now resolves all gates in a single
+  pass over the scan set. Both scanners also stop descending into nested
+  checkouts (any directory carrying a `.git` entry, such as agent worktrees
+  under `.claude/worktrees/`), which are not project source. Output is
+  byte-identical before and after on an unchanged tree; the 2-second user-wait
+  budgets and the measured evidence ship in
+  `tests/fixtures/cli/latency-corpus.json`, guarded by
+  `tests/test_cli_performance.py`.
+
+### Fixed
+
+- **SessionStart hook no longer risks tripping its own runner timeout.** The
+  shipped `hooks.json` for all three clients raises the SessionStart runner
+  timeout from 1 to 5 seconds (now also declared as `runner_timeout_sec` in the
+  hook manifest), so a cold start on the Python fallback host degrades to a
+  skipped nudge instead of a client-visible hook error. The hook itself remains
+  fail-open.
+
 ### Added
 
 - **Release branches are checked for merge-back drift.** New
