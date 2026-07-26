@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 import tarfile
 from pathlib import Path
@@ -118,3 +119,90 @@ def test_release_archive_is_built_only_from_the_allowlist(tmp_path):
         for path in archived
         for token in forbidden_tokens
     )
+
+
+# A release payload must never carry a maintainer's machine layout. Home
+# directories are the leak that matters: they name a real person and expose
+# the build host. Documentation may still *illustrate* such a path, so a user
+# segment is only acceptable when it is an obvious stand-in.
+REDACTED_USER_SEGMENTS = frozenset(
+    {
+        "...",
+        "<user>",
+        "<username>",
+        "%username%",
+        "$user",
+        "public",
+        "default",
+        "test",
+        "testuser",
+        "runner",
+    }
+)
+
+USER_HOME_PATH = re.compile(
+    r"(?:[A-Za-z]:[\\/]{1,2}Users|/home|/Users)[\\/]{1,2}([^\\/\s\"']{1,64})",
+    re.IGNORECASE,
+)
+
+# Compiled artifacts have no reason to mention a Windows drive at all; a hit
+# there is build-host debug metadata (`C:\Users\...\.cargo\...`) rather than
+# prose, so binaries are held to the stricter rule.
+WINDOWS_DRIVE_PATH = re.compile(r"[A-Za-z]:[\\/]{1,2}[A-Za-z0-9._\\/ -]{3,80}")
+
+
+def developer_home_leaks(text):
+    """Return home-directory paths in ``text`` that name a concrete user."""
+    return [
+        match.group(0)
+        for match in USER_HOME_PATH.finditer(text)
+        if match.group(1).lower() not in REDACTED_USER_SEGMENTS
+    ]
+
+
+def _release_payload():
+    for relative in GEN.collect_release_files(ROOT, ALLOWLIST):
+        data = (ROOT / relative).read_bytes()
+        yield relative, data, data.decode("utf-8", "replace")
+
+
+def test_released_files_carry_no_maintainer_home_directories():
+    leaks = {
+        relative: found
+        for relative, _, text in _release_payload()
+        if (found := developer_home_leaks(text))
+    }
+    assert leaks == {}, f"maintainer paths reached the release payload: {leaks}"
+
+
+def test_released_binaries_embed_no_windows_build_paths():
+    leaks = {
+        relative: found
+        for relative, data, text in _release_payload()
+        if b"\0" in data[:8192] and (found := WINDOWS_DRIVE_PATH.findall(text))
+    }
+    assert leaks == {}, f"binaries embed build-host paths: {leaks}"
+
+
+def test_home_directory_scanner_flags_real_leaks_and_spares_placeholders():
+    # Without this the scan could silently pass by matching nothing at all.
+    leaking = (
+        "D:/Users/robert/documenten/adr-kit/bin/adr-judge",
+        r"C:\Users\Robert\AppData\Local\adr-kit",
+        r"C:\\Users\\rvdbreemen\\.cargo\\registry",
+        "/home/robert/src/adr-kit",
+        "/Users/breemen/adr-kit",
+    )
+    for sample in leaking:
+        assert developer_home_leaks(sample), f"missed a leak: {sample}"
+
+    redacted = (
+        r"On Windows this mangles paths like C:\\Users\\... -> C:Users...",
+        "[adr-kit] Engine: D:/Users/.../adr-kit/bin/adr-judge",
+        "C:/Users/test/AppData/Local/adr-kit/marketplaces",
+        r"C:\Program Files\ADR Kit",
+        "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library",
+        "https://github.com/rvdbreemen/adr-kit",
+    )
+    for sample in redacted:
+        assert not developer_home_leaks(sample), f"false positive: {sample}"

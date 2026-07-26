@@ -1,7 +1,7 @@
 {
   "name": "adr-kit",
   "description": "Architecture Decision Record toolkit for AI coding agents: bootstrap, multi-format authoring, bounded deterministic enforcement, lifecycle workflows, context injection, generated graph indexes, and local health checks.",
-  "version": "0.40.0",
+  "version": "0.41.0",
   "author": {
     "name": "Robert van den Breemen",
     "url": "https://github.com/rvdbreemen"
