@@ -5,10 +5,11 @@ It exists to make contribution and prioritisation decisions predictable.
 
 ## Status
 
-`adr-kit` is at v0.39.0 and remains pre-1.0. The Claude, Codex, and standalone
+`adr-kit` is at v0.40.0 and remains pre-1.0. The Claude, Codex, and standalone
 Copilot distributions, 15 workflows, local ADR lifecycle, deterministic
-enforcement, context injection, guardian, MCP server, and generated indexes are
-all shipped. File layout and conventions may still change before v1.0.0.
+enforcement, index-first selective context, human-gated ADR grilling with
+deterministic readiness, guardian, MCP server, and generated indexes are all
+shipped. File layout and conventions may still change before v1.0.0.
 
 The [2026-07-18 source audit](docs/reviews/2026-07-18-source-audit/FINDINGS.md)
 is the current engineering baseline. All implementation findings are closed
@@ -68,6 +69,20 @@ Priority is shaped by user evidence:
   canonical profile are selectable through one semantic registry. Profile
   migration is dry-run capable and idempotent, and all native client payloads
   share the same templates and engines.
+- **v0.40.0:** index-first selective context: schema-v2 `ADR-INDEX.json` as
+  the shared query database, retrieval metadata and Decision Contracts,
+  project retrieval probes, and authority-aware lifecycle injection.
+- **v0.39.0:** one declarative registry of every version-bearing file plus a
+  bump writer, so a release is written rather than hand-edited (ADR-013).
+- **v0.38.0:** the enforced three-marketplace release runbook, version
+  consistency gate, tag-triggered publish workflow, and `/release-adr-kit`
+  (ADR-012).
+- **v0.37.0:** ADR Grilling across the lifecycle, the deterministic
+  `adr-readiness` contract, the fifth MCP tool, and the active Proposed queue
+  (ADR-011).
+- **v0.35.0-v0.36.0:** native certification for all three CLI clients through
+  one outcome contract and capability registry, plus the generated client
+  support matrix (ADR-010).
 - **v0.34.0:** selectable MADR/Nygard/canonical formats, versioned JSON ADR
   graph index, three-platform native installer with a real MCP handshake, and
   the closed source-audit hardening set (bounded regex, fail-closed judge
