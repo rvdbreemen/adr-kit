@@ -5,46 +5,114 @@
 
 **Architecture decisions your AI coding agents actually follow.**
 
-> **Coding agent installing ADR Kit?** Read
-> **[INSTALL-AGENT.md](INSTALL-AGENT.md)** and stop there. It is the short,
-> client-neutral runbook for detection, preview, installation, project
-> initialization, and verification across native and portable agent setups.
+> **Coding agent?** Installing ADR Kit: read
+> **[INSTALL-AGENT.md](INSTALL-AGENT.md)** and stop there: it is the complete
+> client-neutral runbook. Working in a project that already has ADR Kit: the
+> [agent contract](#agent-contract) is the whole brief.
 
-**Agent choosing an ADR format?** Run
-`python bin/adr profiles --format json`. MADR is the preferred default.
-If the user chooses another format, accept only a returned profile id and
-use its returned shipped template path. ADR Kit currently ships complete
-templates for `madr`, `nygard`, and `canonical`; never invent a profile name
-or synthesize an unregistered template.
+Your codebase is full of decisions: the database you migrated to, the layer
+nothing may bypass, the framework you committed to, the pattern you
+standardized on. Almost none of it is visible in the code. It lives in the
+heads of the people who were there, and a coding agent has no head. It is
+fast, confident, and starts every session with total amnesia. Left alone it
+reintroduces the driver you dropped, bypasses the repository layer, and makes
+new architectural decisions without telling anyone.
 
-**Agent finding the ADRs for a task?** Run
-`python bin/adr-context --format json "<task>"`. It queries the generated
-`docs/adr/ADR-INDEX.json` rather than opening the entire ADR set, and returns
-explainable matches from lifecycle, scope, paths, components, symbols, topics,
-and relationships. Open only the returned Markdown ADRs before applying a
-constraint. Regenerate all indexes with `python bin/adr-index docs/adr` and
-verify them with `python bin/adr-index --check docs/adr`. Never hand-edit
-either generated index. See [Selective ADR context](docs/selective-context.md).
+**`adr-kit` makes architecture decisions executable.** Architecture Decision
+Records stop being documentation nobody re-reads and become guardrails that
+run: the decisions relevant to the current task are retrieved and injected
+while the agent works, the governing decision is delivered *before* a file is
+edited, every commit is checked against declarative rules with `file:line`
+citations, and a guardian watches for decisions that have drifted out of date.
+One toolkit covers the whole lifecycle (capture, enforce, maintain, retire)
+across Claude Code, OpenAI Codex, and the standalone GitHub Copilot CLI.
 
-`adr-kit` turns Architecture Decision Records from passive documentation into active guardrails. Your agent gets the relevant decisions injected while it codes, every commit is checked against the accepted decisions, and a guardian watches for decisions that go stale. One toolkit covers the whole lifecycle: capture, enforce, maintain, retire.
+**For the agent, it removes the guessing.** Instead of reading every ADR, or
+none, it queries a generated index and gets a ranked, explained shortlist for
+the task in front of it. It receives the binding decision as context at the
+moment it writes the file, not as a review comment three days later. And it
+gets a deterministic pass/fail at commit time that no amount of confident
+prose can talk its way around.
 
-Ships separate integration payloads for Claude Code CLI, OpenAI Codex CLI, and
-the standalone GitHub Copilot CLI. The generated
-[client support matrix](docs/client-support.md) distinguishes simulated
-contract coverage from release-candidate native certification. All three include English skill metadata,
-the same deterministic engines, and quiet-by-default lifecycle behavior:
-routine successful hooks do not print progress, while relevant ADR context is
-delivered to the agent and actionable warnings remain available.
-The engines are dependency-free Python 3.10+ (stdlib only, no build step, no
-API key required for any default path).
+**For you, writing a decision down finally pays off the same week.** The ADR
+you record on Monday blocks the violation on Thursday without you being in the
+room. Half-formed intent becomes a real decision record through a guided
+interview that asks one evidence-backed question at a time. The guardian tells
+you which decisions have gone stale, which were made but never recorded, and
+which are ready to retire, so the decision log stays worth reading instead of
+becoming another folder of dead markdown.
+
+The engines are deterministic, stdlib-only Python 3.10+: no build step, no
+service, no API key on any default path. LLM passes exist, are opt-in, cost
+nothing until you enable them, and never run in a hook hot path.
 
 > **Pre-1.0**: functional and in daily use, but conventions may still evolve before v1.0.0. Pin a tag if you need stability across upgrades.
 >
 > **Audit posture**: the [2026-07-18 source audit](docs/reviews/2026-07-18-source-audit/FINDINGS.md) drove fail-closed enforcement, exact staged-snapshot handling, transaction-safe lifecycle/state updates, and cross-platform packaging fixes. ADR Kit remains a development guardrail, not a sandbox, branch-protection replacement, or sole merge control.
 
-## Why
+## Start here
 
-AI coding agents are fast, confident, and have no memory of why your system is built the way it is. Left alone, they will cheerfully reintroduce the database driver you migrated away from, bypass the repository layer you standardized on, and make new architectural decisions without telling anyone. Human teams have the same failure mode, just slower.
+| You are | Start at |
+| --- | --- |
+| A human setting this up | [Install](#install), then [the lifecycle](#the-lifecycle-capture-guard-maintain). Claude Code users: four commands and you are done. |
+| A human evaluating it | [Why](#why), [What's new](#whats-new), [Comparison](#comparison), [ROADMAP.md](ROADMAP.md). |
+| A coding agent **installing** ADR Kit | **[INSTALL-AGENT.md](INSTALL-AGENT.md)** and stop there. It is the complete client-neutral runbook for detection, preview, installation, initialization, and verification. Do not read the rest of this README first. |
+| A coding agent **working in** a project that already has ADR Kit | The agent contract directly below. |
+| A maintainer cutting a release | [docs/RELEASING.md](docs/RELEASING.md) and [`/release-adr-kit`](.claude/commands/release-adr-kit.md). |
+
+### Agent contract
+
+Three rules cover almost everything an agent needs in an ADR Kit project.
+Full reference: [docs/README.md](docs/README.md).
+
+**1. Find the decisions for a task by querying the index, not by reading the
+set.**
+
+```bash
+python bin/adr-context --format json "<task description>"
+```
+
+It queries the generated `docs/adr/ADR-INDEX.json` instead of opening every
+ADR, and returns explainable matches from lifecycle, scope, paths, components,
+symbols, topics, and relationships. Open only the returned Markdown ADRs
+before applying a constraint: the Markdown is the authority, the index is
+the lookup. Regenerate with `python bin/adr-index docs/adr` and verify with
+`python bin/adr-index --check docs/adr`. Never hand-edit either generated
+index. See [Selective ADR context](docs/selective-context.md).
+
+**2. Treat an injected decision as binding.** When an `[adr-inject] ADR-NNN
+... governs <file>` block arrives before an edit, the quoted Decision is a
+constraint on that edit, not background reading. Accepted ADRs govern;
+Proposed ADRs are advisory and labelled as such; historical ADRs are opt-in.
+
+**3. Never invent an ADR format.** Run `python bin/adr profiles --format json`
+and accept only a returned profile `id` with its returned template path. MADR
+is the preferred default; `nygard` and `canonical` are the other shipped
+profiles. Never synthesize an unregistered template.
+
+## What's new
+
+Nine releases shipped between 2026-07-18 and 2026-07-23. These are the ones
+that change what ADR Kit does; full detail, including the patch releases, is in
+[CHANGELOG.md](CHANGELOG.md).
+
+| Version | What landed | Why it matters |
+| --- | --- | --- |
+| **0.40.0** | [Index-first selective context](docs/selective-context.md): `ADR-INDEX.json` schema v2 is the local query database for the CLI, MCP, hooks, status, doctor, and guardian. ADRs can carry retrieval metadata (topics, aliases, components, symbols, scope) and a compact `Must` / `Must Not` / `Exceptions` / `Verification` Decision Contract. Project retrieval probes report expected inclusions and exclusions. | Retrieval stops scaling with the size of your ADR set, and every match explains itself. Lifecycle context is now authority-aware: Accepted governs, Proposed is advisory, historical is opt-in. |
+| **0.39.0** | [`packaging/version-sites.json`](packaging/version-sites.json) declares every version-bearing file; `scripts/bump-version.py X.Y.Z` writes them all in one command ([ADR-013](docs/adr/ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md)). | Releasing 0.38.0 took nine hand-edits over four discovery rounds. It is now one command plus a `--check` drift gate. |
+| **0.38.0** | [docs/RELEASING.md](docs/RELEASING.md) as the enforced runbook for all three marketplaces, a version-consistency gate, a tag-triggered publish workflow, and the repo-level `/release-adr-kit` command ([ADR-012](docs/adr/ADR-012-release-to-the-three-coding-agent-marketplaces-from-the-public-repository.md)). | One tag now publishes Claude Code, Codex, and Copilot consistently instead of drifting apart. |
+| **0.37.0** | [ADR Grilling](docs/adr-grilling.md) across the full lifecycle: `/adr-kit:grill` completes Proposed ADRs one evidence-backed human question at a time and reconstructs decisions from PRs, ranges, chat logs, and documents. Deterministic `bin/adr-readiness` separates mechanical defects from unresolved human decisions ([ADR-011](docs/adr/ADR-011-adopt-deterministic-readiness-and-human-gated-grilling-across-the-adr-lifecycle.md)). | The gap between "we decided something" and "there is a usable ADR" was where decision logs died. Source material is evidence; it is never acceptance authority. |
+| **0.35.0-0.36.0** | Native certification for all three CLI clients through one outcome contract and capability registry ([ADR-010](docs/adr/ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md)), the generated [client support matrix](docs/client-support.md), a normalized fail-open hook runtime with measured Windows latency, `adr-doctor` fast and deep modes, and quiet-by-default hooks across all three clients. | The matrix distinguishes simulated contract coverage from native certification, per client and per OS, instead of claiming blanket support. Hooks stopped narrating themselves; only actionable output remains. |
+| **0.34.0** | [Selectable ADR formats](#adr-conventions): MADR default, Nygard and canonical selectable ([ADR-005](docs/adr/ADR-005-selectable-agent-friendly-adr-formats.md)); the deterministic [JSON ADR graph](docs/adr/ADR-INDEX.json) ([ADR-007](docs/adr/ADR-007-json-adr-graph-index-for-agent-retrieval.md)); Codex CLI integration and the multi-CLI installer; audit hardening. | Tools map headings to shared semantic roles, so no existing ADR set has to be rewritten to be governed. |
+| *Unreleased* | One shared status/enforcement reader across `adr-index`, `adr-watch`, `adr-judge`, `adr-lint`, `adr-retire`, and `adr-status`; snapshot caching and memoized format detection on the commit and index hot paths; a daily `main` → `dev` merge-back drift gate. | Two forked regexes meant the same ADR could read Accepted to one tool and Unknown to another. One reader, one answer. |
+
+Upgrading from before 0.40.0: update ADR Kit, run
+`python bin/adr-index docs/adr`, then add retrieval probes before enabling
+strict index or strict completeness policy. Projects without retrieval
+metadata keep working; completeness is advisory by default, and no ADR body
+profile or lifecycle transition changed.
+
+## Why
 
 ADRs are the established answer: short markdown files in your repo that record the problem, the decision, the alternatives rejected, and the consequences accepted. What was always missing is **enforcement**. A decision nobody re-reads is a decision nobody follows.
 
@@ -55,6 +123,23 @@ ADRs are the established answer: short markdown files in your repo that record t
 3. **When the work lands**: declarative rules from each ADR are checked against the diff at commit time and in CI, deterministically and key-free.
 
 And because decisions age, a periodic guardian flags drift between code and decisions, retirement candidates, and decisions that were made but never recorded.
+
+### One engine, three clients
+
+ADR Kit ships separate integration payloads for Claude Code CLI, OpenAI Codex
+CLI, and the standalone GitHub Copilot CLI. All three carry the same 15
+workflows, the same deterministic engines, the same key-free five-tool MCP
+server, and English skill metadata; only the native event surface differs, and
+the generated [client support matrix](docs/client-support.md) states exactly
+which lifecycle events each client supports and which were certified natively
+versus covered by simulated contract tests. Per-client detail lives in
+[docs/clients/](docs/clients/).
+
+Lifecycle behavior is quiet-by-default: routine successful hooks print
+nothing, relevant ADR context still reaches the agent, and actionable warnings
+stay visible. Where a client has no native pre-edit event, deterministic
+pre-commit enforcement remains the backstop, so no client is silently less
+governed than another.
 
 ## Install
 
@@ -581,7 +666,10 @@ same bounded subprocess regex model. Generation fails explicitly for
 
 **Where are ADRs stored?**
 
-`docs/adr/`, one file per decision, `ADR-XXX-kebab-case-title.md`. The ADR directory and required sections are configurable; the canonical filename pattern is not configurable in v0.34.0.
+`docs/adr/`, one file per decision, `ADR-XXX-kebab-case-title.md`. The ADR
+directory, the body profile, and the required sections are configurable; the
+canonical filename pattern is deliberately not, because every tool, index, and
+cross-reference resolves ADR ids from it.
 
 **Does the kit auto-create ADRs without asking?**
 
@@ -627,9 +715,11 @@ A plain ADR template gives you a markdown file with sections to fill in. What `a
 
 | Concern | Plain ADR template | adr-kit |
 |---|---|---|
-| Format | one file | one file plus a generator agent and codebase audit |
+| Format | one file | selectable MADR, Nygard, or canonical profile, plus a generator agent and codebase audit |
 | Pre-flight discipline | absent | anti-rationalization guards (9 excuses, 9 counter-arguments) |
+| Finishing a half-formed decision | blank sections nobody fills in | guided grilling, one evidence-backed question at a time, with a deterministic readiness report |
 | Acceptance bar | "fill it in" | four named verification gates before Proposed flips to Accepted |
+| Finding the relevant decision | read the folder, or do not | query a generated index; ranked, explained, authority-aware shortlist |
 | While coding | absent | context injection per task plus in-flight file nudges |
 | Enforcement | absent | declarative rules vs every commit and PR, key-free; opt-in LLM judge |
 | Aging | absent | guardian (drift, missing, stale), retirement audit, trend history, coverage KPI |
@@ -642,29 +732,47 @@ If your team is happy with a plain template and the discipline lives in your cul
 
 ```
 adr-kit/
-├── skills/            # 15 Claude Code skills
-├── hooks/             # Claude hook config plus shared fail-open runtime
-├── codex/             # Codex plugin: 15 skills, hooks, MCP, packaged engines
-├── copilot/           # Copilot CLI plugin: 15 skills, hooks, MCP, engines
-├── scripts/           # detected-client installer and payload sync check
+├── bin/               # 23 stdlib-only Python entry points plus shared engine modules
+├── skills/            # the 15 canonical workflows, authored once for Claude Code
 ├── agents/            # adr-generator subagent
-├── bin/               # 20 stdlib-only Python entry points plus shared helpers
-├── templates/         # selectable MADR/Nygard/canonical templates, guide, hooks, CI workflows
-├── schemas/           # config + Enforcement JSON schemas
-├── instructions/      # per-path rules for coding and review work
-├── tests/             # comprehensive pytest unit and end-to-end suite
+├── hooks/             # hook config, shared fail-open runtime, per-client adapters
+├── clients/           # canonical workflow/capability registry the client payloads generate from
+├── codex/             # generated Codex plugin: 15 skills, hooks, MCP, packaged engines
+├── copilot/           # generated Copilot CLI plugin: 15 skills, hooks, MCP, engines
+├── prompts/           # per-client generated prompt payloads
+├── scripts/           # installer, project setup, settings, adapter generator, release tooling
+├── packaging/         # version-site registry, dependency and executable manifests
+├── templates/         # MADR/Nygard/canonical templates, guide, git hooks, CI workflows
+├── schemas/           # config, Enforcement, frontmatter, index, readiness, client schemas
+├── instructions/      # shared ADR guide plus per-path coding and review rules
+├── examples/          # sample ADRs and an annotated configuration file
+├── tests/             # pytest unit, contract, and end-to-end suite
+├── docs/              # documentation index (docs/README.md) and all guides
 ├── docs/adr/          # this repo's own ADRs (we eat the dog food)
 └── docs/research/     # the landscape research behind the roadmap
 ```
 
+Client payloads under `codex/`, `copilot/`, and `prompts/` are **generated**
+from `clients/` and `skills/` by `scripts/build-client-adapters.py`. Edit the
+canonical source, then regenerate; a drift check gates the release.
+
 ## Project resources
 
+Start with the [documentation index](docs/README.md), which maps every guide
+for both humans and agents. Frequently used entries:
+
+- [docs/README.md](docs/README.md): the full documentation map.
 - [ROADMAP.md](ROADMAP.md): direction, v1.0.0 criteria, deliberate non-goals.
+- [INSTALL-AGENT.md](INSTALL-AGENT.md): the client-neutral install runbook for coding agents.
 - [INSTALL.md](INSTALL.md): per-tool manual install paths and the all-tools script.
+- [docs/selective-context.md](docs/selective-context.md): the index-first retrieval contract.
+- [docs/adr-grilling.md](docs/adr-grilling.md): the guided decision interview, end to end.
+- [docs/client-support.md](docs/client-support.md): generated per-client, per-OS support matrix.
+- [docs/RELEASING.md](docs/RELEASING.md): the enforced three-marketplace release runbook.
 - [MIGRATING-FROM-ADR-SKILL.md](MIGRATING-FROM-ADR-SKILL.md): switching from Jim van den Breemen's adr-skill.
 - [CHANGELOG.md](CHANGELOG.md): full history, Keep a Changelog format.
 - [CONTRIBUTING.md](CONTRIBUTING.md): dev loop, add-a-skill, release procedure, code style.
-- [SECURITY.md](SECURITY.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md), [SECURITY.md](SECURITY.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 - [2026-07-18 source audit](docs/reviews/2026-07-18-source-audit/FINDINGS.md): multi-perspective findings and verification evidence for v0.33.0.
 
 ## Credits

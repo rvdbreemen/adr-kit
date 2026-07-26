@@ -127,29 +127,41 @@ validation without changing output.
 - **MINOR**: new feature, backwards-compatible.
 - **PATCH**: bug fix, doc-only change, no behavioural change.
 
-The current release helper accepts stable `X.Y.Z` versions only. Although
-Semantic Versioning permits pre-release and build metadata, `bin/bump-version`
-does not yet accept those forms.
+The release helper accepts stable `X.Y.Z` versions only. Although Semantic
+Versioning permits pre-release and build metadata, the bump writer does not
+accept those forms.
 
-Release steps:
+**[docs/RELEASING.md](docs/RELEASING.md) is the authoritative runbook** and
+explains the distribution model behind each step: Claude Code, Codex, and
+Copilot all resolve adr-kit from the public repository, so a release is a
+version-consistent commit, a tag, and a GitHub Release. In a Claude Code
+session, `/release-adr-kit` drives that runbook end to end. The outline:
 
 1. Finish the notes under `## [Unreleased]` in `CHANGELOG.md`.
-2. Run `python bin/bump-version X.Y.Z`. It stamps all client manifests,
-   marketplaces, copied-artifact versions, and rolls `Unreleased` into the
-   dated release section.
+2. Run `python scripts/bump-version.py X.Y.Z`. Every version-bearing file is
+   declared in [`packaging/version-sites.json`](packaging/version-sites.json)
+   and written by this one command: client manifests, marketplaces,
+   copied-artifact stamps, README pins, and the CHANGELOG release heading.
+   Never hand-edit a version; if a file still carries an old one, the fix is a
+   registry line. `--check` reports drift without writing.
 3. Run `python scripts/build-client-adapters.py`, then inspect `git status` and
-   `git diff`. Stage every stamped/generated file, including the guide,
-   pre-commit wrapper, and both marketplace manifests.
-4. Run the validation commands below and complete the manual client smoke test.
+   `git diff`. Stage every stamped and generated file.
+4. Run the validation commands below, plus
+   `python scripts/check-release-version.py --expect X.Y.Z`, and complete the
+   manual client smoke test.
 5. Commit the release candidate (`chore(release): vX.Y.Z (...)`), then capture
    and assemble the three native Windows observations on the separate evidence
    commit described above.
 6. Run the `ADR Kit release candidate` workflow with both exact commit SHAs.
    Do not continue unless its all-three gate passes.
 7. Tag the validated candidate with the repository's published convention:
-   `git tag -a vX.Y.Z -m "..."`.
-8. `git push` and `git push --tags`.
-9. Create a GitHub Release on the new tag with notes summarised from the CHANGELOG.
+   `git tag -a vX.Y.Z -m "..."`, then `git push` and `git push --tags`. The
+   tag triggers `.github/workflows/release-publish.yml`, which re-runs the
+   gates and publishes the GitHub Release from the CHANGELOG section.
+8. Merge the release back into `dev`. Releases land on `main` while work
+   continues on `dev`; skipping this drifts `dev` one release at a time until
+   it no longer carries the release toolchain it is meant to run.
+   `scripts/check-branch-sync.py` and a daily workflow guard this.
 
 ## Code style
 
