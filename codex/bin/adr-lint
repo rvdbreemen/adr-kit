@@ -37,7 +37,7 @@ import subprocess
 import sys
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -724,6 +724,11 @@ def _iter_gate_scan_files(repo_root: Path):
             d for d in dirnames
             if d not in TEXT_SCAN_SKIP_DIRS and d.lower() not in TEXT_SCAN_SKIP_DIRS
         ]
+        # Never descend into a nested checkout (git worktree, vendored clone):
+        # its files belong to another tree, not to this project's source.
+        dirnames[:] = [
+            d for d in dirnames if not (Path(dirpath) / d / ".git").exists()
+        ]
         current = Path(dirpath)
         try:
             rel_first = current.relative_to(repo_root).parts[:1]
@@ -739,17 +744,37 @@ def _iter_gate_scan_files(repo_root: Path):
                     return
 
 
+def _resolve_gates_locally(gates: Iterable[str], repo_root: Path) -> Set[str]:
+    """Return the subset of `gates` that appear somewhere under repo_root.
+
+    One pass over the scan set regardless of how many gates are checked. The
+    previous per-gate helper re-walked and re-read the whole tree for every
+    gate, making lint runtime O(gates x files).
+    """
+    pending = {g.strip() for g in gates if g and g.strip()}
+    found: Set[str] = set()
+    if not pending:
+        return found
+    for path in _iter_gate_scan_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        hits = {needle for needle in pending if needle in text}
+        if hits:
+            found |= hits
+            pending -= hits
+            if not pending:
+                break
+    return found
+
+
 def _gate_exists_locally(gate: str, repo_root: Path) -> bool:
+    """Single-gate convenience wrapper (kept for direct callers and tests)."""
     needle = gate.strip()
     if not needle:
         return False
-    for path in _iter_gate_scan_files(repo_root):
-        try:
-            if needle in path.read_text(encoding="utf-8", errors="ignore"):
-                return True
-        except OSError:
-            continue
-    return False
+    return needle in _resolve_gates_locally([needle], repo_root)
 
 
 def detect_frontmatter_consistency(files: List[Path], repo_root: Path) -> Dict[int, List[str]]:
@@ -759,6 +784,17 @@ def detect_frontmatter_consistency(files: List[Path], repo_root: Path) -> Dict[i
 
     def add(record: Dict, message: str) -> None:
         issues.setdefault(record["adr_num"], []).append(message)
+
+    # Resolve every named gate in a single pass over the tree instead of
+    # re-scanning the repository once per gate.
+    _wanted_gates = {
+        str(record["data"].get("gate")).strip()
+        for record in records.values()
+        if record["data"].get("status") == "Accepted"
+        and record["data"].get("binding") is True
+        and record["data"].get("gate")
+    }
+    present_gates = _resolve_gates_locally(_wanted_gates, repo_root)
 
     for adr_id, record in records.items():
         data = record["data"]
@@ -813,7 +849,7 @@ def detect_frontmatter_consistency(files: List[Path], repo_root: Path) -> Dict[i
             gate = data.get("gate")
             if not gate:
                 add(record, "Accepted binding ADR requires a named gate")
-            elif not _gate_exists_locally(str(gate), repo_root):
+            elif str(gate).strip() not in present_gates:
                 add(record, f"gate {gate!r} was not found under {repo_root}")
 
     return issues

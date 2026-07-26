@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "method_id": "adr-kit-cli-latency-v1",
+  "goal": "No deterministic user-facing CLI path may exceed 2 seconds wall clock.",
+  "machine_class": {
+    "required": "Windows certification runner",
+    "best_effort": ["macOS", "Linux"]
+  },
+  "sample_count": {
+    "certification": 10,
+    "smoke": 3
+  },
+  "process_startup_included": true,
+  "ci_variance_percent": 20,
+  "python_floor_ms_p50": 124,
+  "budgets": {
+    "adr-lint": {"p50_ms": 1200, "p95_ms": 1600, "hard_timeout_ms": 2000},
+    "adr-retire": {"p50_ms": 800, "p95_ms": 1200, "hard_timeout_ms": 2000}
+  },
+  "evidence": {
+    "measured": "2026-07-26",
+    "machine": {"system": "Windows", "python": "3.12.9"},
+    "clean_tree_853_files_14_adrs": {
+      "before": {
+        "adr-lint": {"p50_ms": 666.8, "p95_ms": 710.7},
+        "adr-retire": {"p50_ms": 877.7, "p95_ms": 922.8}
+      },
+      "after": {
+        "adr-lint": {"p50_ms": 577.7, "p95_ms": 665.3},
+        "adr-retire": {"p50_ms": 391.7, "p95_ms": 408.4}
+      }
+    },
+    "contaminated_tree_2330_files_8_nested_worktrees": {
+      "before": {
+        "adr-lint": {"p50_ms": 1495.8, "p95_ms": 2031.9},
+        "adr-retire": {"p50_ms": 1868.8, "p95_ms": 2606.8}
+      },
+      "after": {
+        "adr-lint": {"p50_ms": 874.4, "p95_ms": 1278.1},
+        "adr-retire": {"p50_ms": 435.2, "p95_ms": 472.1}
+      }
+    },
+    "adr_count_scaling_clean_tree": {
+      "before": {
+        "adr-lint": {"n16_p50_ms": 683.5, "n50_p50_ms": 1047.0, "n100_p50_ms": 1621.2},
+        "adr-retire": {"n16_p50_ms": 1000.5, "n50_p50_ms": 2618.1, "n100_p50_ms": 5228.8}
+      },
+      "after": {
+        "adr-lint": {"n16_p50_ms": 586.4, "n50_p50_ms": 784.4, "n100_p50_ms": 1112.8},
+        "adr-retire": {"n16_p50_ms": 390.8, "n50_p50_ms": 451.5, "n100_p50_ms": 559.5}
+      }
+    },
+    "root_causes_fixed": [
+      "bin/adr-retire walked the full repository once per ADR from detect_tech_removal; now one memoized walk plus one single-pass term resolution per run",
+      "bin/adr-lint _gate_exists_locally re-read up to 5000 files per gate; now one pass resolves every gate needle",
+      "both scanners descended into nested checkouts (.claude/worktrees agent trees); now any directory containing a .git entry is pruned"
+    ]
+  }
+}
