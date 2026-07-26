@@ -21,7 +21,7 @@ import re
 import sys
 from datetime import date
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
@@ -144,18 +144,34 @@ def _technology_terms(content: str) -> List[str]:
     return sorted(terms, key=str.lower)
 
 
+_WALK_CACHE: Dict[Tuple[str, frozenset], List[Path]] = {}
+
+
 def _walk_repo_files(repo_root: Path, extensions: set) -> List[Path]:
     """Walk repo without following symlinks, with a file-count safety cap.
 
     Replaces rglob('*') which would follow symlinks and could fall into
     infinite cycles or escape the repo root (SEC-LOW).
+
+    Memoized per (repo_root, extensions): scoring N ADRs used to trigger N
+    identical full-tree walks, which made runtime linear in ADR count.
     """
+    cache_key = (str(repo_root), frozenset(extensions))
+    cached = _WALK_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     result: List[Path] = []
     count = 0
     skip_dirs = set(IGNORED_DIRS) | {"node_modules", ".tox"}
     for dirpath, dirnames, filenames in os.walk(repo_root, followlinks=False):
         # Prune ignored directories in-place so os.walk skips them.
         dirnames[:] = [d for d in dirnames if d.lower() not in skip_dirs]
+        # Never descend into a nested checkout (git worktree, vendored clone):
+        # its files are not this project's source.
+        dirnames[:] = [
+            d for d in dirnames if not (Path(dirpath) / d / ".git").exists()
+        ]
         for fname in filenames:
             if Path(fname).suffix.lower() in extensions:
                 result.append(Path(dirpath) / fname)
@@ -166,7 +182,9 @@ def _walk_repo_files(repo_root: Path, extensions: set) -> List[Path]:
                         f"[adr-retire] File scan capped at {MAX_FILES} files. "
                         f"Some files may be missed."
                     )
+                    _WALK_CACHE[cache_key] = result
                     return result
+    _WALK_CACHE[cache_key] = result
     return result
 
 
@@ -174,21 +192,50 @@ def _source_files(repo_root: Path) -> Iterable[Path]:
     return _walk_repo_files(repo_root, SOURCE_SUFFIXES)
 
 
-def detect_tech_removal(adr_id: str, content: str, repo_root: Path) -> float:
-    """Return 1.0 only when explicit decision terms vanish from source."""
-    del adr_id
-    terms = _technology_terms(content)
-    if not terms:
-        return 0.0
-    lowered = [term.lower() for term in terms]
+def resolve_present_terms(repo_root: Path, terms: Iterable[str]) -> Set[str]:
+    """Return the subset of lowercased `terms` that occur in any source file.
+
+    Single pass: each source file is read at most once regardless of how many
+    ADRs are being scored. Stops early once every term has been located.
+    """
+    pending = {term.lower() for term in terms if term}
+    found: Set[str] = set()
+    if not pending:
+        return found
     for source_file in _source_files(repo_root):
         try:
             source = source_file.read_text(encoding="utf-8", errors="ignore").lower()
         except OSError:
             continue
-        if any(term in source for term in lowered):
-            return 0.0
-    return 1.0
+        hits = {term for term in pending if term in source}
+        if hits:
+            found |= hits
+            pending -= hits
+            if not pending:
+                break
+    return found
+
+
+def detect_tech_removal(
+    adr_id: str,
+    content: str,
+    repo_root: Path,
+    present_terms: Optional[Set[str]] = None,
+) -> float:
+    """Return 1.0 only when explicit decision terms vanish from source.
+
+    `present_terms` is the precomputed set of lowercased terms known to exist
+    in the tree. When omitted the term set is resolved on demand, preserving
+    the original single-ADR behaviour for direct callers.
+    """
+    del adr_id
+    terms = _technology_terms(content)
+    if not terms:
+        return 0.0
+    lowered = [term.lower() for term in terms]
+    if present_terms is None:
+        present_terms = resolve_present_terms(repo_root, lowered)
+    return 0.0 if any(term in present_terms for term in lowered) else 1.0
 
 
 def detect_supersession_broken(
@@ -251,6 +298,7 @@ def score_adr(
     repo_root: Path,
     config: Dict,
     as_of: Optional[date] = None,
+    present_terms: Optional[Set[str]] = None,
 ) -> Dict:
     """Return four-signal score and recommendation for one ADR."""
     status = extract_status(content)
@@ -269,7 +317,9 @@ def score_adr(
             adr_id, content, config, as_of
         )
         if config.get("retirement", {}).get("check_tech_removal", True):
-            signals["tech_removal"] = detect_tech_removal(adr_id, content, repo_root)
+            signals["tech_removal"] = detect_tech_removal(
+                adr_id, content, repo_root, present_terms
+            )
         signals["policy_mismatch"] = detect_policy_mismatch(adr_id, content, config)
     score = round(sum(signals.values()) / 4.0, 2)
     recommendation = "KEEP"
@@ -355,8 +405,18 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     adrs = load_adr_set(adr_dir)
     adr_ids = [adr_id for adr_id, _, _ in adrs]
+
+    # Resolve every ADR's technology terms in one pass over the tree, rather
+    # than re-walking and re-reading the repo once per ADR.
+    present_terms: Optional[Set[str]] = None
+    if config.get("retirement", {}).get("check_tech_removal", True):
+        all_terms: Set[str] = set()
+        for _, _, content in adrs:
+            all_terms.update(term.lower() for term in _technology_terms(content))
+        present_terms = resolve_present_terms(repo_root, all_terms)
+
     results = [
-        score_adr(adr_id, content, adr_ids, repo_root, config)
+        score_adr(adr_id, content, adr_ids, repo_root, config, present_terms=present_terms)
         for adr_id, _, content in adrs
     ]
     results = [result for result in results if result["retirement_score"] >= args.threshold]
