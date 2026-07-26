@@ -92,7 +92,7 @@ profiles. Never synthesize an unregistered template.
 
 ## What's new
 
-Nine releases shipped between 2026-07-18 and 2026-07-23. These are the ones
+Eleven releases shipped between 2026-07-18 and 2026-07-26. These are the ones
 that change what ADR Kit does; full detail, including the patch releases, is in
 [CHANGELOG.md](CHANGELOG.md).
 
@@ -104,7 +104,8 @@ that change what ADR Kit does; full detail, including the patch releases, is in
 | **0.37.0** | [ADR Grilling](docs/adr-grilling.md) across the full lifecycle: `/adr-kit:grill` completes Proposed ADRs one evidence-backed human question at a time and reconstructs decisions from PRs, ranges, chat logs, and documents. Deterministic `bin/adr-readiness` separates mechanical defects from unresolved human decisions ([ADR-011](docs/adr/ADR-011-adopt-deterministic-readiness-and-human-gated-grilling-across-the-adr-lifecycle.md)). | The gap between "we decided something" and "there is a usable ADR" was where decision logs died. Source material is evidence; it is never acceptance authority. |
 | **0.35.0-0.36.0** | Native certification for all three CLI clients through one outcome contract and capability registry ([ADR-010](docs/adr/ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md)), the generated [client support matrix](docs/client-support.md), a normalized fail-open hook runtime with measured Windows latency, `adr-doctor` fast and deep modes, and quiet-by-default hooks across all three clients. | The matrix distinguishes simulated contract coverage from native certification, per client and per OS, instead of claiming blanket support. Hooks stopped narrating themselves; only actionable output remains. |
 | **0.34.0** | [Selectable ADR formats](#adr-conventions): MADR default, Nygard and canonical selectable ([ADR-005](docs/adr/ADR-005-selectable-agent-friendly-adr-formats.md)); the deterministic [JSON ADR graph](docs/adr/ADR-INDEX.json) ([ADR-007](docs/adr/ADR-007-json-adr-graph-index-for-agent-retrieval.md)); Codex CLI integration and the multi-CLI installer; audit hardening. | Tools map headings to shared semantic roles, so no existing ADR set has to be rewritten to be governed. |
-| *Unreleased* | One shared status/enforcement reader across `adr-index`, `adr-watch`, `adr-judge`, `adr-lint`, `adr-retire`, and `adr-status`; snapshot caching and memoized format detection on the commit and index hot paths; a daily `main` → `dev` merge-back drift gate. | Two forked regexes meant the same ADR could read Accepted to one tool and Unknown to another. One reader, one answer. |
+| **0.42.0** | Single-pass repository scans in `adr-lint` and `adr-retire` with committed 2-second latency budgets and regression guards (`tests/fixtures/cli/latency-corpus.json`); nested checkouts (agent worktrees, vendored clones) are never scanned; a hardened SessionStart hook timeout; a daily `main` → `dev` merge-back drift gate and a release payload path-leak gate. | `adr-retire` was linear in ADR count (5.2 s at 100 ADRs, now 0.6 s flat). No deterministic user-facing path exceeds two seconds, and the budget is enforced by tests. |
+| **0.41.0** | One shared status/enforcement reader across `adr-index`, `adr-watch`, `adr-judge`, `adr-lint`, `adr-retire`, and `adr-status`; snapshot caching and memoized format detection on the commit and index hot paths. | Two forked regexes meant the same ADR could read Accepted to one tool and Unknown to another. One reader, one answer. |
 
 Upgrading from before 0.40.0: update ADR Kit, run
 `python bin/adr-index docs/adr`, then add retrieval probes before enabling
@@ -601,7 +602,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.41.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.42.0
         with:
           adr-dir: docs/adr/
 ```
@@ -613,7 +614,7 @@ Declarative-only by default: no LLM, no secrets, no API key. Exit codes: `0` cle
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.41.0
+    rev: v0.42.0
     hooks:
       - id: adr-judge
 ```
