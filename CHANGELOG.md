@@ -38,6 +38,26 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Changed
 
+- **The README leads with what the project is for.** It opened with three
+  agent-directed instruction blocks before stating the problem it solves. It
+  now opens with intent, then splits what changes for the agent from what
+  changes for the human, and routes readers through a "Start here" table and a
+  three-rule agent contract. A new "What's new" section covers the nine
+  releases from 2026-07-18 to 2026-07-23 (index-first selective context, ADR
+  grilling, three-client certification, the release runbook and version
+  registry, selectable formats) with links to the guide behind each one. The
+  repository map, comparison table, project resources, and the FAQ answer that
+  pinned the filename contract to a stale version are refreshed.
+  `ROADMAP.md` records v0.35.0 through v0.40.0 as landed, and `CONTRIBUTING.md`
+  points its release section at `docs/RELEASING.md`, the registry bump writer,
+  the tag-triggered publish workflow, and the merge-back step.
+
+- **New `docs/README.md` documentation index.** One map of every guide, split
+  by audience: which four documents a coding agent needs and the invariants
+  that hold across them, then the human-facing getting-started, day-to-day,
+  direction, and contributing sets. It also lists which files are generated and
+  by which command, so no one hand-edits a generated view.
+
 - **Single readers for shared ADR parsing.** The Enforcement block regex (five
   identical copies), `enforcement_globs`, `adr_id_from_filename` with
   `ADR_FILENAME_RE` (six copies), project `docs/adr` discovery, and the two
