@@ -46,6 +46,9 @@ The engines are deterministic, stdlib-only Python 3.10+: no build step, no
 service, no API key on any default path. LLM passes exist, are opt-in, cost
 nothing until you enable them, and never run in a hook hot path.
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/c99f81eb-6424-4463-8c1d-4aa8a017aa61" />
+
+
 > **Pre-1.0**: functional and in daily use, but conventions may still evolve before v1.0.0. Pin a tag if you need stability across upgrades.
 >
 > **Audit posture**: the [2026-07-18 source audit](docs/reviews/2026-07-18-source-audit/FINDINGS.md) drove fail-closed enforcement, exact staged-snapshot handling, transaction-safe lifecycle/state updates, and cross-platform packaging fixes. ADR Kit remains a development guardrail, not a sandbox, branch-protection replacement, or sole merge control.
