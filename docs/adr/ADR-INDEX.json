@@ -583,6 +583,82 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-016",
+      "title": "Serve Both MCP Protocol Eras from One Hand-Rolled Stdio Server",
+      "path": "ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-30",
+      "decision_summary": "Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc...",
+      "topics": [
+        "backward compatibility",
+        "dependency policy",
+        "model context protocol",
+        "protocol versioning",
+        "stdio transport"
+      ],
+      "aliases": [
+        "2026-07-28 revision",
+        "dual-era MCP",
+        "server/discover"
+      ],
+      "components": [
+        "adr-mcp",
+        "tests"
+      ],
+      "symbols": [
+        "dispatch",
+        "handle_initialize",
+        "HANDSHAKE_PROTOCOL_VERSIONS",
+        "KNOWN_PROTOCOL_VERSIONS",
+        "MODERN_PROTOCOL_VERSIONS",
+        "server/discover"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "bin/adr-mcp declares its supported protocol versions in explicit HANDSHAKEPROTOCOLVERSIONS / MODERNPROTOCOLVERSIONS / KNOWNPROTOCOLVERSIONS tuples and answers only from that set.",
+          "bin/adr-mcp implements server/discover and returns all five required DiscoverResult fields.",
+          "A request routed to the modern era is answered with resultType, meta[\"io.modelcontextprotocol/serverInfo\"], and — for server/discover and tools/list — an integer ttlMs and a cacheScope of \"public\".",
+          "A modern-routed request declaring a version outside MODERNPROTOCOLVERSIONS is answered -32022 with data.supported and data.requested, including when the method is server/discover.",
+          "A legacy initialize naming a version outside HANDSHAKEPROTOCOLVERSIONS, or naming none, is answered with a counter-offer of \"2025-11-25\".",
+          "Era selection is a pure function of the frame being answered (server/discover or the io.modelcontextprotocol/protocolVersion sentinel → modern; anything else → legacy), never from configuration and never from process state.",
+          "bin/adr-mcp runs on the Python standard library with zero third-party runtime imports, and codex/bin/adr-mcp and copilot/bin/adr-mcp stay byte-identical to it."
+        ],
+        "must_not": [
+          "No response may reflect a client-supplied protocolVersion that is not a member of the declared set for that era.",
+          "No request carrying the io.modelcontextprotocol/protocolVersion sentinel may be answered under legacy semantics, whatever arrived earlier on the same stdin. There is no era lock and no connection-scoped era state.",
+          "-32022 must not appear in a response to initialize.",
+          "No legacy-routed result may carry resultType, meta.serverInfo, ttlMs or cacheScope.",
+          "bin/adr-mcp and its two shipped mirrors must not import mcp, mcptypes, pydantic, or any other third-party package.",
+          "The server must not emit -32020 or -32021, nor any undefined code in the spec-reserved -32020..-32099 range, and must not allocate new codes in the legacy -32000..-32019 range.",
+          "tools/call results must not carry ttlMs or cacheScope."
+        ],
+        "exceptions": [
+          "The mcp and mcp-types 2.0.0 sources may be read, and their patterns copied, as reference material. That is documentation, not a dependency.",
+          "ping remains implemented for legacy clients although revision 2026-07-28 removes it. It is reachable on a modern-routed request — any frame carrying the sentinel routes modern, including ping — and the answer there is -32601, with no res..."
+        ],
+        "verification": [
+          "tests/testadrmcp.py — the conformance suite described under Confirmation, carrying the gate id adr-mcp-dual-era-v1. This is where every positive obligation of this contract is verified. It does not exist yet; verifiedin stays empty until...",
+          "bin/adr-judge declarative rules from the Enforcement block below. They are deliberately negative only — a forbidpattern tripwire against the version echo and a forbidimport allowlist for the zero-dependency rule. No requirepattern rule i...",
+          "The semantic obligations that no regex can express — resultType stamping, cacheScope: \"public\", the -32022 data shape, era routing, cache hints absent from tools/call — are covered by the conformance suite and human review, not by the LL..."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "{bin,codex/bin,copilot/bin}/adr-mcp"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-mcp-dual-era-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -859,6 +935,36 @@
     {
       "source": "ADR-015",
       "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-012",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-015",
       "type": "related",
       "resolved": true
     }

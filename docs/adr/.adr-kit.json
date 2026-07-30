@@ -1,5 +1,7 @@
 {
   "judge": {
+    "llm_enabled": true,
+    "llm_cmd": ["claude", "-p"],
     "pre_commit_timeout_ms": 5000,
     "pre_push_timeout_ms": 15000,
     "llm_timeout_ms": 30000,

@@ -21,3 +21,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-013 | Accepted | - | Chosen: the declarative registry with a writer. |
 | ADR-014 | Accepted | - | Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain... |
 | ADR-015 | Accepted | `tests/fixtures/cli/latency-corpus.json` | Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool... |
+| ADR-016 | Accepted | `{bin,codex/bin,copilot/bin}/adr-mcp` | Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc... |

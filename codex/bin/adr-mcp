@@ -4,9 +4,18 @@
 Speaks MCP over stdio: newline-delimited JSON-RPC 2.0 messages on
 stdin/stdout (MCP stdio transport does NOT use Content-Length framing).
 Hand-rolled on the Python stdlib only, so no `mcp` package is required.
+
 The protocol surface is deliberately tiny (initialize, initialized,
 tools/list, tools/call, ping); the dispatch table in serve() is shaped so
 swapping in the official `mcp` SDK later is a local change.
+
+Protocol era: this server currently speaks the handshake era only. MCP
+revision 2026-07-28 removed the initialize handshake in favour of stateless
+per-request envelopes; dual-era support is planned in ADR-016 and TASK-58,
+not yet implemented here. A 2026-07-28 client probing `server/discover`
+receives -32601 and correctly falls back to `initialize`, so this server is
+non-compliant rather than broken. See
+docs/research/2026-07-29-mcp-2026-07-28-revision.md.
 
 Exposes exactly 5 tools, each a subprocess call into a sibling bin/ script:
 

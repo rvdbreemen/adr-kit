@@ -586,3 +586,49 @@ def test_unknown_notification_is_silently_ignored(project: Path):
     responses, parse_errors, _ = run_session(project, [INITIALIZE, note, ping])
     assert not parse_errors
     assert set(responses) == {1, 14}
+
+
+# ---------------------------------------------------------------------------
+# Gate adr-mcp-dual-era-v1 (ADR-016)
+# ---------------------------------------------------------------------------
+#
+# ADR-016 is Accepted and binding, and names this gate. The gate is the
+# evidence that the decision holds. Its full conformance suite is TASK-58.3;
+# until TASK-58.1 and TASK-58.2 land, the requirements below are unmet by
+# construction, so this test is registered as an expected failure rather than
+# silently skipped. Deleting the xfail marker is how the gate goes live.
+
+GATE_ADR_MCP_DUAL_ERA_V1 = "adr-mcp-dual-era-v1"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "gate adr-mcp-dual-era-v1: dual-era support is not implemented yet "
+        "(TASK-58.1 / TASK-58.2). Remove this marker when it is."
+    ),
+)
+def test_gate_adr_mcp_dual_era_v1_server_discover(project: Path):
+    """server/discover MUST be answered, not rejected as an unknown method."""
+    discover = {
+        "jsonrpc": "2.0",
+        "id": 900,
+        "method": "server/discover",
+        "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }
+        },
+    }
+    responses, _, _ = run_session(project, [discover])
+    result = responses[900].get("result")
+    assert result is not None, "server/discover must return a result, not an error"
+    assert result["resultType"] == "complete"
+    assert result["supportedVersions"] == ["2026-07-28"]
+    assert result["cacheScope"] == "public"
+    assert isinstance(result["ttlMs"], int)
+    assert "tools" in result["capabilities"]
+    # Identity travels in _meta; DiscoverResult has no top-level serverInfo.
+    assert "serverInfo" not in result
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "adr-kit"
