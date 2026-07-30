@@ -59,3 +59,6 @@ docs/adr/.adr-kit-state.json
 docs/adr/.adr-kit-state.json.lock
 docs/adr/.adr-kit-readiness.json
 .adr-kit-cache/
+
+# Comprehensive review working output (session artefact, not source)
+.full-review/

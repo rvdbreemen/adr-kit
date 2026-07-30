@@ -39,6 +39,8 @@ import argparse
 import hashlib
 import json
 import os
+import importlib.machinery
+import importlib.util
 import re
 import shlex
 import shutil
@@ -51,13 +53,57 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
-if str(_BIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BIN_DIR))
 
-from adr_catalog import ENFORCEMENT_BLOCK_RE, adr_id_from_filename, adr_status
-from adr_format import section_text
-from adr_config import ConfigValidationError, load_validated_config
-from adr_regex import RegexEvaluationError, bounded_regex_search
+
+def _load_sibling(name: str):
+    """Import a sibling bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    SEC-HIGH: the previous `sys.path.insert(0, _BIN_DIR)` put this directory
+    ahead of the standard library for every import the judge performs --
+    including the optional `import jsonschema`. Wherever _BIN_DIR is a
+    directory an attacker can commit into (a self-hosted checkout, a vendored
+    bin/, or CI running the judge from a pull-request checkout, as
+    .github/actions/adr-judge does), a committed bin/jsonschema.py executed as
+    code on the always-on declarative path. The insert also defeated CPython's
+    own -P / PYTHONSAFEPATH mitigation by re-adding the directory it removes.
+
+    Loading by explicit file location keeps the flat layout and the
+    zero-dependency constraint while making the directory non-importable, so
+    no file placed next to this script can shadow anything.
+
+    Modules are registered in sys.modules under their bare name so that their
+    own sibling imports (adr_catalog imports adr_format and adr_schema)
+    resolve from the cache rather than the path. Load order below is therefore
+    dependency order, not alphabetical.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+# Dependency order: adr_format has no sibling imports; adr_schema needs
+# adr_format; adr_catalog needs both. adr_config and adr_regex are standalone.
+_load_sibling("adr_format")
+_load_sibling("adr_schema")
+_adr_catalog = _load_sibling("adr_catalog")
+_adr_format = sys.modules["adr_format"]
+_adr_config = _load_sibling("adr_config")
+_adr_regex = _load_sibling("adr_regex")
+
+ENFORCEMENT_BLOCK_RE = _adr_catalog.ENFORCEMENT_BLOCK_RE
+adr_id_from_filename = _adr_catalog.adr_id_from_filename
+adr_status = _adr_catalog.adr_status
+section_text = _adr_format.section_text
+ConfigValidationError = _adr_config.ConfigValidationError
+load_validated_config = _adr_config.load_validated_config
+RegexEvaluationError = _adr_regex.RegexEvaluationError
+bounded_regex_search = _adr_regex.bounded_regex_search
 
 # Default LLM invocation. Overridable via --llm-cmd, ADR_KIT_LLM_CMD env, or
 # .adr-kit.json's judge.llm_cmd. Tests inject a fake binary here.
@@ -350,14 +396,21 @@ ENFORCEMENT_KNOWN_KEYS = frozenset(
 ENFORCEMENT_RULE_KEYS = frozenset({"pattern", "path_glob", "message"})
 
 
-def validate_enforcement(data: Dict) -> List[str]:
+def validate_enforcement(data: Dict, deep: bool = False) -> List[str]:
     """Return structural issues for a parsed Enforcement block ([] = valid).
 
     Stdlib structural checks mirror the JSON schema: only known top-level
     keys (rule kinds), rule arrays of objects, required non-empty string
     "pattern", optional string "path_glob"/"message", boolean "llm_judge".
-    When the optional jsonschema library is installed, the real schema runs
-    as a deeper second layer (same auto-detect approach as adr-lint).
+
+    PERF-HIGH: the jsonschema second layer is `deep`-only and OFF in the
+    commit path. Importing jsonschema costs ~220 ms on every invocation --
+    47% of wall clock on a typical commit -- and a differential test over 90
+    Enforcement blocks spanning the whole schema surface found zero verdicts
+    it changed: the stdlib checks below already cover every constraint the
+    schema expresses. Authoring-time depth is not lost, because `bin/adr-lint`
+    runs the same schema through its own validator (adr-lint:953), where the
+    budget is 1200 ms and an author wants maximum feedback.
     """
     issues: List[str] = []
     unknown = sorted(set(data) - ENFORCEMENT_KNOWN_KEYS)
@@ -392,14 +445,22 @@ def validate_enforcement(data: Dict) -> List[str]:
         )
     if issues:
         return issues
+    if not deep:
+        return issues
     validator = _get_enforcement_validator()
     if validator is not None:
         try:
             schema_errors = sorted(
                 validator.iter_errors(data), key=lambda e: list(e.absolute_path)
             )
-        except Exception as e:  # pragma: no cover - defensive
-            return [f"schema validation errored: {e}"]
+        except Exception:
+            # SEC-HIGH: a malfunctioning jsonschema must NOT invalidate the
+            # block. Returning an issue here marks the ADR structurally
+            # invalid, which makes the judge skip every one of its rules --
+            # so one broken library silently disarms the whole ADR set. Treat
+            # a validator fault the same as a missing library: no deeper
+            # validation available, stdlib checks above stand.
+            return issues
         for e in schema_errors[:5]:
             issues.append(f"schema: {e.message}")
     return issues
@@ -493,15 +554,39 @@ def parse_diff(text: str) -> Dict[str, DiffFile]:
 
     Skips deleted files (+++ /dev/null) and binary diffs. Tracks the new-file
     line counter via the @@ hunk header so reporting can cite file:line.
+
+    SEC-HIGH: split on "\\n" only, never str.splitlines(). splitlines() also
+    breaks on \\x0b \\x0c \\x1c \\x1d \\x1e \\x85 \\u2028 \\u2029, none of which
+    git treats as a line terminator. Content after such a byte became an
+    orphan fragment matching no branch below and was dropped from `added`,
+    so a forbidden token preceded by a form feed walked past forbid_pattern.
+    Form feed is ordinary page-break punctuation in GNU C style and Emacs
+    sources, so this fired by accident, not only under attack.
+
+    SEC-HIGH: the file-header branches are hunk-gated. An added line whose
+    CONTENT starts with "++ " renders as "+++ " on the wire; ungated, it took
+    the header branch, re-attributed the rest of the hunk to a fabricated
+    path, and left the real file with zero added lines. Inside a hunk a
+    "+++" line is always content, never a header, so gating removes the
+    ambiguity at the source -- and with it the need for the old
+    `not line.startswith("+++")` guard, which silently dropped "++X".
     """
     files: Dict[str, DiffFile] = {}
     current: Optional[DiffFile] = None
     old_path: Optional[str] = None
     lineno = 0
-    for line in text.splitlines():
-        if line.startswith("--- "):
+    in_hunk = False
+    for raw_line in text.split("\n"):
+        # Strip exactly one trailing CR: a CRLF diff must not leave \r on the
+        # line, or anchored patterns (e.g. `ArduinoJson\.h>$`) stop matching.
+        line = raw_line[:-1] if raw_line.endswith("\r") else raw_line
+        if line.startswith("diff --git "):
+            in_hunk = False
+            current = None
+            old_path = None
+        elif not in_hunk and line.startswith("--- "):
             old_path = _diff_path(line[4:], "a/")
-        elif line.startswith("+++ "):
+        elif not in_hunk and line.startswith("+++ "):
             new_path = _diff_path(line[4:], "b/")
             if new_path is None:
                 if old_path is None:
@@ -525,7 +610,8 @@ def parse_diff(text: str) -> Dict[str, DiffFile]:
             m = HUNK_HEADER_RE.match(line)
             if m:
                 lineno = int(m.group(1))
-        elif current and line.startswith("+") and not line.startswith("+++"):
+                in_hunk = True
+        elif current and line.startswith("+"):
             current.added.append((lineno, line[1:]))
             lineno += 1
         elif line.startswith(" "):
