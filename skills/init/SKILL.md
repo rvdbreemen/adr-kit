@@ -294,7 +294,6 @@ Apply the answer with the kit's own command — do **not** hand-write the JSON, 
 ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
 ```
 
-
 - **host** — you know which client you are running in, because you are reading this client's copy of this skill. Pass that id:
   ```bash
   "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend host --host-client claude-code-cli
