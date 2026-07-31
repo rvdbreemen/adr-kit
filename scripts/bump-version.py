@@ -28,48 +28,58 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from version_sites import (  # noqa: E402
     SEMVER,
     VersionSiteError,
+    apply_transaction,
     check,
+    describe_changes,
     format_findings,
     load_registry,
+    plan_writes,
     read_canonical,
-    write_all,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
 UNRELEASED = re.compile(r"^## \[Unreleased\]\s*$", re.MULTILINE)
 
 
-def ensure_changelog_heading(version: str, release_date: str) -> str:
-    """Make sure CHANGELOG.md carries `## [version] - date` as the top release.
+def plan_changelog_heading(version: str, release_date: str) -> "tuple[bytes | None, str]":
+    """Compute a CHANGELOG.md carrying `## [version] - date` as the top release.
 
-    Returns a short description of what happened.
+    Writes nothing. The bytes join the same transaction as the declared sites,
+    because the CHANGELOG heading is the version every other tool reads as
+    canonical: writing it first and then failing to write the sites left the
+    repository announcing a release that no manifest carried, with no rollback.
+
+    Returns the new bytes (None when the file already says the right thing) and
+    a short description of what happened.
     """
     path = ROOT / "CHANGELOG.md"
-    text = path.read_text(encoding="utf-8")
+    original = path.read_text(encoding="utf-8")
     heading_re = re.compile(rf"^## \[{re.escape(version)}\][^\n]*$", re.MULTILINE)
 
-    existing = heading_re.search(text)
+    existing = heading_re.search(original)
     if existing:
         wanted = f"## [{version}] - {release_date}"
-        if existing.group(0) != wanted:
-            text = text[: existing.start()] + wanted + text[existing.end() :]
-            path.write_text(text, encoding="utf-8", newline="\n")
-            return f"updated existing CHANGELOG heading to '{wanted}'"
-        return f"CHANGELOG heading '{wanted}' already correct"
-
-    marker = UNRELEASED.search(text)
-    if not marker:
-        raise VersionSiteError(
-            "CHANGELOG.md has no '## [Unreleased]' marker to insert the new release under"
+        if existing.group(0) == wanted:
+            return None, f"CHANGELOG heading '{wanted}' already correct"
+        text = original[: existing.start()] + wanted + original[existing.end() :]
+        note = f"updated existing CHANGELOG heading to '{wanted}'"
+    else:
+        marker = UNRELEASED.search(original)
+        if not marker:
+            raise VersionSiteError(
+                "CHANGELOG.md has no '## [Unreleased]' marker to insert the new release under"
+            )
+        insert_at = marker.end()
+        block = (
+            f"\n\n## [{version}] - {release_date}\n\n### Added\n\n"
+            "- TODO: describe this release.\n"
         )
-    insert_at = marker.end()
-    block = f"\n\n## [{version}] - {release_date}\n\n### Added\n\n- TODO: describe this release.\n"
-    text = text[:insert_at] + block + text[insert_at:]
-    path.write_text(text, encoding="utf-8", newline="\n")
-    return (
-        f"inserted new CHANGELOG section '## [{version}] - {release_date}' "
-        "with a TODO placeholder: replace it with the real release notes"
-    )
+        text = original[:insert_at] + block + original[insert_at:]
+        note = (
+            f"inserted new CHANGELOG section '## [{version}] - {release_date}' "
+            "with a TODO placeholder: replace it with the real release notes"
+        )
+    return text.encode("utf-8"), note
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,8 +106,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"All declared version sites already carry {version}.")
             return 0
 
-        print(ensure_changelog_heading(version, release_date))
-        changed = write_all(ROOT, version, registry)
+        # Plan everything -- CHANGELOG included -- before the first byte lands,
+        # then write it as one transaction that rolls back as a unit.
+        changelog_bytes, note = plan_changelog_heading(version, release_date)
+        changes = plan_writes(ROOT, version, registry)
+        changed = describe_changes(ROOT, changes, registry)
+        if changelog_bytes is not None:
+            changes[ROOT / "CHANGELOG.md"] = changelog_bytes
+        apply_transaction(changes)
+
+        print(note)
         if changed:
             print(f"Wrote {version} to {len(changed)} site(s):")
             for entry in changed:

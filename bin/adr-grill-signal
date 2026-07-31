@@ -4,10 +4,41 @@
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
+
+_BIN_DIR = Path(__file__).resolve().parent
+
+
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    SEC-HIGH (TASK-62): this script carried no sys.path.insert, but it still
+    resolved its siblings through CPython's implicit sys.path[0] -- the script's
+    own directory. That is the same shadowing surface the insert created (a
+    module committed next to this file wins over the standard library), and it
+    meant the script could not run under -P / PYTHONSAFEPATH at all. Siblings
+    are registered in sys.modules under their bare name so the plain
+    `from adr_* import ...` below resolves from the cache instead of the path.
+    bin/adr-judge carries the full rationale.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+_load_sibling("adr_grill_signal")
+
 
 from adr_grill_signal import analyze_index, normalize_path
 

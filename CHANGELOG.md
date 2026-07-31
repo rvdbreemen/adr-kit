@@ -4,6 +4,150 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-07-31
+
+### Upgrade notes
+
+**The per-commit LLM judge is now on by default.** If you do not want it, set
+`judge.llm_enabled: false` in `docs/adr/.adr-kit.json` before upgrading. Nothing
+is spent until an author sets `llm_judge: true` on an ADR, so a project with no
+opted-in ADRs pays nothing either way.
+
+**`judge.llm_cmd` and `judge.llm_model` are deprecated and ignored.** They still
+validate, so existing configs keep working, but they no longer choose anything.
+Select a backend with `python bin/adr-judge --set-backend {host,openrouter,ollama}`
+and inspect the result with `--show-config`. This is deliberate: those keys let
+repository-tracked configuration choose the binary the judge executes, and
+`docs/adr/.adr-kit.json` is authored by anyone with commit access.
+
+### Added
+- **The LLM judge runs by default, on your own agent's model.** `judge.backend`
+  is an enum -- `host` (default), `openrouter`, `ollama` -- resolving to a
+  code-side command table. The `host` backend uses the CLI of the agent adr-kit
+  was installed for and passes **no model flag**, so each CLI resolves the model
+  its user configured; nothing is pinned. The judge cannot detect which client it
+  runs in, because a `git commit` happens whether or not any agent is running, so
+  the installer records the client at install time rather than probing `PATH`.
+  New flags: `--show-config` (every value with its provenance, no secret ever
+  printed), `--set-backend`, `--host-client`, `--model`. An unavailable backend
+  degrades to declarative-only and never blocks a commit. See ADR-017, which
+  supersedes ADR-001.
+- **`bin/adr-suggest` shares that same registry** (`bin/adr_llm.py`), so both
+  entry points resolve a model the same way and neither carries a default command.
+
+
+- **The MCP server speaks both protocol eras.** Revision `2026-07-28` made the
+  Model Context Protocol stateless and removed the `initialize` handshake.
+  `bin/adr-mcp` now serves the handshake era (`2024-11-05` through
+  `2025-11-25`) and the modern era (`2026-07-28`) from one process. Modern
+  results carry `resultType` and `_meta.serverInfo`; `server/discover` and
+  `tools/list` also carry `ttlMs` and `cacheScope`. The era is a pure function
+  of the single frame, with no per-connection lock, because the revision
+  forbids relying on prior requests to establish context. See ADR-016.
+
+### Changed
+
+- **The judge no longer imports `jsonschema` on the commit path.** The stdlib
+  structural checks already cover every constraint the schema expresses — a
+  differential test over 90 Enforcement blocks found zero verdicts it changed —
+  while the import cost roughly 220 ms on every invocation. Authoring-time
+  depth is unchanged: `adr-lint` still runs the full schema. Measured with
+  interleaved A/B sampling on a 1.2 MB diff: 1105 ms to 721 ms p50, a 1.53x
+  improvement.
+- **A malfunctioning `jsonschema` no longer disarms enforcement.** A validator
+  fault was returned as a validation issue, which marked the Enforcement block
+  structurally invalid and made the judge skip every rule in that ADR — so one
+  broken library silently disarmed the whole set. It now degrades to the stdlib
+  checks, the same as a missing library.
+
+### Fixed
+
+- **`bin/adr-suggest` ignored the model policy the judge enforces.** It carried
+  its own pinned `claude-sonnet-4-6` and honoured `suggest.llm_cmd` /
+  `judge.llm_cmd`, so repository-tracked configuration could still choose the
+  binary it executed -- the guarantee held at one entry point and not the other.
+  Both now share `bin/adr_llm.py`. ADR-017's enforcement covered only
+  `adr-judge`, which is why this survived; it now covers all three executables
+  across all three client distributions.
+- **`bin/bump-version` wrote only part of the release.** It carried its own
+  hard-coded path list instead of reading `packaging/version-sites.json`, and
+  silently skipped both README version pins -- the snippets users copy into
+  their own workflow and pre-commit config. Both bump writers now share one
+  plan-then-apply engine. Note that `scripts/bump-version.py`, the writer the
+  runbook prescribes, was never affected.
+- **A failed bump could leave the CHANGELOG announcing a release nothing
+  carried.** `scripts/bump-version.py` wrote the release heading before the
+  transaction rather than inside it, so a mid-run failure left the canonical
+  source ahead of every manifest, with no rollback.
+- **`.githooks/pre-commit` was version-stamped but declared nowhere,** so no gate
+  verified it. `bin/adr-guardian` compares that stamp against the plugin version
+  and reports the hook stale; it is now a declared site.
+- **The import-safety suite failed on Python 3.10.** It ran each executable with
+  `-P`, which is not a flag before CPython 3.11, so the interpreter exited 2 and
+  the test read that as the tool being broken. The variant is skipped below 3.11.
+- **The MCP server did not speak UTF-8 on Windows.** The stdio transport
+  mandates UTF-8 and newline-delimited framing; `bin/adr-mcp` wrote its frames
+  in text mode using the platform default, so on a cp1252 host an em dash left
+  as the byte `0x97` and every frame ended `\r\n`. Strict readers aborted the
+  session, lenient ones silently accepted mojibake, and a character with no
+  cp1252 mapping turned a tool result into JSON-RPC `-32603`. Stdio is now
+  pinned to UTF-8 with LF framing. Pre-existing and independent of the protocol
+  era.
+- **Superseding an ADR erased its original acceptance date.** For a record
+  predating the `## Status History` convention, the date lived only in the
+  Status line the command replaces, and the freshly created history block held
+  just the new transition. The lifecycle commands now seed the recovered entry
+  first, recording `changed_by: unknown` rather than inventing a signer, and
+  refuse instead of writing a lossy history when the prior state cannot be
+  read. Applies to `accept`, `reject`, `propose`, `document` and `supersede`.
+- **Status history was written as invalid YAML when a value contained a colon.**
+  A `reason` such as "Human approval: records the ..." — or the documented
+  `--changed-by "User: <name>"` — ended the plain scalar and made the *entire*
+  block unparseable. Three shipped ADRs were already affected and are repaired,
+  with no change to any date, status, actor or wording. It went unnoticed
+  because adr-kit reads these blocks with its own line-oriented parser; only an
+  external consumer using a real YAML parser saw the damage.
+- **`bin/adr accept` could not resolve a reference to another ADR.** It linted
+  the single file being accepted, so a populated `supersedes` reported
+  `target not found` even though the same ADR passed a directory lint.
+  Acceptance now uses the whole directory as lookup context while still
+  reporting findings only for the ADR being accepted, so an unrelated broken
+  ADR does not block it. The error also names the failing finding rather than
+  only a count.
+- **`require_pattern` blocked on a finding no author could act on.** Under
+  `--snapshot diff` a modified file has no reconstructable post-image, so the
+  rule failed closed — a statement about the invocation, not the code. It is
+  now an advisory, and the MCP `adr_judge` tool asks for `--snapshot worktree`.
+  Deleted or unstaged files, and unreadable or unsafe paths, still fail closed.
+- **`bin/adr-status --format json` emitted `summary.by_status` in a random key
+  order,** because the dict was built from a set and iteration followed
+  `PYTHONHASHSEED`. Five seeds produced five orders; they now agree.
+- **Forbidden tokens could pass the enforcement floor.** `parse_diff` split on
+  `str.splitlines()`, which breaks on eight characters git does not treat as
+  line terminators. Content after one was dropped before any rule saw it, so a
+  token preceded by a form feed — ordinary page-break punctuation in GNU C
+  style and Emacs sources — was never matched. Reproduced 5 of 5; now 0 of 5.
+- **An added line starting with `++` hijacked the file-header branch,**
+  re-attributing the rest of the hunk to a fabricated path and leaving the real
+  file with zero added lines. Header branches are now hunk-gated.
+- **A module committed next to `bin/adr-judge` could run as code.** The script
+  put its own directory ahead of the standard library on `sys.path`, so a
+  committed `bin/jsonschema.py` was imported on the always-on declarative path.
+  Reachable wherever that directory is writable by a contributor, including CI
+  running the judge from a pull-request checkout. It also defeated CPython's
+  own `-P` / `PYTHONSAFEPATH` mitigation. Siblings are now loaded by explicit
+  file location and the directory is no longer importable.
+- **A failed install left the client marketplace registered.** All three
+  installers register the marketplace and then install the plugin; when the
+  second step failed on a first install, the transaction rollback was a no-op
+  because it restores a previous prepared source that does not yet exist. Each
+  installer now undoes a registration it made itself, and leaves a
+  pre-existing one alone.
+- **`build-client-adapters.py --check` reported drift on a Windows checkout.**
+  The generator emits LF while git materialises CRLF for paths `.gitattributes`
+  does not pin, so byte comparison failed while `git diff` was empty. Line
+  endings are now normalised for the comparison only; content is still compared
+  byte for byte, and binary outputs are never normalised.
 
 ## [0.42.0] - 2026-07-26
 
@@ -1206,7 +1350,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.42.0...v0.43.0
 [0.37.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.34.2...v0.35.0

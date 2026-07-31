@@ -38,7 +38,7 @@ status_history:
   - date: 2026-07-18
     status: Accepted
     changed_by: Robert van den Breemen
-    reason: Human approval: records the v0.34.0 heuristic-gate scope decision after review
+    reason: "Human approval: records the v0.34.0 heuristic-gate scope decision after review"
     changed_via: adr-kit lifecycle
 ```
 

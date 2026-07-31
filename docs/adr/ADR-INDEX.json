@@ -7,8 +7,8 @@
       "title": "Make Per-Commit LLM Gates Opt-In",
       "path": "ADR-001-llm-gates-opt-in.md",
       "format": "canonical",
-      "status": "Accepted",
-      "date": "2026-05-31",
+      "status": "Superseded",
+      "date": "2026-07-30",
       "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
       "topics": [],
       "aliases": [],
@@ -30,7 +30,7 @@
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
-        "superseded_by": null
+        "superseded_by": "ADR-017"
       }
     },
     {
@@ -512,9 +512,226 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-015",
+      "title": "Enforce a Two-Second Deterministic Latency Budget as a Test Fixture Contract",
+      "path": "ADR-015-enforce-a-two-second-deterministic-latency-budget-as-a-test-fixture-contract.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-26",
+      "decision_summary": "Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool...",
+      "topics": [
+        "latency budget",
+        "non-functional requirement",
+        "performance",
+        "regression guard"
+      ],
+      "aliases": [
+        "2s budget",
+        "latency corpus",
+        "user-wait ceiling"
+      ],
+      "components": [
+        "adr-lint",
+        "adr-retire",
+        "hooks",
+        "tests"
+      ],
+      "symbols": [
+        "_resolve_gates_locally",
+        "_WALK_CACHE",
+        "latency-corpus.json",
+        "reference-corpus.json",
+        "resolve_present_terms"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every deterministic user-facing CLI or hook path keeps a p50/p95/hard-budget entry in a committed latency fixture with measured evidence.",
+          "Latency-critical scan mechanisms are guarded by machine-independent structural tests, not only by wall-clock assertions.",
+          "Repo scanners prune any directory containing a .git entry (nested checkouts are not project source)."
+        ],
+        "must_not": [
+          "No deterministic user-facing path may carry a hard budget above 2000 ms.",
+          "Repo scanners must not re-walk or re-read the tree once per scored item (per ADR, per gate, per term); needle resolution is single-pass.",
+          "Budgets must not be relaxed to make a failing test pass; a budget change requires superseding or amending this ADR."
+        ],
+        "exceptions": [
+          "Opt-in LLM passes (adr-judge --llm, guardian LLM tier) are excluded: their latency is network- and model-bound and covered by ADR-001's opt-in gate.",
+          "The ~124 ms Python interpreter spawn floor per CLI invocation is accepted as irreducible for the subprocess-per-call design on Windows."
+        ],
+        "verification": [
+          "tests/testcliperformance.py (structural guards + 2 s ceiling smoke, method adr-kit-cli-latency-v1).",
+          "tests/testhookperformance.py (hook budgets, method adr-kit-hook-latency-v1).",
+          "Evidence: tests/fixtures/cli/latency-corpus.json, tests/fixtures/hooks/reference-corpus.json."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "tests/fixtures/cli/latency-corpus.json"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-kit-cli-latency-v1",
+        "documents_shipped": false,
+        "verified_in": [
+          "tests/test_cli_performance.py",
+          "tests/test_hook_performance.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-016",
+      "title": "Serve Both MCP Protocol Eras from One Hand-Rolled Stdio Server",
+      "path": "ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-31",
+      "decision_summary": "Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc...",
+      "topics": [
+        "backward compatibility",
+        "dependency policy",
+        "model context protocol",
+        "protocol versioning",
+        "stdio transport"
+      ],
+      "aliases": [
+        "2026-07-28 revision",
+        "dual-era MCP",
+        "server/discover"
+      ],
+      "components": [
+        "adr-mcp",
+        "tests"
+      ],
+      "symbols": [
+        "dispatch",
+        "handle_initialize",
+        "HANDSHAKE_PROTOCOL_VERSIONS",
+        "KNOWN_PROTOCOL_VERSIONS",
+        "MODERN_PROTOCOL_VERSIONS",
+        "server/discover"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "bin/adr-mcp declares its supported protocol versions in explicit HANDSHAKEPROTOCOLVERSIONS / MODERNPROTOCOLVERSIONS / KNOWNPROTOCOLVERSIONS tuples and answers only from that set.",
+          "bin/adr-mcp implements server/discover and returns all five required DiscoverResult fields.",
+          "A request routed to the modern era is answered with resultType, meta[\"io.modelcontextprotocol/serverInfo\"], and — for server/discover and tools/list — an integer ttlMs and a cacheScope of \"public\".",
+          "A modern-routed request declaring a version outside MODERNPROTOCOLVERSIONS is answered -32022 with data.supported and data.requested, including when the method is server/discover.",
+          "A legacy initialize naming a version outside HANDSHAKEPROTOCOLVERSIONS, or naming none, is answered with a counter-offer of \"2025-11-25\".",
+          "Era selection is a pure function of the frame being answered (server/discover or the io.modelcontextprotocol/protocolVersion sentinel → modern; anything else → legacy), never from configuration and never from process state.",
+          "bin/adr-mcp runs on the Python standard library with zero third-party runtime imports, and codex/bin/adr-mcp and copilot/bin/adr-mcp stay byte-identical to it."
+        ],
+        "must_not": [
+          "No response may reflect a client-supplied protocolVersion that is not a member of the declared set for that era.",
+          "No request carrying the io.modelcontextprotocol/protocolVersion sentinel may be answered under legacy semantics, whatever arrived earlier on the same stdin. There is no era lock and no connection-scoped era state.",
+          "-32022 must not appear in a response to initialize.",
+          "No legacy-routed result may carry resultType, meta.serverInfo, ttlMs or cacheScope.",
+          "bin/adr-mcp and its two shipped mirrors must not import mcp, mcptypes, pydantic, or any other third-party package.",
+          "The server must not emit -32020 or -32021, nor any undefined code in the spec-reserved -32020..-32099 range, and must not allocate new codes in the legacy -32000..-32019 range.",
+          "tools/call results must not carry ttlMs or cacheScope."
+        ],
+        "exceptions": [
+          "The mcp and mcp-types 2.0.0 sources may be read, and their patterns copied, as reference material. That is documentation, not a dependency.",
+          "ping remains implemented for legacy clients although revision 2026-07-28 removes it. It is reachable on a modern-routed request — any frame carrying the sentinel routes modern, including ping — and the answer there is -32601, with no res..."
+        ],
+        "verification": [
+          "tests/testadrmcp.py — the conformance suite described under Confirmation, carrying the gate id adr-mcp-dual-era-v1. This is where every positive obligation of this contract is verified. It does not exist yet; verifiedin stays empty until...",
+          "bin/adr-judge declarative rules from the Enforcement block below. They are deliberately negative only — a forbidpattern tripwire against the version echo and a forbidimport allowlist for the zero-dependency rule. No requirepattern rule i...",
+          "The semantic obligations that no regex can express — resultType stamping, cacheScope: \"public\", the -32022 data shape, era routing, cache hints absent from tools/call — are covered by the conformance suite and human review, not by the LL..."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "{bin,codex/bin,copilot/bin}/adr-mcp",
+          "tests/test_adr_mcp.py"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-mcp-dual-era-v1",
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_mcp.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-017",
+      "title": "Run the LLM Judge by Default on the Host Agent's Own Model",
+      "path": "ADR-017-run-the-llm-judge-by-default-on-the-host-agent-model.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-30",
+      "decision_summary": "Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a...",
+      "topics": [
+        "backend selection",
+        "cost and consent",
+        "llm judging",
+        "supply chain"
+      ],
+      "aliases": [
+        "backend registry",
+        "default-on LLM judge"
+      ],
+      "components": [
+        "adr-judge",
+        "adr-suggest"
+      ],
+      "symbols": [
+        "BACKENDS",
+        "judge.backend",
+        "judge.llm_enabled"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "judge.backend is an enum: \"host\", \"openrouter\", \"ollama\". Default \"host\".",
+          "The host backend uses the command the installer wrote for that client, and passes no model flag.",
+          "judge.llmenabled defaults to true only once TASK-63 has landed.",
+          "An unavailable backend — missing binary, unreachable daemon, absent key, non-zero status, unparseable output — degrades to declarative-only and returns None, preserving ADR-001's guarantee that tooling drift never blocks a commit.",
+          "The OpenRouter key is read from the environment."
+        ],
+        "must_not": [
+          "Repository-tracked configuration must not supply a command, an argument vector, an endpoint, or a credential.",
+          "A key present in .adr-kit.json must not be used; it is refused with an error naming the environment variable to use instead.",
+          "No backend may be selected by probing which CLIs exist on the machine.",
+          "No vendor SDK may enter the runtime dependency set."
+        ],
+        "exceptions": [],
+        "verification": []
+      },
+      "scope": {
+        "path_globs": [
+          "{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-judge-backend-registry-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [
+          "ADR-001"
+        ],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
+    {
+      "source": "ADR-001",
+      "target": "ADR-017",
+      "type": "superseded-by",
+      "resolved": true
+    },
     {
       "source": "ADR-002",
       "target": "ADR-001",
@@ -770,6 +987,90 @@
     {
       "source": "ADR-014",
       "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-015",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-015",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-015",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-012",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-001",
+      "type": "supersedes",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-016",
       "type": "related",
       "resolved": true
     }

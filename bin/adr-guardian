@@ -43,6 +43,8 @@ Multi-session safety (task-9):
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -54,8 +56,41 @@ import io
 from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
-if str(_BIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BIN_DIR))
+
+
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    SEC-HIGH (TASK-62): `sys.path.insert(0, _BIN_DIR)` put this directory ahead
+    of the standard library for every import, so a module committed next to
+    this script executed as code -- and it re-added the very directory
+    CPython's -P / PYTHONSAFEPATH removes. Siblings are registered in
+    sys.modules under their bare name, so the plain `from adr_* import ...`
+    statements below (and the lazy ones inside functions) resolve from the
+    cache instead of the path. bin/adr-judge carries the full rationale.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+# Dependency order: adr_catalog needs adr_format + adr_schema; adr_query
+# lazily needs adr_catalog; adr_retrieval_health needs adr_query. The
+# remaining three are standalone.
+_load_sibling("adr_format")
+_load_sibling("adr_schema")
+_load_sibling("adr_catalog")
+_load_sibling("adr_query")
+_load_sibling("adr_retrieval_health")
+_load_sibling("adr_config")
+_load_sibling("adr_state")
+_load_sibling("adr_guardian_queue")
 
 from adr_config import load_json_config as _load_config
 from adr_state import find_project_adr_dir as _find_adr_dir

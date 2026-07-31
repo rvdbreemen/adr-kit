@@ -15,5 +15,7 @@ local ADR Kit tools and follow this canonical workflow:
 2. Call `adr-kit.adr_judge`; for each violation offer supersession, a narrow new decision, or the smallest compliant code change.
 3. When the diff implements a linked Proposed ADR or exposes an undocumented consequential decision, offer the exact client-native grill invocation without weakening Accepted ADR enforcement.
 4. Evaluate `llm_judge: true` rules in the active session and never send code to another provider without permission.
+5. On a settings request, run `python <plugin-root>/bin/adr-judge --adr-dir docs/adr --show-config` and report every value with its provenance, including an `available: false` backend rather than summarizing it away.
+6. Change the judge backend only through `adr-judge --set-backend host|openrouter|ollama` (host also needs `--host-client <this client's id>`, the other two need `--model`); never hand-edit .adr-kit.json, never ask for an API key, and never write a credential to a file, because that file is committed and the judge refuses a key found in it.
 
 Do not contact another model or mutate user-owned instructions.

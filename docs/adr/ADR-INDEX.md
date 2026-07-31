@@ -6,7 +6,7 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 
 | ADR | Status | Scope | Decision |
 | --- | --- | --- | --- |
-| ADR-001 | Accepted | - | Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init: |
+| ADR-001 | Superseded | - | Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init: |
 | ADR-002 | Accepted | - | Implement the ADR Guardian as a dumb SessionStart detector plus in-session smart sweep, with two-tier cadence and no... |
 | ADR-003 | Superseded | - | Keep the canonical seven-section template as the only storage format. |
 | ADR-004 | Accepted | - | Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo... |
@@ -20,3 +20,6 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-012 | Accepted | - | Chosen: the documented-runbook-plus-tag-triggered-gate option. |
 | ADR-013 | Accepted | - | Chosen: the declarative registry with a writer. |
 | ADR-014 | Accepted | - | Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain... |
+| ADR-015 | Accepted | `tests/fixtures/cli/latency-corpus.json` | Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool... |
+| ADR-016 | Accepted | `{bin,codex/bin,copilot/bin}/adr-mcp`, `tests/test_adr_mcp.py` | Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc... |
+| ADR-017 | Accepted | `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}` | Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a... |

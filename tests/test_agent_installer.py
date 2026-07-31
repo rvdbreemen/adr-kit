@@ -697,3 +697,116 @@ def test_stale_lock_is_recovered_and_interruption_is_evidenced(tmp_path):
         (tmp_path / "evidence" / "copilot-last-transaction.json").read_text()
     )
     assert evidence["status"] == "rolled-back"
+
+
+# ---------------------------------------------------------------------------
+# TASK-51: a failed install must not leave the marketplace registered
+# ---------------------------------------------------------------------------
+
+
+class _HalfInstallRunner:
+    """CLI stand-in where marketplace ops succeed but `plugin install` fails.
+
+    This is the shape reported in TASK-51 during the 0.39.0 local publish: the
+    Copilot marketplace ended up registered at the new version while
+    `copilot plugin list` said "No plugins installed".
+    """
+
+    def __init__(self, client: str) -> None:
+        self.client = client
+        self.calls: list[list[str]] = []
+
+    def __call__(self, command):
+        self.calls.append(list(command))
+        joined = " ".join(command)
+        if "marketplace" in joined and "list" in joined:
+            empty = {"claude": "[]", "codex": '{"marketplaces": []}', "copilot": ""}
+            return subprocess.CompletedProcess(command, 0, empty[self.client], "")
+        if "plugin" in joined and "list" in joined:
+            empty = {
+                "claude": "[]",
+                "codex": '{"installed": []}',
+                "copilot": "No plugins installed\n",
+            }
+            return subprocess.CompletedProcess(command, 0, empty[self.client], "")
+        if "marketplace" in joined and ("add" in command or "remove" in command):
+            return subprocess.CompletedProcess(command, 0, "ok", "")
+        if "install" in command or "add" in command:
+            return subprocess.CompletedProcess(command, 1, "", "install failed: boom")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def issued(self, *fragments: str) -> bool:
+        return any(all(f in " ".join(c) for f in fragments) for c in self.calls)
+
+
+@pytest.mark.parametrize("client_name", ["claude", "codex", "copilot"])
+def test_failed_install_removes_a_marketplace_this_run_registered(tmp_path, client_name):
+    """A half-registered marketplace is worse than a clean failure.
+
+    The generic transaction rollback cannot cover this case: it restores the
+    PREVIOUS prepared source, so it is a no-op when no `<source>.old` exists --
+    which is precisely a first install. Only the installer knows it registered
+    the marketplace, so the undo lives there.
+    """
+    from clients.installer import native
+
+    source = tmp_path / "prepared"
+    (source / "codex" / ".codex-plugin").mkdir(parents=True)
+    (source / "codex" / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"version": "0.39.0"}), encoding="utf-8"
+    )
+    client = native.Client(name=client_name, executable=client_name, version="1.0.0")
+    runner = _HalfInstallRunner(client_name)
+
+    with pytest.raises(RuntimeError, match="install failed: boom"):
+        native.INSTALLERS[client_name](
+            client, source, False, runner, desired_version="0.39.0"
+        )
+
+    assert runner.issued("marketplace", "add"), "precondition: this run registered it"
+    assert runner.issued("marketplace", "remove"), (
+        f"{client_name}: marketplace left registered after a failed install"
+    )
+    # The undo must come after the failure, not replace it.
+    add_at = next(i for i, c in enumerate(runner.calls) if "add" in c and "marketplace" in " ".join(c))
+    remove_at = next(i for i, c in enumerate(runner.calls) if "remove" in c and "marketplace" in " ".join(c))
+    assert remove_at > add_at
+
+
+@pytest.mark.parametrize("client_name", ["claude", "codex", "copilot"])
+def test_failed_install_keeps_a_marketplace_it_did_not_register(tmp_path, client_name):
+    """Only undo what this run did: a pre-existing registration is not ours."""
+    from clients.installer import native
+
+    source = tmp_path / "prepared"
+    (source / "codex" / ".codex-plugin").mkdir(parents=True)
+    (source / "codex" / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"version": "0.39.0"}), encoding="utf-8"
+    )
+    client = native.Client(name=client_name, executable=client_name, version="1.0.0")
+
+    marketplace = native.MARKETPLACES[client_name]
+    listings = {
+        "claude": json.dumps([{"name": marketplace, "source": {"source": str(source)}}]),
+        "codex": json.dumps({"marketplaces": [{"name": marketplace, "source": str(source)}]}),
+        "copilot": f"{marketplace}  {source}\n",
+    }
+
+    class _PreRegistered(_HalfInstallRunner):
+        def __call__(self, command):
+            joined = " ".join(command)
+            if "marketplace" in joined and "list" in joined:
+                self.calls.append(list(command))
+                return subprocess.CompletedProcess(command, 0, listings[self.client], "")
+            return super().__call__(command)
+
+    runner = _PreRegistered(client_name)
+    with pytest.raises(RuntimeError):
+        native.INSTALLERS[client_name](
+            client, source, False, runner, desired_version="0.39.0"
+        )
+
+    assert not runner.issued("marketplace", "add"), "precondition: already registered"
+    assert not runner.issued("marketplace", "remove"), (
+        f"{client_name}: removed a marketplace this run did not register"
+    )

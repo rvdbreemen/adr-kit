@@ -253,42 +253,78 @@ Run the `install-hooks` skill (or do its work inline if delegating is awkward):
 3. If the project already has a `.githooks/pre-commit`, do NOT overwrite. Read both. Tell the user the existing hook content. Ask: `prepend adr-kit check before existing hook | replace | abort install`. On `prepend`, write a wrapper that runs adr-kit then exec's the original (saved as `.githooks/pre-commit.adr-kit-saved`).
 4. Run `git config core.hooksPath .githooks` once. Confirm with `git config --get core.hooksPath`.
 
-### 4a — Interactive LLM opt-in (new in v0.17.0)
+### 4a — Choose the judge backend (ADR-017)
 
-The hook installs, but the per-commit LLM passes are **OFF by default**. The declarative regex/glob gate is always-on and free.
+The declarative Enforcement gate is always-on, deterministic and free. The LLM pass is **on by default** and needs one decision from the user: which model reviews their commits.
 
-Print this notice first:
-
-```
-[adr-kit] Per-commit LLM judging (claude-sonnet-4-6) adds up to 2 Sonnet calls
-per commit (adr-judge + adr-suggest), each with a 120s timeout. Estimated cost:
-$0.10–$0.30 per commit on a typical project. The declarative Enforcement gate is
-always-on and costs nothing. LLM review is always available on demand via
-/adr-kit:judge and `adr-judge --llm`.
-```
-
-Then ask two questions (default No for both):
-
-1. `Enable per-commit LLM judging (claude-sonnet-4-6) for llm_judge:true ADRs? (y/N)`
-2. `Enable per-commit ADR-suggest nudges? (y/N)`
-
-Write the answers into `docs/adr/.adr-kit.json` (create if absent, merge if present):
-
-```json
-{
-  "judge": { "llm_enabled": <true|false> },
-  "suggest": { "enabled": <true|false> }
-}
-```
-
-Write the file even when both are declined (both `false`) — explicit configuration is better than absent-and-defaulting. Tell the user:
+Print this notice first, verbatim. Do not shorten the cost paragraph and do not name a specific model — no model is pinned any more.
 
 ```
-[adr-kit] LLM judging: <enabled|disabled>. Suggest: <enabled|disabled>.
-LLM review is always available on demand: /adr-kit:judge or ADR_KIT_LLM=1 git commit ...
+[adr-kit] The pre-commit judge runs two passes.
+
+  Declarative gate  always on, regex and globs, no model, no cost.
+  LLM pass          on by default, for ADRs you mark `llm_judge: true`.
+
+What the LLM pass costs: ONE model call per llm_judge ADR, on every commit that
+touches its scope, every time. The calls are deliberately isolated from each
+other -- a shared prompt let one ADR's text flip another ADR's verdict -- so the
+cost is LINEAR in the number of opted-in ADRs and is not amortised across them.
+No ADR carries `llm_judge: true` until an author adds it, so a fresh project
+pays nothing until someone opts a decision in.
+
+Where that call goes is your choice:
+
+  1. host        the CLI of the agent you already use. No model flag is passed,
+                 so your own configured model answers, and no extra credential
+                 is needed beyond the agent you are already signed in to.
+  2. openrouter  any model, over HTTPS. Needs OPENROUTER_API_KEY in your
+                 environment. adr-kit will never store a key in the repository.
+  3. ollama      a local model. Nothing leaves the machine. Measured at ~3.4s
+                 per call on a 12B model, so commits get noticeably slower.
+
+Any backend that is unavailable degrades to declarative-only and never blocks a
+commit.
 ```
 
-Print the final one-liner: `Pre-commit ADR judge installed (declarative gate always-on; LLM passes opt-in). Disable a single commit with ADR_KIT_HOOK_DISABLE=1 git commit ...; enable LLM for one commit with ADR_KIT_LLM=1 git commit ...; remove permanently with /adr-kit:install-hooks --uninstall.`
+Then ask: `Judge backend? [1] host  [2] openrouter  [3] ollama  [4] turn the LLM pass off (1)`
+
+Apply the answer with the kit's own command — do **not** hand-write the JSON, because the command validates what it wrote and refuses an incomplete choice. Resolve the plugin path first if it is not already in scope from step 1a:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+```
+
+- **host** — you know which client you are running in, because you are reading this client's copy of this skill. Pass that id:
+  ```bash
+  "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend host --host-client claude-code-cli
+  ```
+  Each client's copy of this skill names its own id: this one is `claude-code-cli`. The judge cannot work this out at commit time — a `git commit` happens whether or not any agent is running — which is why it is recorded now, into the gitignored `docs/adr/.adr-kit.local.json`, while it is known with certainty.
+- **openrouter** — ask for a `provider/model` slug (e.g. `anthropic/claude-sonnet-4.5`), then:
+  ```bash
+  "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend openrouter --model <slug>
+  ```
+  **Never ask the user for their API key and never write one anywhere.** `docs/adr/.adr-kit.json` is committed, so a key written there is a published key; the judge refuses one outright. Tell the user to export `OPENROUTER_API_KEY` in their own shell profile.
+- **ollama** — run `ollama list` and offer the tags it actually reports; a tag that is not pulled fails on first use. Then:
+  ```bash
+  "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend ollama --model <tag>
+  ```
+- **off** — merge `{"judge": {"llm_enabled": false}}` into `docs/adr/.adr-kit.json`. Say plainly that the declarative gate still runs and that `/adr-kit:judge` still gives LLM review on demand.
+
+Ignore the local file in version control (idempotent):
+
+```bash
+grep -q "\.adr-kit\.local\.json" .gitignore 2>/dev/null || echo "docs/adr/.adr-kit.local.json" >> .gitignore
+```
+
+Then ask one more question (default No): `Enable per-commit ADR-suggest nudges (a second model call per commit, advisory only)? (y/N)` and merge `{"suggest": {"enabled": <true|false>}}`.
+
+Confirm by showing the resolved configuration rather than by asserting it:
+
+```bash
+"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --show-config
+```
+
+Print the final one-liner: `Pre-commit ADR judge installed (declarative gate always-on; LLM pass on <backend>). Disable a single commit with ADR_KIT_HOOK_DISABLE=1 git commit ...; skip the LLM pass for one commit with ADR_KIT_NO_LLM=1 git commit ...; change the backend later with /adr-kit:judge settings; remove permanently with /adr-kit:install-hooks --uninstall.`
 
 ## Step 5 — Final lint
 
@@ -356,7 +392,7 @@ adr-kit init complete:
 - audit:    <N> candidates → <X> kept, <Y> merged, <Z> dropped
 - ADRs:     <N> created, <M> already present
 - hook:     installed (or already present + reason)
-- llm:      per-commit judging <enabled|disabled>, suggest <enabled|disabled>
+- llm:      backend <host|openrouter|ollama|off>, suggest <enabled|disabled>
 - guardian: <enabled|disabled> (plugin-level | project-scoped | disabled)
 - lint:     <P> PASS, <A> ADVISORY, <F> FAIL
 - scripts:  generated | skipped (user declined)

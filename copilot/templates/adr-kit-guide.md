@@ -1,4 +1,4 @@
-<!-- adr-kit-guide v0.42.0 -->
+<!-- adr-kit-guide v0.43.0 -->
 <!-- Canonical project-side ADR guide. Copied from the plugin's templates/adr-kit-guide.md to .claude/adr-kit-guide.md by /adr-kit:init, /adr-kit:upgrade, and /adr-kit:setup. -->
 <!-- This file is plain markdown — readable by Claude Code, headless `claude -p`, shell scripts in pre-commit hooks, evaluator scripts, and any agent that doesn't process @-imports. Do not embed Claude-Code-specific syntax inside this file. -->
 
@@ -17,7 +17,7 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 | Mode | When | Entry point |
 |---|---|---|
 | **Init / bootstrap** | Once per project: scan source + docs, propose a starter ADR set, hook the kit into `CLAUDE.md`, install the pre-commit hook | `/adr-kit:init` |
-| **Per-commit verification** | Every `git commit`: declarative-rule check (always-on, free). Claude Sonnet LLM judge for `llm_judge: true` ADRs is opt-in as of v0.17.0 (enable via `judge.llm_enabled:true` or `ADR_KIT_LLM=1`). Falls back to declarative-only when the `claude` CLI is unavailable | `.githooks/pre-commit` (auto) |
+| **Per-commit verification** | Every `git commit`: declarative-rule check (always-on, free). The LLM judge for `llm_judge: true` ADRs is **on by default** as of v0.43.0 (ADR-017) and runs on the host agent's own model, with no model pinned. Falls back to declarative-only when the backend is unavailable | `.githooks/pre-commit` (auto) |
 | **On-demand invocation** | Mid-session: write or grill an ADR, judge a staged diff, supersede an existing decision | `/adr-kit:adr`, `/adr-kit:grill`, `/adr-kit:judge`, `adr-generator` subagent |
 | **Guardian (v0.18+)** | Periodic staleness detector at SessionStart; in-session model runs due health tiers | `bin/adr-guardian` (hook, free) + `/adr-kit:guardian` (sweep) |
 
@@ -141,7 +141,7 @@ Optional `## Enforcement` section at the end of an ADR. Fenced JSON code block, 
 **Rules:**
 - `forbid_pattern` — regex must NOT match any added line in the diff (lines starting with `+`, excluding `+++ ` markers).
 - `forbid_import` — same engine as `forbid_pattern`; the separate name documents intent.
-- `require_pattern` — regex must match at least once in the post-diff content of any file matching `path_glob`.
+- `require_pattern` — regex must match at least once in the post-image of any file matching `path_glob`, read from the snapshot named by `--snapshot`. `staged` reads the git index (what the pre-commit hook uses), `worktree` reads the checked-out file. Under `--snapshot diff` a *modified* file's post-image cannot be rebuilt from a unified diff, which shows only the changed hunks — that case is reported as an **advisory** and does not block, because it is a fact about the invocation rather than about the code. A deleted or unstaged file, and an unreadable or unsafe path, still fail closed.
 - `llm_judge: true` — the optional LLM pass evaluates the diff against the
   semantic decision text (`## Decision Outcome` in MADR, `## Decision` in
   Nygard/canonical). The pass is opt-in (`judge.llm_enabled:true` or
@@ -156,16 +156,16 @@ Optional `## Enforcement` section at the end of an ADR. Fenced JSON code block, 
 After `/adr-kit:init` (or `/adr-kit:install-hooks`), every `git commit` runs `bin/adr-judge` on the staged diff with two passes:
 
 - **Declarative pass** — always-on; fast, regex-only, no LLM. A violation exits non-zero and blocks the commit.
-- **LLM pass (Sonnet, opt-in as of v0.17.0)** — all `llm_judge: true` ADRs are batched into one `claude -p --model claude-sonnet-4-6` call. Sonnet returns a per-ADR JSON verdict; any `VIOLATION` blocks the commit with the model's one-sentence reason. Falls back gracefully when the `claude` CLI is missing or unauthenticated — never blocks a legitimate commit due to tooling drift.
+- **LLM pass (on by default as of v0.43.0, ADR-017)** — each `llm_judge: true` ADR gets its **own isolated call**; they are never batched. Batching was reversed deliberately: a shared prompt let one ADR's Decision text flip another ADR's verdict, reproduced three times out of three, and the forged pass was indistinguishable from a genuine one. The model is resolved from the host agent (`judge.backend`), not pinned. Any `VIOLATION` blocks the commit with the model's one-sentence reason. An unavailable backend degrades to declarative-only and never blocks a legitimate commit.
 
-**Cost shape** (typical project, 50 `llm_judge` ADRs, small diff): roughly $0.10–0.30 per commit on Sonnet 4.6 with prompt caching. Latency 5–10s. Configurable via `judge.llm_model` / `judge.llm_timeout_seconds` / `judge.llm_cmd` in `docs/adr/.adr-kit.json`.
+**Cost shape.** Since per-ADR isolation replaced batching, cost and latency are **linear in the number of `llm_judge: true` ADRs** — one model call each, not one call total. The old figure (roughly $0.10–0.30 per commit for 50 ADRs on one batched call) no longer holds and would under-estimate a large set by an order of magnitude. The mitigating fact is that `llm_judge` defaults to `false`, so the population is empty until an author opts an ADR in. Select the backend with `python bin/adr-judge --set-backend {host,openrouter,ollama}`; inspect the effective settings with `--show-config`.
 
 **Knobs:**
-- Enable LLM pass per commit: `ADR_KIT_LLM=1 git commit -m "…"`
-- Enable LLM pass project-wide: set `judge.llm_enabled: true` in `docs/adr/.adr-kit.json`
+- The LLM pass is on by default; `judge.llm_enabled: false` in `docs/adr/.adr-kit.json` turns it off project-wide.
+- Re-enable it for one commit after that: `ADR_KIT_LLM=1 git commit -m "…"`
 - Disable LLM pass per commit: `ADR_KIT_NO_LLM=1 git commit -m "…"`
 - Disable hook entirely per commit: `ADR_KIT_HOOK_DISABLE=1 git commit -m "…"`
-- Switch model: set `judge.llm_model: "claude-haiku-4-5"` in `.adr-kit.json` for higher throughput at lower cost.
+- Switch backend or model: `python bin/adr-judge --set-backend openrouter --model <provider/model>` (or `ollama --model <tag>`). `judge.llm_model` and `judge.llm_cmd` are deprecated and ignored: repository-tracked config may select among backends but may never supply a command, endpoint or credential (ADR-017).
 - Remove permanently: `/adr-kit:install-hooks --uninstall`
 
 ## Supersession (changing a decision)
@@ -174,9 +174,16 @@ Accepted ADRs are immutable. To change a decision:
 
 1. Author a new ADR with the next number. Status `Proposed`. The Decision should explain what changes and why now.
 2. In its Related Decisions: `Supersedes ADR-OLD`.
-3. After the new ADR is `Accepted`: edit the old ADR's Status line to `Superseded by ADR-NEW, YYYY-MM-DD.` and append that transition to its `## Status History`. Leave every other section and all earlier history entries untouched: the old decision's content is the historical record.
+3. Accept the new ADR: `bin/adr accept ADR-NEW --changed-by "User: <name>"`.
+4. Link both sides: `bin/adr supersede ADR-OLD --by ADR-NEW --changed-by "User: <name>"`.
+
+**Use the commands; do not hand-edit the old ADR.** `bin/adr supersede` writes the old ADR's Status line, its `superseded_by`, its Status History entry, the new ADR's `supersedes`, and regenerates all three indexes — as one transaction that rolls back on failure. Doing it by hand means getting five coupled edits right, and the failure mode is silent: a half-written link passes nothing and blocks acceptance later with an error that points at the wrong file.
+
+Steps 3 and 4 may run in either order. Accepting first is the safer habit, because a successor that claims nothing cannot be half-linked to anything.
 
 Never edit Decision, Context, Consequences, or Alternatives of an Accepted/Deprecated ADR. Only the Status line and an appended Status History transition may change.
+
+**One thing the commands cannot recover.** An ADR authored before the `## Status History` convention has its acceptance date in the Status line and nowhere else. The lifecycle commands seed a recovered entry from that line before replacing it, recording `changed_by: unknown` and `changed_via: unrecorded` rather than inventing a signer. If the Status line does not yield both a status and a date, the command refuses instead of writing a history that silently omits the earlier transition — fix the line, then re-run.
 
 ## Code review checks
 
@@ -288,6 +295,24 @@ records, then open the linked Markdown ADR before applying its decision.
   }
 }
 ```
+
+## MCP server (`bin/adr-mcp`)
+
+A hand-rolled Model Context Protocol server on stdio, stdlib-only with zero runtime dependencies. It exposes five read-only tools — `adr_context`, `adr_judge`, `adr_status`, `adr_quality`, `adr_readiness` — each a subprocess call into a sibling `bin/` script. `adr-suggest` is deliberately not exposed: it is LLM-only, and this server stays key-free.
+
+**Both protocol eras are served from one process** (ADR-016), because clients in the wild speak either:
+
+| Era | Reached through | Result shape |
+|---|---|---|
+| handshake (`2024-11-05` … `2025-11-25`) | `initialize`, which confirms a declared version or counter-offers `2025-11-25` | unchanged from earlier releases |
+| modern (`2026-07-28`) | `server/discover`, or the reserved `io.modelcontextprotocol/protocolVersion` key in `params._meta` | adds `resultType` and `_meta.serverInfo`; `server/discover` and `tools/list` also carry `ttlMs` and `cacheScope` |
+
+Two properties are worth knowing before changing anything here:
+
+- **Era is a pure function of the single frame.** There is no per-process and no per-connection era state, so the same bytes always get the same answer. Revision `2026-07-28` forbids relying on prior requests over the same connection to establish context, and a lock would mean a byte-identical frame gets two different answers depending on history. The official SDK does lock per connection; ADR-016 deliberately diverges.
+- **`-32022` never appears in a response to `initialize`.** The handshake negotiates by counter-offer, so an unknown or absent version gets `2025-11-25` back rather than an error. `-32022` is modern-era only.
+
+Primary-source notes, including the exact `_meta` key spellings and the error-code allocation, are in `docs/research/2026-07-29-mcp-2026-07-28-revision.md`.
 
 ## Plugin-side deep dives
 

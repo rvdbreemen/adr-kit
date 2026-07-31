@@ -134,6 +134,109 @@ def test_single_file_lints():
     assert out["summary"]["total"] == 1
 
 
+def _write_pair(adr_dir: Path) -> Path:
+    """Write a clean, bidirectionally linked supersession pair; return the successor."""
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    (adr_dir / "ADR-001-old-decision.md").write_text(
+        '---\nid: "ADR-001"\ntitle: "Old Decision"\nstatus: "Superseded"\n'
+        'date: "2026-07-06"\nbinding: false\ngate: null\n'
+        "documents_shipped: false\nverified_in: []\nsupersedes: []\n"
+        'superseded_by: "ADR-002"\n---\n'
+        "# ADR-001 Old Decision\n\n## Status\n\nSuperseded by ADR-002, 2026-07-06.\n",
+        encoding="utf-8",
+    )
+    successor = adr_dir / "ADR-002-new-decision.md"
+    successor.write_text(
+        '---\nid: "ADR-002"\ntitle: "New Decision"\nstatus: "Accepted"\n'
+        'date: "2026-07-06"\nbinding: false\ngate: null\n'
+        "documents_shipped: false\nverified_in: []\nsupersedes:\n"
+        '  - "ADR-001"\nsuperseded_by: null\n---\n'
+        "# ADR-002 New Decision\n\n## Status\n\nAccepted, 2026-07-06.\n\n"
+        "## Related Decisions\n\n- Supersedes ADR-001.\n",
+        encoding="utf-8",
+    )
+    return successor
+
+
+def test_single_file_cannot_resolve_a_cross_reference_without_context(tmp_path):
+    """The scoping TASK-67 describes: one file, so the target resolves to nothing."""
+    successor = _write_pair(tmp_path / "docs" / "adr")
+
+    code, out = run_lint("--gates", "consistency", str(successor))
+
+    assert code == 1
+    summaries = [f["summary"] for f in out["files"][0]["findings"]]
+    assert any("supersedes target ADR-001 not found" in s for s in summaries)
+
+
+def test_context_dir_resolves_cross_references_for_a_single_target(tmp_path):
+    """TASK-67: the directory is lookup context; the verdict stays about one file."""
+    adr_dir = tmp_path / "docs" / "adr"
+    successor = _write_pair(adr_dir)
+
+    code, out = run_lint(
+        "--gates", "consistency", "--context-dir", str(adr_dir), str(successor)
+    )
+
+    assert code == 0, out
+    assert out["summary"]["total"] == 1
+    assert out["files"][0]["file"] == "ADR-002-new-decision.md"
+
+
+def test_context_dir_does_not_leak_an_unrelated_files_findings(tmp_path):
+    """A broken ADR elsewhere in the context directory is not this file's problem."""
+    adr_dir = tmp_path / "docs" / "adr"
+    successor = _write_pair(adr_dir)
+    (adr_dir / "ADR-003-broken-decision.md").write_text(
+        '---\nid: "ADR-003"\ntitle: "Broken Decision"\nstatus: "Superseded"\n'
+        'date: "2026-07-06"\nbinding: false\ngate: null\n'
+        "documents_shipped: false\nverified_in: []\nsupersedes:\n"
+        '  - "ADR-404"\nsuperseded_by: null\n---\n'
+        "# ADR-003 Broken Decision\n\n## Status\n\nSuperseded, 2026-07-06.\n",
+        encoding="utf-8",
+    )
+
+    code, out = run_lint(
+        "--gates", "consistency", "--context-dir", str(adr_dir), str(successor)
+    )
+
+    assert code == 0, out
+    assert out["summary"]["total"] == 1
+    assert "ADR-404" not in json.dumps(out["files"])
+
+
+def test_context_dir_does_not_count_the_target_twice_as_a_duplicate(tmp_path):
+    """The context directory contains the target; identity is the resolved path."""
+    adr_dir = tmp_path / "docs" / "adr"
+    successor = _write_pair(adr_dir)
+
+    result = subprocess.run(
+        [
+            sys.executable, str(ADR_LINT), "--format", "json",
+            "--gates", "consistency",
+            # Relative context dir against an absolute target: the same file
+            # reached by two spellings must still be one file.
+            "--context-dir", "docs/adr", str(successor.resolve()),
+        ],
+        capture_output=True, text=True, encoding="utf-8", cwd=str(tmp_path),
+    )
+    out = json.loads(result.stdout)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert out["summary"]["total"] == 1
+    assert "duplicate" not in json.dumps(out["files"])
+
+
+def test_missing_context_dir_exits_2(tmp_path):
+    successor = _write_pair(tmp_path / "docs" / "adr")
+
+    code, out = run_lint(
+        "--context-dir", str(tmp_path / "nope"), str(successor)
+    )
+
+    assert code == 2
+
+
 def test_human_format_runs():
     """Human format produces non-JSON output and still exits cleanly."""
     result = subprocess.run(

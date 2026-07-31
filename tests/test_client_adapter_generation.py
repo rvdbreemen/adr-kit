@@ -227,3 +227,57 @@ def test_generator_has_no_network_or_runtime_dependency():
     dependencies = json.loads((ROOT / "packaging/dependencies.json").read_text())
     assert dependencies["runtime"] == []
     assert "coverage" not in json.dumps(dependencies["runtime"]).lower()
+
+
+def test_crlf_materialised_tree_is_not_drift_but_content_change_still_is(tmp_path):
+    """A Windows checkout must not read as adapter drift (TASK-57).
+
+    The generator emits LF. With core.autocrlf=true git materialises CRLF for
+    any generated path .gitattributes does not pin, so a byte-exact comparison
+    reported drift on 13 files while `git diff` was empty -- which made the
+    release runbook's drift gate unusable on the Windows certification machine,
+    and whose suggested fix rewrote those files as LF, producing phantom
+    modifications that could mask real drift.
+
+    Only the EOL dimension may be relaxed: a real content change must still be
+    detected, including when it arrives alongside CRLF.
+    """
+    output = tmp_path / "payload"
+    GEN.generate(ROOT, output)
+
+    text_outputs = [
+        p for p in output.rglob("*")
+        if p.is_file() and b"\x00" not in p.read_bytes() and b"\n" in p.read_bytes()
+    ]
+    assert text_outputs, "expected at least one generated text file"
+
+    # 1. Whole tree materialised as CRLF, content otherwise identical.
+    for path in text_outputs:
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    _, drift = GEN.generate(ROOT, output, check=True)
+    assert drift == [], f"CRLF materialisation reported as drift: {drift}"
+
+    # 2. A real content change is still drift, even with CRLF line endings.
+    victim = output / "codex/skills/adr/SKILL.md"
+    victim.write_bytes(victim.read_bytes() + b"hand edit\r\n")
+    _, drift = GEN.generate(ROOT, output, check=True)
+    assert "codex/skills/adr/SKILL.md" in drift, "real drift masked by EOL normalisation"
+
+
+def test_binary_outputs_are_never_eol_normalised():
+    """A CRLF byte pair inside a binary is data, not a line ending.
+
+    Normalising it would make two genuinely different binaries compare equal,
+    so _same_content must refuse to normalise when either side contains NUL --
+    the same binary heuristic git uses.
+    """
+    # Same bytes: equal regardless.
+    assert GEN._same_content(b"\x00a\r\nb", b"\x00a\r\nb")
+    # Differ only by a CRLF pair, but binary: must NOT be treated as equal.
+    assert not GEN._same_content(b"\x00a\r\nb", b"\x00a\nb")
+    # Text differing only by EOL: equal.
+    assert GEN._same_content(b"a\r\nb", b"a\nb")
+    # Text differing in content: not equal.
+    assert not GEN._same_content(b"a\r\nX", b"a\nb")
+    # A missing file is never a match.
+    assert not GEN._same_content(None, b"a\n")

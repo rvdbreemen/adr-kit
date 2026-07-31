@@ -1,5 +1,5 @@
 {
-  "$comment": "Single declarative registry of every place the release version lives. The bump writer (scripts/bump-version.py), the release gate (scripts/check-release-version.py), the client-adapter generator and the test suite all read THIS file, so adding a version-bearing file is a one-line change here instead of edits in three places that can drift. See ADR-012 and docs/RELEASING.md.",
+  "$comment": "Single declarative registry of every place the release version lives. Both bump writers (scripts/bump-version.py and bin/bump-version), the release gate (scripts/check-release-version.py), the client-adapter generator and the test suite all read THIS file, so adding a version-bearing file is a one-line change here instead of edits in three places that can drift. See ADR-012 and docs/RELEASING.md.",
   "schema_version": 1,
   "canonical": {
     "path": "CHANGELOG.md",
@@ -43,6 +43,12 @@
       "kind": "regex",
       "pattern": "(ADR_KIT_WRAPPER_VERSION=\")(\\d+\\.\\d+\\.\\d+)(\")",
       "label": "pre-commit wrapper version stamp"
+    },
+    {
+      "path": ".githooks/pre-commit",
+      "kind": "regex",
+      "pattern": "(ADR_KIT_WRAPPER_VERSION=\")(\\d+\\.\\d+\\.\\d+)(\")",
+      "label": "own pre-commit wrapper stamp (this repo dogfoods the template)"
     },
     {
       "path": "templates/cc-settings/guardian-hook-entry.json",

@@ -8,7 +8,7 @@ These tests do NOT require the pre-commit CLI to be installed.  They smoke-
 test the wrapper's git-diff-to-adr-judge pipe directly.
 """
 
-import locale
+import os
 import subprocess
 import sys
 import textwrap
@@ -120,17 +120,31 @@ def _make_project(tmp_path: Path) -> Path:
 
 
 def _run_wrapper(repo_root: Path) -> subprocess.CompletedProcess:
-    """Invoke the wrapper script in the context of the git repo."""
+    """Invoke the wrapper script in the context of the git repo.
+
+    The child's stream encoding is pinned to UTF-8 rather than inherited, and
+    decoded as UTF-8 to match. Previously the child wrote with whatever
+    PYTHONIOENCODING dictated while this decoded with
+    locale.getpreferredencoding() -- so with PYTHONIOENCODING=utf-8 set in the
+    environment (an ordinary thing to do on Windows, where the console is
+    cp1252), a non-ASCII path came back mojibaked: 'src/é.py' arrived as
+    'src/Ã©.py', the UTF-8 bytes of 'é' read through a cp1252 lens.
+
+    That made the outcome depend on the shell rather than on the code under
+    test. Pinning both ends removes the variable; errors="replace" is kept so a
+    genuinely undecodable byte still yields a readable failure rather than a
+    UnicodeDecodeError inside the harness.
+    """
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
     result = subprocess.run(
         [sys.executable, str(WRAPPER)],
         cwd=str(repo_root),
         capture_output=True,
+        env=env,
     )
-    # Decode with errors="replace" so Windows ANSI / non-UTF-8 bytes don't
-    # cause UnicodeDecodeError in test output.
-    console_encoding = locale.getpreferredencoding(False)
-    result.stdout = result.stdout.decode(console_encoding, errors="replace")
-    result.stderr = result.stderr.decode(console_encoding, errors="replace")
+    result.stdout = result.stdout.decode("utf-8", errors="replace")
+    result.stderr = result.stderr.decode("utf-8", errors="replace")
     return result
 
 
