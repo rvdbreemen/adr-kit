@@ -3,9 +3,10 @@ id: TASK-72
 title: >-
   adr-suggest still pins a model and reads the deprecated judge.llm_model,
   against ADR-017
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-31 04:54'
+updated_date: '2026-07-31 05:49'
 labels:
   - judge
   - adr-017
@@ -16,8 +17,11 @@ references:
   - docs/adr/ADR-017-run-the-llm-judge-by-default-on-the-host-agent-model.md
   - 'bin/adr-judge:590'
 modified_files:
+  - bin/adr_llm.py
   - bin/adr-suggest
+  - bin/adr-judge
   - docs/adr/ADR-017-run-the-llm-judge-by-default-on-the-host-agent-model.md
+  - schemas/adr-kit-config.schema.json
   - tests/test_adr_suggest.py
 priority: high
 ordinal: 77500
@@ -49,10 +53,38 @@ Found by the TASK-59 implementer while closing out the backend registry, and con
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `bin/adr-suggest` resolves its invocation through the same backend registry as `bin/adr-judge`, with no pinned model on the host path
-- [ ] #2 `suggest.llm_cmd` and `judge.llm_cmd` no longer supply an argument vector to adr-suggest; a config containing them is ignored with a warning, matching the judge
-- [ ] #3 An unavailable backend degrades adr-suggest to a no-op that never blocks a commit, matching ADR-001's guarantee as ADR-017 preserves it
-- [ ] #4 ADR-017's Enforcement globs either cover `bin/adr-suggest` or the ADR states explicitly why it is exempt; the current silent gap is closed either way
-- [ ] #5 A regression test proves the pin is gone and that a repo-tracked command in either config key is not executed
-- [ ] #6 The stale comment claiming the shape is 'identical to adr-judge' is corrected or removed
+- [x] #1 `bin/adr-suggest` resolves its invocation through the same backend registry as `bin/adr-judge`, with no pinned model on the host path
+- [x] #2 `suggest.llm_cmd` and `judge.llm_cmd` no longer supply an argument vector to adr-suggest; a config containing them is ignored with a warning, matching the judge
+- [x] #3 An unavailable backend degrades adr-suggest to a no-op that never blocks a commit, matching ADR-001's guarantee as ADR-017 preserves it
+- [x] #4 ADR-017's Enforcement globs either cover `bin/adr-suggest` or the ADR states explicitly why it is exempt; the current silent gap is closed either way
+- [x] #5 A regression test proves the pin is gone and that a repo-tracked command in either config key is not executed
+- [x] #6 The stale comment claiming the shape is 'identical to adr-judge' is corrected or removed
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Done. The agent had not sent a final report when I closed this, so everything below is my own verification against the running code.
+
+**The fix shares code rather than duplicating it.** A new `bin/adr_llm.py` holds the backend registry, and both `bin/adr-judge` and `bin/adr-suggest` load it as a sibling. That is the right call: two divergent registries would have been worse than the single violation this task described, and `bin/adr-suggest:144` records that a copy of this logic is exactly what drifted in the first place.
+
+`bin/adr-suggest` now carries **zero** occurrences of `claude-sonnet-4-6` or `DEFAULT_LLM_CMD`. Its module docstring states the precedence explicitly — `--llm-cmd` > `ADR_KIT_LLM_CMD` > `judge.backend` — and why the split exists: the first two come from the operator running the command, the third from whoever last opened a pull request.
+
+**The three security properties, each verified by attack rather than by reading:**
+
+| Test | Result |
+|---|---|
+| `judge.openrouter_api_key` in committed `.adr-kit.json` | **exit 2**, names `$.judge.openrouter_api_key`, says the key is already published and must be rotated |
+| `judge.backend: openrouter` with no key in the environment | **exit 0** — degrades, never blocks |
+| `suggest.llm_cmd` carrying a real payload that writes a file | **payload never executed** |
+
+That last one is the one worth running rather than reasoning about. I put an actual command vector in the committed config, pointed at a file it would create, and confirmed the file does not exist afterwards. The guarantee "repository-tracked configuration may never introduce a command" now holds at both entry points, not just the judge.
+
+The asymmetry is preserved and is correct: a published credential **blocks**, because it is a user error that has to be seen; an unavailable backend **degrades**, because that is tooling drift and ADR-001's guarantee — which ADR-017 explicitly keeps — is that it never blocks a commit.
+
+**Criterion #4, the enforcement gap, is closed properly.** ADR-017's globs were `{bin,codex/bin,copilot/bin}/adr-judge`, so `bin/adr-suggest` sat outside every rule — the ADR governed it through `components` and enforced nothing, which is precisely how this survived. The globs are now `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}`, and a second rule forbids `DEFAULT_LLM_CMD` in any entry point, with the message pointing at `bin/adr_llm.py` as the only place a command, endpoint or model may live. So the specific mistake this task fixed cannot recur silently in any of the three executables across any of the three distributions.
+
+Editing the Enforcement block of an Accepted ADR is sanctioned here: ADR-016 records that adding a declarative rule later is "a mechanical tightening rather than a change to the decision". No Decision, Context, Consequences or Alternatives text was touched.
+
+**Verification:** `bin/adr-judge --dry-run-enforcement ADR-017` 0/0. Full working-tree diff through the enforcement floor: 0 violations, 0 advisory. `bin/adr-lint --strict docs/adr` 17/17 PASS. Mirrors in sync, `--check` reports changed=0. Full suite **1224 passed, 11 skipped, 0 failed**.</finalSummary>
+<!-- SECTION:FINAL_SUMMARY:END -->

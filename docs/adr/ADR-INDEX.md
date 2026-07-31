@@ -22,4 +22,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-014 | Accepted | - | Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain... |
 | ADR-015 | Accepted | `tests/fixtures/cli/latency-corpus.json` | Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool... |
 | ADR-016 | Accepted | `{bin,codex/bin,copilot/bin}/adr-mcp`, `tests/test_adr_mcp.py` | Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc... |
-| ADR-017 | Accepted | `bin/adr-judge` | Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a... |
+| ADR-017 | Accepted | `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}` | Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a... |

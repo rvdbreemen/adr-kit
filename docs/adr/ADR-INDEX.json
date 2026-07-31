@@ -710,7 +710,7 @@
       },
       "scope": {
         "path_globs": [
-          "bin/adr-judge"
+          "{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}"
         ]
       },
       "metadata": {

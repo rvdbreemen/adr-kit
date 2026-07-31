@@ -12,16 +12,24 @@ CLI, a timeout, a malformed response, or "no decision detected" all resolve to
 exit 0 with (at most) a one-line stderr note. Non-zero exit is reserved for
 genuine usage errors (e.g. a bad --diff path).
 
-The LLM command, env, and config resolution mirror bin/adr-judge exactly:
-  precedence:  --llm-cmd  >  ADR_KIT_LLM_CMD env  >  .adr-kit.json suggest.llm_cmd
-               >  suggest.llm_model  >  judge.llm_cmd  >  judge.llm_model  >  default
-  default:     claude -p --model claude-sonnet-4-6
+The model is resolved through the SAME backend registry as bin/adr-judge
+(bin/adr_llm.py, ADR-017) — there is no pinned model and no default vendor:
+  precedence:  --llm-cmd  >  ADR_KIT_LLM_CMD env  >  judge.backend
+  judge.backend: host (default; the client CLI the installer recorded, with no
+                 model flag) | openrouter | ollama
+
+Repository-tracked `suggest.llm_cmd` / `judge.llm_cmd` / `*.llm_model` are read
+only to warn that they are ignored (TASK-72): docs/adr/.adr-kit.json is
+committed, so honouring them let repository content choose the binary this
+script executes. --llm-cmd and ADR_KIT_LLM_CMD stay unrestricted because those
+come from the operator running the command, not from whoever last opened a
+pull request.
 
 Usage:
   git diff --cached --unified=0 | adr-suggest          # default: stdin, docs/adr
   adr-suggest --diff <file>                             # read diff from a file
   adr-suggest --json                                    # emit parsed result to stdout
-  adr-suggest --llm-cmd "claude -p ..."                 # override the LLM invocation
+  adr-suggest --llm-cmd "claude -p"                     # operator override
   adr-suggest --adr-dir docs/decisions                  # non-default ADR location
   adr-suggest --diff <file> --intent-file <file>        # add commit/PR text as context
 """
@@ -36,9 +44,6 @@ import io
 import json
 import os
 import re
-import shlex
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -69,39 +74,34 @@ def _load_sibling(name: str):
 
 
 # Dependency order: adr_catalog imports adr_format and adr_schema;
-# adr_config is standalone.
+# adr_config and adr_llm are standalone.
 _load_sibling("adr_format")
 _load_sibling("adr_schema")
 _load_sibling("adr_catalog")
-_load_sibling("adr_config")
+_adr_config = _load_sibling("adr_config")
+_adr_llm = _load_sibling("adr_llm")
+_adr_llm.TOOL = "adr-suggest"
 
 from adr_catalog import adr_id_from_filename
 from adr_format import section_text
 from adr_config import ConfigValidationError, load_validated_config
 
-# Default LLM invocation — identical shape to adr-judge. Overridable via
-# --llm-cmd, ADR_KIT_LLM_CMD env, or .adr-kit.json suggest.llm_cmd / judge.llm_cmd.
-# Tests inject a fake binary here.
-DEFAULT_LLM_CMD = ["claude", "-p", "--model", "claude-sonnet-4-6"]
+# The model comes from the shared backend registry (bin/adr_llm.py, ADR-017),
+# not from a constant here. This script used to carry its own default command
+# vector naming one vendor CLI and one pinned model tag, so a user working in
+# Codex or Copilot got a judge that matched their agent and a suggester that
+# silently called Claude on a model they had not chosen (TASK-72). ADR-017
+# names adr-suggest in its `components`, so the rule applies here in full:
+# config selects a backend by name, and every command, endpoint and model lives
+# on the code side of that line. The vector itself is quoted in TASK-72 and in
+# ADR-017's Context rather than here, because the Enforcement block now forbids
+# that literal in this file and prose is not a licence to reintroduce it.
 DEFAULT_LLM_TIMEOUT_S = 120
 
 # Cap for --intent-file content embedded in the prompt (v0.21+). Commit logs and
 # PR bodies can be arbitrarily long; the decision signal is almost always in the
 # first few KB. Truncation keeps the prompt (and cost) bounded.
 INTENT_MAX_CHARS = 8000
-
-# SEC-HIGH: only these binaries may be specified via repo-tracked .adr-kit.json
-# (suggest.llm_cmd / judge.llm_cmd). Env (ADR_KIT_LLM_CMD) and CLI (--llm-cmd)
-# remain unrestricted because those are operator-controlled, not arbitrarily
-# checked in by collaborators. Mirrors adr-judge's allowlist.
-_LLM_CMD_ALLOWLIST = {
-    "claude",
-    "claude-code",
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "claude-haiku-4-5-20251001",
-}
 
 # Documentation / non-decision paths. A diff touching ONLY these is skipped
 # without an LLM round-trip — they cannot carry an architectural decision worth
@@ -137,10 +137,12 @@ class SuggestError(Exception):
 
 # ---------- helpers copied from adr-judge (kept self-contained on purpose) ----------
 #
-# adr-kit bins are standalone scripts with no shared importable module (they are
-# extension-less files loaded directly). Rather than introduce a fragile import
-# hack, we copy the minimal helpers verbatim so adr-suggest runs anywhere
-# adr-judge does. Keep these in sync if adr-judge's equivalents change.
+# The diff/ADR parsing helpers below are still copies: adr-kit bins are
+# extension-less scripts loaded directly, and duplicating three small pure
+# functions beats an import hack. Keep them in sync if adr-judge's equivalents
+# change. Anything that decides WHICH MODEL IS CALLED is the exception — that
+# now lives in the shared bin/adr_llm.py, because a copy of it drifted (TASK-72)
+# and drift in that particular code is a security property going quiet.
 
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 DECISION_SECTION_RE = re.compile(
@@ -148,27 +150,6 @@ DECISION_SECTION_RE = re.compile(
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
 HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
-
-
-def _split_cmd(cmd_str: str) -> List[str]:
-    """Split a shell command string into a token list, Windows-path-safe.
-
-    shlex.split uses POSIX mode by default, which treats backslashes as escape
-    characters. On Windows this mangles paths like C:\\Users\\... -> C:Users...
-    before shutil.which ever sees them. Using posix=False preserves backslashes;
-    we strip surrounding quote pairs that posix=False would otherwise keep.
-    """
-    tokens = shlex.split(cmd_str, posix=(sys.platform != "win32"))
-    if sys.platform == "win32":
-        stripped = []
-        for t in tokens:
-            if len(t) >= 2 and (
-                (t[0] == '"' and t[-1] == '"') or (t[0] == "'" and t[-1] == "'")
-            ):
-                t = t[1:-1]
-            stripped.append(t)
-        return stripped
-    return tokens
 
 
 def glob_to_regex(glob: str) -> re.Pattern:
@@ -267,11 +248,42 @@ def extract_decision(body: str) -> str:
 
 
 def load_config(path: Optional[Path]) -> Dict:
-    """Read and schema-validate .adr-kit.json; return defaults when missing."""
+    """Read and schema-validate .adr-kit.json; return defaults when missing.
+
+    A credential in the committed file is refused by name before validation,
+    with the same sentence adr-judge raises. Note the asymmetry this creates,
+    which is deliberate: an unavailable backend degrades quietly to exit 0
+    because tooling drift must never cost a user their commit, but a published
+    key exits 2, because that is the user's own mistake and staying quiet about
+    it would leave the key in the repository.
+    """
+    offenders = _credential_keys_in(path)
+    if offenders:
+        raise SuggestError(_adr_llm.credential_refusal_message(path, offenders))
     try:
         return load_validated_config(path)
     except ConfigValidationError as exc:
         raise SuggestError(str(exc)) from exc
+
+
+def _credential_keys_in(path: Optional[Path]) -> List[str]:
+    """Credential-shaped keys in the raw config, before schema validation."""
+    if path is None or not path.exists():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []  # load_validated_config reports the real parse error.
+    return _adr_llm.find_credential_keys(raw)
+
+
+def load_local_config(adr_dir: Path) -> Dict:
+    """Read the machine-local, gitignored companion to .adr-kit.json.
+
+    Fail-open by design: it records which client the operator installed for,
+    and a corrupt one must degrade the suggestion pass, never break it.
+    """
+    return _adr_config.load_json_config(adr_dir / _adr_llm.LOCAL_CONFIG_NAME)
 
 
 def collect_adrs(adr_dir: Path) -> List[Tuple[str, Path, str]]:
@@ -492,83 +504,55 @@ def parse_suggest_response(raw: str) -> Optional[Dict]:
 
 def run_llm_suggest(
     prompt: str,
-    llm_cmd: List[str],
+    backend,
     timeout_s: int,
 ) -> Optional[Dict]:
-    """Run the detector LLM call. Returns the parsed result dict, or None.
+    """Run the detector call on `backend`. Returns the parsed result, or None.
 
-    None means "skip gracefully": missing CLI, timeout, non-zero exit, or
+    None means "skip gracefully": no backend resolved, an unavailable one, a
+    timeout, a non-zero exit, an HTTP error, an unreachable daemon, or
     unparseable output. The caller turns None into exit 0 with a stderr note —
-    a suggestion engine must never block a commit.
+    a suggestion engine must never block a commit (ADR-001's guarantee, which
+    ADR-017 explicitly retains).
+
+    Every one of those faults is already funnelled to None by the backend
+    itself, so this function has no error handling of its own: adding a second
+    layer would only create somewhere for an exception to escape from.
     """
-    binary = llm_cmd[0]
-    if shutil.which(binary) is None:
+    if backend is None:
         return None
-    try:
-        result = subprocess.run(
-            llm_cmd,
-            input=prompt,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=timeout_s,
-        )
-    except subprocess.TimeoutExpired:
+    unavailable = backend.unavailable_reason()
+    if unavailable:
+        print(f"[adr-suggest] (skipped: {unavailable})", file=sys.stderr)
         return None
-    except OSError:
+    raw = backend.judge(prompt, timeout_s, "adr-suggest")
+    if raw is None:
         return None
-    if result.returncode != 0:
-        return None
-    return parse_suggest_response(result.stdout)
+    return parse_suggest_response(raw)
 
 
-def resolve_llm_cmd(args, cfg: Dict) -> List[str]:
-    """Resolve the LLM invocation. Precedence:
+def resolve_backend(args, cfg: Dict, local_cfg: Dict):
+    """Resolve the model to ask, through the shared registry. Precedence:
 
-      --llm-cmd  >  ADR_KIT_LLM_CMD env  >  suggest.llm_cmd  >  suggest.llm_model
-                 >  judge.llm_cmd  >  judge.llm_model  >  DEFAULT_LLM_CMD
+      --llm-cmd  >  ADR_KIT_LLM_CMD env  >  judge.backend
 
-    suggest.* falls back to judge.* so a project that already configured the
-    judge LLM gets the same model for suggestions for free. Repo-tracked
-    *.llm_cmd binaries are allowlist-checked (SEC-HIGH), mirroring adr-judge.
+    Identical to adr-judge because it IS adr-judge's resolver (bin/adr_llm.py).
+    There is no `suggest.backend`: which model the project talks to is a
+    property of the project, not of which of the two tools is asking, and a
+    second key would be a second place for that answer to live.
+
+    Returns (backend_or_None, warnings). Repo-tracked suggest.llm_cmd /
+    suggest.llm_model are reported as ignored here rather than honoured — this
+    file is committed, so honouring them let repository content pick the binary
+    this script executes (ADR-017 Must Not, TASK-72).
     """
-    if args.llm_cmd:
-        return _split_cmd(args.llm_cmd)
-    if os.environ.get("ADR_KIT_LLM_CMD"):
-        return _split_cmd(os.environ["ADR_KIT_LLM_CMD"])
-
     suggest_cfg = cfg.get("suggest") or {}
     judge_cfg = cfg.get("judge") or {}
-
-    # suggest.llm_cmd, then judge.llm_cmd — both allowlist-checked.
-    for source_cfg, source_name in ((suggest_cfg, "suggest"), (judge_cfg, "judge")):
-        raw_cfg_cmd = source_cfg.get("llm_cmd")
-        if raw_cfg_cmd:
-            candidate = (
-                list(raw_cfg_cmd)
-                if isinstance(raw_cfg_cmd, list)
-                else _split_cmd(raw_cfg_cmd)
-            )
-            cfg_binary = Path(candidate[0]).name if candidate else ""
-            cfg_binary_stem = Path(candidate[0]).stem if candidate else ""
-            if cfg_binary in _LLM_CMD_ALLOWLIST or cfg_binary_stem in _LLM_CMD_ALLOWLIST:
-                return candidate
-            print(
-                f"[adr-suggest] WARN: repo config {source_name}.llm_cmd[0]="
-                f"{cfg_binary!r} is not in the allowed list. Ignoring repo "
-                f"config — use env ADR_KIT_LLM_CMD or --llm-cmd to override.",
-                file=sys.stderr,
-            )
-            # Fall through to model / default — do not honour the unsafe cmd.
-            break
-
-    # suggest.llm_model, then judge.llm_model — keep the default `claude -p` shape.
-    for source_cfg in (suggest_cfg, judge_cfg):
-        model = source_cfg.get("llm_model")
-        if model:
-            return ["claude", "-p", "--model", str(model)]
-
-    return list(DEFAULT_LLM_CMD)
+    warnings = _adr_llm.legacy_command_warnings(suggest_cfg, "suggest")
+    backend, judge_warnings = _adr_llm.resolve_llm_backend(
+        judge_cfg, local_cfg, args.llm_cmd, dict(os.environ)
+    )
+    return backend, warnings + judge_warnings
 
 
 def resolve_llm_timeout(args, cfg: Dict) -> int:
@@ -651,8 +635,10 @@ def main() -> int:
     p.add_argument(
         "--llm-cmd",
         default=None,
-        help="Override the LLM invocation. Default: 'claude -p --model "
-        "claude-sonnet-4-6'. Tests inject a fake binary here.",
+        help="Operator override for the LLM invocation, unrestricted because "
+        "it comes from whoever runs the command. Without it the backend comes "
+        "from judge.backend (default 'host': the client CLI recorded at "
+        "install time, with no model flag). Tests inject a fake binary here.",
     )
     p.add_argument(
         "--llm-timeout",
@@ -740,10 +726,13 @@ def main() -> int:
         adr_list = build_adr_list(adrs)
         prompt = build_suggest_prompt(adr_list, diff_text, intent_text)
 
-        llm_cmd = resolve_llm_cmd(args, cfg)
+        local_cfg = load_local_config(adr_dir)
+        backend, backend_warnings = resolve_backend(args, cfg, local_cfg)
+        for warning in backend_warnings:
+            print(f"[adr-suggest] WARN: {warning}", file=sys.stderr)
         llm_timeout_s = resolve_llm_timeout(args, cfg)
 
-        result = run_llm_suggest(prompt, llm_cmd, llm_timeout_s)
+        result = run_llm_suggest(prompt, backend, llm_timeout_s)
         if result is None:
             if args.json:
                 # Nothing parseable — emit a neutral, machine-readable skip.

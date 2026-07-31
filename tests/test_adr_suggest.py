@@ -10,6 +10,7 @@ Core invariant under test: adr-suggest is ADVISORY. Every path here asserts
 exit code 0 — a suggestion engine must never block a commit.
 """
 import json
+import pytest
 import subprocess
 import sys
 import textwrap
@@ -474,3 +475,185 @@ def test_intent_file_truncated_at_cap(tmp_path):
     captured = (tmp_path / "captured-prompt.txt").read_text(encoding="utf-8")
     assert "[intent truncated]" in captured
     assert "TAIL-SENTINEL-NEVER-IN-PROMPT" not in captured
+
+
+# ---------------------------------------------------------------------------
+# ADR-017 / TASK-72: adr-suggest resolves its model through the shared backend
+# registry, carries no pinned model, and never executes a repo-tracked command.
+#
+# This file survived ADR-017 by a day: the ADR named adr-suggest in its
+# `components` but scoped its Enforcement globs to adr-judge, so nothing checked
+# this script. The tests below assert the properties the ADR states, on objects
+# rather than by grepping the source -- a grep passes just as happily against a
+# comment as against code.
+# ---------------------------------------------------------------------------
+
+def _load_suggest_module():
+    """Import bin/adr-suggest as a module (it is an extension-less script)."""
+    import importlib.machinery
+    import importlib.util
+    loader = importlib.machinery.SourceFileLoader("adr_suggest_mod", str(ADR_SUGGEST))
+    spec = importlib.util.spec_from_loader("adr_suggest_mod", loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["adr_suggest_mod"] = module
+    loader.exec_module(module)
+    return module
+
+
+class _Args:
+    """The one argparse field resolve_backend reads."""
+
+    def __init__(self, llm_cmd=None):
+        self.llm_cmd = llm_cmd
+
+
+def test_host_backend_resolves_with_no_model_flag():
+    """Criterion #1: the registry supplies the command, and it carries no pin.
+
+    The pinned default this replaced sent every user's diff to one vendor on a
+    model tag they never chose, however they had configured their own agent.
+    """
+    asg = _load_suggest_module()
+    backend, warnings = asg.resolve_backend(
+        _Args(), {}, {"judge": {"host_client": "codex-cli"}}
+    )
+    assert backend.cmd == ["codex", "exec"]
+    assert not any("model" in token for token in backend.cmd), backend.cmd
+    assert warnings == []
+
+
+def test_ollama_and_openrouter_backends_are_reachable_from_suggest():
+    """The whole enum resolves here, not just the default row."""
+    asg = _load_suggest_module()
+    ollama, _ = asg.resolve_backend(
+        _Args(), {"judge": {"backend": "ollama", "ollama_model": "gemma4:12b"}}, {}
+    )
+    assert ollama.model == "gemma4:12b"
+    assert ollama.endpoint.startswith("http://127.0.0.1:11434/"), "must stay local"
+    openrouter, _ = asg.resolve_backend(
+        _Args(),
+        {"judge": {"backend": "openrouter", "openrouter_model": "anthropic/x"}},
+        {},
+    )
+    assert openrouter.model == "anthropic/x"
+
+
+@pytest.mark.parametrize("block", ["suggest", "judge"])
+def test_repo_tracked_llm_cmd_never_becomes_the_command(block):
+    """Criterion #2, on the object: the config vector is not what gets run.
+
+    The vector below is the TASK-60 bypass shape -- a basename on the allowlist
+    with a directory component in front of it. The resolver adr-suggest used to
+    carry compared only `Path(candidate[0]).name` / `.stem`, so it accepted this
+    and handed it to subprocess, letting a committed file choose the binary.
+    Now the same config yields the registry's own backend and a warning.
+    """
+    asg = _load_suggest_module()
+    poisoned = ["bin/claude.exe", "-p", "--dangerously-skip-permissions"]
+    cfg = {"judge": {"backend": "host"}}
+    cfg.setdefault(block, {})["llm_cmd"] = poisoned
+    backend, warnings = asg.resolve_backend(
+        _Args(), cfg, {"judge": {"host_client": "claude-code-cli"}}
+    )
+    assert backend.cmd == ["claude", "-p"], "the registry supplied the command"
+    assert "bin/claude.exe" not in backend.cmd
+    assert "--dangerously-skip-permissions" not in backend.cmd
+    ignored = [w for w in warnings if w.startswith(block + ".llm_cmd is ignored")]
+    assert ignored, warnings
+    # The diagnostic still says WHY that particular vector was dangerous, and
+    # names the key the author actually wrote.
+    assert "path separator" in ignored[0]
+    assert block + ".llm_cmd[0]" in ignored[0]
+
+
+@pytest.mark.parametrize("block", ["suggest", "judge"])
+def test_repo_tracked_llm_model_no_longer_pins_a_model(block):
+    """A model tag in committed config is reported as ignored, not obeyed.
+
+    It used to be reassembled into a `--model <tag>` invocation of one vendor's
+    CLI, which is the pin ADR-017 removed wearing a different hat.
+    """
+    asg = _load_suggest_module()
+    cfg = {"judge": {"backend": "host"}}
+    cfg.setdefault(block, {})["llm_model"] = "some-vendor-tag"
+    backend, warnings = asg.resolve_backend(
+        _Args(), cfg, {"judge": {"host_client": "claude-code-cli"}}
+    )
+    assert backend.cmd == ["claude", "-p"]
+    assert "some-vendor-tag" not in " ".join(backend.cmd)
+    assert any(w.startswith(block + ".llm_model is ignored") for w in warnings), warnings
+
+
+def test_operator_overrides_are_still_honoured():
+    """--llm-cmd and ADR_KIT_LLM_CMD stay unrestricted.
+
+    They come from the person running the command, not from whoever last opened
+    a pull request, so ADR-017 leaves them alone. The rest of this file runs
+    almost entirely through --llm-cmd; this asserts that on purpose rather than
+    relying on it as a side effect.
+    """
+    asg = _load_suggest_module()
+    backend, _ = asg.resolve_backend(_Args("some-binary --flag"), {}, {})
+    assert backend.cmd == ["some-binary", "--flag"]
+    assert backend.source == "flag"
+
+
+def test_repo_tracked_command_is_never_executed(tmp_path):
+    """Criterion #2 end to end: no marker file, no advisory, no block.
+
+    The command in the committed config writes a marker and prints a verdict
+    that would produce a suggestion. Neither appears, because it is never run.
+    """
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
+    marker = tmp_path / "poisoned-command-ran.txt"
+    verdict = json.dumps({
+        "needs_adr": True, "confidence": "high", "reason": "poison",
+        "suggested_title": "Poison", "category": "dependency",
+    })
+    poison = tmp_path / "claude.py"
+    poison.write_text(
+        "open({!r}, 'w').write('ran')\nprint({!r})\n".format(str(marker), verdict),
+        encoding="utf-8",
+    )
+    (proj / "docs" / "adr" / ".adr-kit.json").write_text(
+        json.dumps({"suggest": {"enabled": True, "llm_cmd": [str(poison), "-p"]}}),
+        encoding="utf-8",
+    )
+    code, out, err = _run_suggest(proj, CODE_DIFF)
+    assert code == 0, err[:600]
+    assert not marker.exists(), "a repo-tracked command was executed"
+    assert "suggest.llm_cmd is ignored" in err
+    assert "This change looks like" not in err, "the poisoned verdict was used"
+
+
+def test_unavailable_backend_is_a_silent_no_op(tmp_path):
+    """Criterion #3: no backend, no commit blocked, no suggestion invented.
+
+    ADR-001's guarantee that tooling drift never costs a user their commit is
+    retained verbatim by ADR-017, and it has to hold for the suggestion pass
+    exactly as it does for the judge.
+    """
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
+    code, out, err = _run_suggest(proj, CODE_DIFF)
+    assert code == 0, err[:600]
+    assert "This change looks like" not in err
+    assert "no client was recorded" in err, err[:600]
+
+
+def test_credential_in_committed_config_is_refused_by_name(tmp_path):
+    """The one thing that is NOT a silent no-op, and deliberately so.
+
+    An unavailable backend is tooling drift and degrades quietly. A key written
+    into a committed file is a published key -- a user error that must be seen,
+    and staying quiet about it would leave the key in the repository. Same
+    sentence adr-judge raises, from the same function.
+    """
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
+    (proj / "docs" / "adr" / ".adr-kit.json").write_text(
+        json.dumps({"suggest": {"enabled": True, "api_key": "sk-not-a-real-key"}}),
+        encoding="utf-8",
+    )
+    code, out, err = _run_suggest(proj, CODE_DIFF)
+    assert code == 2
+    assert "OPENROUTER_API_KEY" in err
+    assert "sk-not-a-real-key" not in err, "the refusal must not echo the key"

@@ -379,9 +379,14 @@ blocking, and repository-tracked config cannot introduce a command.
 {
   "forbid_pattern": [
     {
-      "pattern": "--model\\s+claude-sonnet",
-      "path_glob": "bin/adr-judge",
+      "pattern": "--model[\"'\\s,=]+claude",
+      "path_glob": "{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}",
       "message": "Do not re-pin a model: the host backend passes no model flag so each CLI resolves the user's own (ADR-017)."
+    },
+    {
+      "pattern": "DEFAULT_LLM_CMD\\s*=",
+      "path_glob": "{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}",
+      "message": "No entry point may carry its own default command vector: judge.backend selects a key in the code-side registry (bin/adr_llm.py), which is the only place a command, an endpoint or a model may live (ADR-017)."
     }
   ],
   "forbid_import": [],
@@ -389,6 +394,44 @@ blocking, and repository-tracked config cannot introduce a command.
   "llm_judge": false
 }
 ```
+
+### 2026-07-31: the globs now cover every file that can name a model
+
+Enforcement only, added under TASK-72; the decision above is unchanged and its
+text is the historical record.
+
+The original rule was scoped to `bin/adr-judge`, so `bin/adr-suggest` — named in
+this ADR's own `components` — sat outside every rule. It kept a pinned
+`claude … --model claude-sonnet-4-6` default and kept honouring `suggest.llm_cmd`
+and `judge.llm_cmd`, the argument vectors the Must Not list forbids. The ADR
+governed that file and enforced nothing on it, which is why the violation
+survived the decision by a day rather than being caught at the commit that
+introduced it.
+
+Three changes, all mechanical tightenings in ADR-016's sense rather than a change
+to the decision.
+
+The glob now covers `adr-judge`, `adr-suggest` and the shared registry module
+`adr_llm.py` under all three client roots.
+
+The model-pin pattern was `--model\s+claude-sonnet`, which requires whitespace
+between the flag and the tag. The violation it exists to catch was written as a
+Python list — `"--model", "claude-sonnet-4-6"` — where the separator is a quote,
+a comma and a space. Checked against the actual offending line on 2026-07-31:
+the old pattern does not match it. A rule that misses the shape the violation
+took is decoration, so the separator is now a character class covering the shell
+form, the list form and `--model=`.
+
+And a second rule forbids a `DEFAULT_LLM_CMD` assignment anywhere in that set,
+because the pin returned as a *default constant* rather than as a flag. Both
+rules were verified to fire on a diff reintroducing the pin, and to leave the
+current sources clean.
+
+One consequence worth stating: prose in those files may no longer quote the
+forbidden literals, so the historical vector is written out in this ADR's
+Context and in TASK-72 instead of in a code comment. That is the right place for
+it — a comment quoting a banned string is indistinguishable, to a regex, from
+its reintroduction.
 
 ### Why `require_pattern` is empty
 

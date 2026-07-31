@@ -193,7 +193,7 @@
     },
     "suggest": {
       "type": "object",
-      "description": "Per-project policy for bin/adr-suggest (introduced in adr-kit v0.16.0). adr-suggest is the advisory counterpart to adr-judge: it runs an LLM pass over the staged diff to detect whether the change introduces a NEW architectural decision not yet covered by an ADR, and prints a non-blocking suggestion. It NEVER blocks a commit. All keys are optional; an absent block means defaults, and llm_cmd / llm_model fall back to the judge.* equivalents.",
+      "description": "Per-project policy for bin/adr-suggest (introduced in adr-kit v0.16.0). adr-suggest is the advisory counterpart to adr-judge: it runs an LLM pass over the staged diff to detect whether the change introduces a NEW architectural decision not yet covered by an ADR, and prints a non-blocking suggestion. It NEVER blocks a commit. All keys are optional; an absent block means defaults. Which model is asked is NOT configured here as of ADR-017: adr-suggest resolves it through the same code-side backend registry as the judge (judge.backend, judge.openrouter_model, judge.ollama_model), because the backend is a property of the project rather than of which of the two tools is asking.",
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -203,15 +203,14 @@
         },
         "llm_model": {
           "type": "string",
-          "description": "Model identifier passed to `claude -p --model` for the suggestion pass. Defaults to judge.llm_model, then 'claude-sonnet-4-6'. Ignored when llm_cmd is set.",
-          "default": "claude-sonnet-4-6"
+          "description": "DEPRECATED and IGNORED as of ADR-017 (fixed in adr-suggest by TASK-72); adr-suggest warns when it is present. It pinned one vendor's model tag for the suggestion pass regardless of which agent the user had chosen. The host backend now passes no model flag at all, so each CLI resolves the model its own user configured. Use judge.openrouter_model or judge.ollama_model to name a model for those backends. Retained in the schema only so an existing project's config still validates."
         },
         "llm_cmd": {
           "oneOf": [
             { "type": "array", "items": { "type": "string" } },
             { "type": "string" }
           ],
-          "description": "Override the entire LLM invocation for the suggestion pass. Accepts a tokenised array or a single shell-quoted string. Repo-tracked values are validated against the same Claude-CLI allowlist as judge.llm_cmd. Falls back to judge.llm_cmd when absent."
+          "description": "DEPRECATED and IGNORED as of ADR-017 (fixed in adr-suggest by TASK-72); adr-suggest warns when it is present and names the specific reason a dangerous vector was dangerous. This file is committed, so this key let repository content choose the binary adr-suggest executes and the flags it ran with -- the same hole TASK-60 closed in the judge, which survived here because ADR-017's Enforcement globs did not cover this script. The replacement is judge.backend, an enum into a code-side command table. For an operator-controlled override use the ADR_KIT_LLM_CMD environment variable or --llm-cmd, which remain unrestricted because they come from the person running the command. Retained in the schema only so an existing project's config still validates."
         },
         "llm_timeout_seconds": {
           "type": "integer",

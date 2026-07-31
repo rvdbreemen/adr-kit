@@ -12,13 +12,20 @@ version bump should surface its complete work list in one pass.
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 REGISTRY_RELPATH = "packaging/version-sites.json"
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+
+#: Every `kind` this module can read and write. A registry entry declaring
+#: anything else is a hard error at both ends: verified-but-never-written is the
+#: exact failure mode ADR-013 exists to prevent.
+SITE_KINDS = frozenset({"json", "regex", "regex_all"})
 
 
 class VersionSiteError(RuntimeError):
@@ -137,7 +144,7 @@ def _read_site(root: Path, site: dict) -> list[str | None]:
         # Each match is a tuple of capture groups; group 2 is the version.
         values = [m[1] if isinstance(m, tuple) else m for m in matches]
         return values if kind == "regex_all" else values[:1]
-    raise VersionSiteError(f"unknown site kind {kind!r} for {site['path']}")
+    raise VersionSiteError(_unknown_kind_message(kind, site["path"]))
 
 
 def read_all(root: Path, registry: dict | None = None) -> list[tuple[dict, list[str | None]]]:
@@ -181,40 +188,159 @@ def check(root: Path, expected: str, registry: dict | None = None) -> list[Findi
 
 # --- writing ------------------------------------------------------------------
 
-def _write_site(root: Path, site: dict, version: str) -> bool:
-    """Write the version into one site. Returns True when the file changed."""
-    path = root / site["path"]
-    if not path.is_file():
-        raise VersionSiteError(f"declared version site is missing: {site['path']}")
-    original = path.read_text(encoding="utf-8")
+def _unknown_kind_message(kind: object, path: str) -> str:
+    return (
+        f"unknown site kind {kind!r} for {path}; this module implements "
+        f"{sorted(SITE_KINDS)}. A kind nothing writes would leave the site "
+        "verified but never bumped, which is the drift ADR-013 exists to stop."
+    )
+
+
+def _rewrite(site: dict, text: str, version: str) -> str:
+    """Return `text` with the version substituted. Pure: touches no file."""
     kind = site["kind"]
 
     if kind == "json":
         try:
-            doc = json.loads(original)
+            doc = json.loads(text)
         except json.JSONDecodeError as exc:
             raise VersionSiteError(f"invalid JSON in {site['path']}: {exc}") from exc
         if not _pointer_set(doc, site["pointer"], version):
             raise VersionSiteError(f"pointer {site['pointer']} not found in {site['path']}")
-        updated = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
-    elif kind in {"regex", "regex_all"}:
+        return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+
+    if kind in {"regex", "regex_all"}:
         pattern = re.compile(site["pattern"])
-        if not pattern.search(original):
+        if not pattern.search(text):
             raise VersionSiteError(
                 f"pattern for {site['label']} did not match anything in {site['path']}"
             )
         count = 0 if kind == "regex_all" else 1
-        updated = pattern.sub(
+        return pattern.sub(
             lambda m: f"{m.group(1)}{version}{m.group(3) if m.lastindex and m.lastindex >= 3 else ''}",
-            original,
+            text,
             count=count,
         )
-    else:
-        raise VersionSiteError(f"unknown site kind {kind!r} for {site['path']}")
-    if updated == original:
-        return False
-    path.write_text(updated, encoding="utf-8", newline="\n")
-    return True
+
+    raise VersionSiteError(_unknown_kind_message(kind, site["path"]))
+
+
+def plan_writes(root: Path, version: str, registry: dict | None = None) -> dict[Path, bytes]:
+    """Compute the post-image of every declared site without touching the disk.
+
+    Planning the whole registry before the first byte is written is what makes an
+    undeclarable site loud instead of silent: a `kind` this module does not
+    implement, a pattern that matches nothing or a pointer that does not resolve
+    aborts the entire bump, rather than being skipped or leaving the sites ahead
+    of it written and the rest stale.
+
+    Every planning failure is collected and reported together, because a release
+    should surface its complete work list in one pass (ADR-013) instead of one
+    error per run.
+
+    Sites are folded into a shared working image in registry order, because two
+    sites may declare the same path -- README.md carries both version pins -- and
+    the second substitution must see the first one's edit rather than the stale
+    bytes on disk.
+
+    Returns only the paths whose content actually changes.
+    """
+    registry = registry or load_registry(root)
+    originals: dict[Path, str] = {}
+    working: dict[Path, str] = {}
+    missing: set[Path] = set()
+    errors: list[str] = []
+
+    for site in registry["sites"]:
+        path = root / site["path"]
+        if path in missing:
+            continue
+        if path not in originals:
+            if not path.is_file():
+                missing.add(path)
+                errors.append(f"declared version site is missing: {site['path']}")
+                continue
+            originals[path] = path.read_text(encoding="utf-8")
+            working[path] = originals[path]
+        try:
+            working[path] = _rewrite(site, working[path], version)
+        except VersionSiteError as exc:
+            errors.append(str(exc))
+
+    if errors:
+        raise VersionSiteError(
+            "cannot write the version to every declared site:\n"
+            + "\n".join(f"  - {message}" for message in errors)
+        )
+    return {
+        path: text.encode("utf-8")
+        for path, text in working.items()
+        if text != originals[path]
+    }
+
+
+def _atomic_write_bytes(path: Path, content: bytes) -> None:
+    """Replace `path` in one step, so no reader ever sees a half-written file."""
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def apply_transaction(changes: dict[Path, bytes]) -> None:
+    """Write every planned change, restoring all of them if any write fails.
+
+    A release tool that leaves half the manifests bumped is worse than one that
+    misses a file: the tree then carries two versions and no tool can tell which
+    is intended. Only the paths already written are restored -- `_atomic_write_bytes`
+    replaces in one step, so a failed write left its target untouched, and
+    rewriting it could only invent a second failure.
+    """
+    originals = {path: path.read_bytes() for path in changes}
+    written: list[Path] = []
+    try:
+        for path, content in changes.items():
+            _atomic_write_bytes(path, content)
+            written.append(path)
+    except BaseException as exc:
+        rollback_errors = []
+        for path in written:
+            try:
+                _atomic_write_bytes(path, originals[path])
+            except BaseException as rollback_exc:  # pragma: no cover - catastrophic
+                rollback_errors.append(f"{path}: {rollback_exc}")
+        if rollback_errors:
+            raise VersionSiteError(
+                f"release write failed ({exc}); rollback also failed: "
+                + "; ".join(rollback_errors)
+            ) from exc
+        raise VersionSiteError(
+            f"release write failed; all targets were rolled back: {exc}"
+        ) from exc
+
+
+def describe_changes(root: Path, changes: dict, registry: dict | None = None) -> list[str]:
+    """Render a planned change set as `path (label, label)` lines, in registry order."""
+    registry = registry or load_registry(root)
+    labels: dict[str, list[str]] = {}
+    for site in registry["sites"]:
+        if (root / site["path"]) in changes:
+            labels.setdefault(site["path"], []).append(site["label"])
+    return [f"{path} ({', '.join(names)})" for path, names in labels.items()]
 
 
 def write_all(root: Path, version: str, registry: dict | None = None) -> list[str]:
@@ -222,11 +348,9 @@ def write_all(root: Path, version: str, registry: dict | None = None) -> list[st
     if not SEMVER.match(version):
         raise VersionSiteError(f"not a MAJOR.MINOR.PATCH version: {version!r}")
     registry = registry or load_registry(root)
-    changed: list[str] = []
-    for site in registry["sites"]:
-        if _write_site(root, site, version):
-            changed.append(f"{site['path']} ({site['label']})")
-    return changed
+    changes = plan_writes(root, version, registry)
+    apply_transaction(changes)
+    return describe_changes(root, changes, registry)
 
 
 def format_findings(findings: Iterable[Finding]) -> str:
