@@ -3,10 +3,10 @@ id: TASK-58.4
 title: >-
   Validate the adr-mcp dual-era upgrade against real clients, the SDK and the
   latency budget
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-29 22:48'
-updated_date: '2026-07-30 22:53'
+updated_date: '2026-07-31 05:04'
 labels:
   - mcp
   - protocol
@@ -57,7 +57,7 @@ Record the outcome as evidence in the task's final summary: which clients were t
 - [x] #5 A handshake-only client, including one sending initialize with no protocolVersion, still works exactly as before
 - [x] #6 The ADR-015 two-second latency budget is measured with the added server/discover round-trip, and either shown to hold or the fixture is updated with written justification
 - [x] #7 Captured DiscoverResult, modern ListToolsResult and modern CallToolResult payloads validate against schema/2026-07-28.json
-- [ ] #8 The suite passes on Windows and on Linux CI
+- [x] #8 The suite passes on Windows and on Linux CI
 - [x] #9 The task's final summary names every client and mode exercised, and any deviation found
 <!-- AC:END -->
 
@@ -92,3 +92,23 @@ No client's stored config was mutated; each was driven through an explicit per-i
 **Blocking defect found, and since fixed: TASK-69.** The run surfaced that `bin/adr-mcp` did not speak UTF-8 on Windows — invalid bytes on the wire, CRLF framing, and a tool result lost to `-32603`. Pre-existing and era-independent, so not a regression from this work, but it made the SDK client unable to drive the server on a cp1252 host in any era. Fixed and covered by three teeth-verified regression tests. That is why AC3 is marked met: the SDK drove all three modes successfully, though at the time only with `PYTHONIOENCODING=utf-8` forced on the server as a workaround. That workaround is no longer needed.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All nine criteria met. AC8 closed by CI run 30605623277 on `dev`: **validate → success**, with Python 3.10 and 3.12 both green on ubuntu, macos and windows, plus markdownlint.
+
+Getting there took two follow-up commits, and the reason is exactly why this criterion could not be waved through locally.
+
+**The first push went red on Python 3.10 across all three platforms while 3.12 passed everywhere** — a version problem, not a platform one. `tests/test_bin_import_safety.py` (from TASK-62) runs each executable twice, plain and with `-P`. `-P` (PYTHONSAFEPATH) landed in CPython 3.11; on 3.10 it is not a flag at all, so the interpreter exits 2 with "Unknown option" and the assertion `returncode in (0, 1)` read that as the tool being broken. Now skipped below 3.11 rather than skipping the whole test: the plain run still proves the shadowing defence on every supported version, and `-P` only adds the case where CPython's own mitigation is active too.
+
+I develop on 3.12. Nothing local would ever have caught this.
+
+**The second push turned all six matrix jobs green but validate stayed red** on a single markdownlint MD012 — two consecutive blank lines at `skills/init/SKILL.md:297`, introduced with the backend-choice section. Swept the entire linted scope rather than patching the reported line, since markdownlint stops at the first file and a second violation would only have surfaced on the next run. All 53 files under the configured globs are clean; five other MD012 hits elsewhere in the repository are outside those globs and left alone.
+
+**A correction to my own reporting.** After the first push I read `gh run watch --exit-status` returning 0 as success and said so. The run had in fact concluded `failure`; the watcher's exit code did not reflect the run's conclusion. I now read `--json conclusion` per job instead. Stating it because the wrong claim went out before the right one did.
+
+The substance of the validation — three real clients, the official SDK in three modes, schema conformance, the latency measurements, the byte-diffed legacy regression — is recorded in comment #1 and is unchanged by any of this. What changed is only that the cross-platform leg is now evidence rather than an assumption.
+
+Also worth recording: this run surfaced a defect the task did not ask about. `bin/adr-mcp` did not speak UTF-8 on Windows — invalid bytes on the wire, CRLF framing, and a tool result lost to `-32603`. Pre-existing and era-independent, so not a regression from the dual-era work, but it made the official SDK client unable to drive the server on a cp1252 host in any era. Fixed and covered by three teeth-verified regression tests under TASK-69.</finalSummary>
+<!-- SECTION:FINAL_SUMMARY:END -->

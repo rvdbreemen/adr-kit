@@ -1,10 +1,10 @@
 ---
 id: TASK-58
 title: 'Support MCP protocol revision 2026-07-28 in adr-mcp (stdio, dual-era)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-29 21:35'
-updated_date: '2026-07-30 05:26'
+updated_date: '2026-07-31 05:04'
 labels:
   - mcp
   - protocol
@@ -68,3 +68,23 @@ Backward compatibility is safe in the interim: a client probing `server/discover
 - [ ] #12 `test_initialize_echoes_client_protocol_version` is renamed; its assertion still holds because 2024-11-05 is a declared handshake version, so the fix is the name plus a new test that sends an undeclared version string
 - [ ] #13 ADR-016 governs this work and is Accepted
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Umbrella closed: 58.1 through 58.5 are all Done, and CI on `dev` is green across Python 3.10 and 3.12 on ubuntu, macos and windows.
+
+`bin/adr-mcp` now serves both MCP protocol eras from one process, governed by ADR-016. The load-bearing design point is that **era is a pure function of the single frame** — no per-process and no per-connection state, so the same bytes always get the same answer. Revision 2026-07-28 forbids relying on prior requests over a connection to establish context, and a lock would mean a byte-identical frame gets two different answers depending on history. The official SDK does lock per connection; this deliberately diverges, and TASK-58.4 validated that the divergence holds up against the SDK's own client.
+
+What the validation actually established, rather than assumed: all three real clients (Claude Code 2.1.220, Codex CLI 0.145.0, GitHub Copilot CLI 1.0.71) negotiate the **handshake** era today, and the modern surface is exercised only by the official `mcp` 2.0.0 SDK. ADR-016 deliberately made no assumption about this; now there is evidence. All three put vendor keys in `params._meta` without using the reserved `io.modelcontextprotocol/` prefix, which is direct empirical support for keying era detection on the reserved key rather than on `_meta` merely being present.
+
+`server/discover` does not add a round trip — it replaces `initialize` one for one. Cold start to first tool result is 578 ms p50 legacy versus 622 ms modern, both roughly a third of ADR-015's 2000 ms budget, and modern is 208 ms *faster* at p95. The latency corpus was deliberately left untouched: nothing breaches the budget, so there was nothing to justify.
+
+**Three defects surfaced along the way that the plan did not anticipate**, all now fixed with regression tests:
+
+- `bin/adr-mcp` did not speak UTF-8 on Windows (TASK-69) — invalid bytes on the wire, CRLF framing, a tool result lost to `-32603`. Pre-existing and era-independent, but it made the official SDK client unable to drive the server on a cp1252 host in any era.
+- `require_pattern` under `--snapshot diff` blocked on a finding no author could act on (TASK-65), which is also what had made ADR-016 decline its four `require_pattern` rules as permanently unworkable. Fixing it inverted that reasoning, and the rules are now in the Enforcement block, re-measured to fire on a breach and stay silent on the compliant implementation.
+- `bin/adr-status` emitted `summary.by_status` in `PYTHONHASHSEED`-dependent order (TASK-66), which is why the conformance suite could not get a byte-exact golden for that one frame.
+
+ADR-016 is Accepted, `documents_shipped: true`, `verified_in: tests/test_adr_mcp.py`, gate `adr-mcp-dual-era-v1` live. Shipped in v0.43.0.</finalSummary>
+<!-- SECTION:FINAL_SUMMARY:END -->
