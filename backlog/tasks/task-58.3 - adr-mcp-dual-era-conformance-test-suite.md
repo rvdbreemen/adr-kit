@@ -1,9 +1,10 @@
 ---
 id: TASK-58.3
 title: 'adr-mcp: dual-era conformance test suite'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-29 22:48'
+updated_date: '2026-07-30 21:25'
 labels:
   - mcp
   - protocol
@@ -54,3 +55,27 @@ Run the full suite on both CI Python versions (3.10 and 3.12, per `.github/workf
 - [ ] #7 The whole suite passes on Python 3.10 and 3.12
 - [ ] #8 No test asserts behaviour that ADR-016 explicitly rejects
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+58 tests in `tests/test_adr_mcp.py` (39 before), all driven as real newline-delimited JSON-RPC through `serve()`. Full suite: 1001 passed, 5 skipped.
+
+**The no-era-lock property is pinned in both directions**, which is the assertion most likely to regress. One ordered session shows a modern frame after a legacy `initialize` still routing modern, and a bare frame after modern frames still routing legacy — with both `tools/list` bodies asserted identical, so the same request demonstrably gets two era shapes decided only by its own bytes.
+
+**The legacy golden has teeth.** Captured by driving frames through `git show 7d067a2:bin/adr-mcp` — the last commit before TASK-58.1 — against the same fixture, then byte-compared. A negative control was run: mutating the golden's `ping` result is caught on the byte path, mutating a count inside the `adr_status` payload on the structural path. Seven of eight frames are byte-exact.
+
+**Open question 1 resolved with reasoning, and the implementation was found correct.** ADR-016's Decision Contract Must is unqualified by method — "including when the method is `server/discover`" is emphasis on the hardest case, not a restriction to it — while the Confirmation bullet naming `-32601` for an enveloped `ping` sits in a list where every other bullet names its envelope defect explicitly, so it describes the conformant-envelope case. Both are now pinned: `-32601` with a valid envelope, `-32022` with an unsupported version. The reasoning is in the test docstring. `-32022` is also the more useful answer, because `-32601` would tell a 2025-06-18 client that `ping` does not exist when the truth is that its version cannot be spoken through an envelope.
+
+**Open question 2 resolved as asked**, on emitted frames rather than file text: a 13-frame error battery plus two raw malformed lines, reading codes off every stdout line including the id-less parse-error frames. The assertion is the full Must Not via an allowlist covering both halves of the reserved range, and it asserts set equality so no allowlist entry sits there unobserved.
+
+**Three caveats worth carrying forward.**
+
+The brief's "non-string version gives -32602" was ambiguous about era: on `initialize` the implementation must counter-offer, since `-32022` may never reach it. Only the modern envelope gives `-32602`. Both readings are pinned with the asymmetry explained.
+
+`adr_status` is compared structurally rather than byte-exactly, for three documented reasons — and two of them were newly found here, beyond the key-order caveat handed over from TASK-58.1: `avg_age_days`/`age_days` are computed from today's real date, so a byte golden would go stale overnight, and `retrieval.index_error` quotes a native OS path. The third is a genuine defect in `bin/adr-status` and is now TASK-66.
+
+Python 3.10 is **not verified**. It is not installed on this machine (checked `py --list`, `where python`, the Programs\Python tree and conda envs). Passes on 3.12.9 and 3.14.0. The agent audited by review for 3.11+ syntax and found none, but CI's 3.10 leg remains the real check — reported as a gap rather than claimed as coverage.
+
+Also cleaned up: the comment block above the old gate test still described an `xfail(strict=True)` marker that TASK-58.2 had already removed. Rewritten to state the gate is live; `GATE_ADR_MCP_DUAL_ERA_V1` is retained so `bin/adr-lint`'s gate-existence check still resolves.
+<!-- SECTION:FINAL_SUMMARY:END -->

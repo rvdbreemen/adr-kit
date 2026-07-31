@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 import textwrap
@@ -223,7 +224,246 @@ def test_acceptance_gates_block_incomplete_record_without_mutation(tmp_path):
 
     assert result.returncode == 2
     assert "acceptance blocked" in result.stderr
+    # The blocker itself, not only the count of blockers.
+    assert "completeness:" in result.stderr
     assert path.read_bytes() == before
+
+
+def _history_entries(body: str):
+    """Return the status_history entries of an ADR body, in file order."""
+    entries = []
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- date:"):
+            entries.append({"date": stripped.split(":", 1)[1].strip()})
+        elif entries and ":" in stripped and not stripped.startswith("#"):
+            key, _, value = stripped.partition(":")
+            if key in {"status", "changed_by", "reason", "changed_via"}:
+                entries[-1][key] = value.strip()
+    return entries
+
+
+def _set_status(path: Path, frontmatter_date: str, status_line: str) -> None:
+    """Rewrite a fixture into the pre-status_history shape TASK-68 describes."""
+    text = path.read_text(encoding="utf-8")
+    text = text.replace('date: "2026-07-01"', f'date: "{frontmatter_date}"')
+    text = re.sub(
+        r"(## Status\n\n)[^\n]*", rf"\g<1>{status_line}", text, count=1
+    )
+    path.write_text(text, encoding="utf-8")
+
+
+def test_supersede_preserves_the_acceptance_date_of_a_pre_history_adr(tmp_path):
+    """TASK-68: the only record of the acceptance must survive the supersession."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    old_path = _write_adr(adr_dir, 1, "Old Decision", status="Accepted")
+    _write_adr(adr_dir, 2, "New Decision", status="Accepted")
+    _set_status(old_path, "2026-05-31", "Accepted, 2026-05-31.")
+    assert "status_history" not in old_path.read_text(encoding="utf-8")
+
+    result = _run_adr(
+        "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06", "--changed-by", "Codex",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    _data, body = _frontmatter(old_path)
+    assert "2026-05-31" in body
+    entries = _history_entries(body)
+    assert [(e["date"], e["status"]) for e in entries] == [
+        ("2026-05-31", "Accepted"),
+        ("2026-07-06", "Superseded"),
+    ]
+    # The actor was never recorded; recovering the date must not invent one.
+    assert entries[0]["changed_by"] == "unknown"
+    assert entries[0]["changed_via"] == "unrecorded"
+    assert entries[1]["changed_by"] == "Codex"
+
+
+def test_supersede_leaves_an_existing_status_history_block_alone(tmp_path):
+    """ADRs that already carry a history block keep their previous behaviour."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    old_path = _write_adr(adr_dir, 1, "Old Decision", status="Accepted")
+    _write_adr(adr_dir, 2, "New Decision", status="Accepted")
+    existing = (
+        "## Status History\n\n"
+        "```yaml\n"
+        "status_history:\n"
+        "  - date: 2026-05-31\n"
+        "    status: Accepted\n"
+        "    changed_by: Ford Prefect\n"
+        "    reason: Original acceptance\n"
+        "    changed_via: adr-kit lifecycle\n"
+        "```\n\n"
+    )
+    old_path.write_text(
+        old_path.read_text(encoding="utf-8").replace(
+            "## Context\n", existing + "## Context\n", 1
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_adr(
+        "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06", "--changed-by", "Codex",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    _data, body = _frontmatter(old_path)
+    entries = _history_entries(body)
+    assert [(e["date"], e["status"], e["changed_by"]) for e in entries] == [
+        ("2026-05-31", "Accepted", "Ford Prefect"),
+        ("2026-07-06", "Superseded", "Codex"),
+    ]
+    assert "changed_by: unknown" not in body
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [("propose", "Proposed"), ("accept", "Accepted"), ("reject", "Rejected")],
+)
+def test_status_commands_seed_a_missing_history_with_the_prior_transition(
+    tmp_path, command, expected
+):
+    """TASK-68 #6: mutate_status drives accept/reject/propose through the same pair."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "Lifecycle Command")
+    _set_status(path, "2026-06-12", "Proposed, 2026-06-12.")
+
+    result = _run_adr(
+        command, "1", "--adr-dir", str(adr_dir), "--date", "2026-07-06",
+        "--changed-by", "Codex",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    _data, body = _frontmatter(path)
+    entries = _history_entries(body)
+    assert [(e["date"], e["status"]) for e in entries] == [
+        ("2026-06-12", "Proposed"),
+        ("2026-07-06", expected),
+    ]
+    assert entries[0]["changed_by"] == "unknown"
+
+
+def test_document_seeds_a_missing_history_before_appending(tmp_path):
+    """The third append_status_history caller creates a block too."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "Shipped Decision", status="Accepted")
+    _set_status(path, "2026-06-12", "Accepted, 2026-06-12.")
+    pointer = adr_dir / "evidence.txt"
+    pointer.write_text("shipped", encoding="utf-8")
+
+    result = _run_adr(
+        "document", "1", "--adr-dir", str(adr_dir), "--verified-in", str(pointer),
+        "--date", "2026-07-06", "--changed-by", "Codex",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    _data, body = _frontmatter(path)
+    entries = _history_entries(body)
+    assert [(e["date"], e["changed_by"]) for e in entries] == [
+        ("2026-06-12", "unknown"),
+        ("2026-07-06", "Codex"),
+    ]
+
+
+def test_same_day_transition_is_not_duplicated_as_a_recovered_entry(tmp_path):
+    """Nothing earlier exists to preserve when the transition is the same one."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "Lifecycle Command")
+
+    result = _run_adr(
+        "propose", "1", "--adr-dir", str(adr_dir), "--date", "2026-07-01",
+        "--changed-by", "Codex",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    _data, body = _frontmatter(path)
+    assert [(e["date"], e["status"]) for e in _history_entries(body)] == [
+        ("2026-07-01", "Proposed")
+    ]
+    assert "changed_by: unknown" not in body
+
+
+def test_supersede_refuses_when_the_prior_transition_cannot_be_recovered(tmp_path):
+    """TASK-68 #3: refuse rather than write a history that omits the earlier entry."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    old_path = _write_adr(adr_dir, 1, "Old Decision", status="Accepted")
+    _write_adr(adr_dir, 2, "New Decision", status="Accepted")
+    old_path.write_text(
+        old_path.read_text(encoding="utf-8")
+        .replace('date: "2026-07-01"', "date: null")
+        .replace("Accepted, 2026-07-01.", "Accepted (see the mailing list thread)."),
+        encoding="utf-8",
+    )
+    before = old_path.read_bytes()
+
+    result = _run_adr(
+        "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06",
+    )
+
+    assert result.returncode == 2
+    assert "cannot be recovered" in result.stderr
+    assert "no date" in result.stderr
+    assert old_path.read_bytes() == before
+
+
+def test_accept_resolves_a_supersedes_target_from_the_adr_directory(tmp_path):
+    """TASK-67 #1: a successor already linked to its target must be acceptable."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    old_path = _write_adr(adr_dir, 1, "Old Decision", status="Accepted")
+    new_path = _write_adr(adr_dir, 2, "New Decision")
+
+    linked = _run_adr(
+        "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06", "--changed-by", "Codex",
+    )
+    assert linked.returncode == 0, linked.stderr + linked.stdout
+    new_data, _body = _frontmatter(new_path)
+    assert new_data["supersedes"] == ["ADR-001"]
+
+    result = _run_adr(
+        "accept", "2", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
+        "--changed-by", "Codex",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert _frontmatter(new_path)[0]["status"] == "Accepted"
+    assert _frontmatter(old_path)[0]["superseded_by"] == "ADR-002"
+
+
+def test_acceptance_is_not_blocked_by_an_unrelated_broken_adr(tmp_path):
+    """TASK-67 #2: the wider lookup is context, not a wider verdict."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    _write_adr(adr_dir, 1, "Old Decision", status="Accepted")
+    new_path = _write_adr(adr_dir, 2, "New Decision")
+    broken = _write_adr(adr_dir, 3, "Broken Decision", status="Accepted")
+    # Frontmatter says Accepted, the body says something else: a consistency
+    # FAIL that belongs to ADR-003 alone.
+    _set_status(broken, "2026-07-01", "Proposed, 2026-07-01.")
+
+    linked = _run_adr(
+        "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06", "--changed-by", "Codex",
+    )
+    assert linked.returncode == 0, linked.stderr + linked.stdout
+
+    result = _run_adr(
+        "accept", "2", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
+        "--changed-by", "Codex",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert _frontmatter(new_path)[0]["status"] == "Accepted"
 
 
 def test_two_file_write_failure_rolls_back_first_replacement(tmp_path, monkeypatch):
@@ -293,3 +533,82 @@ def test_index_failure_rolls_back_both_supersession_records_and_indexes(
     assert not (adr_dir / "ADR-INDEX.md").exists()
     assert not (adr_dir / "ADR-INDEX.json").exists()
 
+
+
+# ===========================================================================
+# TASK-70: status_history blocks must be valid YAML, not just mini-parser food
+# ===========================================================================
+#
+# history_entry() used to emit every field as a bare plain scalar. A value
+# containing ": " ends the scalar and re-reads as a nested mapping, which takes
+# the WHOLE block down -- not just that line. Three ADRs in docs/adr were
+# written that way (007, 008, 009), each through a `reason` holding free text
+# such as "Human approval: records the ...", and the documented
+# `--changed-by "User: <name>"` produces the same shape.
+#
+# It survived because adr-kit reads these blocks with its own line-oriented
+# mini-parser, which takes everything after the first colon as the value. The
+# project's lint reported 17/17 PASS with three unparseable blocks on disk, so
+# these tests deliberately use a REAL YAML parser -- asserting with the
+# mini-parser would reproduce exactly the blind spot that hid the defect.
+
+HOSTILE_HISTORY_VALUES = [
+    # (status, changed_by, reason, changed_via)
+    ("Accepted", "User: Robert van den Breemen", "Human approval: records it", "adr-kit lifecycle"),
+    ("Superseded", "unknown", "Amended by ADR-014: advance the gate", "unrecorded"),
+    ("Proposed", "- leading dash", "trailing colon:", "has # hash"),
+    ("Rejected", '"quoted"', r'back\slash and "quotes"', "*anchor"),
+    ("Accepted", "  padded  ", "", "@at-sign"),
+]
+
+
+def test_history_entry_round_trips_through_a_real_yaml_parser():
+    """Every hostile scalar shape survives write -> parse unchanged."""
+    yaml = pytest.importorskip(
+        "yaml",
+        reason="PyYAML absent; a silent pass here is what let TASK-70 survive",
+    )
+    adr = _load_lifecycle_module()
+
+    block = "status_history:\n" + "".join(
+        adr.history_entry(status, changed_by, reason, changed_via, "2026-07-31")
+        for status, changed_by, reason, changed_via in HOSTILE_HISTORY_VALUES
+    )
+    parsed = yaml.safe_load(block)["status_history"]
+
+    assert len(parsed) == len(HOSTILE_HISTORY_VALUES)
+    for entry, (status, changed_by, reason, changed_via) in zip(
+        parsed, HOSTILE_HISTORY_VALUES
+    ):
+        assert entry["status"] == status
+        assert entry["changed_by"] == changed_by
+        assert entry["reason"] == reason
+        assert entry["changed_via"] == changed_via
+
+
+def test_every_status_history_block_in_the_repo_parses():
+    """Directory-wide guard: a future regression fails here, not downstream.
+
+    The three ADRs this caught were only found by reaching for a real parser.
+    Without this test the next one is found by whoever consumes the ADRs from
+    outside adr-kit, which is far too late.
+    """
+    yaml = pytest.importorskip(
+        "yaml",
+        reason="PyYAML absent; a silent pass here is what let TASK-70 survive",
+    )
+    adr_dir = Path(__file__).resolve().parent.parent / "docs" / "adr"
+    failures = []
+    checked = 0
+    for path in sorted(adr_dir.glob("ADR-*.md")):
+        match = re.search(r"```yaml\n(.*?)```", path.read_text(encoding="utf-8"), re.S)
+        if not match:
+            continue
+        checked += 1
+        try:
+            yaml.safe_load(match.group(1))
+        except yaml.YAMLError as exc:
+            failures.append(f"{path.name}: {str(exc).splitlines()[0]}")
+
+    assert checked > 0, "no status_history blocks found; the glob or fence changed"
+    assert not failures, "unparseable status_history blocks:\n  " + "\n  ".join(failures)

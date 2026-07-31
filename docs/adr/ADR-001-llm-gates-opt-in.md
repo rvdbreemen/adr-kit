@@ -1,20 +1,37 @@
 ---
 id: "ADR-001"
 title: "Make Per-Commit LLM Gates Opt-In"
-status: "Accepted"
-date: "2026-05-31"
+status: "Superseded"
+date: "2026-07-30"
 binding: false
 gate: null
 documents_shipped: false
 verified_in: []
 supersedes: []
-superseded_by: null
+superseded_by: "ADR-017"
 ---
 # ADR-001 Make Per-Commit LLM Gates Opt-In
 
 ## Status
 
-Accepted, 2026-05-31
+Superseded by ADR-017, 2026-07-30.
+
+## Status History
+
+```yaml
+status_history:
+  - date: 2026-05-31
+    status: Accepted
+    changed_by: unknown
+    reason: Original acceptance. This ADR predates the status_history convention and had no such block; the date and status are recovered from its Status line, which read "Accepted, 2026-05-31" until the supersession replaced it. The actor was never recorded and is not guessed here.
+    changed_via: unrecorded
+  - date: 2026-07-30
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-017 flips the per-commit LLM judge back to default-on, on the host agent's own model, with a configurable backend
+    changed_via: adr-kit lifecycle
+```
+
 
 ## Context
 

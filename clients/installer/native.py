@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import platform
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -15,6 +17,66 @@ from .payload import PREPARED_MARKER
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 MARKETPLACES = {name: SPECS[name].marketplace for name in CLIENT_IDS}
+
+# Per-client flags for `plugin marketplace remove`. Kept beside the installers
+# so undo_marketplace_registration and uninstall_client cannot drift apart.
+_MARKETPLACE_REMOVE_FLAGS = {
+    "claude": ("--scope", "user"),
+    "codex": ("--json",),
+    "copilot": ("--force",),
+}
+
+
+@contextlib.contextmanager
+def undo_marketplace_registration(
+    client: Client, *, added: bool, dry_run: bool, runner: Runner
+):
+    """Remove a marketplace this run registered, if the install then fails.
+
+    TASK-51: all three installers register the marketplace and *then* install
+    the plugin. When the second step failed on a first install, the
+    registration survived -- the reported half state where the marketplace was
+    listed at the new version but `plugin list` said "No plugins installed".
+
+    The generic transaction rollback cannot cover this: it restores the
+    PREVIOUS prepared source, so it returns immediately when no `<source>.old`
+    exists, which is exactly the first-install case. Only the installer knows
+    it was the one that registered the marketplace, so the undo belongs here.
+
+    A failure to undo never masks the original error -- it is reported and the
+    original exception propagates, because that error is what the operator
+    needs to act on.
+    """
+    try:
+        yield
+    except BaseException:
+        if added and not dry_run:
+            marketplace = MARKETPLACES[client.name]
+            flags = _MARKETPLACE_REMOVE_FLAGS[client.name]
+            command = [
+                client.executable, "plugin", "marketplace", "remove",
+                marketplace, *flags,
+            ]
+            print(f"  undo: removing marketplace registered by this run")
+            print(f"  $ {display_command(command)}")
+            try:
+                result = runner(command)
+                if result.returncode:
+                    detail = (result.stderr or result.stdout).strip()
+                    print(
+                        f"  WARNING: could not remove {marketplace}; it is still "
+                        f"registered without a working plugin. Remove it manually: "
+                        f"{display_command(command)}"
+                        + (f" ({detail})" if detail else ""),
+                        file=sys.stderr,
+                    )
+            except OSError as undo_exc:
+                print(
+                    f"  WARNING: could not remove {marketplace} ({undo_exc}); it is "
+                    f"still registered without a working plugin.",
+                    file=sys.stderr,
+                )
+        raise
 
 
 def display_command(command: Sequence[str], system: str | None = None) -> str:
@@ -106,31 +168,35 @@ def install_claude(
             dry_run=dry_run, runner=runner,
         )
         marketplace = None
-    if marketplace is None:
+    added_marketplace = marketplace is None
+    if added_marketplace:
         invoke(
             [client.executable, "plugin", "marketplace", "add", str(source), "--scope", "user"],
             dry_run=dry_run, runner=runner,
         )
-    installed = runner([client.executable, "plugin", "list", "--json"])
-    require_success(installed, "Claude plugin listing")
-    plugin_id = f"adr-kit@{MARKETPLACES['claude']}"
-    user_entry = next(
-        (
-            item for item in (json_output(installed) or [])
-            if isinstance(item, dict)
-            and item.get("id") == plugin_id
-            and item.get("scope", "user") == "user"
-        ),
-        None,
-    )
-    user_install = user_entry is not None
-    if desired_version and user_entry and user_entry.get("version") == desired_version:
-        print(f"  no-op: {plugin_id} {desired_version} is already healthy")
-        return
-    invoke(
-        [client.executable, "plugin", "update" if user_install else "install", plugin_id, "--scope", "user"],
-        dry_run=dry_run, runner=runner,
-    )
+    with undo_marketplace_registration(
+        client, added=added_marketplace, dry_run=dry_run, runner=runner
+    ):
+        installed = runner([client.executable, "plugin", "list", "--json"])
+        require_success(installed, "Claude plugin listing")
+        plugin_id = f"adr-kit@{MARKETPLACES['claude']}"
+        user_entry = next(
+            (
+                item for item in (json_output(installed) or [])
+                if isinstance(item, dict)
+                and item.get("id") == plugin_id
+                and item.get("scope", "user") == "user"
+            ),
+            None,
+        )
+        user_install = user_entry is not None
+        if desired_version and user_entry and user_entry.get("version") == desired_version:
+            print(f"  no-op: {plugin_id} {desired_version} is already healthy")
+            return
+        invoke(
+            [client.executable, "plugin", "update" if user_install else "install", plugin_id, "--scope", "user"],
+            dry_run=dry_run, runner=runner,
+        )
 
 
 def install_codex(
@@ -163,18 +229,22 @@ def install_codex(
             dry_run=dry_run, runner=runner,
         )
         marketplace = None
-    if marketplace is None:
+    added_marketplace = marketplace is None
+    if added_marketplace:
         invoke(
             [client.executable, "plugin", "marketplace", "add", str(source), "--json"],
             dry_run=dry_run, runner=runner,
         )
-    desired = desired_version or json.loads(
-        (source / "codex" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
-    ).get("version")
-    if entries.get(plugin_id, {}).get("version") != desired:
-        if plugin_id in entries:
-            invoke([client.executable, "plugin", "remove", plugin_id], dry_run=dry_run, runner=runner)
-        invoke([client.executable, "plugin", "add", plugin_id, "--json"], dry_run=dry_run, runner=runner)
+    with undo_marketplace_registration(
+        client, added=added_marketplace, dry_run=dry_run, runner=runner
+    ):
+        desired = desired_version or json.loads(
+            (source / "codex" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+        ).get("version")
+        if entries.get(plugin_id, {}).get("version") != desired:
+            if plugin_id in entries:
+                invoke([client.executable, "plugin", "remove", plugin_id], dry_run=dry_run, runner=runner)
+            invoke([client.executable, "plugin", "add", plugin_id, "--json"], dry_run=dry_run, runner=runner)
 
 
 def install_copilot(
@@ -190,20 +260,24 @@ def install_copilot(
             dry_run=dry_run, runner=runner,
         )
         registered = False
-    if not registered:
+    added_marketplace = not registered
+    if added_marketplace:
         invoke([client.executable, "plugin", "marketplace", "add", str(source)], dry_run=dry_run, runner=runner)
-    listed = runner([client.executable, "plugin", "list"])
-    require_success(listed, "Copilot plugin listing")
-    installed = registered and "adr-kit" in (listed.stdout + listed.stderr).lower()
-    if installed and desired_version and desired_version in (listed.stdout + listed.stderr):
-        print(f"  no-op: adr-kit {desired_version} is already healthy")
-        return
-    command = (
-        [client.executable, "plugin", "update", "adr-kit"]
-        if installed
-        else [client.executable, "plugin", "install", f"adr-kit@{MARKETPLACES['copilot']}"]
-    )
-    invoke(command, dry_run=dry_run, runner=runner)
+    with undo_marketplace_registration(
+        client, added=added_marketplace, dry_run=dry_run, runner=runner
+    ):
+        listed = runner([client.executable, "plugin", "list"])
+        require_success(listed, "Copilot plugin listing")
+        installed = registered and "adr-kit" in (listed.stdout + listed.stderr).lower()
+        if installed and desired_version and desired_version in (listed.stdout + listed.stderr):
+            print(f"  no-op: adr-kit {desired_version} is already healthy")
+            return
+        command = (
+            [client.executable, "plugin", "update", "adr-kit"]
+            if installed
+            else [client.executable, "plugin", "install", f"adr-kit@{MARKETPLACES['copilot']}"]
+        )
+        invoke(command, dry_run=dry_run, runner=runner)
 
 
 INSTALLERS = {"claude": install_claude, "codex": install_codex, "copilot": install_copilot}

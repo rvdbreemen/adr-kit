@@ -140,7 +140,13 @@ def test_path_glob_filter(tmp_path):
 
 
 def test_llm_judge_only_is_advisory(tmp_path):
-    """Free-form ADRs (llm_judge:true, no rules) emit advisory, not violation."""
+    """Free-form ADRs (llm_judge:true, no rules) emit advisory, not violation.
+
+    The advisory belongs to the declarative-only path, so the LLM pass has to
+    be off for it to appear. That took no flag before ADR-017 turned the pass
+    on by default; it now takes the explicit off switch ADR-017 retained from
+    ADR-001.
+    """
     body = CANONICAL_ADR.split("## Enforcement")[0] + textwrap.dedent("""
         ## Enforcement
 
@@ -148,7 +154,9 @@ def test_llm_judge_only_is_advisory(tmp_path):
         {"llm_judge": true}
         ```
     """)
-    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": body}, {})
+    proj = _make_project(tmp_path, {"ADR-001-no-foo.md": body}, {
+        "docs/adr/.adr-kit.json": '{"judge": {"llm_enabled": false}}',
+    })
     code, out = _run(SAMPLE_DIFF, proj)
     assert code == 0
     assert out["summary"]["advisories"] == 1

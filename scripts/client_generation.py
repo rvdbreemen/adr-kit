@@ -54,6 +54,35 @@ _native_hook_config = native_hook_config
 _render_skill = render_skill
 
 
+def _same_content(actual: bytes | None, expected: bytes) -> bool:
+    """True when the file on disk matches, ignoring line-ending style only.
+
+    The generator emits LF. On a Windows checkout with core.autocrlf=true git
+    materialises CRLF for any path .gitattributes does not pin, so a byte-exact
+    comparison reported drift on 13 generated files while `git diff` was empty
+    (TASK-57). That made the release runbook's drift gate unusable on the
+    certification machine, and "fixing" it rewrote those files as LF, which then
+    showed as phantom modifications until the next checkout -- noise that can
+    mask real drift.
+
+    Only the EOL dimension is relaxed. Content is still compared byte for byte,
+    so a single changed character is still drift.
+
+    Binary outputs (the prebuilt native hooks under hooks/bin/) are compared
+    byte-exactly and never normalised: a 0x0D 0x0A pair inside a binary is data,
+    not a line ending, and collapsing it would make two genuinely different
+    binaries compare equal. A NUL byte on either side is the binary signal --
+    the same heuristic git itself uses.
+    """
+    if actual is None:
+        return False
+    if actual == expected:
+        return True
+    if b"\x00" in actual or b"\x00" in expected:
+        return False
+    return actual.replace(b"\r\n", b"\n") == expected.replace(b"\r\n", b"\n")
+
+
 def generate(
     source_root: Path,
     output_root: Path | None = None,
@@ -175,6 +204,7 @@ def generate(
 
     drift: list[str] = []
     pending_writes: list[tuple[Path, bytes, int | None]] = []
+    # Guard: only relax the EOL dimension, and only for text. See _same_content.
     for (relative, (content, mode)), actual in zip(
         ordered_outputs,
         actual_outputs,
@@ -190,7 +220,7 @@ def generate(
                 and stat.S_IMODE(destination.stat().st_mode) == mode
             )
         )
-        if actual == content and mode_matches:
+        if _same_content(actual, content) and mode_matches:
             stats.unchanged += 1
             continue
         drift.append(relative)

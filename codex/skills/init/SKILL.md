@@ -14,6 +14,8 @@ local ADR Kit tools and follow this canonical workflow:
 1. Run the setup workflow, preview legacy ADR migration, and audit the workspace.
 2. Create selected reconstruction candidates as Proposed and present them in small batches.
 3. Use a compact confirmation grill only when the chosen decision, rationale, alternatives, and consequences have direct cited evidence; otherwise use the full grill and confirm each ADR separately.
-4. Install the ADR Kit-owned pre-commit gate and finish with `adr-doctor --fix-index docs/adr/`.
+4. Install the ADR Kit-owned pre-commit gate, then state plainly that the declarative gate is free and always on while the LLM pass is on by default and costs one model call per `llm_judge: true` ADR on every commit touching its scope, linear in their number and nothing at all until an author opts one in.
+5. Offer the backend choice host, openrouter, ollama, or off, and apply it with `adr-judge --set-backend ...` rather than by writing JSON; pass this client's own id to `--host-client`, never prompt for or store an API key, and add docs/adr/.adr-kit.local.json to .gitignore.
+6. Finish with `adr-doctor --fix-index docs/adr/`.
 
 Do not contact another model or mutate user-owned instructions.

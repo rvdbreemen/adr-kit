@@ -7,11 +7,36 @@ enforcement health, retirement candidates.
 Usage:
   adr-status [--format json|markdown|table] [--adr-dir DIR] [--limit N]
   adr-status --format markdown > /tmp/health.md
+
+Determinism of `--format json` (TASK-66)
+----------------------------------------
+`summary.by_status` is emitted in a fixed (alphabetical) key order, so two runs
+of this binary on unchanged ADRs produce the same ordering. It previously
+iterated the CANONICAL_STATUSES *set*, whose order depends on PYTHONHASHSEED,
+so every process emitted a different order.
+
+The payload as a whole is still NOT byte-comparable, deliberately, and a
+consumer wanting a stable artifact must compare it structurally:
+
+* `summary.avg_age_days` and `adrs[].age_days` are measured against today's
+  real date, so they change overnight without the ADRs changing. They are
+  honest values; freezing them behind a `--today` flag would add a lying mode
+  to a read-only dashboard for the benefit of golden tests alone.
+* `retrieval.probe_file` is an absolute resolved path and
+  `retrieval.index_error` quotes a native OS path, so both differ per machine
+  and per platform. They are produced by the shared `adr_query` /
+  `adr_retrieval_health` modules that `adr-context` and `adr-doctor` also read;
+  normalising them here would either lie about the path or fork the message.
+
+`tests/test_adr_mcp.py::normalised_status_payload` documents the same three
+exclusions on the consumer side.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import re
 import sys
@@ -20,8 +45,37 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 _BIN_DIR = Path(__file__).resolve().parent
-if str(_BIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BIN_DIR))
+
+
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    SEC-HIGH (TASK-62): `sys.path.insert(0, _BIN_DIR)` put this directory ahead
+    of the standard library for every import, so a module committed next to
+    this script executed as code -- and it re-added the very directory
+    CPython's -P / PYTHONSAFEPATH removes. Siblings are registered in
+    sys.modules under their bare name, so the plain `from adr_* import ...`
+    statements below (and the lazy ones inside functions) resolve from the
+    cache instead of the path. bin/adr-judge carries the full rationale.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+# Dependency order: adr_catalog needs adr_format + adr_schema; adr_query
+# lazily needs adr_catalog; adr_retrieval_health needs adr_query.
+_load_sibling("adr_format")
+_load_sibling("adr_schema")
+_load_sibling("adr_catalog")
+_load_sibling("adr_query")
+_load_sibling("adr_retrieval_health")
 
 # Report against the same readers the enforcement gate uses, so a status or
 # coverage figure can never claim more (or less) than adr-judge actually acts on.
@@ -279,8 +333,13 @@ def compute_summary(adrs: List[AdrRecord]) -> Dict[str, Any]:
                        llm_judge: true.
     """
     total = len(adrs)
-    by_status: Dict[str, int] = {s: 0 for s in CANONICAL_STATUSES}
-    by_status["unknown"] = 0
+    # TASK-66: sort at construction. CANONICAL_STATUSES is a set, so iterating
+    # it directly gave a by_status key order that depended on PYTHONHASHSEED --
+    # two runs of the same binary on the same ADRs emitted different JSON.
+    # Insertion order here is the JSON key order, so this is the whole fix.
+    by_status: Dict[str, int] = {
+        s: 0 for s in sorted(CANONICAL_STATUSES | {"unknown"})
+    }
 
     ages: List[int] = []
     with_enforcement = 0

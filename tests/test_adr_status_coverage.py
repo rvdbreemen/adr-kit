@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -89,12 +90,16 @@ def _summary_for(adr_dir: Path) -> dict:
     return compute_summary(load_adr_set(adr_dir))
 
 
-def _run_cli(args: list) -> tuple[int, str, str]:
+def _run_cli(args: list, hash_seed: str | None = None) -> tuple[int, str, str]:
+    env = dict(os.environ)
+    if hash_seed is not None:
+        env["PYTHONHASHSEED"] = hash_seed
     result = subprocess.run(
         [sys.executable, str(ADR_STATUS)] + args,
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env=env,
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -214,6 +219,81 @@ class TestOutputFormats:
         rc, out, err = _run_cli(["--format", "markdown", "--adr-dir", str(adr_dir)])
         assert rc == 0
         assert "| Enforcement coverage | 100.0% of Accepted (llm_judge: 0.0%) |" in out
+
+
+# ---------------------------------------------------------------------------
+# Key-order determinism (TASK-66)
+# ---------------------------------------------------------------------------
+
+class TestByStatusKeyOrderIsStable:
+    """`summary.by_status` used to be built from a set, so its JSON key order
+    followed PYTHONHASHSEED and changed on every process.
+
+    The seeds are pinned to two DIFFERENT values on purpose. Two ordinary runs
+    prove nothing: hash randomisation is fixed for the life of a process, and
+    two random seeds can agree by luck -- which is exactly the "passes on a
+    lucky ordering" trap this test exists to avoid. Order is compared between
+    runs rather than against a hard-coded list, so re-ordering the statuses
+    deliberately stays a one-line change.
+    """
+
+    _STATUS_MIX = (
+        (1, "Accepted"),
+        (2, "Proposed"),
+        (3, "Superseded"),
+        (4, "Deprecated"),
+        (5, "Amended"),
+        (6, "Bogus"),  # -> "unknown"
+    )
+
+    def _orders(self, adr_dir: Path, seeds: tuple[str, ...]) -> list[list[str]]:
+        orders = []
+        for seed in seeds:
+            rc, out, err = _run_cli(
+                ["--format", "json", "--adr-dir", str(adr_dir)], hash_seed=seed
+            )
+            assert rc == 0, err
+            orders.append(list(json.loads(out)["summary"]["by_status"]))
+        return orders
+
+    def test_key_order_matches_across_runs_with_different_hash_seeds(self, tmp_path):
+        adr_dir = tmp_path / "adr"
+        for num, status in self._STATUS_MIX:
+            _write_adr(adr_dir, num, status=status)
+
+        orders = self._orders(adr_dir, ("0", "1", "2", "3", "12345"))
+
+        assert len(set(map(tuple, orders))) == 1, (
+            f"by_status key order is not stable across runs: {orders}"
+        )
+        # Every bucket is still emitted, including the ones with a zero count.
+        assert set(orders[0]) == {
+            "accepted", "amended", "deprecated", "proposed", "superseded", "unknown",
+        }
+
+    def test_whole_summary_block_is_byte_identical_across_runs(self, tmp_path):
+        """Ordering was the only unstable thing in `summary`; keep it that way.
+
+        `summary` carries `avg_age_days`, which is date-derived -- stable
+        within a single test run, and pinned here only against ordering
+        regressions elsewhere in the block. The rest of the payload is not
+        byte-comparable; see bin/adr-status's module docstring.
+        """
+        adr_dir = tmp_path / "adr"
+        for num, status in self._STATUS_MIX:
+            _write_adr(adr_dir, num, status=status)
+
+        blocks = []
+        for seed in ("0", "1"):
+            rc, out, _ = _run_cli(
+                ["--format", "json", "--adr-dir", str(adr_dir)], hash_seed=seed
+            )
+            assert rc == 0
+            start = out.index('"summary"')
+            end = out.index('"adrs"')
+            blocks.append(out[start:end])
+
+        assert blocks[0] == blocks[1]
 
 
 # ---------------------------------------------------------------------------

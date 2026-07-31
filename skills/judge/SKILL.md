@@ -10,7 +10,41 @@ allowed-tools: [Read, Bash, Edit, Write, Task]
 Use `$ARGUMENTS` as an optional focus for the staged review. Empty means judge
 the complete staged diff.
 
-You are running an interactive judge of the user's staged git diff against the project's Accepted ADRs. As of adr-kit v0.13.0, the LLM evaluation is done by `bin/adr-judge --llm` (Claude Sonnet by default) — same engine and same prompt as the pre-commit hook, so a verdict here matches the verdict the hook would emit. Your job is to drive the resolution loop the hook can't drive: walk the user through fixing each violation interactively.
+You are running an interactive judge of the user's staged git diff against the project's Accepted ADRs. The LLM evaluation is done by `bin/adr-judge --llm` through whichever backend the project configured (ADR-017) — same engine and same prompt as the pre-commit hook, so a verdict here matches the verdict the hook would emit. Your job is to drive the resolution loop the hook can't drive: walk the user through fixing each violation interactively.
+
+If `$ARGUMENTS` is `settings` (or the user asks what the judge is configured to use, or wants to change the model or backend), do **Step 0** and stop there.
+
+## Step 0 — Judge settings
+
+This is the settings surface for judging. It lives here rather than under a separate `/adr-kit:settings` because the values are the judge's own, and because `scripts/settings.py` already owns an unrelated `adr-kit:settings` namespace (`.adr-kit/settings.json`, install and doctor preferences) — two commands called "settings" showing different keys would be worse than one command in the obvious place.
+
+Show what is configured now, always before changing anything:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --show-config
+```
+
+Every value comes back with its provenance (`default`, `project`, `local`, `env`), followed by the resolved backend and whether it is currently available. Report it as-is; do not summarise away an `available = false`, because that line is the difference between a judge that runs and a judge that is silently doing nothing.
+
+To change it, use the kit's own writer — never hand-edit `.adr-kit.json`. The writer refuses an incomplete choice and re-validates what it wrote, so it cannot leave a config the judge then rejects:
+
+```bash
+# the agent's own CLI, no model flag, no extra credential
+"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend host --host-client claude-code-cli
+# any model over HTTPS; the key comes from OPENROUTER_API_KEY in the environment
+"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend openrouter --model anthropic/claude-sonnet-4.5
+# a local model; nothing leaves the machine, roughly 3.4s per call on a 12B model
+"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend ollama --model gemma4:12b
+```
+
+Rules for this step:
+
+- **Never ask for an API key and never write one into a file.** `docs/adr/.adr-kit.json` is committed; a key written there is a published key, and the judge refuses one with an error rather than using it. Tell the user to export `OPENROUTER_API_KEY` in their shell profile.
+- `--host-client` is a per-machine fact and goes to the gitignored `docs/adr/.adr-kit.local.json`. Pass the client you are running in; the judge cannot detect it at commit time and will not guess.
+- For `ollama`, offer only tags that `ollama list` actually reports.
+- To switch the pass off entirely: `judge.llm_enabled: false` in `.adr-kit.json`, or `ADR_KIT_NO_LLM=1 git commit ...` for one commit.
+- Be straight about cost when asked: one model call per `llm_judge: true` ADR per commit that touches its scope, linear in the number of opted-in ADRs, and nothing at all while no ADR opts in.
 
 After loading the staged diff, run
 `python <plugin-root>/bin/adr-readiness --diff --all-proposed --format json`.
@@ -59,7 +93,7 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
 EXIT=$?
 ```
 
-The `--llm` flag enables the Sonnet pass — `bin/adr-judge` shells out to `claude -p --model claude-sonnet-4-6` (configurable via `judge.llm_model` in `docs/adr/.adr-kit.json`). The runner falls back to declarative-only with a WARN line if the `claude` CLI is missing.
+The `--llm` flag forces the LLM pass on even where `judge.llm_enabled` was set false. It routes through the configured `judge.backend` (see Step 0), one isolated call per `llm_judge: true` ADR. Any backend that is missing, unreachable, unauthenticated or unparseable degrades to declarative-only with a WARN line and exit 0 — tooling drift never blocks a commit.
 
 Read `/tmp/adr-judge-result.json`. Show the user:
 

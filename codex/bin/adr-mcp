@@ -5,16 +5,25 @@ Speaks MCP over stdio: newline-delimited JSON-RPC 2.0 messages on
 stdin/stdout (MCP stdio transport does NOT use Content-Length framing).
 Hand-rolled on the Python stdlib only, so no `mcp` package is required.
 
-The protocol surface is deliberately tiny (initialize, initialized,
-tools/list, tools/call, ping); the dispatch table in serve() is shaped so
-swapping in the official `mcp` SDK later is a local change.
+The protocol surface is deliberately tiny (server/discover, initialize,
+initialized, tools/list, tools/call, ping); the dispatch table in serve() is
+shaped so swapping in the official `mcp` SDK later is a local change.
 
-Protocol era: this server currently speaks the handshake era only. MCP
-revision 2026-07-28 removed the initialize handshake in favour of stateless
-per-request envelopes; dual-era support is planned in ADR-016 and TASK-58,
-not yet implemented here. A 2026-07-28 client probing `server/discover`
-receives -32601 and correctly falls back to `initialize`, so this server is
-non-compliant rather than broken. See
+Protocol era: this server is dual-era (ADR-016). MCP revision 2026-07-28
+removed the initialize handshake in favour of stateless per-request
+envelopes, so both surfaces are served from one process:
+
+  * handshake era (2024-11-05 .. 2025-11-25) - reached through `initialize`,
+    which confirms a declared version or counter-offers the newest one.
+  * modern era (2026-07-28) - reached through `server/discover` or through
+    the reserved `io.modelcontextprotocol/protocolVersion` key in
+    `params._meta`. Modern results carry `resultType`, `_meta.serverInfo`
+    and, on `server/discover` and `tools/list`, `ttlMs` / `cacheScope`.
+
+The era is a PURE FUNCTION of the single frame being answered: no
+per-process and no per-connection era state, so the same bytes always get
+the same answer. That is deliberate - the spec forbids relying on prior
+requests over the same connection to establish context. See ADR-016 and
 docs/research/2026-07-29-mcp-2026-07-28-revision.md.
 
 Exposes exactly 5 tools, each a subprocess call into a sibling bin/ script:
@@ -58,8 +67,55 @@ from typing import Any, Dict, List, Optional, Tuple
 BIN_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BIN_DIR.parent
 
-# Fallback when the client does not send a protocolVersion (it should).
-DEFAULT_PROTOCOL_VERSION = "2025-06-18"
+# ---------------------------------------------------------------------------
+# Protocol version registry (ADR-016)
+# ---------------------------------------------------------------------------
+#
+# Versions are an ENUMERATED SET, never a sortable scalar. Membership is a
+# tuple lookup; an unrecognised peer string is never ordered against a known
+# one, because date-shaped strings only happen to sort lexicographically
+# ("zzz" > "2025-11-25" is True) and future identifiers may not be dates.
+
+# Reachable through the `initialize` handshake. One stateless code path
+# serves all four: the tools-only subset (initialize / tools/list /
+# tools/call / ping) is identical across them, so nothing has to remember
+# which revision was negotiated.
+HANDSHAKE_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")
+
+# The stateless per-request envelope era.
+MODERN_PROTOCOL_VERSIONS = ("2026-07-28",)
+
+# Every version this server implements, oldest first.
+KNOWN_PROTOCOL_VERSIONS = HANDSHAKE_PROTOCOL_VERSIONS + MODERN_PROTOCOL_VERSIONS
+
+# Counter-offered when an `initialize` names a version outside the handshake
+# set, or names none. The handshake revisions mandate a counter-offer, never
+# an error, so -32022 must never reach an `initialize` response.
+HANDSHAKE_COUNTER_OFFER = HANDSHAKE_PROTOCOL_VERSIONS[-1]
+
+# Reserved `_meta` keys, spelled exactly as the specification does. The
+# `io.modelcontextprotocol/` prefix is spec-reserved, so legacy traffic
+# cannot mint these.
+PROTOCOL_VERSION_META_KEY = "io.modelcontextprotocol/protocolVersion"
+CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
+CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
+SERVER_INFO_META_KEY = "io.modelcontextprotocol/serverInfo"
+LOG_LEVEL_META_KEY = "io.modelcontextprotocol/logLevel"
+
+# Cache hints for modern `server/discover` and `tools/list` results only.
+# `tools/call` is not a cacheable operation. "public" because the tool list
+# is identical for every caller and carries no user-specific data. An int is
+# emitted deliberately: schema.ts says `ttlMs: number` (@minimum 0) while the
+# generated schema.json says "type": "integer"; an int satisfies both.
+MODERN_CACHE_TTL_MS = 300000
+MODERN_CACHE_SCOPE = "public"
+
+MODERN_INSTRUCTIONS = (
+    "adr-kit: read-only Architecture Decision Record tooling. Call tools/list "
+    "for the five deterministic, key-free tools (adr_context, adr_judge, "
+    "adr_status, adr_quality, adr_readiness). Every tool accepts optional "
+    "project_root and adr_dir arguments to select the active workspace."
+)
 
 # Per-tool subprocess timeout. The wrapped CLIs are regex-only and fast;
 # this only guards against pathological inputs.
@@ -298,6 +354,21 @@ def run_cli(
     env = dict(os.environ)
     if env_extra:
         env.update(env_extra)
+    # Make the child WRITE utf-8, since we decode it as utf-8 just below.
+    #
+    # Honest scope (measured, TASK-69): every CLI wrapped here emits JSON with
+    # ensure_ascii=True, so their *stdout* is pure ASCII today and this line
+    # changes nothing on that path -- an A/B with it disabled produced
+    # byte-identical output. It is kept for the two places that are not
+    # ASCII-safe by construction: the child's *stderr*, which carries free-form
+    # warning text that can quote a non-ASCII path, and any future CLI that
+    # dumps with ensure_ascii=False. Without it those decode through
+    # errors="replace" and become U+FFFD.
+    #
+    # It is NOT what fixed the corruption this task was filed for; that was
+    # _pin_stdio_to_utf8 on our own stdout. Set after env_extra so a caller
+    # cannot unset it by accident.
+    env["PYTHONIOENCODING"] = "utf-8"
     proc = subprocess.run(
         cmd,
         input=stdin_text,
@@ -474,7 +545,7 @@ def tool_adr_judge(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict
         "--diff", "-",
         "--adr-dir", str(adr_dir),
         "--repo-root", str(root),
-        "--snapshot", "diff",
+        "--snapshot", "worktree",  # TASK-65: the caller has a worktree; "diff" cannot see a modified file's post-image.
         "--json",
     ]
     # Never run the LLM pass from the MCP server: key-free by design.
@@ -626,6 +697,48 @@ METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 
+# Specification-reserved range (-32020..-32099). Only the one code this
+# server can legitimately reach is defined here: -32020 (HeaderMismatch) is
+# HTTP-only and unreachable on stdio, and -32021 (MissingRequiredClient-
+# Capability) has no code path because the server never samples, elicits or
+# asks for roots. Neither may be emitted (ADR-016).
+UNSUPPORTED_PROTOCOL_VERSION = -32022
+
+
+def _pin_stdio_to_utf8() -> None:
+    """Force UTF-8, LF-terminated stdio regardless of the host's locale.
+
+    The MCP stdio transport mandates UTF-8 and newline-delimited framing. Python
+    opens std streams in text mode using the platform default, which on a cp1252
+    Windows host breaks both (TASK-69):
+
+    * ``bin/adr-status`` emits U+2014 in "Superseded - consider archiving"; it
+      left as the cp1252 byte 0x97, so the frame was not valid UTF-8. Strict
+      readers abort the session; lenient ones silently accept mojibake.
+    * U+2192 from ``adr-context`` has no cp1252 mapping at all, so
+      ``_write_message`` raised ``UnicodeEncodeError``, which ``dispatch``'s
+      broad handler turned into JSON-RPC -32603. The tool result was lost.
+    * Text-mode writes translated the trailing "\\n" to "\\r\\n".
+
+    ``newline=""`` disables that translation, so the "\\n" appended in
+    ``_write_message`` reaches the wire as one byte. Reconfiguration happens
+    once in ``main`` before ``serve``; the ``hasattr`` guard covers a caller
+    that replaced a std stream with an object lacking ``reconfigure``.
+    """
+    for stream, kwargs in (
+        (sys.stdin, {"encoding": "utf-8"}),
+        (sys.stdout, {"encoding": "utf-8", "newline": ""}),
+        # stderr carries diagnostics, not protocol. errors="replace" keeps an
+        # unmappable character in a log line from raising inside the server.
+        (sys.stderr, {"encoding": "utf-8", "errors": "replace"}),
+    ):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(**kwargs)
+            except (ValueError, OSError):
+                # A detached or non-seekable stream; the default encoding stays.
+                pass
+
 
 def _write_message(payload: Dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -636,23 +749,161 @@ def _reply_result(req_id: Any, result: Dict[str, Any]) -> None:
     _write_message({"jsonrpc": "2.0", "id": req_id, "result": result})
 
 
-def _reply_error(req_id: Any, code: int, message: str) -> None:
-    _write_message({"jsonrpc": "2.0", "id": req_id,
-                    "error": {"code": code, "message": message}})
+def _reply_error(
+    req_id: Any, code: int, message: str, data: Optional[Dict[str, Any]] = None
+) -> None:
+    error: Dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    _write_message({"jsonrpc": "2.0", "id": req_id, "error": error})
 
 
 # ---------------------------------------------------------------------------
 # Method handlers
 # ---------------------------------------------------------------------------
 
+def frame_is_modern(method: str, params: Dict[str, Any]) -> bool:
+    """Classify one frame's protocol era. A PURE FUNCTION of that frame.
+
+    No per-process and no per-connection state is consulted or kept, so the
+    same bytes always get the same answer. Exactly two rules (ADR-016):
+
+    1. `server/discover`, or a `params._meta` carrying the reserved
+       `io.modelcontextprotocol/protocolVersion` key -> modern. The sentinel
+       is that one key, not the required pair: its prefix is spec-reserved so
+       a legacy client cannot mint it, while a bare `_meta` is no evidence at
+       all (legacy requests already put `progressToken` there). Checking only
+       the version key means a half-built envelope still routes modern and
+       gets a -32602 naming what is missing, instead of being misrouted to
+       legacy and failing confusingly.
+    2. Anything else -> legacy.
+
+    `initialize` is the one explicit exception to rule 1: it routes legacy
+    even when the modern envelope is stamped on it, because `initialize`
+    does not exist at 2026-07-28 at all, so an envelope on it is a client
+    defect rather than an era signal (TASK-58.1 AC #6).
+
+    There is deliberately NO era lock: locking would make a byte-identical
+    frame get two different answers depending on what arrived earlier on the
+    same stdin, which is what "Servers MUST NOT rely on prior requests over
+    the same connection to establish context" forbids.
+    """
+    if method == "initialize":
+        return False
+    if method == "server/discover":
+        return True
+    meta = params.get("_meta")
+    return isinstance(meta, dict) and PROTOCOL_VERSION_META_KEY in meta
+
+
+def modern_envelope_error(
+    params: Dict[str, Any]
+) -> Optional[Tuple[int, str, Optional[Dict[str, Any]]]]:
+    """Validate a modern-routed frame's envelope and negotiate its version.
+
+    Returns (code, message, data) for the first failure, or None when the
+    frame may be served. Routing signal and validation stay separate: a
+    frame routed modern on the sentinel alone is still rejected here when
+    the rest of the envelope is absent.
+    """
+    meta = params.get("_meta")
+    if not isinstance(meta, dict):
+        meta = {}
+    missing = [
+        key
+        for key in (PROTOCOL_VERSION_META_KEY, CLIENT_CAPABILITIES_META_KEY)
+        if key not in meta
+    ]
+    if missing:
+        return (
+            INVALID_PARAMS,
+            "Invalid params: modern request is missing required _meta key(s): "
+            + ", ".join(missing),
+            None,
+        )
+    requested = meta[PROTOCOL_VERSION_META_KEY]
+    if not isinstance(requested, str):
+        # A shape defect, not a negotiation failure: -32022 is the one code
+        # auto-negotiating clients do not fall back from.
+        return (
+            INVALID_PARAMS,
+            f"Invalid params: '{PROTOCOL_VERSION_META_KEY}' must be a string",
+            None,
+        )
+    if requested not in MODERN_PROTOCOL_VERSIONS:
+        # Era-scoped: a modern answer lists modern versions only, because a
+        # handshake revision cannot be reached through a modern envelope.
+        return (
+            UNSUPPORTED_PROTOCOL_VERSION,
+            f"Unsupported protocol version: {requested!r}",
+            {"supported": list(MODERN_PROTOCOL_VERSIONS), "requested": requested},
+        )
+    return None
+
+
+def _modern_result(
+    payload: Dict[str, Any], cacheable: bool = False
+) -> Dict[str, Any]:
+    """Stamp a modern-era result: resultType, cache hints, _meta.serverInfo.
+
+    `resultType` is always "complete": the five tools are fully parameterised
+    by their arguments, so the server never emits "input_required" and never
+    invents a value of its own. Cache hints are stamped on `server/discover`
+    and `tools/list` only - `CallToolResult` extends `Result`, not
+    `CacheableResult`.
+    """
+    result: Dict[str, Any] = {"resultType": "complete"}
+    result.update(payload)
+    if cacheable:
+        result["ttlMs"] = MODERN_CACHE_TTL_MS
+        result["cacheScope"] = MODERN_CACHE_SCOPE
+    meta = dict(result.get("_meta") or {})
+    meta[SERVER_INFO_META_KEY] = {"name": "adr-kit", "version": server_version()}
+    result["_meta"] = meta
+    return result
+
+
+def negotiate_handshake_version(requested: Any) -> str:
+    """Confirm a declared handshake version, or counter-offer the newest.
+
+    Absent, unknown, or a modern-era value such as "2026-07-28" all get the
+    counter-offer. The handshake revisions mandate exactly this ("Otherwise,
+    the server MUST respond with another protocol version it supports"), so
+    -32022 is never emitted on the legacy surface. Nothing is ever reflected
+    back unvalidated.
+    """
+    if isinstance(requested, str) and requested in HANDSHAKE_PROTOCOL_VERSIONS:
+        return requested
+    return HANDSHAKE_COUNTER_OFFER
+
+
 def handle_initialize(params: Dict[str, Any]) -> Dict[str, Any]:
-    requested = params.get("protocolVersion")
-    protocol = requested if isinstance(requested, str) and requested else DEFAULT_PROTOCOL_VERSION
     return {
-        "protocolVersion": protocol,
+        "protocolVersion": negotiate_handshake_version(params.get("protocolVersion")),
         "capabilities": {"tools": {}},
         "serverInfo": {"name": "adr-kit", "version": server_version()},
     }
+
+
+def handle_server_discover(params: Dict[str, Any]) -> Dict[str, Any]:
+    """The modern-era replacement for the handshake.
+
+    Returns the five required DiscoverResult fields plus the two optional
+    ones this server has something to say with. There is deliberately no
+    top-level `serverInfo` and no top-level `protocolVersion`: neither field
+    exists in DiscoverResult this revision, and identity travels in `_meta`.
+    `supportedVersions` lists the MODERN versions only - legacy reachability
+    is settled by the handshake, and advertising a handshake revision here
+    would invite a client to send it inside an envelope that does not exist.
+    """
+    return _modern_result(
+        {
+            "supportedVersions": list(MODERN_PROTOCOL_VERSIONS),
+            "capabilities": {"tools": {}},
+            "instructions": MODERN_INSTRUCTIONS,
+        },
+        cacheable=True,
+    )
 
 
 def handle_tools_list(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -690,28 +941,95 @@ def dispatch(message: Dict[str, Any], root: Path, adr_dir: Path) -> None:
         return
 
     if method.startswith("notifications/"):
-        # notifications/initialized, notifications/cancelled, ...: ignore.
+        # notifications/initialized, notifications/cancelled,
+        # notifications/progress, ...: accepted and ignored in both eras.
+        # The notification rules forbid a response, and the five tool
+        # handlers are synchronous subprocess calls that cannot be
+        # interrupted mid-flight, so nothing further is emitted either.
         return
 
     try:
-        if method == "initialize":
-            _reply_result(req_id, handle_initialize(params))
-        elif method == "ping":
-            _reply_result(req_id, {})
-        elif method == "tools/list":
-            _reply_result(req_id, handle_tools_list(params))
-        elif method == "tools/call":
-            try:
-                _reply_result(req_id, handle_tools_call(params, root, adr_dir))
-            except KeyError:
-                _reply_error(req_id, INVALID_PARAMS,
-                             f"Unknown tool: {params.get('name')!r}")
+        if frame_is_modern(method, params):
+            _dispatch_modern(req_id, is_notification, method, params, root, adr_dir)
         else:
-            if not is_notification:
-                _reply_error(req_id, METHOD_NOT_FOUND, f"Method not found: {method}")
+            _dispatch_legacy(req_id, is_notification, method, params, root, adr_dir)
     except Exception as exc:  # noqa: BLE001 - the loop must survive anything
         if not is_notification:
             _reply_error(req_id, INTERNAL_ERROR, f"Internal error: {exc}")
+
+
+def _dispatch_legacy(
+    req_id: Any,
+    is_notification: bool,
+    method: str,
+    params: Dict[str, Any],
+    root: Path,
+    adr_dir: Path,
+) -> None:
+    """Handshake-era dispatch. Results keep exactly their historical shape.
+
+    No resultType, no _meta.serverInfo, no ttlMs and no cacheScope:
+    CacheableResult does not exist in the handshake revisions, so stamping
+    those fields here would invent wire fields the client's schema does not
+    define.
+    """
+    if method == "initialize":
+        _reply_result(req_id, handle_initialize(params))
+    elif method == "ping":
+        _reply_result(req_id, {})
+    elif method == "tools/list":
+        _reply_result(req_id, handle_tools_list(params))
+    elif method == "tools/call":
+        try:
+            _reply_result(req_id, handle_tools_call(params, root, adr_dir))
+        except KeyError:
+            _reply_error(req_id, INVALID_PARAMS,
+                         f"Unknown tool: {params.get('name')!r}")
+    else:
+        if not is_notification:
+            _reply_error(req_id, METHOD_NOT_FOUND, f"Method not found: {method}")
+
+
+def _dispatch_modern(
+    req_id: Any,
+    is_notification: bool,
+    method: str,
+    params: Dict[str, Any],
+    root: Path,
+    adr_dir: Path,
+) -> None:
+    """Modern-era (2026-07-28) dispatch.
+
+    Envelope validation and version negotiation run first and take
+    precedence over any result, including on `server/discover`: a probe
+    without the required keys is malformed, and a probe naming an
+    unsupported version gets -32022 whose `data.supported` carries exactly
+    the list `supportedVersions` would have carried.
+    """
+    failure = modern_envelope_error(params)
+    if failure is not None:
+        code, message, data = failure
+        if not is_notification:
+            _reply_error(req_id, code, message, data)
+        return
+
+    if method == "server/discover":
+        _reply_result(req_id, handle_server_discover(params))
+    elif method == "tools/list":
+        _reply_result(req_id, _modern_result(handle_tools_list(params), cacheable=True))
+    elif method == "tools/call":
+        try:
+            _reply_result(
+                req_id, _modern_result(handle_tools_call(params, root, adr_dir))
+            )
+        except KeyError:
+            _reply_error(req_id, INVALID_PARAMS,
+                         f"Unknown tool: {params.get('name')!r}")
+    else:
+        # `ping` lands here: revision 2026-07-28 removed it, so it is not
+        # advertised or served in this era. There is no result to stamp.
+        if not is_notification:
+            _reply_error(req_id, METHOD_NOT_FOUND, f"Method not found: {method}")
 
 
 def serve(root: Path, adr_dir: Path) -> int:
@@ -753,6 +1071,9 @@ def main() -> int:
         help="Directory containing ADR-*.md files. Default: <root>/docs/adr.",
     )
     args = parser.parse_args()
+
+    # Before anything writes a byte: the transport contract is UTF-8 + LF.
+    _pin_stdio_to_utf8()
 
     root = Path(args.root or os.environ.get("PROJECT_ROOT") or os.getcwd()).resolve()
     if not root.is_dir():

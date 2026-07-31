@@ -1,9 +1,10 @@
 ---
 id: TASK-57
 title: Fix Windows CRLF false-positive drift in build-client-adapters.py --check
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-26 13:57'
+updated_date: '2026-07-30 20:44'
 labels:
   - bug
   - release
@@ -35,3 +36,29 @@ Fix direction: normalize line endings before comparing in --check (e.g. compare 
 - [ ] #3 Regression test covers the CRLF-materialized tree case
 - [ ] #4 Release runbook needs no Windows-specific caveat afterwards
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed in `scripts/client_generation.py` with two regression tests.
+
+**Reproduced first.** The bug did not reproduce on a plain `--check` run, because `.gitattributes` pins `bin/*`, `scripts/*.py`, `.githooks/*`, `templates/githooks/*`, `codex/bin/*` and `copilot/bin/*` to `eol=lf`. It does **not** pin `hooks/hooks.json`, `codex/hooks/*`, `copilot/hooks.json` or the `codex/templates/*` and `copilot/templates/*` trees — exactly the files the report named. Materialising CRLF into `codex/hooks/hooks.json` reproduced it immediately: exit 1, "Client adapter drift", with byte-identical content.
+
+**Fix.** New `_same_content(actual, expected)` helper replaces the bare `actual == content` comparison in the drift loop. It tries byte equality first, and only if that fails compares with `\r\n` collapsed to `\n`. Content is still compared byte for byte, so a single changed character is still drift; only the EOL dimension is relaxed, which is what the task asked for.
+
+**Binary guard.** Normalisation is refused when either side contains a NUL byte — the same binary heuristic git uses. This matters concretely: `hooks/bin/windows-x64/` ships prebuilt `.exe` and `.pdb` files, and a `0D 0A` pair inside a binary is data, not a line ending. Collapsing it would make two genuinely different binaries compare equal, turning a drift-detection fix into a drift-detection hole.
+
+**Verified** against all three cases, isolated from a concurrent agent that was editing `bin/adr-mcp` (its mirrors legitimately drifted at the time, which initially made my first test read as a failure — the harness now filters those paths):
+
+| case | drift reported | expected |
+|---|---|---|
+| CRLF, content identical | none | none |
+| real content change | `codex/hooks/hooks.json` | detected |
+| real change *and* CRLF | `codex/hooks/hooks.json` | detected, not masked |
+
+**Tests added** to `tests/test_client_adapter_generation.py`: one that materialises the whole generated tree as CRLF and asserts zero drift, then adds a real edit and asserts it is still caught; and one unit test pinning `_same_content` behaviour including the binary refusal and the missing-file case. Suite: 11 passed.
+
+**Criterion 4 needed no work.** `docs/RELEASING.md` carries no Windows or CRLF caveat — the maintainer had simply been distrusting the local gate and relying on Linux CI. That workaround is now unnecessary rather than documented away.
+
+Same family as TASK-64 (Windows non-ASCII path handling): platform-specific text behaviour that a Linux-only CI run cannot surface.
+<!-- SECTION:FINAL_SUMMARY:END -->

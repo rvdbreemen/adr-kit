@@ -52,6 +52,10 @@ out/
 *.log
 *.pdb
 
+# Judge host-client record (per-machine, written by /adr-kit:init; ADR-017)
+docs/adr/.adr-kit.local.json
+.adr-kit.local.json
+
 # ADR Guardian state (per-machine, never committed)
 .adr-kit-state.json
 docs/adr/.adr-kit-state.json

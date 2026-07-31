@@ -5,8 +5,9 @@ status: "Accepted"
 date: "2026-07-30"
 binding: true
 gate: "adr-mcp-dual-era-v1"
-documents_shipped: false
-verified_in: []
+documents_shipped: true
+verified_in:
+  - "tests/test_adr_mcp.py"
 supersedes: []
 superseded_by: null
 topics:
@@ -54,6 +55,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Human acceptance in session after all seven lint gates passed; require_pattern rules deferred to TASK-58.5 so enforcement cannot block incremental work before the implementation exists
+    changed_via: adr-kit lifecycle
+  - date: 2026-07-31
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Dual-era surface shipped in TASK-58.1/58.2 and validated against three real clients plus the official mcp 2.0.0 SDK in TASK-58.4; gate adr-mcp-dual-era-v1 is live in the conformance suite
     changed_via: adr-kit lifecycle
 ```
 
@@ -839,9 +845,11 @@ answer changes when to re-measure, not what to decide.
 
 ## Enforcement
 
-Negative rules only, scoped to all three shipped copies of the file. Both
+Scoped to all three shipped copies of the file. The two `forbid_*` rules
 describe things that must never appear, so neither depends on the
-implementation existing yet.
+implementation existing. The four `require_pattern` rules were added on
+2026-07-31, once both preconditions recorded below had actually been met — see
+"Why `require_pattern` was empty at acceptance".
 
 ```json
 {
@@ -859,12 +867,52 @@ implementation existing yet.
       "message": "adr-mcp is stdlib-only with zero runtime dependencies (ADR-016). Only the listed standard-library modules may be imported; the mcp SDK is a reference to read, not to import. Adding another stdlib module means amending this allowlist."
     }
   ],
-  "require_pattern": [],
+  "require_pattern": [
+    {
+      "pattern": "MODERN_PROTOCOL_VERSIONS",
+      "path_glob": "{bin,codex/bin,copilot/bin}/adr-mcp",
+      "message": "The modern-era version set must stay declared: era routing is a pure function of the frame and needs an enumerated set to match against (ADR-016)."
+    },
+    {
+      "pattern": "server/discover",
+      "path_glob": "{bin,codex/bin,copilot/bin}/adr-mcp",
+      "message": "server/discover is the modern era's entry point; removing it strands every client that does not send the reserved _meta key (ADR-016)."
+    },
+    {
+      "pattern": "UNSUPPORTED_PROTOCOL_VERSION",
+      "path_glob": "{bin,codex/bin,copilot/bin}/adr-mcp",
+      "message": "-32022 must remain reachable on the modern surface; the handshake counter-offers instead, so this is the only path that can refuse a version (ADR-016)."
+    },
+    {
+      "pattern": "server/discover",
+      "path_glob": "tests/test_adr_mcp.py",
+      "message": "The conformance suite must keep exercising server/discover: it is the gate adr-mcp-dual-era-v1 (ADR-016)."
+    }
+  ],
   "llm_judge": false
 }
 ```
 
-### Why there is no `require_pattern` rule
+### Why `require_pattern` was empty at acceptance
+
+> **Resolved 2026-07-31 (TASK-58.5).** The four rules are now in the block
+> above. Both blockers below were removed by later work rather than argued
+> away, and the original reasoning is kept verbatim as the historical record.
+>
+> The first failure mode was conditional on the implementation being absent; it
+> ended when TASK-58.1 and TASK-58.2 landed. The second — the one called
+> permanent — was fixed by TASK-65, which is the very change this section
+> called for two paragraphs down ("`bin/adr-mcp:469` should pass
+> `--snapshot worktree` rather than `diff`"). `require_pattern` under
+> `--snapshot diff` now emits an **advisory** instead of a violation, and the
+> MCP tool asks for `worktree`.
+>
+> Re-measured against the shipped implementation before adding the rules, not
+> predicted: an innocent one-line change to `bin/adr-mcp` draws 0 violations
+> under `worktree` and 4 advisories under `diff`; a copy with the modern
+> surface stripped draws 3 violations naming each missing symbol. The rules
+> distinguish the compliant implementation from a breach, which is the bar this
+> section set for not shipping a decorative rule.
 
 Declined, not deferred. The acceptance record above anticipated deferring these
 rules to TASK-58.5; on the evidence below the correct answer is stronger than a

@@ -4,20 +4,99 @@
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-for import_root in (ROOT, ROOT / "bin", ROOT / "scripts"):
+_BIN_DIR = ROOT / "bin"
+
+
+def _is_bin_dir(entry: str) -> bool:
+    """True when a sys.path entry resolves to this script's own directory.
+
+    Compared resolved, not textually: CPython only guarantees an absolute
+    sys.path[0] from 3.11 onward, and "" (cwd) must also be caught when bin/
+    happens to be the working directory.
+    """
+    try:
+        return Path(entry or ".").resolve() == _BIN_DIR
+    except (OSError, ValueError):
+        return False
+
+
+# SEC-HIGH (TASK-62): ROOT/"bin" used to go on sys.path at position 0 together
+# with these two, which let any module committed next to this script shadow the
+# standard library. The bin siblings are now loaded by explicit file location
+# (below), so that entry is gone.
+#
+# ROOT and ROOT/"scripts" must stay importable: adr_doctor_checks and
+# adr_doctor_probes reach into scripts/adr_settings.py, scripts/project_setup.py,
+# scripts/client_generation.py, clients.installer.* and hooks.hook_benchmark,
+# which are packages and flat modules in OTHER directories, not siblings. They
+# are APPENDED so the standard library and site-packages still resolve first.
+#
+# That alone is not enough here. CPython puts this script's own directory at
+# sys.path[0] regardless, ahead of these appends, so a committed
+# bin/adr_settings.py shadowed scripts/adr_settings.py and executed --
+# reproduced against this file after the sibling conversion. The bin entry is
+# therefore masked for the duration of the import block below and restored
+# afterwards; restoring is safe because nothing in that dependency tree imports
+# lazily, and it keeps an in-process importer (pytest) from losing an entry
+# other test modules put there deliberately.
+for import_root in (ROOT, ROOT / "scripts"):
     if str(import_root) not in sys.path:
-        sys.path.insert(0, str(import_root))
+        sys.path.append(str(import_root))
+
+_SAVED_SYS_PATH = list(sys.path)
+sys.path[:] = [entry for entry in _SAVED_SYS_PATH if not _is_bin_dir(entry)]
+
+
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    Registered in sys.modules under the bare name so each module's own sibling
+    imports (adr_doctor_core -> adr_schema + adr_retrieval_health, and so on)
+    resolve from the cache. bin/adr-judge carries the full rationale.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+# Dependency order: adr_catalog needs adr_format + adr_schema; adr_query lazily
+# needs adr_catalog; adr_retrieval_health needs adr_query; adr_doctor_core needs
+# adr_schema + adr_retrieval_health; adr_doctor_checks and adr_doctor_probes
+# need adr_doctor_models (plus the scripts/ packages appended above).
+for _sibling in (
+    "adr_format",
+    "adr_schema",
+    "adr_catalog",
+    "adr_query",
+    "adr_retrieval_health",
+    "adr_doctor_models",
+    "adr_doctor_core",
+    "adr_doctor_checks",
+    "adr_doctor_probes",
+):
+    _load_sibling(_sibling)
 
 from adr_doctor_checks import run_client_checks
 from adr_doctor_probes import run_deep_extensions
 from adr_doctor_core import render_text as render_adr_text
 from adr_doctor_core import run_doctor as run_adr_doctor
 from adr_doctor_models import build_report, render_human
+
+sys.path[:] = _SAVED_SYS_PATH
+del _SAVED_SYS_PATH
 
 
 def _parser() -> argparse.ArgumentParser:

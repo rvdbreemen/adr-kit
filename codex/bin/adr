@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -15,8 +17,33 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
-if str(_BIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BIN_DIR))
+
+
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    SEC-HIGH (TASK-62): `sys.path.insert(0, _BIN_DIR)` put this directory ahead
+    of the standard library for every import, so a module committed next to
+    this script executed as code -- and it re-added the very directory
+    CPython's -P / PYTHONSAFEPATH removes. Siblings are registered in
+    sys.modules under their bare name, so the plain `from adr_* import ...`
+    statements below (and the lazy ones inside functions) resolve from the
+    cache instead of the path. bin/adr-judge carries the full rationale.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+# Dependency order: adr_schema imports adr_format.
+_load_sibling("adr_format")
+_load_sibling("adr_schema")
 
 from adr_format import (
     DEFAULT_PROFILE,
@@ -29,6 +56,8 @@ from adr_format import (
     unresolved_open_questions,
 )
 from adr_schema import (
+    DATE_RE,
+    VALID_STATUSES,
     migrate_text,
     parse_frontmatter,
     render_frontmatter,
@@ -164,13 +193,45 @@ def set_status_line(body: str, status_line: str) -> str:
     return f"\n## Status\n\n{status_line}\n\n{body}"
 
 
+# A plain (unquoted) YAML scalar cannot contain ": ", cannot end in ":", and
+# cannot begin with an indicator character. Emitting one anyway does not fail
+# loudly: it re-reads as a nested mapping and takes the WHOLE status_history
+# block down with it (TASK-70). Three ADRs in this repository were written that
+# way before this guard existed, all through a `reason` holding free text like
+# "Human approval: records the ...", and the recommended
+# `--changed-by "User: <name>"` produces the same shape.
+#
+# It stayed invisible because adr-kit reads these blocks with its own
+# line-oriented mini-parser, which takes everything after the first colon as
+# the value. Only an external consumer with a real YAML parser sees the damage.
+_YAML_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"
+
+
+def _yaml_scalar(value: str) -> str:
+    """Render a string as YAML, quoting only when a plain scalar would not survive."""
+    text = "" if value is None else str(value)
+    needs_quotes = (
+        text == ""
+        or text != text.strip()
+        or ": " in text
+        or text.endswith(":")
+        or " #" in text
+        or text[0] in _YAML_INDICATORS
+    )
+    if not needs_quotes:
+        return text
+    # Double-quoted style: the only YAML style that can represent every scalar.
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def history_entry(status: str, changed_by: str, reason: str, changed_via: str, when: str) -> str:
     return (
-        f"  - date: {when}\n"
-        f"    status: {status}\n"
-        f"    changed_by: {changed_by}\n"
-        f"    reason: {reason}\n"
-        f"    changed_via: {changed_via}\n"
+        f"  - date: {_yaml_scalar(when)}\n"
+        f"    status: {_yaml_scalar(status)}\n"
+        f"    changed_by: {_yaml_scalar(changed_by)}\n"
+        f"    reason: {_yaml_scalar(reason)}\n"
+        f"    changed_via: {_yaml_scalar(changed_via)}\n"
     )
 
 
@@ -205,6 +266,87 @@ def append_status_history(
     return body + section
 
 
+def read_status_line(body: str) -> Tuple[Optional[str], Optional[str]]:
+    """Return the (status, date) written in the body's Status section line."""
+    match = STATUS_RE.search(body)
+    if not match:
+        return None, None
+    line = match.group(2).strip()
+    word = re.match(r"([A-Za-z]+)", line)
+    status = word.group(1).capitalize() if word else None
+    if status not in VALID_STATUSES:
+        status = None
+    found_date = DATE_RE.search(line)
+    return status, (found_date.group(1) if found_date else None)
+
+
+def prior_transition(path: Path, data: Dict, body: str) -> Tuple[str, str]:
+    """Return the (status, date) this ADR carried before the current mutation.
+
+    The Status line comes first because it is the half a lifecycle command is
+    about to overwrite; frontmatter fills in whichever field the prose omits.
+    Both are consulted before giving up: an ADR whose frontmatter plainly
+    records `status: "Accepted"` and `date: "2026-05-31"` has a recoverable
+    transition even when its Status line is unparseable prose.
+    """
+    status, when = read_status_line(body)
+    if status is None and data.get("status") in VALID_STATUSES:
+        status = str(data["status"])
+    if when is None and isinstance(data.get("date"), str):
+        when = data["date"]
+    if status is None or when is None:
+        missing = " and ".join(
+            name
+            for name, value in (("status", status), ("date", when))
+            if value is None
+        )
+        raise AdrLifecycleError(
+            f"{path}: refusing to mutate: this ADR has no '## Status History' "
+            f"block and its existing transition cannot be recovered (no {missing} "
+            "in the Status line or the frontmatter). Writing a history that "
+            "starts at this transition would drop the earlier one. Add a "
+            "'## Status History' block, or a Status line such as "
+            "'Accepted, YYYY-MM-DD.', and rerun."
+        )
+    return status, when
+
+
+def ensure_status_history(
+    path: Path,
+    data: Dict,
+    body: str,
+    pending: Tuple[str, str],
+) -> str:
+    """Seed a missing status_history block with the transition already on file.
+
+    ADRs authored before the status_history convention record their acceptance
+    in exactly two places, the frontmatter `date` and the Status line, and a
+    lifecycle command overwrites both. Appending the new entry to a freshly
+    created block then loses that earlier transition for good (TASK-68), so it
+    is recovered here, from the record as it stands, before anything is
+    rewritten. Call this BEFORE set_status_line: afterwards the line it reads
+    is already the new one.
+    """
+    if HISTORY_START_RE.search(body):
+        return body
+    status, when = prior_transition(path, data, body)
+    if (status, when) == pending:
+        # Same status on the same day: there is no earlier transition to keep.
+        return body
+    return append_status_history(
+        body,
+        status,
+        # The actor genuinely was never recorded. Naming the current user or
+        # "adr-kit" would put a signature on a transition neither performed.
+        "unknown",
+        "Recovered from the record as it stood before this transition; this "
+        "ADR predates the status_history convention. The actor was never "
+        "recorded and is not guessed here.",
+        "unrecorded",
+        when,
+    )
+
+
 def mutate_status(
     path: Path,
     status: str,
@@ -216,6 +358,7 @@ def mutate_status(
 ) -> str:
     data, body = load_adr(path)
     assert_legal_transition(str(data.get("status")), status)
+    body = ensure_status_history(path, data, body, (status, when))
     data["status"] = status
     data["date"] = when
     if status != "Superseded":
@@ -420,6 +563,10 @@ def _assert_acceptance_gates(path: Path, args) -> Dict:
         )
     root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd().resolve()
     lint_script = Path(__file__).resolve().with_name("adr-lint")
+    # --context-dir hands the lint the sibling ADRs to resolve cross-references
+    # against while it still reports on this file alone. Without it a
+    # `supersedes` entry could never find its target and every acceptance of a
+    # correctly linked successor failed with "target not found" (TASK-67).
     lint_code, lint_payload = _run_json_tool(
         [
             sys.executable,
@@ -431,13 +578,25 @@ def _assert_acceptance_gates(path: Path, args) -> Dict:
             "schema,completeness,audit,evidence,clarity,consistency,policy",
             "--repo-root",
             str(root),
+            "--context-dir",
+            str(path.parent),
             str(path),
         ]
     )
     if lint_code != 0:
+        # Report what failed, not just how many did. The counts alone sent
+        # readers back to adr-lint to find out what the blocker actually was.
+        failures = [
+            f"{finding.get('gate', '?')}: {finding.get('summary', '')}".strip()
+            for entry in lint_payload.get("files", [])
+            for finding in entry.get("findings", [])
+            if finding.get("level") == "FAIL"
+        ]
+        detail = "; ".join(failures) if failures else "see adr-lint output"
         raise AdrLifecycleError(
-            "acceptance blocked: strict lint failed: "
+            "acceptance blocked: strict lint failed ("
             + json.dumps(lint_payload.get("summary", {}), sort_keys=True)
+            + f"): {detail}"
         )
     return lint_payload.get("summary", {})
 
@@ -449,6 +608,9 @@ def command_document(args) -> List[str]:
     if not args.verified_in:
         raise AdrLifecycleError("document requires at least one --verified-in pointer")
     data, body = load_adr(path)
+    body = ensure_status_history(
+        path, data, body, (str(data["status"]), args.date)
+    )
     data["documents_shipped"] = True
     data["verified_in"] = args.verified_in
     body = append_status_history(
@@ -562,6 +724,15 @@ def command_supersede(args) -> List[str]:
                 f"{old_id} already has competing successor "
                 f"{candidate_data.get('id', candidate.name)}"
             )
+
+    # Both files are seeded before either is mutated: prior_transition reads the
+    # frontmatter status and date that the lines below overwrite.
+    old_body = ensure_status_history(
+        old_path, old_data, old_body, ("Superseded", args.date)
+    )
+    new_body = ensure_status_history(
+        new_path, new_data, new_body, (str(new_data["status"]), args.date)
+    )
 
     old_data["status"] = "Superseded"
     old_data["date"] = args.date

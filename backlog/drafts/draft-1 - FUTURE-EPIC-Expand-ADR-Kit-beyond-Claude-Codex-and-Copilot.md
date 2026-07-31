@@ -1,10 +1,10 @@
 ---
-id: TASK-43
+id: DRAFT-1
 title: 'FUTURE EPIC: Expand ADR Kit beyond Claude, Codex, and Copilot'
-status: To Do
+status: Draft
 assignee: []
 created_date: '2026-07-19 19:02'
-updated_date: '2026-07-19 19:02'
+updated_date: '2026-07-30 21:11'
 labels:
   - epic
   - future
@@ -63,3 +63,17 @@ Preserve and eventually execute ADR Kit support expansion beyond the current Cla
 <!-- SECTION:PLAN:BEGIN -->
 Activation gate: do not start until the maintainer explicitly selects this epic after the three-client program. Phase 1 refreshes TASK-38 evidence and records current capabilities, adoption, maintenance, OS/surface, licensing, and maintenance budget. Phase 2 decides the generic standards promise and selects a small expansion wave. Phase 3 creates one bounded implementation/certification task per approved client surface. Phase 4 promotes clients independently from passing evidence and updates installer defaults only with explicit approval. Stop whenever a client lacks the full required contract, sustainable maintenance, or a current user priority; retain it as compatibility/watchlist rather than building around gaps.
 <!-- SECTION:PLAN:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: claude-session-2026-07-30
+created: 2026-07-30 21:11
+---
+Moved from To Do to Draft on 2026-07-30 while clearing the active backlog.
+
+This is not progress and not a decision to drop it. The epic carries an explicit activation gate in its own description — "work starts only after explicit maintainer activation and a fresh capability/adoption/maintenance review" — and acceptance criterion 1 states it is deliberately NOT part of release certification or completion. Marking it Done would claim that support for OpenCode, Kilo, Kimi, Cursor, VS Code agent plugins, goose, Qwen, Gemini CLI, OMP and Pi exists, which it does not.
+
+Draft is the honest status: the register is preserved, the research links stay, and nothing is lost — but it no longer sits in the active To Do queue implying someone should pick it up. Move it back to To Do when you decide to activate a wave.
+---
+<!-- COMMENTS:END -->

@@ -3,9 +3,10 @@ id: TASK-62
 title: >-
   Remove sys.path.insert from bin/ executables: committed module shadows the
   judge's imports (CI code execution)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-30 18:31'
+updated_date: '2026-07-30 21:25'
 labels:
   - security
   - judge
@@ -90,3 +91,25 @@ Consider also hardening the CI path independently: pin the action to a released 
 - [ ] #6 The CI exposure is addressed: either the workflow runs the judge from a trusted checkout, or the action is pinned to a released ref, or the import fix is verified sufficient on its own with a test
 - [ ] #7 Tests pass on Python 3.10 and 3.12, on Windows and Linux
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+19 files in `bin/` converted to explicit sibling loading, plus two shadowing paths the conversion alone would not have closed. New `tests/test_bin_import_safety.py` with 123 tests, proven to fail on HEAD.
+
+**Three files the enumeration missed, and they were worse.** `adr-readiness`, `adr-readiness-ci` and `adr-grill-signal` had no `sys.path.insert` at all — which is why they were not in the estimate — but they resolved siblings purely through CPython's implicit `sys.path[0]`, so they were more exposed rather than less. `python -P bin/adr-readiness --help` failed outright before the change and is clean after.
+
+**`bin/adr_schema.py` was partially undoing adr-judge's own fix.** It carried its own `sys.path.insert(0, _BIN_DIR)` behind an `if str(_BIN_DIR) not in sys.path` guard that does not short-circuit under `-P`, nor on Python 3.10 where `sys.path[0]` is relative rather than absolute. Because `bin/adr-judge` loads `adr_schema` through `_load_sibling`, the shared module re-added the very directory commit ebdbbf6 had removed. Replaced with the same explicit loader. This is the finding I would have missed by treating the task as "grep for the insert and convert".
+
+**Removing the insert is not sufficient for `adr-lint`.** CPython places the script's directory at `sys.path[0]` regardless, and `adr-lint` is the only executable importing a third-party name (`jsonschema`) through the path — the exact name the original finding used as its payload. Reproduced with a hostile module: plain invocation executed it, `-P` did not. `adr-judge` escapes this only because ebdbbf6 made jsonschema deep-only; `adr-lint` cannot. Closed with a scoped import that masks the bin entry and restores it. A global scrub was rejected deliberately: fourteen test modules load these executables in-process via `SourceFileLoader` and nine more put `bin/` on the path on purpose.
+
+**`adr-doctor` had a second shadowing shape.** It inserted three roots, of which only `ROOT/bin` was the target; `ROOT` and `ROOT/scripts` must stay importable because its modules reach real packages there. Those are now appended rather than prepended. Probing found a different working payload: a committed `bin/adr_settings.py` shadowed `scripts/adr_settings.py` and executed. Masked during the import block and restored after.
+
+**Verification** went beyond `--help`, which argparse would pass even on an unconverted file: `python3 -P` on all 18 executables with real invocations, and a hostile-module probe across 15 executables × {plain, `-P`} × four payload names, all clean. `adr-lint --strict docs/adr` output is byte-identical to HEAD. Startup A/B over 7 samples: −23 ms to +18 ms, noise against the 500–600 ms budgets.
+
+**The agent caused a CRLF incident and reported it.** Its conversion script used `Path.write_text`, which translates to CRLF on Windows, rewriting 15 files against `.gitattributes`' `bin/* text eol=lf` pin. Caught via a git warning, normalised back to LF, re-verified, exec bits intact. Worth knowing given TASK-57 is the same surface. Separately observed and explicitly not claimed: `bin/adr-renumber` and `bin/bump-version` already carry CRLF and were never touched.
+
+**Python 3.10 remains unverified** — not installed on this machine. That is the axis that matters most here, because 3.10 gives a relative `sys.path[0]`, which is exactly why `adr_schema.py`'s guard failed to short-circuit there. `_is_bin_dir()` compares resolved paths for that reason, but CI's 3.10 leg is the real check.
+
+Deliberately skipped: `bin/adr-judge` and `bin/adr-mcp` (owned by concurrent agents), `bin/adr-judge-precommit` (subprocess wrapper, no imports), `bin/adr-renumber` and `bin/bump-version` (no sibling imports, no insert). The `codex/` and `copilot/` mirrors are untouched and were byte-compared as in sync.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-58.2
 title: 'adr-mcp: modern wire contract and server/discover'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-29 22:47'
+updated_date: '2026-07-30 20:50'
 labels:
   - mcp
   - protocol
@@ -61,3 +62,19 @@ Tolerate without implementing: a client that sends `inputResponses` or `requestS
 - [ ] #11 An unknown tool name is still a JSON-RPC error, not an isError result
 - [ ] #12 No code path emits -32021 or -32020
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented in `bin/adr-mcp` alongside TASK-58.1. `tests/test_adr_mcp.py`: 39 passed.
+
+Added `_modern_result()` as a single stamping seam (`resultType`, cache hints, `_meta.serverInfo`), `handle_server_discover()`, and split `dispatch()` into `_dispatch_legacy` / `_dispatch_modern`. `_reply_error` gained an optional `data` argument for the -32022 payload. The module docstring was rewritten — it still claimed the server was handshake-era only.
+
+**Verified per criterion**, driven as real frames rather than inspected: `resultType: "complete"` and `_meta.serverInfo` on every modern result; `ttlMs` as an int and `cacheScope: "public"` on `server/discover` and modern `tools/list`; both absent on `tools/call`; `supportedVersions == ["2026-07-28"]` and no top-level `serverInfo` or `protocolVersion` in the DiscoverResult; tools returned in declaration order and stable across calls; a tool-internal failure as `isError: true` inside a `resultType: complete` result while an unknown tool name stays a JSON-RPC error; an enveloped `ping` refused; `logLevel`, `progressToken`, `inputResponses` and `requestState` all tolerated without being implemented.
+
+Legacy-era result shapes are unchanged — see TASK-58.1's summary for the byte-identity evidence and the one `bin/adr-status` key-order caveat.
+
+**Handover note on acceptance criterion 12** (no -32020/-32021 ever emitted): no code path emits either, but there is now a comment at `bin/adr-mcp:685-687` naming both codes to explain *why* they are unreachable. A grep-based assertion would therefore false-positive. TASK-58.3 asserts this against emitted frames from a driven session instead, which is the stronger check anyway.
+
+**Left unclaimed, deliberately:** ADR-016 observes that `bin/adr-mcp:469` should pass `--snapshot worktree` rather than `diff`, since `diff` cannot reconstruct a post-image for a modified file and produces unactionable violations through the MCP `adr_judge` tool. The ADR calls it "a TASK-58 opportunity, not a requirement of this decision" and it appears in neither task's acceptance criteria, so it was not changed. It remains a real defect worth its own task.
+<!-- SECTION:FINAL_SUMMARY:END -->

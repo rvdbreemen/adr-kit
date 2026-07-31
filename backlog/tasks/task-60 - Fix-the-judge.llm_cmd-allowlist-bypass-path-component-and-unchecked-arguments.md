@@ -3,9 +3,10 @@ id: TASK-60
 title: >-
   Fix the judge.llm_cmd allowlist bypass (path component and unchecked
   arguments)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-30 17:53'
+updated_date: '2026-07-30 21:34'
 labels:
   - security
   - judge
@@ -61,3 +62,28 @@ State the governing rule wherever it lands: repo-tracked config may select among
 - [ ] #5 The rule is stated in the ADR governing TASK-59: repo-tracked config may select among operator-enabled backends but may never introduce an endpoint, binary or credential
 - [ ] #6 If the TASK-59 backend registry lands first, this guard is replaced by the named-backend indirection rather than duplicated
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed in `bin/adr-judge` with regression tests that were proven to fail on HEAD.
+
+New `check_repo_llm_cmd(candidate)` returns a refusal reason (or `None` when acceptable) and gates the config branch of LLM-command resolution:
+
+- Rejects `os.sep`, `os.altsep`, a literal `/` **and** `\` on every platform, plus `:` — which also covers drive-relative `C:claude` and NTFS alternate data streams (`name:stream`).
+- Compares the **raw** `candidate[0]` against the allowlist. The `Path()` call was deleted outright rather than swapping `.stem` for `.name`: taking any path attribute was the bug class, and dropping it rejects `claude.exe`, `claude.sh` and `claude.bat` without needing a special case (this closes F10 as a side effect).
+- Validates the whole argument vector against a small safe-flag set (`-p`, `--print`, `--model`, `--output-format`, in both `--flag X` and `--flag=X` forms). Anything else refuses the vector and falls back to the default command with a warning.
+- Env `ADR_KIT_LLM_CMD` and CLI `--llm-cmd` remain unrestricted, preserving the operator-versus-repository distinction the original comment drew and which was correct.
+
+**Verified against a real HEAD mirror**, not just after the fix: vector 1 (a repository-shipped `bin/claude.exe`) actually executed the payload on HEAD, writing its marker file, and is refused afterwards. Vector 2 (unchecked argument vector) likewise fails on HEAD and passes after. A test also pins this repository's own shipped config shape (`llm_cmd: ["claude","-p"]`) as accepted, so the guard cannot later be tightened past what ships.
+
+Suite: 148 tests across the judge files, 1028 passed overall.
+
+**Two acceptance criteria are deliberately deferred, not silently dropped.**
+
+AC #5 (state the governing rule in the TASK-59 ADR) — the rule is written verbatim in `check_repo_llm_cmd`'s docstring, and now also appears in ADR-017's Decision Contract: repo-tracked config may select among operator-enabled backends but may never introduce an endpoint, a binary or a credential.
+
+AC #6 (replace the guard with the named-backend registry) — the registry does not exist yet; ADR-017 specifies it and TASK-59 implements it. Tightening the current guard was the right interim step because a registry must admit `ollama`, so the allowlist approach cannot simply be extended.
+
+Also still open and outside this change: `schemas/adr-kit-config.schema.json` types `llm_cmd` as an untyped string array with no mention of the guard, so the schema is not a second layer.
+<!-- SECTION:FINAL_SUMMARY:END -->

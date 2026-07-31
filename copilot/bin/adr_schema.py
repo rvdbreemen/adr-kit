@@ -7,6 +7,8 @@ scalar fields plus string lists.
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import json
 import re
 import sys
@@ -15,8 +17,31 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
-if str(_BIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BIN_DIR))
+
+
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    SEC-HIGH (TASK-62): this module used to `sys.path.insert(0, _BIN_DIR)`.
+    That made bin/ shadow the standard library for every subsequent import in
+    whatever process loaded it -- including the executables that load this
+    module by explicit path precisely to avoid that -- and it re-added the
+    directory CPython's -P / PYTHONSAFEPATH removes. See bin/adr-judge for the
+    full rationale. Registering under the bare name lets the plain
+    `from adr_format import ...` below resolve from sys.modules.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+_load_sibling("adr_format")
 
 from adr_format import SUPPORTED_PROFILES
 

@@ -25,11 +25,16 @@ Usage:
   adr-lint --gates schema             # validate canonical frontmatter
   adr-lint --format json              # machine-readable output
   adr-lint --config /tmp/policy.json  # custom config path
+  adr-lint --context-dir docs/adr docs/adr/ADR-042-foo.md
+                                      # lint one file, resolve its
+                                      # cross-references against the whole set
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -39,7 +44,81 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_BIN_DIR = Path(__file__).resolve().parent
+
+
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+
+    SEC-HIGH (TASK-62): `sys.path.insert(0, _BIN_DIR)` put this directory ahead
+    of the standard library for every import, so a module committed next to
+    this script executed as code -- and it re-added the very directory
+    CPython's -P / PYTHONSAFEPATH removes. Siblings are registered in
+    sys.modules under their bare name, so the plain `from adr_* import ...`
+    statements below resolve from the cache instead of the path.
+
+    This one matters more than most: adr-lint is the only executable that still
+    imports the optional third-party `jsonschema` (three sites below), which is
+    exactly the name the original finding used as its payload.
+    bin/adr-judge carries the full rationale.
+    """
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+# Dependency order: adr_catalog imports adr_format and adr_schema.
+_load_sibling("adr_format")
+_load_sibling("adr_schema")
+_load_sibling("adr_catalog")
+
+
+def _import_jsonschema():
+    """Import the optional third-party jsonschema -- never a bin/ sibling.
+
+    SEC-HIGH (TASK-62), the residual half. Dropping the explicit
+    sys.path.insert is not enough on its own: CPython still puts this script's
+    own directory at sys.path[0] for a plain `python bin/adr-lint` run, and
+    jsonschema is the one name adr-lint resolves through the path rather than
+    through _load_sibling. It is also the exact name the original finding used
+    as its payload, so a committed bin/jsonschema.py still executed here after
+    the sibling conversion -- reproduced, then fixed by this function.
+
+    The masking is scoped and reverted because the test suite imports this file
+    in-process; a permanent scrub would delete bin/ from pytest's own sys.path
+    and break unrelated test modules that put it there deliberately.
+
+    Returns the module, or None when jsonschema is not installed.
+    """
+    saved = list(sys.path)
+    sys.path[:] = [entry for entry in saved if not _is_bin_dir(entry)]
+    try:
+        import jsonschema  # type: ignore
+
+        return jsonschema
+    except ImportError:
+        return None
+    finally:
+        sys.path[:] = saved
+
+
+def _is_bin_dir(entry: str) -> bool:
+    """True when a sys.path entry resolves to this script's own directory.
+
+    Compared resolved, not textually: CPython only guarantees an absolute
+    sys.path[0] from 3.11 onward, and "" (cwd) must also be caught when bin/
+    happens to be the working directory.
+    """
+    try:
+        return Path(entry or ".").resolve() == _BIN_DIR
+    except (OSError, ValueError):
+        return False
 
 from adr_schema import (
     FrontmatterError,
@@ -48,10 +127,6 @@ from adr_schema import (
     split_frontmatter,
     validate_frontmatter,
 )
-_BIN_DIR = Path(__file__).resolve().parent
-if str(_BIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BIN_DIR))
-
 from adr_catalog import (
     ENFORCEMENT_BLOCK_RE,
     STATUS_BOLD_INLINE_RE,
@@ -108,9 +183,8 @@ def _get_enforcement_validator():
     if _ENFORCEMENT_VALIDATOR_LOADED:
         return _ENFORCEMENT_VALIDATOR
     _ENFORCEMENT_VALIDATOR_LOADED = True
-    try:
-        import jsonschema  # type: ignore
-    except ImportError:
+    jsonschema = _import_jsonschema()
+    if jsonschema is None:
         return None
     schema_path = (
         Path(__file__).resolve().parent.parent
@@ -232,20 +306,19 @@ def load_config(path: Optional[Path]) -> Dict:
             )
 
     # Optional jsonschema validation: deeper structural check.
-    try:
-        import jsonschema
-        schema_path = (
-            Path(__file__).resolve().parent.parent
-            / "schemas"
-            / "adr-kit-config.schema.json"
-        )
-        if schema_path.exists():
-            schema = json.loads(schema_path.read_text(encoding="utf-8"))
-            jsonschema.validate(cfg, schema)
-    except ImportError:
-        pass  # jsonschema not installed; basic checks above suffice.
-    except Exception as e:
-        raise PolicyError(f"{path}: schema validation failed: {e}")
+    jsonschema = _import_jsonschema()  # None when not installed; basic checks suffice.
+    if jsonschema is not None:
+        try:
+            schema_path = (
+                Path(__file__).resolve().parent.parent
+                / "schemas"
+                / "adr-kit-config.schema.json"
+            )
+            if schema_path.exists():
+                schema = json.loads(schema_path.read_text(encoding="utf-8"))
+                jsonschema.validate(cfg, schema)
+        except Exception as e:
+            raise PolicyError(f"{path}: schema validation failed: {e}")
 
     return cfg
 
@@ -323,6 +396,39 @@ def discover_files(target: Path) -> List[Path]:
         if ADR_FILENAME_RE.match(p.name):
             seen[p.name.lower()] = p
     return sorted(seen.values(), key=lambda p: p.name.lower())
+
+
+def _path_key(path: Path) -> str:
+    """Return a comparable identity for a file path.
+
+    Two Path objects can name the same file and still compare unequal: the
+    target handed in as `docs/adr/ADR-017-x.md` and the same file found by
+    walking a context directory differ by absoluteness, and on Windows by case.
+    Resolving and case-folding both is what keeps a file from counting twice.
+    """
+    try:
+        resolved = path.resolve()
+    except OSError:  # pragma: no cover - unresolvable path (broken symlink)
+        resolved = Path(os.path.abspath(str(path)))
+    return os.path.normcase(str(resolved))
+
+
+def merge_lookup_context(targets: List[Path], context: List[Path]) -> List[Path]:
+    """Return the targets plus every context ADR that is not already a target.
+
+    Deduplication is by resolved path, not by Path object. A context directory
+    normally contains the target file, and counting it twice would manufacture
+    a duplicate-ADR-number finding against the very ADR being linted.
+    """
+    seen = {_path_key(fp) for fp in targets}
+    merged = list(targets)
+    for fp in context:
+        key = _path_key(fp)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(fp)
+    return merged
 
 
 def scan_extra_migration_notices(
@@ -763,26 +869,49 @@ def _gate_exists_locally(gate: str, repo_root: Path) -> bool:
     return needle in _resolve_gates_locally([needle], repo_root)
 
 
-def detect_frontmatter_consistency(files: List[Path], repo_root: Path) -> Dict[int, List[str]]:
-    """Detect cross-file and consuming-repo frontmatter consistency issues."""
+def detect_frontmatter_consistency(
+    files: List[Path],
+    repo_root: Path,
+    report_files: Optional[List[Path]] = None,
+) -> Dict[int, List[str]]:
+    """Detect cross-file and consuming-repo frontmatter consistency issues.
+
+    `files` is the lookup corpus: any record in it can be resolved as the
+    target of a `supersedes` or `superseded_by` reference. `report_files`, when
+    given, narrows which of those records may *produce* a finding, so a caller
+    can hand in a whole directory as context and still get a verdict about one
+    ADR alone. `bin/adr accept` needs exactly that split: without the corpus
+    every cross-reference resolved to nothing and reported "target not found"
+    (TASK-67), and without the narrowing an unrelated ADR elsewhere in the
+    directory would block an unrelated acceptance.
+    """
     records = _frontmatter_records(files)
+    reported = records
+    if report_files is not None:
+        wanted = {_path_key(fp) for fp in report_files}
+        reported = {
+            adr_id: record
+            for adr_id, record in records.items()
+            if _path_key(record["file"]) in wanted
+        }
     issues: Dict[int, List[str]] = {}
 
     def add(record: Dict, message: str) -> None:
         issues.setdefault(record["adr_num"], []).append(message)
 
-    # Resolve every named gate in a single pass over the tree instead of
-    # re-scanning the repository once per gate.
+    # Gate presence is a property of one record, not a cross-reference, so it
+    # is asked only of the records that may report. Resolve every named gate in
+    # a single pass over the tree instead of re-scanning once per gate.
     _wanted_gates = {
         str(record["data"].get("gate")).strip()
-        for record in records.values()
+        for record in reported.values()
         if record["data"].get("status") == "Accepted"
         and record["data"].get("binding") is True
         and record["data"].get("gate")
     }
     present_gates = _resolve_gates_locally(_wanted_gates, repo_root)
 
-    for adr_id, record in records.items():
+    for adr_id, record in reported.items():
         data = record["data"]
         body_status = _current_status(record["body"])
         if body_status and body_status.capitalize() != data["status"]:
@@ -936,12 +1065,11 @@ def check_policy_gate(content: str, adr_id: str) -> List[Dict]:
     """
     data, err = _extract_enforcement_block(content)
     if err is not None:
-        # Schema / JSON error — FAIL.
-        try:
-            import jsonschema  # noqa: F401
-            code = "POLICY_SCHEMA_INVALID"
-        except ImportError:
-            code = "POLICY_SCHEMA_INVALID"
+        # Schema / JSON error — FAIL. The probing `import jsonschema` that used
+        # to sit here assigned the same code on both branches, so it decided
+        # nothing; its only remaining effect was executing whatever module the
+        # name resolved to (TASK-62). Dropped, behaviour unchanged.
+        code = "POLICY_SCHEMA_INVALID"
         return [{"gate": "policy", "severity": "FAIL", "code": code, "message": err}]
     if data is None:
         # No enforcement block — skip silently.
@@ -1470,6 +1598,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Consuming repo root for gate and verified_in resolution (default: cwd).",
     )
     parser.add_argument(
+        "--context-dir", metavar="PATH", default=None,
+        help="ADR directory used only to resolve cross-references (supersedes, "
+             "superseded_by). Findings are still reported for <path> alone.",
+    )
+    parser.add_argument(
         "--gates", default=None,
         help=f"Comma-separated gates to run. Default: {','.join(DEFAULT_GATES)}. "
              f"All: {','.join(ALL_GATES)}",
@@ -1522,12 +1655,26 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     files = discover_files(target)
 
-    duplicates = detect_duplicates(files)
+    # Cross-file gates need the whole set to resolve a reference, but a caller
+    # that asked about one file must not be told about someone else's problem.
+    # Corpus is what the detectors look things up in; `files` stays what they
+    # may report on.
+    corpus = files
+    if args.context_dir:
+        context_root = Path(args.context_dir)
+        if not context_root.exists():
+            print(f"adr-lint: context dir not found: {context_root}", file=sys.stderr)
+            return 2
+        corpus = merge_lookup_context(files, discover_files(context_root))
+
+    duplicates = detect_duplicates(corpus)
     supersession = (
-        detect_supersession_conflicts(files) if "consistency" in gates else {}
+        detect_supersession_conflicts(corpus) if "consistency" in gates else {}
     )
     frontmatter_consistency = (
-        detect_frontmatter_consistency(files, repo_root) if "consistency" in gates else {}
+        detect_frontmatter_consistency(corpus, repo_root, report_files=files)
+        if "consistency" in gates
+        else {}
     )
 
     file_results = [

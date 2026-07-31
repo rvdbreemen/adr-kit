@@ -303,32 +303,39 @@ The MCP specification revision dated 2026-07-28 makes the protocol stateless: `i
 capabilities in `params._meta`, and servers answer a `server/discover` probe. This is documented
 in [`docs/research/2026-07-29-mcp-2026-07-28-revision.md`](../docs/research/2026-07-29-mcp-2026-07-28-revision.md).
 
-`bin/adr-mcp` implements the **handshake era only**. As of this document:
+`bin/adr-mcp` serves **both eras from one process**, governed by
+[ADR-016](../docs/adr/ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md)
+(Accepted 2026-07-30) and implemented in TASK-58.1 and TASK-58.2:
 
-- `DEFAULT_PROTOCOL_VERSION = "2025-06-18"` (`bin/adr-mcp:53`).
-- `server/discover` is unrouted and answers `-32601` (`bin/adr-mcp:700-702`).
-  Per the spec's backward-compatibility rules a dual-era client must not key its fallback to a
-  specific code, so it correctly classifies this server as legacy and falls back to
-  `initialize`. **The server is non-compliant, not broken.**
-- `handle_initialize` **echoes the client's requested `protocolVersion` verbatim**
-  (`bin/adr-mcp:640-641`). It will therefore claim to speak `2026-07-28` — or any
-  arbitrary string — without implementing it. There is no intersection against a declared
-  supported set and no `-32022 UnsupportedProtocolVersion`. This behaviour is currently
-  *asserted as intended* by `test_initialize_echoes_client_protocol_version`
-  (`tests/test_adr_mcp.py:203-208`).
-- `dispatch()` never checks that `initialize` arrived first (`bin/adr-mcp:669-705`).
-  A modern-only client that skips the probe gets its `tools/call` silently processed under legacy
-  semantics instead of a deterministic failure — exactly the "era-ambiguous method" hazard the
-  stdio transport page warns about.
-- No `resultType`, no `ttlMs`/`cacheScope` on `tools/list`, no
-  `_meta["io.modelcontextprotocol/serverInfo"]` on results.
+- **Version registry.** `DEFAULT_PROTOCOL_VERSION` is gone. Three enumerated tuples replace it:
+  `HANDSHAKE_PROTOCOL_VERSIONS` (`2024-11-05` … `2025-11-25`), `MODERN_PROTOCOL_VERSIONS`
+  (`2026-07-28`) and their concatenation. Versions are a set, never a sortable scalar — date
+  strings only happen to sort lexicographically.
+- **Era detection is a pure function of the single frame.** `server/discover`, or the reserved
+  `io.modelcontextprotocol/protocolVersion` key in `params._meta`, routes modern; everything
+  else, including `initialize`, routes legacy. There is no per-process and no per-connection era
+  state, so the same bytes always get the same answer. The revision forbids relying on prior
+  requests to establish context; the official SDK does lock per connection, and ADR-016
+  deliberately diverges.
+- **Negotiation replaces the echo.** A modern frame naming an unsupported version gets
+  `-32022` with `data.supported` and `data.requested`. `initialize` never gets `-32022`: the
+  handshake negotiates by counter-offer, so an unknown or absent version gets `2025-11-25`.
+- **Modern results are spec-shaped.** `resultType: "complete"` and
+  `_meta["io.modelcontextprotocol/serverInfo"]` on every modern result; `ttlMs` (int) and
+  `cacheScope: "public"` on `server/discover` and `tools/list` only. `tools/call` carries
+  neither, because `CallToolResult` extends `Result` alone.
+- **Legacy output is unchanged.** Byte-identity was verified by replaying frames against a copy
+  of the pre-change server. One response differed only in JSON key order, traced to pre-existing
+  nondeterminism in `bin/adr-status` rather than to this change.
 
-The remediation is tracked as **TASK-58** (`backlog/tasks/task-58 - Support-MCP-protocol-revision-2026-07-28-in-adr-mcp-stdio-dual-era.md`),
-`status: To Do`, priority high, 12 acceptance criteria, planned to modify `bin/adr-mcp`,
-`tests/test_adr_mcp.py` and `docs/adr/`. Its AC #12 requires an ADR recording the decision
-(including the rejected alternative of adopting the official `mcp` Python SDK 2.0.0); that ADR
-does **not exist yet**, so there is no accepted decision to cite. Nothing in this section is
-implemented.
+**Resolved (TASK-65, 2026-07-31).** The gap recorded here — `bin/adr-mcp` passing `--snapshot diff`
+to the judge, where that mode cannot reconstruct a post-image for a *modified* file and so turned
+every `require_pattern` into a violation an author could not act on — is fixed on both sides. The
+call site now passes `--snapshot worktree`, and `require_pattern` under `--snapshot diff` emits an
+**advisory** instead of a violation, because that outcome is a fact about the invocation rather
+than about the code. A deleted or unstaged file, and an unreadable or unsafe path, still fail
+closed. This also unblocked the four `require_pattern` rules ADR-016 had declined; they are now in
+its Enforcement block.
 
 ### Other current-state limitations
 
@@ -373,10 +380,12 @@ implemented.
    `scripts/install-agent-envs.py` and `scripts/client_generation*.py` and found **no generator
    that writes `codex/bin/` or `copilot/bin/`**, and no test asserting mirror parity — the only
    hit is an executable-bit check in
-   `tests/test_agent_installer.py:307`. If the mirrors are
-   hand-synced at release time, TASK-58 must land in all three or the Codex and Copilot
-   distributions silently diverge. I could not prove either way from the repository, so this is
-   flagged as an unresolved risk rather than a conclusion.
+   `tests/test_agent_installer.py:307`. **Resolved 2026-07-31:** the mirrors are generated —
+   `scripts/build-client-adapters.py` writes them and `--check` reports drift, which three CI
+   workflows run. The dual-era work landed in all three copies through that generator rather than
+   by hand, and ADR-016's Enforcement globs are scoped
+   `{bin,codex/bin,copilot/bin}/adr-mcp` so a drift introduced in a mirror is caught by the
+   judge as well. The risk flagged here was real but is now covered on both paths.
 5. **`--adr-dir` outside `--root` starts cleanly and then fails every single tool call.**
    `main()` resolves `--adr-dir` with no containment check (`bin/adr-mcp:752`) and the startup
    banner cheerfully reports it, but `_call_paths` runs `adr_dir.relative_to(root)`
@@ -409,9 +418,17 @@ implemented.
 8. **`adr_judge` exit code 1 is a success.** Documented above under the error model; repeated
    here because it is the most likely integration mistake for any new client.
 9. **The MCP server carries no ADR-015 latency budget.** `tests/fixtures/cli/latency-corpus.json`
-   contains no `adr-mcp` entry (verified by loading the JSON). Given the `adr_quality` fan-out
-   and the 60-second per-call timeout, whether an agent-facing MCP call counts as a
-   "deterministic user-facing path" under ADR-015 is an open question worth resolving at the
-   component level.
-10. **`ping` is implemented but removed in the 2026-07-28 revision.** Harmless today (legacy era),
-   but it is one of the small surfaces TASK-58 has to make era-conditional.
+   contains no `adr-mcp` entry (verified by loading the JSON). **Resolved 2026-07-31 (TASK-58.4):**
+   measured, and the entry is deliberately still absent. Cold start to first tool result is
+   578 ms p50 legacy and 622 ms p50 modern — about a third of the 2000 ms budget — and
+   `server/discover` *replaces* `initialize` one for one rather than adding a round trip
+   (4.74 ms versus 2.10 ms warm). Nothing breaches the budget, so there is nothing to justify.
+   Adding an `adr-mcp` entry was declined on scope: the corpus states it covers one-shot
+   user-facing CLI invocations, and a long-lived server's per-request latency is a different
+   metric that would need its own semantics. Measured at 17 ADRs; the corpus's own
+   `adr_count_scaling` block shows these paths grow with ADR count.
+10. **`ping` is implemented but removed in the 2026-07-28 revision.** Harmless: it is answered on
+   the handshake surface, where it is still specified, and the dual-era work (TASK-58.1/58.2)
+   left it there deliberately rather than making it era-conditional. All three real clients
+   validated in TASK-58.4 negotiate the handshake era, so removing it would cost compatibility
+   and buy nothing.

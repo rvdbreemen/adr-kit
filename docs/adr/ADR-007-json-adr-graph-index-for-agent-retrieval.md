@@ -37,7 +37,7 @@ status_history:
   - date: 2026-07-23
     status: Accepted
     changed_by: Codex for Robert
-    reason: Amended by ADR-014: advance the generated graph enforcement gate from schema version 1 to schema version 2 while retaining ADR-007's graph foundation and Markdown-authority rules
+    reason: "Amended by ADR-014: advance the generated graph enforcement gate from schema version 1 to schema version 2 while retaining ADR-007's graph foundation and Markdown-authority rules"
     changed_via: adr-kit lifecycle
 ```
 

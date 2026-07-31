@@ -3,9 +3,10 @@ id: TASK-63
 title: >-
   Harden the LLM judge: per-ADR isolation, deterministic supersession, and
   verdict completeness
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-30 18:32'
+updated_date: '2026-07-30 21:34'
 labels:
   - security
   - judge
@@ -77,3 +78,29 @@ Two aggravating factors: `collect_llm_targets:895-896` requires only `status == 
 - [ ] #7 The JSON output makes a contaminated or incomplete LLM pass machine-detectable
 - [ ] #8 TASK-59 does not enable the LLM pass by default until these fixes are in
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All four gaps closed in `bin/adr-judge`, with regression tests proven to fail on a HEAD mirror first.
+
+**1. Per-ADR isolation.** `run_llm_batch` now loops one `subprocess.run` per target through a new `_run_llm_single`, each with a prompt built from that ADR alone. Separate calls were chosen over fenced sub-blocks deliberately: acceptance criterion 1 is a claim about what *cannot* happen, and only separate calls make the sibling's text structurally absent rather than merely deprioritised. **This makes cost and latency linear in `llm_judge` ADR count** — a real reversal of the batching trade, now documented in `.claude/adr-kit-guide.md` and ADR-017, both of which still quoted the old batched figure.
+
+**2. Deterministic supersession.** New `resolve_retired_ids(adrs)` runs before any prompt exists and reads **only** structured frontmatter: an ADR's own `superseded_by`, and the `supersedes` list of an ADR that is itself Accepted. Prose in `## Decision` or `## Related Decisions` is deliberately not read — honouring it would swap a probabilistic cross-ADR bypass for a deterministic one, which is worse.
+
+**3. Verdict completeness.** A verdict must be keyed to *this* target's exact id; a response keyed to anything else counts as missing. Any missing verdict degrades the **whole** pass to declarative-only with a named warning, never a partial list.
+
+**4. Verdict robustness.** `.strip().upper()` against an OK set — anything else is a violation. `PASS` is excluded on purpose: it is the literal injection payload in the existing fence fixtures, so accepting it would have re-opened by the back door what the fence closes at the front. The greedy `\{.*\}` is replaced by `json.JSONDecoder().raw_decode` scanning forward from each `{`.
+
+**5. Attestation.** `--json` gains an `llm` block (`enabled`, `isolation`, `targets`, `evaluated`, `skipped`, `degraded`, `degraded_reason`); text mode prints skip lines and a summary. It is absent entirely when the pass is off, so the declarative-only JSON shape is unchanged for existing consumers.
+
+**The degrade contract is preserved exactly**: `run_llm_batch` still returns `Optional[List[Dict]]`, `None` on every failure, and the caller extends nothing. One failure mode was added — `except OSError` around the spawn — because a `.py` named as the executable raises `WinError 193`, reproduced; without it an uncaught exception would surface as exit 1, which the hook reads as "violation". The fence (`_data_fence_token`) is untouched and both fence tests still pass.
+
+**A bug was found that neither task described.** `collect_adrs(adr_dir, dry_run_target=...)` narrows the ADR glob upstream, so `--dry-run-enforcement` would have hidden a sibling's `supersedes` from the new resolver — the same ADR set producing two different verdicts depending on a flag. Fixed by re-reading the full set for the LLM branch in dry-run only, covered by `test_dry_run_and_normal_run_agree_on_supersession`.
+
+**Honest limit of the evidence**, stated by the implementer: the contamination tests use a fake CLI, so they prove the sibling's text is structurally absent from the context that decides a verdict. They do not prove a live model resists a shared prompt — that is precisely why isolation was chosen over prompt wording.
+
+Suite: 1028 passed, 10 skipped, zero failures.
+
+Note that no new config key was added, because `schemas/adr-kit-config.schema.json` sets `additionalProperties: false` on the `judge` block — any invented key becomes a validation error and a blocked commit. A batching or budget knob therefore needs a schema change, which belongs with TASK-59's backend registry.
+<!-- SECTION:FINAL_SUMMARY:END -->

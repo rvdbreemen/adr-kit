@@ -7,8 +7,8 @@
       "title": "Make Per-Commit LLM Gates Opt-In",
       "path": "ADR-001-llm-gates-opt-in.md",
       "format": "canonical",
-      "status": "Accepted",
-      "date": "2026-05-31",
+      "status": "Superseded",
+      "date": "2026-07-30",
       "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
       "topics": [],
       "aliases": [],
@@ -30,7 +30,7 @@
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
-        "superseded_by": null
+        "superseded_by": "ADR-017"
       }
     },
     {
@@ -590,7 +590,7 @@
       "path": "ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-30",
+      "date": "2026-07-31",
       "decision_summary": "Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc...",
       "topics": [
         "backward compatibility",
@@ -648,20 +648,90 @@
       },
       "scope": {
         "path_globs": [
-          "{bin,codex/bin,copilot/bin}/adr-mcp"
+          "{bin,codex/bin,copilot/bin}/adr-mcp",
+          "tests/test_adr_mcp.py"
         ]
       },
       "metadata": {
         "binding": true,
         "gate": "adr-mcp-dual-era-v1",
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_mcp.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-017",
+      "title": "Run the LLM Judge by Default on the Host Agent's Own Model",
+      "path": "ADR-017-run-the-llm-judge-by-default-on-the-host-agent-model.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-07-30",
+      "decision_summary": "Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a...",
+      "topics": [
+        "backend selection",
+        "cost and consent",
+        "llm judging",
+        "supply chain"
+      ],
+      "aliases": [
+        "backend registry",
+        "default-on LLM judge"
+      ],
+      "components": [
+        "adr-judge",
+        "adr-suggest"
+      ],
+      "symbols": [
+        "BACKENDS",
+        "judge.backend",
+        "judge.llm_enabled"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "judge.backend is an enum: \"host\", \"openrouter\", \"ollama\". Default \"host\".",
+          "The host backend uses the command the installer wrote for that client, and passes no model flag.",
+          "judge.llmenabled defaults to true only once TASK-63 has landed.",
+          "An unavailable backend — missing binary, unreachable daemon, absent key, non-zero status, unparseable output — degrades to declarative-only and returns None, preserving ADR-001's guarantee that tooling drift never blocks a commit.",
+          "The OpenRouter key is read from the environment."
+        ],
+        "must_not": [
+          "Repository-tracked configuration must not supply a command, an argument vector, an endpoint, or a credential.",
+          "A key present in .adr-kit.json must not be used; it is refused with an error naming the environment variable to use instead.",
+          "No backend may be selected by probing which CLIs exist on the machine.",
+          "No vendor SDK may enter the runtime dependency set."
+        ],
+        "exceptions": [],
+        "verification": []
+      },
+      "scope": {
+        "path_globs": [
+          "bin/adr-judge"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-judge-backend-registry-v1",
         "documents_shipped": false,
         "verified_in": [],
-        "supersedes": [],
+        "supersedes": [
+          "ADR-001"
+        ],
         "superseded_by": null
       }
     }
   ],
   "relationships": [
+    {
+      "source": "ADR-001",
+      "target": "ADR-017",
+      "type": "superseded-by",
+      "resolved": true
+    },
     {
       "source": "ADR-002",
       "target": "ADR-001",
@@ -965,6 +1035,42 @@
     {
       "source": "ADR-016",
       "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-001",
+      "type": "supersedes",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-016",
       "type": "related",
       "resolved": true
     }

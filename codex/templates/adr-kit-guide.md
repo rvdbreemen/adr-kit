@@ -1,4 +1,4 @@
-<!-- adr-kit-guide v0.42.0 -->
+<!-- adr-kit-guide v0.43.0 -->
 <!-- Canonical project-side ADR guide. Copied from the plugin's templates/adr-kit-guide.md to .claude/adr-kit-guide.md by /adr-kit:init, /adr-kit:upgrade, and /adr-kit:setup. -->
 <!-- This file is plain markdown — readable by Claude Code, headless `claude -p`, shell scripts in pre-commit hooks, evaluator scripts, and any agent that doesn't process @-imports. Do not embed Claude-Code-specific syntax inside this file. -->
 
@@ -141,7 +141,7 @@ Optional `## Enforcement` section at the end of an ADR. Fenced JSON code block, 
 **Rules:**
 - `forbid_pattern` — regex must NOT match any added line in the diff (lines starting with `+`, excluding `+++ ` markers).
 - `forbid_import` — same engine as `forbid_pattern`; the separate name documents intent.
-- `require_pattern` — regex must match at least once in the post-diff content of any file matching `path_glob`.
+- `require_pattern` — regex must match at least once in the post-image of any file matching `path_glob`, read from the snapshot named by `--snapshot`. `staged` reads the git index (what the pre-commit hook uses), `worktree` reads the checked-out file. Under `--snapshot diff` a *modified* file's post-image cannot be rebuilt from a unified diff, which shows only the changed hunks — that case is reported as an **advisory** and does not block, because it is a fact about the invocation rather than about the code. A deleted or unstaged file, and an unreadable or unsafe path, still fail closed.
 - `llm_judge: true` — the optional LLM pass evaluates the diff against the
   semantic decision text (`## Decision Outcome` in MADR, `## Decision` in
   Nygard/canonical). The pass is opt-in (`judge.llm_enabled:true` or
@@ -174,9 +174,16 @@ Accepted ADRs are immutable. To change a decision:
 
 1. Author a new ADR with the next number. Status `Proposed`. The Decision should explain what changes and why now.
 2. In its Related Decisions: `Supersedes ADR-OLD`.
-3. After the new ADR is `Accepted`: edit the old ADR's Status line to `Superseded by ADR-NEW, YYYY-MM-DD.` and append that transition to its `## Status History`. Leave every other section and all earlier history entries untouched: the old decision's content is the historical record.
+3. Accept the new ADR: `bin/adr accept ADR-NEW --changed-by "User: <name>"`.
+4. Link both sides: `bin/adr supersede ADR-OLD --by ADR-NEW --changed-by "User: <name>"`.
+
+**Use the commands; do not hand-edit the old ADR.** `bin/adr supersede` writes the old ADR's Status line, its `superseded_by`, its Status History entry, the new ADR's `supersedes`, and regenerates all three indexes — as one transaction that rolls back on failure. Doing it by hand means getting five coupled edits right, and the failure mode is silent: a half-written link passes nothing and blocks acceptance later with an error that points at the wrong file.
+
+Steps 3 and 4 may run in either order. Accepting first is the safer habit, because a successor that claims nothing cannot be half-linked to anything.
 
 Never edit Decision, Context, Consequences, or Alternatives of an Accepted/Deprecated ADR. Only the Status line and an appended Status History transition may change.
+
+**One thing the commands cannot recover.** An ADR authored before the `## Status History` convention has its acceptance date in the Status line and nowhere else. The lifecycle commands seed a recovered entry from that line before replacing it, recording `changed_by: unknown` and `changed_via: unrecorded` rather than inventing a signer. If the Status line does not yield both a status and a date, the command refuses instead of writing a history that silently omits the earlier transition — fix the line, then re-run.
 
 ## Code review checks
 
@@ -288,6 +295,24 @@ records, then open the linked Markdown ADR before applying its decision.
   }
 }
 ```
+
+## MCP server (`bin/adr-mcp`)
+
+A hand-rolled Model Context Protocol server on stdio, stdlib-only with zero runtime dependencies. It exposes five read-only tools — `adr_context`, `adr_judge`, `adr_status`, `adr_quality`, `adr_readiness` — each a subprocess call into a sibling `bin/` script. `adr-suggest` is deliberately not exposed: it is LLM-only, and this server stays key-free.
+
+**Both protocol eras are served from one process** (ADR-016), because clients in the wild speak either:
+
+| Era | Reached through | Result shape |
+|---|---|---|
+| handshake (`2024-11-05` … `2025-11-25`) | `initialize`, which confirms a declared version or counter-offers `2025-11-25` | unchanged from earlier releases |
+| modern (`2026-07-28`) | `server/discover`, or the reserved `io.modelcontextprotocol/protocolVersion` key in `params._meta` | adds `resultType` and `_meta.serverInfo`; `server/discover` and `tools/list` also carry `ttlMs` and `cacheScope` |
+
+Two properties are worth knowing before changing anything here:
+
+- **Era is a pure function of the single frame.** There is no per-process and no per-connection era state, so the same bytes always get the same answer. Revision `2026-07-28` forbids relying on prior requests over the same connection to establish context, and a lock would mean a byte-identical frame gets two different answers depending on history. The official SDK does lock per connection; ADR-016 deliberately diverges.
+- **`-32022` never appears in a response to `initialize`.** The handshake negotiates by counter-offer, so an unknown or absent version gets `2025-11-25` back rather than an error. `-32022` is modern-era only.
+
+Primary-source notes, including the exact `_meta` key spellings and the error-code allocation, are in `docs/research/2026-07-29-mcp-2026-07-28-revision.md`.
 
 ## Plugin-side deep dives
 
