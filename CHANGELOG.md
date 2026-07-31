@@ -6,7 +6,35 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [0.43.0] - 2026-07-31
 
+### Upgrade notes
+
+**The per-commit LLM judge is now on by default.** If you do not want it, set
+`judge.llm_enabled: false` in `docs/adr/.adr-kit.json` before upgrading. Nothing
+is spent until an author sets `llm_judge: true` on an ADR, so a project with no
+opted-in ADRs pays nothing either way.
+
+**`judge.llm_cmd` and `judge.llm_model` are deprecated and ignored.** They still
+validate, so existing configs keep working, but they no longer choose anything.
+Select a backend with `python bin/adr-judge --set-backend {host,openrouter,ollama}`
+and inspect the result with `--show-config`. This is deliberate: those keys let
+repository-tracked configuration choose the binary the judge executes, and
+`docs/adr/.adr-kit.json` is authored by anyone with commit access.
+
 ### Added
+- **The LLM judge runs by default, on your own agent's model.** `judge.backend`
+  is an enum -- `host` (default), `openrouter`, `ollama` -- resolving to a
+  code-side command table. The `host` backend uses the CLI of the agent adr-kit
+  was installed for and passes **no model flag**, so each CLI resolves the model
+  its user configured; nothing is pinned. The judge cannot detect which client it
+  runs in, because a `git commit` happens whether or not any agent is running, so
+  the installer records the client at install time rather than probing `PATH`.
+  New flags: `--show-config` (every value with its provenance, no secret ever
+  printed), `--set-backend`, `--host-client`, `--model`. An unavailable backend
+  degrades to declarative-only and never blocks a commit. See ADR-017, which
+  supersedes ADR-001.
+- **`bin/adr-suggest` shares that same registry** (`bin/adr_llm.py`), so both
+  entry points resolve a model the same way and neither carries a default command.
+
 
 - **The MCP server speaks both protocol eras.** Revision `2026-07-28` made the
   Model Context Protocol stateless and removed the `initialize` handshake.
@@ -34,6 +62,29 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **`bin/adr-suggest` ignored the model policy the judge enforces.** It carried
+  its own pinned `claude-sonnet-4-6` and honoured `suggest.llm_cmd` /
+  `judge.llm_cmd`, so repository-tracked configuration could still choose the
+  binary it executed -- the guarantee held at one entry point and not the other.
+  Both now share `bin/adr_llm.py`. ADR-017's enforcement covered only
+  `adr-judge`, which is why this survived; it now covers all three executables
+  across all three client distributions.
+- **`bin/bump-version` wrote only part of the release.** It carried its own
+  hard-coded path list instead of reading `packaging/version-sites.json`, and
+  silently skipped both README version pins -- the snippets users copy into
+  their own workflow and pre-commit config. Both bump writers now share one
+  plan-then-apply engine. Note that `scripts/bump-version.py`, the writer the
+  runbook prescribes, was never affected.
+- **A failed bump could leave the CHANGELOG announcing a release nothing
+  carried.** `scripts/bump-version.py` wrote the release heading before the
+  transaction rather than inside it, so a mid-run failure left the canonical
+  source ahead of every manifest, with no rollback.
+- **`.githooks/pre-commit` was version-stamped but declared nowhere,** so no gate
+  verified it. `bin/adr-guardian` compares that stamp against the plugin version
+  and reports the hook stale; it is now a declared site.
+- **The import-safety suite failed on Python 3.10.** It ran each executable with
+  `-P`, which is not a flag before CPython 3.11, so the interpreter exited 2 and
+  the test read that as the tool being broken. The variant is skipped below 3.11.
 - **The MCP server did not speak UTF-8 on Windows.** The stdio transport
   mandates UTF-8 and newline-delimited framing; `bin/adr-mcp` wrote its frames
   in text mode using the platform default, so on a cp1252 host an em dash left
