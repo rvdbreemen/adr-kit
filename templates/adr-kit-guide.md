@@ -17,7 +17,7 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 | Mode | When | Entry point |
 |---|---|---|
 | **Init / bootstrap** | Once per project: scan source + docs, propose a starter ADR set, hook the kit into `CLAUDE.md`, install the pre-commit hook | `/adr-kit:init` |
-| **Per-commit verification** | Every `git commit`: declarative-rule check (always-on, free). Claude Sonnet LLM judge for `llm_judge: true` ADRs is opt-in as of v0.17.0 (enable via `judge.llm_enabled:true` or `ADR_KIT_LLM=1`). Falls back to declarative-only when the `claude` CLI is unavailable | `.githooks/pre-commit` (auto) |
+| **Per-commit verification** | Every `git commit`: declarative-rule check (always-on, free). The LLM judge for `llm_judge: true` ADRs is **on by default** as of v0.43.0 (ADR-017) and runs on the host agent's own model, with no model pinned. Falls back to declarative-only when the backend is unavailable | `.githooks/pre-commit` (auto) |
 | **On-demand invocation** | Mid-session: write or grill an ADR, judge a staged diff, supersede an existing decision | `/adr-kit:adr`, `/adr-kit:grill`, `/adr-kit:judge`, `adr-generator` subagent |
 | **Guardian (v0.18+)** | Periodic staleness detector at SessionStart; in-session model runs due health tiers | `bin/adr-guardian` (hook, free) + `/adr-kit:guardian` (sweep) |
 
@@ -156,16 +156,16 @@ Optional `## Enforcement` section at the end of an ADR. Fenced JSON code block, 
 After `/adr-kit:init` (or `/adr-kit:install-hooks`), every `git commit` runs `bin/adr-judge` on the staged diff with two passes:
 
 - **Declarative pass** — always-on; fast, regex-only, no LLM. A violation exits non-zero and blocks the commit.
-- **LLM pass (Sonnet, opt-in as of v0.17.0)** — all `llm_judge: true` ADRs are batched into one `claude -p --model claude-sonnet-4-6` call. Sonnet returns a per-ADR JSON verdict; any `VIOLATION` blocks the commit with the model's one-sentence reason. Falls back gracefully when the `claude` CLI is missing or unauthenticated — never blocks a legitimate commit due to tooling drift.
+- **LLM pass (on by default as of v0.43.0, ADR-017)** — each `llm_judge: true` ADR gets its **own isolated call**; they are never batched. Batching was reversed deliberately: a shared prompt let one ADR's Decision text flip another ADR's verdict, reproduced three times out of three, and the forged pass was indistinguishable from a genuine one. The model is resolved from the host agent (`judge.backend`), not pinned. Any `VIOLATION` blocks the commit with the model's one-sentence reason. An unavailable backend degrades to declarative-only and never blocks a legitimate commit.
 
-**Cost shape** (typical project, 50 `llm_judge` ADRs, small diff): roughly $0.10–0.30 per commit on Sonnet 4.6 with prompt caching. Latency 5–10s. Configurable via `judge.llm_model` / `judge.llm_timeout_seconds` / `judge.llm_cmd` in `docs/adr/.adr-kit.json`.
+**Cost shape.** Since per-ADR isolation replaced batching, cost and latency are **linear in the number of `llm_judge: true` ADRs** — one model call each, not one call total. The old figure (roughly $0.10–0.30 per commit for 50 ADRs on one batched call) no longer holds and would under-estimate a large set by an order of magnitude. The mitigating fact is that `llm_judge` defaults to `false`, so the population is empty until an author opts an ADR in. Select the backend with `python bin/adr-judge --set-backend {host,openrouter,ollama}`; inspect the effective settings with `--show-config`.
 
 **Knobs:**
-- Enable LLM pass per commit: `ADR_KIT_LLM=1 git commit -m "…"`
-- Enable LLM pass project-wide: set `judge.llm_enabled: true` in `docs/adr/.adr-kit.json`
+- The LLM pass is on by default; `judge.llm_enabled: false` in `docs/adr/.adr-kit.json` turns it off project-wide.
+- Re-enable it for one commit after that: `ADR_KIT_LLM=1 git commit -m "…"`
 - Disable LLM pass per commit: `ADR_KIT_NO_LLM=1 git commit -m "…"`
 - Disable hook entirely per commit: `ADR_KIT_HOOK_DISABLE=1 git commit -m "…"`
-- Switch model: set `judge.llm_model: "claude-haiku-4-5"` in `.adr-kit.json` for higher throughput at lower cost.
+- Switch backend or model: `python bin/adr-judge --set-backend openrouter --model <provider/model>` (or `ollama --model <tag>`). `judge.llm_model` and `judge.llm_cmd` are deprecated and ignored: repository-tracked config may select among backends but may never supply a command, endpoint or credential (ADR-017).
 - Remove permanently: `/adr-kit:install-hooks --uninstall`
 
 ## Supersession (changing a decision)

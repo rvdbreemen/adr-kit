@@ -250,7 +250,18 @@ def test_module_committed_next_to_an_executable_is_never_imported(
         encoding="utf-8",
     )
 
-    for flags, label in (([], "plain"), (["-P"], "-P")):
+    # -P (PYTHONSAFEPATH) landed in CPython 3.11. On 3.10 it is not a flag at
+    # all: the interpreter exits 2 with "Unknown option", which this loop would
+    # read as the tool being broken. The project supports 3.10 (validate.yml
+    # runs 3.10 and 3.12), so the variant is skipped rather than the whole test
+    # — the "plain" run still proves the shadowing defence on every version,
+    # and -P only adds the belt-and-braces case where CPython's own mitigation
+    # is active too.
+    variants = [([], "plain")]
+    if sys.version_info >= (3, 11):
+        variants.append((["-P"], "-P"))
+
+    for flags, label in variants:
         if marker.exists():
             marker.unlink()
         result = subprocess.run(
