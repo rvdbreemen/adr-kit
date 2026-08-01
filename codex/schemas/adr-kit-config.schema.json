@@ -135,7 +135,7 @@
         },
         "max_diff_bytes": {
           "type": "integer",
-          "description": "Diffs larger than this size (in UTF-8 bytes) fail closed with an actionable configuration error because deterministic enforcement did not run. Protects against pathological commits without creating a success bypass. Default 1048576 (1 MiB). Set 0 to disable the cap explicitly.",
+          "description": "Diffs larger than this size (in UTF-8 bytes) fail closed with an actionable configuration error because deterministic enforcement did not run. Protects against pathological commits without creating a success bypass. Default 1048576 (1 MiB). Set 0 to disable the cap explicitly. This number governs the PRE-COMMIT path, which judges a single commit and is bound by ADR-015's latency budget. A CI gate judging origin/<base>...HEAD sees a whole-branch diff that is routinely larger, and must pass its own budget with the --max-diff-bytes flag rather than raising this one -- otherwise the local commit budget rises with it (TASK-73).",
           "minimum": 0,
           "default": 1048576
         },

@@ -133,8 +133,7 @@ Optional `## Enforcement` section at the end of an ADR. Fenced JSON code block, 
   "forbid_import": [
     { "pattern": "^#include\\s+<ArduinoJson\\.h>", "path_glob": "src/**" }
   ],
-  "require_pattern": [],
-  "llm_judge": false
+  "require_pattern": []
 }
 ```
 

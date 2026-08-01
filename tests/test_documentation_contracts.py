@@ -60,12 +60,15 @@ def test_canonical_template_enforcement_example_is_valid_json():
         "forbid_pattern",
         "forbid_import",
         "require_pattern",
-        "llm_judge",
     }
     assert isinstance(enforcement["forbid_pattern"], list)
     assert isinstance(enforcement["forbid_import"], list)
     assert isinstance(enforcement["require_pattern"], list)
-    assert enforcement["llm_judge"] is False
+    # The scaffold must NOT ship llm_judge. It used to ship `false`, and every
+    # ADR in this repository inherited that opt-out verbatim -- which is how a
+    # default-on LLM pass ended up with an empty population (TASK-74). Absent
+    # means the default, and the default is now true.
+    assert "llm_judge" not in enforcement
 
 
 def test_filled_canonical_template_passes_strict_schema_gate(tmp_path):

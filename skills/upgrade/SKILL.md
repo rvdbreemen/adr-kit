@@ -126,6 +126,43 @@ For each ADR:
 
 Do NOT modify any other section of the ADR. Only append the new `## Enforcement` section. Accepted ADRs are otherwise immutable.
 
+## Step 4b — LLM judge: opt-out migration (ask before writing)
+
+`llm_judge` defaults to **true** as of TASK-74. ADRs written before that carry an explicit `"llm_judge": false` that is indistinguishable from a deliberate refusal, so the upgrade proposes turning them on — and the user gets the chance to decline.
+
+Run the deterministic scan first. It writes nothing:
+
+```bash
+python3 "$ADR_KIT/bin/adr-migrate" docs/adr/ --enable-llm-judge --dry-run --format json
+```
+
+The result has three lists: `enabled` (what would be turned on), `opted_out` (rule-less blocks the scan proposes to mark as having no code surface), and `unchanged`.
+
+**Then ask the user, once, with the whole picture in front of them.** Show:
+
+- how many ADRs would be enabled, and for each one its id, its one-line Decision and its rule count;
+- which ADRs carry `unbounded_scope: true` — those have no `path_glob` to narrow with, so enabling them costs a model call on **every** commit, not only on commits that touch their area;
+- which ADRs the scan proposes to mark as no-code-surface, and why.
+
+Offer these answers:
+
+- **accept all** (the default) — apply as proposed.
+- **opt out of specific ADRs** — name them; each needs a reason, which is written into the ADR as `llm_judge_reason` so no later upgrade re-proposes it.
+- **enable a rule-less ADR anyway** — name it under `--force-enable`; say plainly that this means one call per commit until the ADR declares a scope.
+- **skip entirely** — change nothing; the next upgrade will ask again.
+
+Apply the answer:
+
+```bash
+python3 "$ADR_KIT/bin/adr-migrate" docs/adr/ --enable-llm-judge \
+  --except ADR-006,ADR-011 --reason "reviewed manually in the release checklist" \
+  --force-enable ADR-014
+```
+
+Report exactly which ADRs were enabled and which were left off. State the cost shape in the same breath: with N opted-in ADRs, a commit touching M distinct scopes makes M model calls, not N — a commit outside every scope makes none.
+
+Re-running the command after this is a no-op and says so.
+
 ## Step 5 — Final lint
 
 ```bash

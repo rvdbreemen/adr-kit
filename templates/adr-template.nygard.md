@@ -100,7 +100,6 @@ Delete this optional adr-kit extension when no machine-checkable rule applies.
 {
   "forbid_pattern": [],
   "forbid_import": [],
-  "require_pattern": [],
-  "llm_judge": false
+  "require_pattern": []
 }
 ```

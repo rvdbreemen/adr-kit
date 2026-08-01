@@ -4,6 +4,57 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`llm_judge` now defaults to `true`.** An Enforcement block that omits the key
+  opts in; only an explicit `false` opts out. The old opt-in default failed
+  silently: ADR-017 turned the LLM pass on by default, and this repository then
+  shipped seventeen ADRs that all carried `llm_judge: false`, so a pass that was
+  on judged nothing while looking active. Six of those blocks contained no rules
+  at all, enforcing literally nothing behind a heading that says Enforcement.
+
+### Added
+
+- **The LLM pass is scope-bounded.** An ADR is only judged when the staged diff
+  touches a file matching its Enforcement rules' `path_glob` set; a commit
+  outside every scope makes zero model calls, and an out-of-scope ADR is
+  recorded in the `--json` attestation rather than silently dropped. ADR-017
+  promised this in prose ("one model call per commit that touches its scope")
+  and the code did not do it — with a default-on flag that gap is the
+  difference between one call and one call per ADR, every commit. An Enforcement
+  block with no rules, or a rule without a `path_glob`, has no boundary and is
+  therefore judged everywhere, exactly as the declarative pass treats a rule
+  with no glob.
+- **`llm_judge_reason`**, a new optional Enforcement key recording why the pass
+  is off. Since the default flipped, a bare `false` is ambiguous — deliberate
+  refusal or leftover? A reason makes the opt-out durable: the upgrade
+  re-proposes a bare `false` and leaves a reasoned one alone. The memory lives
+  in the ADR, not in a state file a fresh clone would lose.
+- **`bin/adr-migrate --enable-llm-judge`**, the opt-out migration. It drops the
+  legacy `llm_judge: false` from every Accepted ADR, and marks a rule-less block
+  as having no code surface instead of turning it into a call on every commit;
+  `--force-enable ADR-NNN` overrides that, `--except ADR-NNN --reason "..."`
+  records a refusal. `--dry-run --format json` writes nothing. `/adr-kit:upgrade`
+  gained step 4b, which runs the scan, shows the user each Decision, its rule
+  count and whether it has a scope, and asks before applying — enable-by-default
+  with a real chance to decline.
+
+- `bin/adr-judge --max-diff-bytes N` overrides `judge.max_diff_bytes` for a single
+  invocation, and the `adr-judge` composite action passes it as a new
+  `max-diff-bytes` input (default 32 MiB). One number could not serve two
+  workloads: the pre-commit hook judges a single commit under ADR-015's latency
+  budget, while the CI gate judges `origin/<base>...HEAD`, which for a release PR
+  is the whole branch. The v0.43.0 release PR failed that gate on size alone at
+  2,281,314 bytes against a 2 MiB cap, then scanned clean in about 5 s once the
+  budget fit. Both paths still fail closed on an oversized diff, and the error now
+  names which limit was hit so the reader edits the right one.
+
+### Changed
+
+- `judge.max_diff_bytes` in this repository's `docs/adr/.adr-kit.json` returns to
+  2 MiB, the commit-sized number. The 8 MiB value was a workaround for the release
+  PR and had silently raised the local commit budget with it.
+
 ## [0.43.0] - 2026-07-31
 
 ### Upgrade notes

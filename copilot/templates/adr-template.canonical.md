@@ -104,7 +104,6 @@ Delete this optional section when the decision has no machine-checkable surface.
     }
   ],
   "forbid_import": [],
-  "require_pattern": [],
-  "llm_judge": false
+  "require_pattern": []
 }
 ```

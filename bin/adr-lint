@@ -210,7 +210,9 @@ ALL_GATES = [
 ]
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
 
-ENFORCEMENT_KNOWN_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern", "llm_judge"})
+ENFORCEMENT_KNOWN_KEYS = frozenset(
+    {"forbid_pattern", "forbid_import", "require_pattern", "llm_judge", "llm_judge_reason"}
+)
 ENFORCEMENT_ARRAY_KEYS = frozenset({"forbid_pattern", "forbid_import", "require_pattern"})
 
 MARKER_RE = re.compile(r"<!--\s*adr-kit-lint:\s*([^>]+?)\s*-->", re.IGNORECASE)

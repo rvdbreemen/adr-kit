@@ -66,3 +66,7 @@ docs/adr/.adr-kit-readiness.json
 
 # Comprehensive review working output (session artefact, not source)
 .full-review/
+
+# Local knowledge-graph analysis output (graphify). Derived from this repo,
+# regenerable with /graphify, and large. Never committed.
+graphify-out/

@@ -106,6 +106,19 @@ python bin/adr-index --check docs/adr
 python -m pytest -q
 ```
 
+**If `ADR Enforcement (declarative)` fails on the release PR with `exceeds
+--max-diff-bytes=...`, that is the cap, not a violation.** The gate judges
+`origin/main...HEAD`, which for a release PR is the whole development branch,
+and this repository counts most changes about three times because it ships
+mirrored `codex/` and `copilot/` distributions. The fix is to raise the
+`max-diff-bytes` input on `.github/actions/adr-judge` (default 32 MiB), **not**
+`judge.max_diff_bytes` in `docs/adr/.adr-kit.json` — that number is the
+pre-commit budget for a single commit and must stay small (ADR-015's latency
+budget). Never set either to 0 to get past it: the cap is what makes an
+unscanned diff fail closed instead of reporting an unearned success. This bit
+once at v0.43.0, where the diff was 2,281,314 bytes against a 2 MiB cap and
+scanned clean in 4.5 s once the budget fit.
+
 ### 3. Land on the public repo and tag
 
 `main` is a protected branch, so **merging is the maintainer's action**. An agent

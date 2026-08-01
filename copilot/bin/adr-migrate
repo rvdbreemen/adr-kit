@@ -421,7 +421,53 @@ def main(argv: List[str] | None = None) -> int:
             "candidates from existing ADR evidence; never writes"
         ),
     )
+    parser.add_argument(
+        "--enable-llm-judge",
+        action="store_true",
+        help=(
+            "opt-out migration for the LLM judge: drop the legacy "
+            "llm_judge:false from every Accepted ADR so the true default "
+            "applies. An ADR with no Enforcement rules has no scope to narrow "
+            "with, so it is marked no-code-surface instead of becoming a call "
+            "on every commit; override that per ADR with --force-enable."
+        ),
+    )
+    parser.add_argument(
+        "--except",
+        dest="opt_out",
+        default="",
+        metavar="ADR-002,ADR-004",
+        help="with --enable-llm-judge: ADRs to opt out; needs --reason",
+    )
+    parser.add_argument(
+        "--force-enable",
+        dest="force_enable",
+        default="",
+        metavar="ADR-014",
+        help=(
+            "with --enable-llm-judge: enable a rule-less ADR anyway, "
+            "accepting one model call on every commit until it declares a scope"
+        ),
+    )
+    parser.add_argument(
+        "--reason",
+        default="",
+        help="with --except: why the LLM pass stays off, recorded in the ADR",
+    )
     args = parser.parse_args(argv)
+
+    if args.enable_llm_judge and (
+        args.plan or args.check or args.to_profile or args.from_profile
+        or args.suggest_retrieval
+    ):
+        parser.error(
+            "--enable-llm-judge cannot be combined with --plan, --check, "
+            "--to-profile, --from-profile, or --suggest-retrieval"
+        )
+    if (args.opt_out or args.force_enable or args.reason) and not args.enable_llm_judge:
+        parser.error(
+            "--except, --force-enable and --reason require --enable-llm-judge"
+        )
 
     if args.plan and (
         args.check or args.dry_run or args.to_profile or args.from_profile
@@ -443,6 +489,38 @@ def main(argv: List[str] | None = None) -> int:
         )
 
     target = Path(args.path)
+    if args.enable_llm_judge:
+        migration = _load_sibling("adr_llm_judge_migration")
+        adr_dir = target if target.is_dir() else target.parent
+        split = lambda raw: [p.strip() for p in raw.split(",") if p.strip()]
+        try:
+            result = migration.apply(
+                adr_dir,
+                opt_out_ids=split(args.opt_out),
+                force_enable_ids=split(args.force_enable),
+                opt_out_reason=args.reason,
+                dry_run=args.dry_run,
+            )
+        except ValueError as exc:
+            print(f"[adr-migrate] ERROR: {exc}", file=sys.stderr)
+            return 2
+        if args.format == "json":
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            verb = "would enable" if args.dry_run else "enabled"
+            print(f"LLM judge {verb}: {len(result['enabled'])} ADR(s)")
+            for row in result["enabled"]:
+                note = " (no scope declared: judged on every commit)" if row["unbounded_scope"] else ""
+                print(f"  + {row['adr']} ({row['rules']} rule(s)){note}")
+            if result["opted_out"]:
+                verb = "would stay off" if args.dry_run else "left off"
+                print(f"LLM judge {verb}: {len(result['opted_out'])} ADR(s)")
+                for row in result["opted_out"]:
+                    print(f"  - {row['adr']}: {row['reason']}")
+            if not result["enabled"] and not result["opted_out"]:
+                print("Nothing to change; every ADR already carries a decision.")
+        return 0
+
     if args.plan:
         scanned = [plan_file(path) for path in discover_plan_files(target)]
         notices = [
