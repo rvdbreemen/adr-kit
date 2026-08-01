@@ -778,7 +778,10 @@
         ]
       },
       "scope": {
-        "path_globs": []
+        "path_globs": [
+          "hooks/adr_hook_core.py",
+          "bin/adr_query.py"
+        ]
       },
       "metadata": {
         "binding": true,

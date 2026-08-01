@@ -457,7 +457,12 @@ def command_new(args) -> List[str]:
     body = body.replace('"Short Imperative Title"', json.dumps(args.title, ensure_ascii=False))
     body = body.replace("Short Imperative Title", args.title)
     body = body.replace("YYYY-MM-DD", args.date)
-    body = body.replace("user@example.com", args.changed_by)
+    # The placeholder sits inside the status_history YAML block, so the actor
+    # has to survive as a YAML scalar. "User: Robert" - the very shape R8 of
+    # spec.md prescribes - is a mapping to a YAML parser, and an unquoted one
+    # makes the whole block unparseable. accept/supersede already route through
+    # _yaml_scalar; creation did not.
+    body = body.replace("user@example.com", _yaml_scalar(args.changed_by))
     _commit_lifecycle_changes(adr_dir, [(destination, body)])
     return [f"created: {destination} ({profile})"]
 

@@ -612,3 +612,37 @@ def test_every_status_history_block_in_the_repo_parses():
 
     assert checked > 0, "no status_history blocks found; the glob or fence changed"
     assert not failures, "unparseable status_history blocks:\n  " + "\n  ".join(failures)
+
+
+def test_adr_new_quotes_an_actor_containing_a_colon(tmp_path):
+    """`User: <name>` is the actor shape spec.md R8 prescribes, and a raw colon
+    turns the status_history block into unparseable YAML.
+
+    accept and supersede route their actor through _yaml_scalar; creation did
+    not, and substituted the template placeholder verbatim. The block then
+    parsed for adr-kit's own mini-parser and failed for real YAML - the same
+    class of defect that corrupted three shipped ADRs before.
+    """
+    import subprocess
+    import sys
+
+    import yaml
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    result = subprocess.run(
+        [
+            sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Decision With A Signer",
+            "--adr-dir", str(adr_dir),
+            "--changed-by", "User: Robert van den Breemen",
+        ],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    created = next(adr_dir.glob("ADR-*.md"))
+    text = created.read_text(encoding="utf-8")
+    block = re.search(r"```yaml\n(status_history:.*?)\n```", text, re.DOTALL)
+    assert block, "no status_history block was written"
+    parsed = yaml.safe_load(block.group(1))
+    assert parsed["status_history"][0]["changed_by"] == "User: Robert van den Breemen"

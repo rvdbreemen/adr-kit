@@ -44,7 +44,7 @@ Accepted, 2026-08-01.
 status_history:
   - date: 2026-08-01
     status: Proposed
-    changed_by: User: Robert van den Breemen
+    changed_by: "User: Robert van den Breemen"
     reason: spec R6 requires semantic proximity; ADR-014 forbids it in the query path
     changed_via: adr-kit
   - date: 2026-08-01
@@ -331,9 +331,20 @@ None. The four questions this record opened were answered by the maintainer on
 ```json
 {
   "forbid_pattern": [],
-  "forbid_import": [],
+  "forbid_import": [
+    {
+      "pattern": "^\\s*(?:import|from)\\s+(?:urllib|http|socket|ssl|requests|httpx|subprocess|asyncio)\\b",
+      "path_glob": "hooks/adr_hook_core.py",
+      "message": "ADR-018 (adr-vector-store-v1): the hook path reads a precomputed store; it may not reach a model, a daemon or the network. Put it in the build step."
+    },
+    {
+      "pattern": "^\\s*(?:import|from)\\s+(?:urllib|http|socket|ssl|requests|httpx|subprocess|asyncio)\\b",
+      "path_glob": "bin/adr_query.py",
+      "message": "ADR-018 (adr-vector-store-v1): the query path reads a precomputed store; it may not reach a model, a daemon or the network. Put it in the build step."
+    }
+  ],
   "require_pattern": [],
   "llm_judge": false,
-  "llm_judge_reason": "proposed: no implementation surface exists yet; revisit at acceptance"
+  "llm_judge_reason": "the forbid rules above state the whole constraint mechanically; a model would add cost without adding a verdict"
 }
 ```
