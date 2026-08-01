@@ -4,7 +4,7 @@
     "pre_commit_timeout_ms": 5000,
     "pre_push_timeout_ms": 15000,
     "llm_timeout_ms": 30000,
-    "max_diff_bytes": 8388608,
+    "max_diff_bytes": 2097152,
     "warn_on_exceed": true
   },
   "context": {

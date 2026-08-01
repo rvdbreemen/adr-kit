@@ -1,8 +1,8 @@
 ---
 id: "ADR-014"
 title: "Use the Generated ADR Graph as the Selective-Context Query Engine"
-status: "Accepted"
-date: "2026-07-23"
+status: "Superseded"
+date: "2026-08-01"
 binding: true
 gate: "index-first-retrieval"
 documents_shipped: false
@@ -12,7 +12,7 @@ verified_in:
   - "tests/test_adr_retrieval_health.py"
   - "hooks/adr_hook_core.py"
 supersedes: []
-superseded_by: null
+superseded_by: "ADR-018"
 topics:
   - "ADR retrieval"
   - "selective context"
@@ -37,7 +37,7 @@ format: "madr"
 
 ## Status
 
-Accepted, 2026-07-23.
+Superseded by ADR-018, 2026-08-01.
 
 ## Status History
 
@@ -52,6 +52,11 @@ status_history:
     status: Accepted
     changed_by: Robert
     reason: Explicit human acceptance after ADR grill and verified TASK-52.2/TASK-52.3 implementation
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-01
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-018 permits a precomputed embedding store in the read path
     changed_via: adr-kit lifecycle
 ```
 
@@ -413,6 +418,7 @@ named gate or the human acceptance requirement.
   "forbid_pattern": [],
   "forbid_import": [],
   "require_pattern": [],
-  "llm_judge": false
+  "llm_judge": false,
+  "llm_judge_reason": "no code surface: this decision governs process or documentation, so there is no diff for a model to judge it against"
 }
 ```

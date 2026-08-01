@@ -445,8 +445,8 @@
       "title": "Use the Generated ADR Graph as the Selective-Context Query Engine",
       "path": "ADR-014-use-the-generated-adr-graph-as-the-selective-context-query-engine.md",
       "format": "madr",
-      "status": "Accepted",
-      "date": "2026-07-23",
+      "status": "Superseded",
+      "date": "2026-08-01",
       "decision_summary": "Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain...",
       "topics": [
         "ADR retrieval",
@@ -510,7 +510,7 @@
           "hooks/adr_hook_core.py"
         ],
         "supersedes": [],
-        "superseded_by": null
+        "superseded_by": "ADR-018"
       }
     },
     {
@@ -720,6 +720,73 @@
         "verified_in": [],
         "supersedes": [
           "ADR-001"
+        ],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-018",
+      "title": "Add a Local Precomputed Vector Layer for ADR Retrieval",
+      "path": "ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-01",
+      "decision_summary": "Chosen option: a local precomputed vector store that the query and hook paths only read, because it delivers semantic...",
+      "topics": [
+        "embeddings",
+        "retrieval",
+        "selective context",
+        "semantic proximity"
+      ],
+      "aliases": [
+        "ADR embeddings",
+        "semantic retrieval",
+        "vector layer"
+      ],
+      "components": [
+        "adr-context",
+        "adr-index",
+        "lifecycle hooks"
+      ],
+      "symbols": [
+        "FIELD_WEIGHTS",
+        "query_adr_context"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Compute embeddings only in an explicit build step, never during a query or a hook.",
+          "Read the store with the standard library only; no third-party runtime dependency may be required for retrieval to work.",
+          "Record, per entry: the embedding model identity, the vector dimension, and a content hash of the source ADR.",
+          "Treat a missing, unreadable, dimension-mismatched or hash-mismatched store as stale, fall back to lexical ranking, and say so.",
+          "Carry lifecycle status and the superseded-by link in the store, so a historical decision stays retrievable but never governing.",
+          "Keep the store machine-local and untracked by default, because it is derived and specific to one embedding model.",
+          "Keep hook injection fail-open and the commit-time judge fail-closed, unchanged from ADR-014."
+        ],
+        "must_not": [
+          "Call an embedding model, a language model, or any network endpoint from the hook path.",
+          "Require a running daemon for retrieval to function.",
+          "Let a similarity score confer authority on a Proposed, Superseded, Rejected or Deprecated decision.",
+          "Hand-edit the store, or treat it as an authoring surface.",
+          "Introduce a hosted vector service."
+        ],
+        "exceptions": [
+          "The build step may call a local or remote model, because it is explicitly invoked, its cost is visible, and its failure blocks nothing at runtime."
+        ],
+        "verification": [
+          "adr-vector-store-v1: the named gate anchoring this decision in source. It must assert the fallback contract (retrieval works, and says so, with no store present) and the staleness contract (a recorded model identity or content hash that..."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-vector-store-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [
+          "ADR-014"
         ],
         "superseded_by": null
       }
@@ -991,6 +1058,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-014",
+      "target": "ADR-018",
+      "type": "superseded-by",
+      "resolved": true
+    },
+    {
       "source": "ADR-015",
       "target": "ADR-001",
       "type": "related",
@@ -1070,6 +1143,42 @@
     },
     {
       "source": "ADR-017",
+      "target": "ADR-016",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-018",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-018",
+      "target": "ADR-007",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-018",
+      "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-018",
+      "target": "ADR-014",
+      "type": "supersedes",
+      "resolved": true
+    },
+    {
+      "source": "ADR-018",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-018",
       "target": "ADR-016",
       "type": "related",
       "resolved": true

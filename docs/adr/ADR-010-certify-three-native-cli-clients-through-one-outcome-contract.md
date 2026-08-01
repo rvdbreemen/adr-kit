@@ -427,7 +427,6 @@ Confirm the decision with:
       "path_glob": "schemas/client-capabilities.schema.json",
       "message": "The TASK-40 capability schema must retain exactly the three selected CLI identifiers."
     }
-  ],
-  "llm_judge": false
+  ]
 }
 ```
