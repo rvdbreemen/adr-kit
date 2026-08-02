@@ -6,6 +6,30 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **The branch is judged before the pull request exists** (spec R2). Opening a PR
+  is a shell call, so a pre-tool guard intercepts `gh pr create` and judges
+  `origin/<base>...HEAD` first - earlier than CI can ever be, because CI only
+  learns of the PR once it is there. This is the one hook that may block, and
+  that is the point: a branch violating an Accepted ADR should be fixed before it
+  becomes a proposal. The denial names the ADR, the file and line, and the way
+  out (supersede the decision, or record an override).
+
+  It fails open on everything that is not a violation - no judge, no git, no base
+  branch, a timeout, or a config error including a diff over the cap. A check
+  that cannot run must not pretend it did. Command matching is anchored on the
+  command shape, so `gh pr list` and a comment mentioning the command do not fire
+  it.
+
+  The guard lives outside `adr_hook_core` on purpose: the retrieval core is
+  asserted by ADR-018's gate to import nothing that can reach a model or the
+  network, `subprocess` included, and this guard must spawn the judge.
+
+- **`templates/github-workflows/adr-judge.yml`**, so a downstream project gets the
+  PR gate by copying a file. `/adr-kit:install-hooks` now offers all three shipped
+  workflow templates.
+
+### Added
+
 - **A hook on leaving plan mode** (spec R3). The plan is complete and no code
   exists yet: the cheapest moment to notice a missing decision, and the only one
   where the answer can still shape the implementation rather than justify it

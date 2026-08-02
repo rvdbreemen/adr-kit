@@ -95,6 +95,23 @@
       }
     },
     {
+      "id": "pr-create",
+      "command": "pre-tool-use",
+      "matcher": "Bash",
+      "outcome": "enforcement",
+      "latency_budget_ms": 5000,
+      "latency": {
+        "p50_ms": 400,
+        "p95_ms": 2000,
+        "hard_timeout_ms": 5000
+      },
+      "clients": {
+        "claude-code-cli": "PreToolUse",
+        "codex-cli": "PreToolUse",
+        "github-copilot-cli": null
+      }
+    },
+    {
       "id": "subagent-start",
       "command": "subagent-start",
       "matcher": null,
