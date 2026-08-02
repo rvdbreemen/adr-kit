@@ -793,6 +793,56 @@
         ],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-019",
+      "title": "Keep the End-of-Session Hooks Deliberately Silent",
+      "path": "ADR-019-keep-the-end-of-session-hooks-deliberately-silent.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-02",
+      "decision_summary": "Chosen option: keep the silence, and record why — this ADR is the record.",
+      "topics": [
+        "end-of-session silence",
+        "hook cost",
+        "unrecorded decisions"
+      ],
+      "aliases": [
+        "end-of-session summary",
+        "SessionEnd hook",
+        "Stop hook"
+      ],
+      "components": [
+        "adr-audit"
+      ],
+      "symbols": [
+        "NOOP_EVENTS"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "stop, subagentstop and sessionend return empty output and exit 0.",
+          "NOOPEVENTS carries a reason per entry, in the source, not only here.",
+          "The unrecorded-decision question stays available on demand through /adr-kit:audit and adr-suggest."
+        ],
+        "must_not": [
+          "No hook may spend money on an event the user cannot see fire and cannot refuse.",
+          "No end-of-session hook may be registered by any client while this ADR stands."
+        ],
+        "exceptions": [],
+        "verification": []
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -1183,6 +1233,24 @@
     {
       "source": "ADR-018",
       "target": "ADR-016",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-019",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-019",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-019",
+      "target": "ADR-017",
       "type": "related",
       "resolved": true
     }

@@ -39,13 +39,31 @@ WRITE_TOOLS = {
 }
 PLAN_EXIT_TOOLS = {"exitplanmode", "exitplan", "planexit"}
 
+# Events this hook accepts and deliberately answers with nothing. Silence here
+# is a decision, not an oversight, so each entry carries its reason: a future
+# reader deciding whether to wire one of these up should inherit the argument
+# rather than re-derive it.
 NOOP_EVENTS = {
+    # The three end-of-work events. "Work finished -- were decisions made?" is a
+    # real question and this is where it would live, but answering it honestly
+    # means reading a whole session, which wants a model. Every hook here is
+    # deterministic, model-free and inside a 2 s budget (ADR-015); spending at
+    # session end would make this the first hook that costs money, on an event
+    # the user cannot see fire. Recorded as a deliberate silence in ADR-019.
     "stop",
     "subagentstop",
     "sessionend",
+    # Not about the work at all. A permission dialog and a notification are UI
+    # moments; injecting ADR context into either would put architectural text
+    # where the user is answering an unrelated question.
     "permissionrequest",
     "notification",
+    # The user stopped the agent. Adding output to an interrupt is the one time
+    # nobody wants more text.
     "interrupt",
+    # Compaction context is injected at PreCompact, while the transcript still
+    # exists. Afterwards there is nothing left to carry forward, so a second
+    # injection would be new context rather than preserved context.
     "postcompact",
 }
 EVENT_ALIASES = {
