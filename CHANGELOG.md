@@ -6,6 +6,22 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **An `openai-compatible` backend**, so LM Studio, a self-hosted vLLM, a corporate
+  gateway or an Azure deployment are all reachable. They speak the chat-completions
+  shape OpenRouter already speaks; the only thing missing was a configurable
+  endpoint. LM Studio works on its default `http://127.0.0.1:1234/v1`.
+
+  The base URL is **machine-local by design** and is refused in the committed
+  config: an endpoint a repository can name is an endpoint a repository can
+  redirect, and the judge posts the diff to it. It comes from
+  `judge.openai_base_url` in `.adr-kit.local.json` or `ADR_KIT_OPENAI_BASE_URL`,
+  with the environment outranking the file. Which model to use stays a project
+  setting, because that is a team decision. No Authorization header is sent when
+  no key is configured, since a local runtime that needs none would reject an
+  empty Bearer.
+
+### Added
+
 - **Setup and upgrade detect the local embedding runtime** and offer a way
   forward instead of leaving the gap to be discovered later
   (`adr-settings --check-embedding`, `bin/adr_embedding_runtime.py`). A runtime

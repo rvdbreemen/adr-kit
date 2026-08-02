@@ -29,31 +29,59 @@
       "properties": {
         "completeness": {
           "type": "string",
-          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+          "enum": [
+            "always_strict",
+            "always_advisory",
+            "advisory_before_strict_from"
+          ]
         },
         "audit": {
           "type": "string",
-          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+          "enum": [
+            "always_strict",
+            "always_advisory",
+            "advisory_before_strict_from"
+          ]
         },
         "evidence": {
           "type": "string",
-          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+          "enum": [
+            "always_strict",
+            "always_advisory",
+            "advisory_before_strict_from"
+          ]
         },
         "clarity": {
           "type": "string",
-          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+          "enum": [
+            "always_strict",
+            "always_advisory",
+            "advisory_before_strict_from"
+          ]
         },
         "consistency": {
           "type": "string",
-          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+          "enum": [
+            "always_strict",
+            "always_advisory",
+            "advisory_before_strict_from"
+          ]
         },
         "policy": {
           "type": "string",
-          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+          "enum": [
+            "always_strict",
+            "always_advisory",
+            "advisory_before_strict_from"
+          ]
         },
         "quality": {
           "type": "string",
-          "enum": ["always_strict", "always_advisory", "advisory_before_strict_from"]
+          "enum": [
+            "always_strict",
+            "always_advisory",
+            "advisory_before_strict_from"
+          ]
         }
       }
     },
@@ -95,7 +123,11 @@
         },
         "profile": {
           "type": "string",
-          "enum": ["canonical", "madr", "nygard"],
+          "enum": [
+            "canonical",
+            "madr",
+            "nygard"
+          ],
           "default": "madr",
           "description": "Operational body profile for newly created ADRs. Values are restricted to the shipped profile catalog: MADR is the agent-friendly default; Nygard is concise; canonical preserves the pre-v0.34 adr-kit format. Per-file format frontmatter remains authoritative."
         }
@@ -108,9 +140,14 @@
       "properties": {
         "backend": {
           "type": "string",
-          "enum": ["host", "openrouter", "ollama"],
+          "enum": [
+            "host",
+            "openrouter",
+            "ollama",
+            "openai-compatible"
+          ],
           "default": "host",
-          "description": "Which model the LLM judge asks for a verdict. 'host' (default) calls the non-interactive entry point of the client CLI recorded at install time (claude -p, codex exec, or copilot -p) and passes NO model flag, so each CLI resolves the model its own user configured and no credential is needed beyond the agent you are already signed in to. 'openrouter' posts to the OpenRouter completions endpoint using judge.openrouter_model and the OPENROUTER_API_KEY environment variable. 'ollama' posts to a local daemon at http://127.0.0.1:11434 using judge.ollama_model, so nothing leaves the machine -- at roughly 3.4 seconds per call on a 12B model, which is slower than a hosted one. Every value degrades to declarative-only and never blocks a commit when its backend is unavailable. Endpoints are code-side and cannot be set here."
+          "description": "Which model the LLM judge asks for a verdict. 'host' (default) calls the non-interactive entry point of the client CLI recorded at install time (claude -p, codex exec, or copilot -p) and passes NO model flag, so each CLI resolves the model its own user configured and no credential is needed beyond the agent you are already signed in to. 'openrouter' posts to the OpenRouter completions endpoint using judge.openrouter_model and the OPENROUTER_API_KEY environment variable. 'ollama' posts to a local daemon at http://127.0.0.1:11434 using judge.ollama_model, so nothing leaves the machine -- at roughly 3.4 seconds per call on a 12B model, which is slower than a hosted one. Every value degrades to declarative-only and never blocks a commit when its backend is unavailable. Endpoints are code-side and cannot be set here. The openai-compatible backend reaches any endpoint speaking the OpenAI chat-completions shape (LM Studio, a self-hosted vLLM, a gateway); its base URL is machine-local by design and is ignored if written here."
         },
         "openrouter_model": {
           "type": "string",
@@ -126,7 +163,10 @@
         "skip_files": {
           "type": "array",
           "description": "Glob patterns for files to exclude from judging. Matches relative to the repo root. Common entries: 'tests/**', 'docs/**', 'vendor/**'. ADR-level path_globs still take precedence; this is a project-wide pre-filter.",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "advisory_only": {
           "type": "boolean",
@@ -155,8 +195,15 @@
         },
         "llm_cmd": {
           "oneOf": [
-            { "type": "array", "items": { "type": "string" } },
-            { "type": "string" }
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
           ],
           "description": "DEPRECATED and IGNORED as of ADR-017; the judge warns when it is present, and names the specific reason a dangerous vector was dangerous. This file is committed, so this key let repository content choose the binary the judge executes and the flags it runs with -- two bypasses were reproduced end to end (TASK-60). The replacement is judge.backend, an enum into a code-side command table, which cannot introduce anything. For an operator-controlled override use the ADR_KIT_LLM_CMD environment variable or --llm-cmd, which remain unrestricted because they come from the person running the command. Retained in the schema only so an existing project's config still validates."
         },
@@ -188,6 +235,11 @@
           "type": "boolean",
           "description": "When true, emit a non-blocking WARN whenever a phase exceeds its *_timeout_ms performance budget (TASK-712). Advisory only; never blocks the commit or push. Default true.",
           "default": true
+        },
+        "openai_model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model name for the openai-compatible backend. WHICH model judges is a team decision, so it belongs here; WHERE the endpoint lives is a machine fact and belongs in .adr-kit.local.json or ADR_KIT_OPENAI_BASE_URL. An endpoint read from committed configuration could redirect the diff to a server the repository chose."
         }
       }
     },
@@ -207,8 +259,15 @@
         },
         "llm_cmd": {
           "oneOf": [
-            { "type": "array", "items": { "type": "string" } },
-            { "type": "string" }
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
           ],
           "description": "DEPRECATED and IGNORED as of ADR-017 (fixed in adr-suggest by TASK-72); adr-suggest warns when it is present and names the specific reason a dangerous vector was dangerous. This file is committed, so this key let repository content choose the binary adr-suggest executes and the flags it ran with -- the same hole TASK-60 closed in the judge, which survived here because ADR-017's Enforcement globs did not cover this script. The replacement is judge.backend, an enum into a code-side command table. For an operator-controlled override use the ADR_KIT_LLM_CMD environment variable or --llm-cmd, which remain unrestricted because they come from the person running the command. Retained in the schema only so an existing project's config still validates."
         },
@@ -228,16 +287,46 @@
           "type": "object",
           "description": "Scoring signal weights (must sum to 1.0)",
           "properties": {
-            "exact_keyword": {"type": "number", "minimum": 0, "maximum": 1},
-            "domain_tag": {"type": "number", "minimum": 0, "maximum": 1},
-            "related_decisions": {"type": "number", "minimum": 0, "maximum": 1},
-            "acceptance_status": {"type": "number", "minimum": 0, "maximum": 1},
-            "recency": {"type": "number", "minimum": 0, "maximum": 1}
+            "exact_keyword": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "domain_tag": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "related_decisions": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "acceptance_status": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "recency": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
           },
           "additionalProperties": false
         },
-        "default_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
-        "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.1},
+        "default_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 5
+        },
+        "min_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.1
+        },
         "strict_index": {
           "type": "boolean",
           "default": false,
@@ -250,7 +339,11 @@
           "description": "Project-relative retrieval probe file, resolved from the ADR directory."
         },
         "retrieval_completeness": {
-          "enum": ["off", "advisory", "strict"],
+          "enum": [
+            "off",
+            "advisory",
+            "strict"
+          ],
           "default": "advisory",
           "description": "Metadata completeness policy for Accepted binding ADRs. Strict is opt-in after migration."
         }
@@ -261,10 +354,23 @@
       "type": "object",
       "description": "Configuration for bin/adr-retire retirement detection",
       "properties": {
-        "threshold_days": {"type": "integer", "minimum": 1, "default": 90},
-        "check_tech_removal": {"type": "boolean", "default": true},
-        "check_supersession": {"type": "boolean", "default": true},
-        "check_policy_mismatch": {"type": "boolean", "default": true}
+        "threshold_days": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 90
+        },
+        "check_tech_removal": {
+          "type": "boolean",
+          "default": true
+        },
+        "check_supersession": {
+          "type": "boolean",
+          "default": true
+        },
+        "check_policy_mismatch": {
+          "type": "boolean",
+          "default": true
+        }
       },
       "additionalProperties": false
     },
@@ -322,7 +428,10 @@
           "properties": {
             "mode": {
               "type": "string",
-              "enum": ["auto", "assist"],
+              "enum": [
+                "auto",
+                "assist"
+              ],
               "description": "Default operating mode for 'adr accept --auto'. 'assist' (default) reports eligibility without mutating the file; 'auto' immediately accepts and rewrites the ADR when all gates pass. Overridden by --auto-mode on the command line.",
               "default": "assist"
             },

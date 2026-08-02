@@ -51,6 +51,21 @@ LOCAL_KEYS: Dict[str, Dict[str, Any]] = {
             "committed: a shared signer is a false attribution, not a shortcut."
         ),
     },
+    "judge.openai_base_url": {
+        "type": "string",
+        "description": (
+            "Base URL of an OpenAI-compatible endpoint, e.g. LM Studio's "
+            "http://127.0.0.1:1234/v1. Machine-local by design: an endpoint a "
+            "repository could name is an endpoint a repository could redirect."
+        ),
+    },
+    "judge.openai_api_key": {
+        "type": "string",
+        "description": (
+            "Optional credential for that endpoint. A local runtime usually needs "
+            "none. Never committed, and never printed back."
+        ),
+    },
     "judge.host_client": {
         "type": "string",
         "enum": ["claude-code-cli", "codex-cli", "github-copilot-cli"],
@@ -93,6 +108,7 @@ FEATURED = [
     "retirement.threshold_days",
     "lifecycle.signer",
     "judge.host_client",
+    "judge.openai_base_url",
 ]
 
 

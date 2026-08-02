@@ -1111,7 +1111,7 @@ def test_backends_is_the_code_side_registry_the_decision_names():
     value: every command and every endpoint is on the code side of that line.
     """
     aj = _load_judge_module()
-    assert set(aj.BACKENDS) == {"host", "openrouter", "ollama"}
+    assert set(aj.BACKENDS) == {"host", "openrouter", "ollama", "openai-compatible"}
     assert all(callable(factory) for factory in aj.BACKENDS.values())
     assert aj.BACKEND_NAMES == tuple(aj.BACKENDS)
     # An unknown key is refused outright, not coerced into a default backend.
@@ -1125,10 +1125,12 @@ def test_backends_is_the_code_side_registry_the_decision_names():
 
 def test_backend_enum_and_default_match_the_decision():
     aj = _load_judge_module()
-    assert aj.BACKEND_NAMES == ("host", "openrouter", "ollama")
+    assert aj.BACKEND_NAMES == ("host", "openrouter", "ollama", "openai-compatible")
     assert aj.DEFAULT_BACKEND == "host"
     judge = CONFIG_SCHEMA["properties"]["judge"]["properties"]
-    assert judge["backend"]["enum"] == ["host", "openrouter", "ollama"]
+    # The enum and the code registry are one contract; assert they agree
+    # rather than restating the list, so adding a backend is one edit.
+    assert judge["backend"]["enum"] == list(aj.BACKEND_NAMES)
     assert judge["backend"]["default"] == "host"
     backend, _ = aj.resolve_llm_backend(
         {}, {"judge": {"host_client": "codex-cli"}}, None, {}
