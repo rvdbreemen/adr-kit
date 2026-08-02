@@ -4,6 +4,19 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`/adr-kit:settings` and `bin/adr-settings`**: one place to see and change every
+  knob, with the provenance of each value (project, machine-local, environment
+  override, or code default). Two things were unreachable before: `judge.llm_enabled`
+  could be switched on by a shipped writer but never off, and a personal setting had
+  nowhere to live that a user would find. Writes are typed and validated against the
+  schema first, so `--set guardian.enabled=maybe` is refused rather than stored as a
+  truthy string, and a refused write leaves no file behind. Each key is routed to the
+  right file: team decisions to the tracked `.adr-kit.json`, personal or
+  machine-specific facts to the gitignored `.adr-kit.local.json`. A credential is
+  reported as a boolean about the environment, never printed.
+
 ### Changed
 
 - **The status-history actor is configured, and unsigned transitions are

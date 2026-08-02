@@ -161,6 +161,14 @@
       "provenance": "declared bin entrypoint"
     },
     {
+      "path": "bin/adr-settings",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-settings command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
       "path": "bin/adr-status",
       "ownership": "runtime",
       "purpose": "ADR Kit adr-status command",

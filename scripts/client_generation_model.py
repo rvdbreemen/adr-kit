@@ -23,6 +23,7 @@ WORKFLOW_IDS = (
     "related",
     "retire",
     "review",
+    "settings",
     "setup",
     "supersede",
     "upgrade",

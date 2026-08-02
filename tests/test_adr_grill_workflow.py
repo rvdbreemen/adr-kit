@@ -7,9 +7,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _canonical_workflow_ids() -> tuple:
+    """Read the canonical workflow set from the generator, not a literal."""
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    name = "client_generation_model"
+    module = sys.modules.get(name)
+    if module is None:
+        loader = importlib.machinery.SourceFileLoader(
+            name, str(ROOT / "scripts" / f"{name}.py")
+        )
+        spec = importlib.util.spec_from_loader(name, loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        loader.exec_module(module)
+    return module.WORKFLOW_IDS
+
+
 def test_canonical_grill_contract_and_fixture_conversations():
     workflows = json.loads((ROOT / "clients" / "workflows.json").read_text(encoding="utf-8"))
-    assert len(workflows["workflows"]) == 15
+    # The count is the canonical set, not a number to re-edit per workflow.
+    assert len(workflows["workflows"]) == len(_canonical_workflow_ids())
     grill = next(item for item in workflows["workflows"] if item["id"] == "grill")
     contract = "\n".join(grill["procedure"])
     for entry in (
