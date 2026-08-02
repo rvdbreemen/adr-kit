@@ -41,6 +41,14 @@
       "provenance": "declared bin entrypoint"
     },
     {
+      "path": "bin/adr-embed",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-embed command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
       "path": "bin/adr-generate-scripts",
       "ownership": "runtime",
       "purpose": "ADR Kit adr-generate-scripts command",

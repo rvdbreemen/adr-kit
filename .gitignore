@@ -70,3 +70,8 @@ docs/adr/.adr-kit-readiness.json
 # Local knowledge-graph analysis output (graphify). Derived from this repo,
 # regenerable with /graphify, and large. Never committed.
 graphify-out/
+
+# Derived embedding store (ADR-018). Machine-local by default: it is rebuilt
+# from the ADRs and is specific to one embedding model.
+docs/adr/.adr-kit-vectors.json
+.adr-kit-vectors.json

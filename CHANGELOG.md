@@ -6,6 +6,34 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **The ADR vector layer ADR-018 permits** (`bin/adr-embed`,
+  `bin/adr_vector_store.py`, gate `adr-vector-store-v1`). Lexical retrieval misses
+  on vocabulary: ask "should the commit hook still run when the model is
+  unreachable?" and the ADR that says "fail open on tooling drift" shares no
+  token with the question. Embeddings close that gap.
+
+  The boundary is what makes it affordable. `adr-embed build` is the only place
+  that may call a model, and it is invoked by a human or a CI job - nothing embeds
+  because someone typed a prompt. The read path does arithmetic on a file:
+  standard-library cosine, no numpy, no daemon, no network, which is what keeps
+  ADR-016's zero-dependency posture and ADR-015's 2 s budget intact.
+
+  Staleness announces itself. Every entry records the embedding model, the vector
+  dimension and a content hash of its ADR; an edited, added or removed record marks
+  the store stale, and a dimension mismatch refuses it outright rather than scoring
+  against vectors from a different model. A stale or missing store falls back to
+  lexical ranking with a reason, which is not an error.
+
+  Similarity generates candidates and never confers authority: a Superseded
+  decision stays findable and stays non-governing, exactly as ADR-014 specified.
+
+  Embedding reuses the judge backend registry, so `ollama` and the new
+  `openai-compatible` backend both embed while `host` reports plainly that no
+  coding-client CLI exposes an embeddings endpoint. The store is machine-local and
+  gitignored: it is derived, and specific to one model.
+
+### Added
+
 - **An `openai-compatible` backend**, so LM Studio, a self-hosted vLLM, a corporate
   gateway or an Azure deployment are all reachable. They speak the chat-completions
   shape OpenRouter already speaks; the only thing missing was a configurable

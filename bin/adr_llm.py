@@ -79,6 +79,7 @@ LOCAL_CONFIG_NAME = ".adr-kit.local.json"
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
 OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate"
+OLLAMA_EMBED_ENDPOINT = "http://127.0.0.1:11434/api/embeddings"
 
 # An OpenAI-compatible base URL turns one backend into a family: LM Studio, a
 # self-hosted vLLM, a corporate gateway, an Azure deployment. They all speak the
@@ -304,6 +305,19 @@ class LLMBackend:
         raise NotImplementedError
 
 
+    def embed(self, texts: List[str], model: str, timeout_s: int) -> Optional[List[List[float]]]:
+        """Return one vector per text, or None when this backend cannot embed.
+
+        Optional by design. ADR-018 puts embedding in a build step, so a backend
+        that only generates text is not broken - it simply has nothing to offer
+        here, and the caller falls back to another route rather than failing.
+        """
+        return None
+
+    def embed_unavailable_reason(self) -> Optional[str]:
+        return f"the {self.kind} backend does not expose an embeddings endpoint"
+
+
 class SubprocessBackend(LLMBackend):
     """Spawn a client CLI, feed it the prompt on stdin, read stdout.
 
@@ -387,9 +401,26 @@ class HttpBackend(LLMBackend):
     def _post(
         self, payload: Dict, headers: Dict[str, str], timeout_s: int, adr_id: str
     ) -> Optional[Dict]:
+        return self._post_to(self.endpoint, payload, headers, timeout_s, adr_id)
+
+    def _post_to(
+        self,
+        endpoint: str,
+        payload: Dict,
+        headers: Dict[str, str],
+        timeout_s: int,
+        adr_id: str,
+    ) -> Optional[Dict]:
+        """POST to an explicit endpoint.
+
+        The judge always posts to `self.endpoint`; embedding posts to a sibling
+        path on the same host. Parameterising the URL keeps one set of failure
+        semantics -- every fault degrades to None -- instead of a second copy
+        that would drift.
+        """
         body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
-            self.endpoint,
+            endpoint,
             data=body,
             headers={"Content-Type": "application/json", **headers},
             method="POST",
@@ -524,6 +555,29 @@ class OllamaBackend(HttpBackend):
         return response if isinstance(response, str) else None
 
 
+    def embed(self, texts, model, timeout_s):
+        """Ollama embeds one text per call; there is no batch endpoint."""
+        vectors = []
+        for text in texts:
+            data = self._post_to(
+                OLLAMA_EMBED_ENDPOINT,
+                {"model": model, "prompt": text},
+                {},
+                timeout_s,
+                "embed",
+            )
+            if data is None:
+                return None
+            vector = data.get("embedding")
+            if not isinstance(vector, list) or not vector:
+                return None
+            vectors.append([float(value) for value in vector])
+        return vectors
+
+    def embed_unavailable_reason(self):
+        return None
+
+
 class OpenAICompatibleBackend(HttpBackend):
     """Any endpoint speaking the OpenAI chat-completions shape.
 
@@ -583,6 +637,36 @@ class OpenAICompatibleBackend(HttpBackend):
             return None
         content = (choices[0].get("message") or {}).get("content")
         return content if isinstance(content, str) else None
+    def embed(self, texts, model, timeout_s):
+        if not self.base_url:
+            return None
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        data = self._post_to(
+            f"{self.base_url}/embeddings",
+            {"model": model, "input": list(texts)},
+            headers,
+            timeout_s,
+            "embed",
+        )
+        if data is None:
+            return None
+        rows = data.get("data")
+        if not isinstance(rows, list) or len(rows) != len(texts):
+            return None
+        vectors = []
+        for row in rows:
+            vector = (row or {}).get("embedding")
+            if not isinstance(vector, list) or not vector:
+                return None
+            vectors.append([float(value) for value in vector])
+        return vectors
+
+    def embed_unavailable_reason(self):
+        return self.unavailable_reason()
+
+
 
 def _host_backend(
     judge_cfg: Dict, local_cfg: Dict, warnings: List[str]
