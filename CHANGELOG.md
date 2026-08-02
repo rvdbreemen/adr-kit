@@ -4,6 +4,18 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The prompt hook returns five ADRs and honours the configured limit** (spec R5).
+  It was hardcoded to three, and `context.default_limit` - documented as the knob -
+  never reached the hook, so a user who set five still got three. The default is
+  now five, the project setting wins when present, and an absurd value is bounded
+  rather than obeyed so a typo cannot turn one prompt into a context flood.
+
+  The Rust hook carried its own copy of the constant, which meant what an agent
+  was told depended on the platform, invisibly. A test now asserts the two
+  implementations declare the same default.
+
 ### Added
 
 - **The branch is judged before the pull request exists** (spec R2). Opening a PR

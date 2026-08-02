@@ -21,7 +21,12 @@ from adr_query import IndexQueryError, query_adr_context
 MAX_INPUT_BYTES = 64 * 1024
 MAX_PARENT_CHARS = 8 * 1024
 MAX_CONTEXT_CHARS = 4 * 1024
-MAX_RESULTS = 3
+# spec.md R5 asks for five relevant ADRs at the moment work begins. This was 3,
+# and the documented knob (context.default_limit) never reached the hook, so a
+# user who set 5 still got 3. Both are fixed: the default is five, and the
+# project setting wins when it is present.
+DEFAULT_MAX_RESULTS = 5
+MAX_RESULTS = DEFAULT_MAX_RESULTS
 QUEUE_CACHE_NAME = ".adr-kit-readiness.json"
 QUEUE_MAX_BYTES = 256 * 1024
 WRITE_TOOLS = {
@@ -272,6 +277,24 @@ def rank(records: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
     return (positive or [item[2] for item in scored])[:MAX_RESULTS]
 
 
+def _configured_limit(workspace: Path) -> int:
+    """context.default_limit when set, else the default. Bounded and fail-soft.
+
+    Read here rather than threaded through, because the hook is the one caller
+    that used to ignore it. The bound keeps a typo from turning one prompt into
+    a context flood.
+    """
+    try:
+        raw = json.loads(
+            (workspace / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return DEFAULT_MAX_RESULTS
+    value = ((raw or {}).get("context") or {}).get("default_limit")
+    if isinstance(value, int) and 1 <= value <= 20:
+        return value
+    return DEFAULT_MAX_RESULTS
+
 def _query(
     workspace: Path,
     query: str,
@@ -282,11 +305,12 @@ def _query(
     index = _index_path(workspace)
     if index is None:
         return []
+    limit = _configured_limit(workspace)
     try:
         outcome = query_adr_context(
             query,
             index.parent,
-            limit=MAX_RESULTS,
+            limit=limit,
             strict_index=True,
             include_history=False,
             statuses=("Accepted", "Proposed"),
@@ -298,7 +322,7 @@ def _query(
         item
         for item in outcome["results"]
         if item.get("status") in {"Accepted", "Proposed"}
-    ][:MAX_RESULTS]
+    ][:limit]
 
 
 def _safe_edit_path(envelope: Envelope) -> Path | None:
