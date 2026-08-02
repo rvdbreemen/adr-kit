@@ -6,6 +6,23 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **A hook on leaving plan mode** (spec R3). The plan is complete and no code
+  exists yet: the cheapest moment to notice a missing decision, and the only one
+  where the answer can still shape the implementation rather than justify it
+  afterwards. `PreToolUse` with an `ExitPlanMode` matcher injects the ADRs that
+  govern the plan and asks whether the plan makes a decision no ADR records yet.
+
+  Deliberately a question and never a gate: a block here would teach people to
+  write an empty ADR to get past it, which is precisely the failure mode that
+  produced six rule-less Enforcement blocks in this repository. Same contract as
+  every other hook - deterministic, injection-only, model-free, 100 ms budget.
+
+  Codex and Copilot expose no plan-mode transition, and the manifest records
+  `null` for them rather than inventing an event name. The client-support matrix
+  gained a Plan exit column that says so.
+
+### Added
+
 - **The ADR vector layer ADR-018 permits** (`bin/adr-embed`,
   `bin/adr_vector_store.py`, gate `adr-vector-store-v1`). Lexical retrieval misses
   on vocabulary: ask "should the commit hook still run when the model is

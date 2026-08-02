@@ -33,6 +33,16 @@
           }
         ],
         "matcher": "Edit|MultiEdit|Write"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" plan-exit claude-code-cli",
+            "timeout": 1
+          }
+        ],
+        "matcher": "ExitPlanMode"
       }
     ],
     "PostToolUse": [

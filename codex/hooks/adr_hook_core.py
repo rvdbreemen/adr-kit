@@ -32,6 +32,8 @@ WRITE_TOOLS = {
     "create",
     "notebookedit",
 }
+PLAN_EXIT_TOOLS = {"exitplanmode", "exitplan", "planexit"}
+
 NOOP_EVENTS = {
     "stop",
     "subagentstop",
@@ -401,6 +403,27 @@ def _proposed_advisory(
     return "\n".join(lines)[:MAX_CONTEXT_CHARS]
 
 
+def _plan_text(envelope: Envelope) -> str:
+    """The plan a plan-exit tool call carries, bounded like every other input."""
+    raw = _first(envelope.tool_input, "plan", "content", "text", "summary")
+    return (_bounded_text(raw, MAX_CONTEXT_CHARS) or "").strip()
+
+
+def _plan_decision_prompt(client: str) -> str:
+    """Ask the question this moment exists for.
+
+    Deliberately a question and not a gate. A hook that blocked here would teach
+    people to write an empty ADR to get past it, which is the failure mode that
+    produced six rule-less Enforcement blocks in this very repository.
+    """
+    return (
+        "Before leaving plan mode: does this plan make an architectural decision "
+        "no ADR records yet? A new dependency, an interface or contract change, a "
+        "shift in a non-functional requirement, or a new pattern all qualify. If "
+        "so, write it now with " + _client_grill(client, "") + " while the "
+        "reasoning is still in front of you; afterwards it becomes justification."
+    )
+
 def evaluate(envelope: Envelope) -> tuple[str, str]:
     compact_event = re.sub(r"[^a-z]", "", envelope.event.lower())
     if compact_event in NOOP_EVENTS:
@@ -452,6 +475,29 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
         return ("\n".join(parts)[:MAX_CONTEXT_CHARS], "prompt") if parts else ("", "noop")
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")
+        if envelope.event == "PreToolUse" and tool in PLAN_EXIT_TOOLS:
+            # Leaving plan mode: the plan is complete and no code exists yet.
+            # Cheapest moment to notice a missing decision, and the only one
+            # where the answer can still shape the implementation instead of
+            # justifying it afterwards. Same contract as every other hook:
+            # deterministic, injection-only, model-free, never blocking.
+            plan = _plan_text(envelope)
+            if not plan:
+                return "", "noop"
+            selected = _query(envelope.workspace, plan)
+            governing = [item for item in selected if item.get("status") == "Accepted"]
+            advisory = [item for item in selected if item.get("status") == "Proposed"]
+            parts = [
+                part
+                for part in (
+                    _render(governing, "ADRs that govern this plan:"),
+                    _render(advisory, "Advisory Proposed ADRs for this plan:"),
+                    _plan_decision_prompt(envelope.client),
+                )
+                if part
+            ]
+            joined = "\n".join(parts)[:MAX_CONTEXT_CHARS]
+            return (joined, "plan-exit") if parts else ("", "noop")
         if tool not in WRITE_TOOLS:
             return "", "noop"
         path = _safe_edit_path(envelope)
