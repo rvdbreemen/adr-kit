@@ -398,6 +398,51 @@ def _stale_artifact_lines(report: Dict) -> List[str]:
     return lines
 
 
+def _refresh_queue_if_stale(adr_dir: Path, project_root: Path) -> None:
+    """Rebuild the Proposed work queue when its cache is missing or expired.
+
+    The SessionStart grill nudge reads `docs/adr/.adr-kit-readiness.json`, which
+    was written only by `adr-guardian refresh-readiness` -- a command invoked by
+    nothing but a sentence in the guardian skill. The cache is gitignored with a
+    24 h TTL, so on a fresh clone the nudge stayed silent until some model
+    happened to run the sweep and think to run that step. A guarantee that
+    depends on a model reading prose is not a guarantee.
+
+    This makes it a mechanism. It runs in-process rather than spawning, because
+    `check` may not spawn: `build_readiness_report` is pure Python over the ADR
+    files, and it is skipped entirely while a valid cache exists, so the common
+    case costs one `stat`.
+
+    Fails open in every direction. This is a convenience for a nudge; a session
+    must never fail to start because a queue could not be computed.
+    """
+    cache_path = adr_dir / QUEUE_CACHE_NAME
+    now = _now_utc()
+    try:
+        if cache_path.is_file():
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            expires_at = datetime.fromisoformat(str(payload["expires_at"]))
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at > now:
+                return
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        pass  # unreadable is the same as absent: rebuild it
+
+    try:
+        _load_sibling("adr_format")
+        _load_sibling("adr_schema")
+        _load_sibling("adr_catalog")
+        _load_sibling("adr_quality_core")
+        readiness = _load_sibling("adr_readiness")
+        report = readiness.build_readiness_report(
+            adr_dir, evaluated_on=now.date(), all_proposed=True
+        )
+        write_queue_cache(cache_path, build_queue_cache(report, generated_at=now))
+    except Exception:
+        return
+
+
 def _stale_index_lines(adr_dir: Path) -> List[str]:
     """Nudge lines when the generated indexes no longer match the ADRs.
 
@@ -696,6 +741,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     # sweep tiers are fresh; it rides the same nudge cooldown as the tiers.
     artifact_lines = _stale_artifact_lines(_artifact_report(adr_dir.parent.parent))
     artifact_lines.extend(_stale_index_lines(adr_dir))
+    _refresh_queue_if_stale(adr_dir, project_root=adr_dir.parent.parent)
     now = _now_utc()
     adr_count = _count_adrs(adr_dir)
 

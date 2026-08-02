@@ -736,6 +736,121 @@ def command_set_status(args, status: str, status_line: str, default_reason: str)
     return [f"{status.lower()}: {path.name}"]
 
 
+ANSWERED_LINE_RE = re.compile(
+    r"^\s*[-*+]\s*\[[xX]\]\s+(?P<question>.+?)\s+—\s+\*\*Answered\b", re.MULTILINE
+)
+
+
+def _open_questions_section(body: str) -> Tuple[int, int, str]:
+    """(start, end, text) of the Open Questions section body. Raises if absent."""
+    match = re.search(
+        r"^##\s+Open Questions\s*$\n(?P<body>.*?)(?=\n##\s+|\Z)",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        raise AdrLifecycleError(
+            "this ADR has no `## Open Questions` section; add one, or the answer "
+            "has nowhere durable to live"
+        )
+    return match.start("body"), match.end("body"), match.group("body")
+
+
+def command_answer(args) -> List[str]:
+    """Resolve an open question in place, keeping both halves of the exchange.
+
+    Grilling asks a question and gets an answer, and until now only one of the
+    two survived. `## Open Questions` holds unresolved items by design, and
+    acceptance requires the list to be empty, so an author who answered a
+    question had to *delete* it to accept the ADR. What remained was the Status
+    History: who flipped the status and when, never what they were asked.
+
+    That reasoning is exactly what a future reader needs to re-evaluate a
+    decision, and re-evaluation is what supersession depends on.
+
+    Nothing new had to be invented to fix it. `unresolved_open_questions`
+    already skips a `[x]` item, so a checked line with the answer written into
+    it survives acceptance untouched and stays in the record forever. This
+    command writes that line, so the convention is a mechanism rather than a
+    hope, and the signer and date come from the same resolution every other
+    lifecycle command uses.
+    """
+    adr_dir = Path(args.adr_dir)
+    adr_id = normalize_adr_id(args.adr)
+    path = find_adr_file(adr_dir, adr_id)
+    if not str(args.answer).strip():
+        raise AdrLifecycleError("an answer with no text is a deletion with extra steps")
+
+    data, body = load_adr(path)
+    start, end, section = _open_questions_section(body)
+
+    lines = section.splitlines()
+    unresolved = [
+        (index, line)
+        for index, line in enumerate(lines)
+        if re.match(r"^\s*[-*+]\s*(?:\[\s\]\s+)?\S", line)
+        and not re.match(r"^\s*[-*+]\s*\[[xX]\]", line)
+        and re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip().casefold().rstrip(".")
+        not in {"none", "no open questions", "no unresolved questions"}
+    ]
+    if not unresolved:
+        raise AdrLifecycleError(f"{adr_id} has no unresolved question to answer")
+
+    target = _select_question(unresolved, args.question)
+    index, line = target
+    question_text = re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip()
+    changed_by = resolve_signer(adr_dir, args.changed_by)
+    lines[index] = (
+        f"- [x] {question_text} — **Answered {args.date} by {changed_by}:** "
+        f"{str(args.answer).strip()}"
+    )
+
+    # splitlines() drops the section's trailing newline; putting it back is what
+    # keeps the blank line before the next heading, and a heading that loses its
+    # blank line stops being a heading to some Markdown readers.
+    rewritten = "\n".join(lines) + ("\n" if section.endswith("\n") else "")
+    body = body[:start] + rewritten + body[end:]
+    _commit_lifecycle_changes(adr_dir, [(path, render_frontmatter(data) + body)])
+    return [
+        f"answered in {path.name}: {question_text[:70]}",
+        "the question and its answer stay in the record; acceptance is no longer blocked by it",
+    ]
+
+
+def _select_question(unresolved: List[Tuple[int, str]], wanted: Optional[str]):
+    """Pick the question to answer: the only one, an index, or a substring."""
+    if wanted is None:
+        if len(unresolved) > 1:
+            listing = "; ".join(
+                f"{position}: "
+                + re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip()[:60]
+                for position, (_index, line) in enumerate(unresolved, 1)
+            )
+            raise AdrLifecycleError(
+                f"{len(unresolved)} unresolved questions; name one with "
+                f"--question <number|text>. {listing}"
+            )
+        return unresolved[0]
+
+    if re.fullmatch(r"\d+", str(wanted).strip()):
+        position = int(str(wanted).strip())
+        if not 1 <= position <= len(unresolved):
+            raise AdrLifecycleError(
+                f"--question {position} is out of range (1..{len(unresolved)})"
+            )
+        return unresolved[position - 1]
+
+    needle = str(wanted).casefold()
+    matches = [item for item in unresolved if needle in item[1].casefold()]
+    if not matches:
+        raise AdrLifecycleError(f"no unresolved question matches {wanted!r}")
+    if len(matches) > 1:
+        raise AdrLifecycleError(
+            f"{wanted!r} matches {len(matches)} unresolved questions; be more specific"
+        )
+    return matches[0]
+
+
 def command_relate(args) -> List[str]:
     """Write a cross-reference on both sides, or remove it from both.
 
@@ -1087,6 +1202,19 @@ def build_parser() -> argparse.ArgumentParser:
     reject.add_argument("adr")
     add_common_args(reject)
 
+    answer = sub.add_parser(
+        "answer",
+        help="resolve an open question in place, keeping the question and the answer",
+    )
+    answer.add_argument("adr")
+    answer.add_argument("--answer", required=True, help="the settled answer")
+    answer.add_argument(
+        "--question",
+        default=None,
+        help="which unresolved question: a 1-based number or distinctive text",
+    )
+    add_common_args(answer)
+
     relate = sub.add_parser(
         "relate",
         help="record a cross-reference between two ADRs on both sides at once",
@@ -1142,6 +1270,8 @@ def main(argv: List[str] | None = None) -> int:
                 f"Rejected, {args.date}.",
                 "Rejected decision",
             )
+        elif args.command == "answer":
+            lines = command_answer(args)
         elif args.command == "relate":
             lines = command_relate(args)
         elif args.command == "supersede":

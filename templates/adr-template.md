@@ -104,6 +104,12 @@ State how implementation of the decision will be verified.
 List unresolved human decisions as unchecked tasks. Accepted ADRs must have no
 unresolved items.
 
+Answer them with `bin/adr answer`, which rewrites an item as
+`- [x] <question> — **Answered <date> by <signer>:** <answer>`. A checked item
+is resolved, so it no longer blocks acceptance and stays in the record. Do not
+delete an answered question: the reasoning is what a future reader needs in
+order to re-evaluate the decision.
+
 ## Related Decisions
 
 * None.
