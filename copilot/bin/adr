@@ -358,6 +358,10 @@ def mutate_status(
 ) -> str:
     data, body = load_adr(path)
     assert_legal_transition(str(data.get("status")), status)
+    # Signer resolution comes after legality on purpose: an illegal transition
+    # must report that it is illegal, not that it is unsigned. Validate the act
+    # before validating the actor.
+    changed_by = resolve_signer(path.parent, changed_by)
     body = ensure_status_history(path, data, body, (status, when))
     data["status"] = status
     data["date"] = when
@@ -462,7 +466,7 @@ def command_new(args) -> List[str]:
     # spec.md prescribes - is a mapping to a YAML parser, and an unquoted one
     # makes the whole block unparseable. accept/supersede already route through
     # _yaml_scalar; creation did not.
-    body = body.replace("user@example.com", _yaml_scalar(args.changed_by))
+    body = body.replace("user@example.com", _yaml_scalar(resolve_signer(adr_dir, args.changed_by)))
     _commit_lifecycle_changes(adr_dir, [(destination, body)])
     return [f"created: {destination} ({profile})"]
 
@@ -771,16 +775,147 @@ def command_supersede(args) -> List[str]:
     return [f"superseded: {old_path.name} -> {new_id}", f"updated successor: {new_path.name}"]
 
 
+
+# --- Signer resolution (spec R8/R8.1) -------------------------------------
+#
+# The actor written into Status History used to default to the literal
+# "adr-kit", so forgetting the flag produced a durable record saying the tool
+# accepted its own ADR. That is worse than an unsigned record: it is a false
+# attribution in the one place an auditor looks.
+#
+# The signer lives in the gitignored machine-local config, not in the tracked
+# one. A committed signer would put one person's name on every teammate's
+# acceptance.
+#
+# What this does NOT do, stated so nobody mistakes it: it does not prove a human
+# was present, and it authenticates nothing. It makes the signature attributable
+# and deliberate. Real non-repudiation needs signed commits, which is a separate
+# decision nobody has taken yet.
+
+LOCAL_CONFIG_NAME = ".adr-kit.local.json"
+
+
+def read_local_config(adr_dir: Path) -> dict:
+    """Read the machine-local config, or {} when absent or unreadable."""
+    try:
+        data = json.loads((Path(adr_dir) / LOCAL_CONFIG_NAME).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def configured_signer(adr_dir: Path) -> Optional[str]:
+    signer = (read_local_config(adr_dir).get("lifecycle") or {}).get("signer")
+    return signer.strip() if isinstance(signer, str) and signer.strip() else None
+
+
+def git_user_name() -> Optional[str]:
+    """`git config user.name`, offered as a proposal. Never adopted silently."""
+    try:
+        out = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    name = (out.stdout or "").strip()
+    return name or None
+
+
+def resolve_signer(adr_dir: Path, explicit: Optional[str]) -> str:
+    """Explicit flag, else configured signer, else refuse."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    signer = configured_signer(adr_dir)
+    if signer:
+        return signer
+    proposal = git_user_name()
+    if proposal:
+        hint = f'  python bin/adr signer --set "User: {proposal}"'
+    else:
+        hint = '  python bin/adr signer --set "User: <your name>"'
+    raise AdrLifecycleError(
+        "no signer configured, so this transition would be unsigned. "
+        "A Status History entry records who decided and when, and the tool must "
+        "not fill that in on your behalf. Set it once for this machine:"
+        f"\n{hint}\n"
+        "or pass --changed-by for a single command."
+    )
+
+
+def command_signer(args) -> List[str]:
+    """Show, set, or audit the machine-local signer."""
+    adr_dir = Path(args.adr_dir)
+    if args.set:
+        value = args.set.strip()
+        if not value:
+            raise AdrLifecycleError("--set needs a non-empty name")
+        path = adr_dir / LOCAL_CONFIG_NAME
+        data = read_local_config(adr_dir)
+        data.setdefault("lifecycle", {})["signer"] = value
+        _atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        return [
+            f"signer set: {value}",
+            f"written to {path} (machine-local, gitignored)",
+        ]
+
+    if args.audit:
+        offenders = []
+        for path in sorted(adr_dir.glob("ADR-*.md")):
+            try:
+                body = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for match in re.finditer(r"^\s*changed_by:\s*(.+)$", body, re.MULTILINE):
+                actor = match.group(1).strip().strip('"')
+                if actor in {"adr-kit", "unknown"}:
+                    offenders.append(f"{path.name}: changed_by {actor!r}")
+        if not offenders:
+            return ["no self-signed or unknown actors found"]
+        return [
+            "Status History entries with no human actor:",
+            *(f"  {line}" for line in offenders),
+            "",
+            "These predate the signer requirement. Correcting one means editing",
+            "history, so it is a deliberate act, not something this command does.",
+        ]
+
+    signer = configured_signer(adr_dir)
+    if signer:
+        return [f"signer: {signer}", f"source: {adr_dir / LOCAL_CONFIG_NAME}"]
+    proposal = git_user_name()
+    lines = ["signer: (unset) - lifecycle commands will refuse to write history"]
+    if proposal:
+        lines.append(f'proposal from git config user.name: python bin/adr signer --set "User: {proposal}"')
+    else:
+        lines.append('set one with: python bin/adr signer --set "User: <your name>"')
+    return lines
+
+
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--adr-dir", default="docs/adr", help="ADR directory")
     parser.add_argument("--date", default=date.today().isoformat(), help="transition date")
-    parser.add_argument("--changed-by", default="adr-kit", help="status history actor")
+    parser.add_argument(
+        "--changed-by",
+        default=None,
+        help=(
+            "status history actor. Defaults to lifecycle.signer from the "
+            "machine-local config; with neither, the command refuses rather "
+            "than signing on your behalf."
+        ),
+    )
     parser.add_argument("--reason", default=None, help="status history reason")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="adr", description="adr-kit lifecycle commands")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    signer = sub.add_parser("signer", help="show, set, or audit the status-history signer")
+    signer.add_argument("--adr-dir", default="docs/adr", help="ADR directory")
+    signer.add_argument("--set", default=None, metavar="NAME", help='e.g. "User: Robert van den Breemen"')
+    signer.add_argument("--audit", action="store_true", help="list history entries with no human actor")
 
     new = sub.add_parser("new", help="create a Proposed ADR from a selected profile")
     new.add_argument("title")
@@ -834,7 +969,9 @@ def main(argv: List[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.command == "new":
+        if args.command == "signer":
+            lines = command_signer(args)
+        elif args.command == "new":
             lines = command_new(args)
         elif args.command == "profiles":
             lines = command_profiles(args)

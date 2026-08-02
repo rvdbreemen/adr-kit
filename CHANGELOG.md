@@ -6,6 +6,28 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Changed
 
+- **The status-history actor is configured, and unsigned transitions are
+  refused.** `--changed-by` defaulted to the literal `adr-kit`, so forgetting the
+  flag wrote a durable record saying the tool accepted its own ADR. That is worse
+  than an unsigned record: it is a false attribution in the one place an auditor
+  looks. The signer now comes from `lifecycle.signer` in the gitignored
+  machine-local config, `--changed-by` still overrides per command, and with
+  neither the command refuses and writes nothing. `bin/adr signer` shows, sets
+  and audits it; `--set` proposes `git config user.name` rather than adopting it
+  silently. `bin/adr signer --audit` lists existing entries with no human
+  actor - six in this repository, which is how the gap was found.
+
+  What this does not do, stated so nobody mistakes it: it does not prove a human
+  was present and it authenticates nothing. It makes the signature attributable
+  and deliberate. Real non-repudiation needs signed commits, which is a separate
+  decision nobody has taken.
+
+  Signer resolution deliberately runs *after* the legality check, so an illegal
+  transition still reports that it is illegal rather than that it is unsigned.
+  Validate the act before the actor.
+
+### Changed
+
 - **`llm_judge` now defaults to `true`.** An Enforcement block that omits the key
   opts in; only an explicit `false` opts out. The old opt-in default failed
   silently: ADR-017 turned the LLM pass on by default, and this repository then

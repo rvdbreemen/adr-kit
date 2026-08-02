@@ -646,3 +646,74 @@ def test_adr_new_quotes_an_actor_containing_a_colon(tmp_path):
     assert block, "no status_history block was written"
     parsed = yaml.safe_load(block.group(1))
     assert parsed["status_history"][0]["changed_by"] == "User: Robert van den Breemen"
+
+
+def test_lifecycle_refuses_to_sign_on_the_users_behalf(tmp_path):
+    """No configured signer and no flag means refuse, not sign as 'adr-kit'."""
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "An Unsigned Decision",
+         "--adr-dir", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+
+    assert result.returncode != 0
+    assert "no signer configured" in result.stderr
+    assert not list(adr_dir.glob("ADR-*.md")), "nothing may be written on refusal"
+
+
+def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
+    """The machine-local config supplies the actor; the flag stays optional."""
+    import json as _json
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.local.json").write_text(
+        _json.dumps({"lifecycle": {"signer": "User: Configured Human"}}), encoding="utf-8"
+    )
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Signed Decision",
+         "--adr-dir", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    created = next(adr_dir.glob("ADR-*.md"))
+    assert 'changed_by: "User: Configured Human"' in created.read_text(encoding="utf-8")
+
+
+def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path):
+    """Validate the act before the actor: the error must name the real problem."""
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Decision",
+         "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "accept", "ADR-001",
+         "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    # Accepted -> Proposed is illegal, and this call also has no signer.
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "propose", "ADR-001",
+         "--adr-dir", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+
+    assert result.returncode == 2
+    assert "illegal lifecycle transition" in result.stderr, (
+        "the signer check must not preempt the legality check; an illegal "
+        "transition has to report that it is illegal"
+    )
