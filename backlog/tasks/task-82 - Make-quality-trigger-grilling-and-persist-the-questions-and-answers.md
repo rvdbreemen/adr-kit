@@ -1,15 +1,33 @@
 ---
 id: TASK-82
 title: 'Make quality trigger grilling, and persist the questions and answers'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-01 10:34'
+updated_date: '2026-08-02 20:51'
 labels:
   - spec-gap
   - R9
   - grilling
   - quality
 dependencies: []
+modified_files:
+  - bin/adr_quality_core.py
+  - bin/adr-quality
+  - bin/adr_readiness.py
+  - bin/adr-readiness
+  - bin/adr_guardian_queue.py
+  - bin/adr-guardian
+  - bin/adr
+  - skills/grill/SKILL.md
+  - skills/guardian/SKILL.md
+  - templates/adr-template.md
+  - templates/adr-template.madr.md
+  - templates/adr-template.nygard.md
+  - templates/adr-template.canonical.md
+  - tests/test_adr_quality_triggers_grilling.py
+  - tests/test_adr_guardian_queue.py
+  - tests/test_adr_mcp.py
 priority: medium
 ordinal: 87500
 ---
@@ -30,10 +48,26 @@ That matters beyond bookkeeping. The reasoning behind a decision is exactly what
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A quality score below the threshold puts an ADR into the grilling queue, and a sharp ADR does not
-- [ ] #2 Accepted ADRs are periodically evaluated too, so quality decay is visible rather than frozen at acceptance time
-- [ ] #3 Questions and their answers are persisted in a durable, schema-defined place that survives acceptance
-- [ ] #4 Answered questions no longer have to be deleted to satisfy the acceptance gate; unresolved and resolved are distinct states
-- [ ] #5 refresh-readiness is invoked by a mechanism rather than by prose, or the nudge stops depending on its cache
-- [ ] #6 bin/adr-quality is reachable from a shipped path
+- [x] #1 A quality score below the threshold puts an ADR into the grilling queue, and a sharp ADR does not
+- [x] #2 Accepted ADRs are periodically evaluated too, so quality decay is visible rather than frozen at acceptance time
+- [x] #3 Questions and their answers are persisted in a durable, schema-defined place that survives acceptance
+- [x] #4 Answered questions no longer have to be deleted to satisfy the acceptance gate; unresolved and resolved are distinct states
+- [x] #5 refresh-readiness is invoked by a mechanism rather than by prose, or the nudge stops depending on its cache
+- [x] #6 bin/adr-quality is reachable from a shipped path
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+**AC#6/#1 — the real scorer is reachable, and it drives the queue.** `bin/adr_quality_core.py` makes the weighted four-gate scorer importable (scores unchanged by the move), so readiness reads it in-process instead of computing quality from three booleans, and `bin/adr-quality` becomes the rendering shell. Below-threshold is now a queue reason in its own right — and the absence of every reason is a reason to leave, so a Proposed ADR that is sharp, unlinked, unshipped and asking nothing drops out instead of padding the list. The readiness `quality` object carries `source`, `threshold` and `below_threshold` so a reader can tell a real score from the structural fallback.
+
+**AC#2 — decay is visible.** `adr-quality --adr-dir --status Accepted` sweeps records that were scored once at acceptance and then frozen, exits 1 on decay, and the guardian's cheap tier runs it. The documented response is a supersession or a retirement, never a rewrite — an Accepted body is immutable.
+
+**AC#3/#4 — the exchange survives, and no new persistence layer was needed.** `unresolved_open_questions` already skipped `[x]` and `Answered:` items, so a checked line carrying its answer survives acceptance untouched; the capability existed and nothing wrote it. `bin/adr answer ADR-NNN --question <n|text> --answer <text>` writes `- [x] <question> — **Answered <date> by <signer>:** <answer>`, resolving the signer like every other lifecycle command. It refuses an empty answer, refuses an ambiguous target while listing the choices, and preserves the blank line before the next heading. The grill skill and all four templates now document it and forbid deleting an answered question.
+
+**AC#5 — the nudge no longer waits for a model to read a sentence.** `refresh-readiness` existed and only prose in the guardian skill ever called it, so on a fresh clone the gitignored 24 h cache stayed empty and the nudge stayed silent. `adr-guardian check` now rebuilds the queue in-process when the cache is missing or expired, skips entirely while a valid one exists (the common case costs one `stat`), and fails open in every direction — a session must never fail to start because a nudge could not be computed. Measured 227–288 ms warm, inside the 500 ms SessionStart budget; `check` still spawns nothing.
+
+The adr_readiness MCP golden (id 8) was regenerated deliberately, with a note in the test explaining that the payload change was intentional and dated to this commit.
+
+19 new tests in `tests/test_adr_quality_triggers_grilling.py`; full suite green (1432 passed, 13 skipped).
+<!-- SECTION:FINAL_SUMMARY:END -->
