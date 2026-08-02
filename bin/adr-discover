@@ -65,6 +65,10 @@ _load_sibling("adr_format")
 
 from adr_format import SUPPORTED_PROFILES, detect_profile
 
+_load_sibling("adr_history_scan")
+
+from adr_history_scan import DEFAULT_MAX_COMMITS, scan_history
+
 # Top-level files that, by their mere presence, suggest a tooling decision.
 TOOLING_MARKERS = [
     ("Makefile", "build", "Project uses Make as build entry point."),
@@ -463,6 +467,17 @@ def main() -> int:
         default=[],
         help="Glob patterns to skip (in addition to the defaults: node_modules/**, vendor/**, .git/**, etc.). Can be repeated.",
     )
+    p.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Skip the git-history scan and report only what the working tree shows.",
+    )
+    p.add_argument(
+        "--max-commits",
+        type=int,
+        default=DEFAULT_MAX_COMMITS,
+        help=f"How far back the history scan reads. Default {DEFAULT_MAX_COMMITS}.",
+    )
     args = p.parse_args()
 
     try:
@@ -478,11 +493,32 @@ def main() -> int:
         candidates.extend(scan_dependencies(root))
         candidates.extend(scan_doc_decisions(root, skip_regexes))
         candidates.extend(scan_template_profiles(root))
+        # Everything above walks the working tree, which shows what the project
+        # is. Stamp it before the history joins, so a reviewer can always tell
+        # a fact about a file from a claim in a commit message.
+        for candidate in candidates:
+            candidate.setdefault("source", "tree")
+
+        history = {"candidates": [], "available": False, "reason": "history scan disabled"}
+        if not args.no_history:
+            tracked = [
+                candidate["evidence_files"][0]
+                for candidate in candidates
+                if candidate.get("evidence_files")
+            ]
+            history = scan_history(root, tracked_paths=tracked,
+                                   max_commits=args.max_commits)
+            candidates.extend(history["candidates"])
 
         payload = {
             "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "repo_root": str(root),
             "candidate_count": len(candidates),
+            "history": {
+                "available": history["available"],
+                "reason": history["reason"],
+                "candidate_count": len(history["candidates"]),
+            },
             "candidates": candidates,
         }
         text = json.dumps(payload, indent=2)

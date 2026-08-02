@@ -542,12 +542,44 @@ def _run_json_tool(command: List[str]) -> Tuple[int, Dict]:
     return result.returncode, payload
 
 
+def _scaffold_residue(text: str) -> List[str]:
+    """Instruction lines from the shipped templates that survived authoring.
+
+    Every gate the auto path runs is structural: is the section present, does
+    the frontmatter parse, does the quality heuristic score high enough. An
+    untouched scaffold satisfies all three -- it is a complete, well-formed ADR
+    that happens to decide nothing, and it scored 0.88 against a 0.70 default.
+    Auto-accepting that would put "Chosen option: **Option A**, because state
+    the decisive rationale" into the record as an Accepted decision.
+
+    These strings are literal instructions to the author. Their presence is not
+    a heuristic about quality; it is proof that a section was never written.
+    """
+    markers = (
+        "because state the decisive rationale",
+        "State how implementation of the decision will be verified.",
+        "Describe the context and problem statement",
+        "{Describe",
+        "<!-- adr-kit:template-placeholder -->",
+    )
+    return [marker for marker in markers if marker in text]
+
+
 def _assert_auto_accept_eligible(path: Path, args, threshold: float) -> Dict:
     data, _body = load_adr(path)
     if data.get("documents_shipped") is not True:
         raise AdrLifecycleError("auto accept requires documents_shipped:true")
     if not data.get("verified_in"):
         raise AdrLifecycleError("auto accept requires at least one verified_in pointer")
+
+    residue = _scaffold_residue(path.read_text(encoding="utf-8"))
+    if residue:
+        raise AdrLifecycleError(
+            "auto accept blocked: the record still contains template instructions "
+            f"({'; '.join(repr(item) for item in residue)}). A scaffold is "
+            "structurally complete and decides nothing; write the sections, then "
+            "accept."
+        )
 
     lint_summary = _assert_acceptance_gates(path, args)
     quality_script = Path(__file__).resolve().with_name("adr-quality")
@@ -617,6 +649,13 @@ def command_document(args) -> List[str]:
     if not args.verified_in:
         raise AdrLifecycleError("document requires at least one --verified-in pointer")
     data, body = load_adr(path)
+    # `document` writes a history entry like every other lifecycle command, so
+    # it has to resolve a signer like every other lifecycle command. It did not,
+    # and wrote `changed_by: ""` -- which the audit gate then rejected, so an
+    # ADR that had just been correctly marked as documenting shipped behaviour
+    # could never be accepted. The failure surfaced two commands later, blaming
+    # acceptance for a defect introduced here.
+    changed_by = resolve_signer(adr_dir, args.changed_by)
     body = ensure_status_history(
         path, data, body, (str(data["status"]), args.date)
     )
@@ -625,7 +664,7 @@ def command_document(args) -> List[str]:
     body = append_status_history(
         body,
         data["status"],
-        args.changed_by,
+        changed_by,
         args.reason or "Documented already-shipped behavior",
         "adr-kit lifecycle",
         args.date,
