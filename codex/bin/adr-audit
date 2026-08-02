@@ -1,510 +1,380 @@
 #!/usr/bin/env python3
-"""adr-audit: deterministic candidate scanner for /adr-kit:init (v0.12.0+).
+"""adr-audit: are we still on course? (spec R15, TASK-84)
 
-Walks a project root looking for decision-shaped artefacts: top-level config
-files (deps, build tools, CI), and documented decisions in README/docs/AGENTS
-(.md). Emits a JSON list of candidates that the /adr-kit:init skill feeds
-into Claude for LLM curation. It also classifies existing ADRs in docs/adr/ by
-body profile. MADR, Nygard, and canonical are supported; only unknown or
-ambiguous hybrid shapes produce a `template_profile` migration finding.
+Two questions, one command, because either answer alone is misleading:
 
-This CLI is intentionally dumb on purpose. It surfaces evidence; it does NOT
-decide which decisions deserve ADRs. That call belongs to the human reviewer
-(via the skill) — adr-audit just makes sure no obvious decision is hidden
-behind a config file the agent never opened.
+  * **Are the decisions any good?** -- `adr-lint`. A clean judge over vague
+    ADRs proves nothing, because a vague rule cannot be violated.
+  * **Does the code obey them?** -- `adr-judge`. A sharp ADR set nobody checks
+    the code against is documentation, not governance.
 
-Usage:
-  adr-audit                                 # scan cwd, print JSON to stdout
-  adr-audit --root /path/to/project
-  adr-audit --output docs/adr/.adr-kit-init-candidates.json
-  adr-audit --skip 'vendor/**' --skip 'node_modules/**'
+The caller should not have to know these come from two binaries, nor that the
+guardian already runs a version of this combination on a cadence nobody asked
+for. `adr-audit` is the on-demand form: a person, a hook or a CI job can
+simply demand it.
 
-Exit codes:
-  0  scan completed (zero or more candidates emitted)
-  2  I/O error or invalid argument
+Two modes:
+
+  --diff PATH|-        judge that diff (the hook and pull-request case)
+  --whole-codebase     judge every tracked file as if it were newly added
+
+Whole-codebase mode answers what no per-diff gate can. A rule added after a
+file was written has never been applied to that file, and never will be by a
+gate that only ever sees changes. Mechanically it is a diff against the empty
+tree, so every line reads as added and `forbid_pattern` applies repository
+wide; `require_pattern` already reads a snapshot and needs no help. Such a diff
+is large by construction, which is exactly what the separate CI-sized budget
+from TASK-73 exists for, so this mode passes it rather than failing closed on
+size.
+
+**Exit codes separate the two failures**, because "your ADRs are not good
+enough" and "your code violates an ADR" have different owners and different
+fixes. One conflated non-zero tells the caller nothing about what to go and do:
+
+  0  both clean
+  1  the code violates an Accepted ADR      (fix the code, or supersede the ADR)
+  3  the ADR set fails its own gates        (fix the records)
+  4  both
+  2  the audit could not run at all         (tooling or configuration)
+
+3 and 4 sit above 1 rather than below it so that a caller who only checks
+`!= 0` still blocks, while a caller who cares can tell the cases apart. Exit 2
+keeps its usual meaning across this toolkit: the tool could not answer, which
+is never the same as answering "no".
+
+A note on the name. `bin/adr-audit` used to be the init discovery scanner; it
+is now `bin/adr-discover`, which is what it does. Two things called audit that
+audit different things is precisely the ambiguity ADRs exist to prevent.
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib.machinery
-import importlib.util
 import json
-import re
+import os
+import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
 
+# The branch- and repository-sized budget from TASK-73. Deliberately separate
+# from judge.max_diff_bytes so raising it here never weakens the commit gate.
+WHOLE_CODEBASE_DIFF_BUDGET = 33_554_432
 
-def _load_sibling(name: str):
-    """Import bin/<name>.py by explicit path, WITHOUT touching sys.path.
+# The empty tree object, which every Git repository has without creating it.
+# Diffing against it turns "the codebase" into "one enormous addition".
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
-    SEC-HIGH (TASK-62): `sys.path.insert(0, _BIN_DIR)` put this directory ahead
-    of the standard library for every import, so a module committed next to
-    this script executed as code -- and it re-added the very directory
-    CPython's -P / PYTHONSAFEPATH removes. Siblings are registered in
-    sys.modules under their bare name, so the plain `from adr_* import ...`
-    statements below (and the lazy ones inside functions) resolve from the
-    cache instead of the path. bin/adr-judge carries the full rationale.
-    """
-    cached = sys.modules.get(name)
-    if cached is not None:
-        return cached
-    loader = importlib.machinery.SourceFileLoader(name, str(_BIN_DIR / f"{name}.py"))
-    spec = importlib.util.spec_from_loader(name, loader)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    loader.exec_module(module)
-    return module
+EXIT_OK = 0
+EXIT_CODE_VIOLATION = 1
+EXIT_TOOLING = 2
+EXIT_ADR_QUALITY = 3
+EXIT_BOTH = 4
 
 
-_load_sibling("adr_format")
-
-from adr_format import SUPPORTED_PROFILES, detect_profile
-
-# Top-level files that, by their mere presence, suggest a tooling decision.
-TOOLING_MARKERS = [
-    ("Makefile", "build", "Project uses Make as build entry point."),
-    ("CMakeLists.txt", "build", "Project uses CMake as build system."),
-    ("meson.build", "build", "Project uses Meson as build system."),
-    ("build.py", "build", "Project uses a custom Python build script."),
-    ("Dockerfile", "runtime", "Project ships a container image."),
-    ("docker-compose.yml", "runtime", "Project uses Docker Compose for local orchestration."),
-    ("docker-compose.yaml", "runtime", "Project uses Docker Compose for local orchestration."),
-    (".pre-commit-config.yaml", "ci", "Project uses pre-commit framework."),
-    ("Procfile", "runtime", "Project deploys with a Procfile-based PaaS."),
-    ("Brewfile", "tooling", "Project depends on Homebrew bundle for dev setup."),
-    ("Vagrantfile", "tooling", "Project provides a Vagrant dev environment."),
-    ("flake.nix", "tooling", "Project uses Nix flakes for reproducible builds."),
-    ("shell.nix", "tooling", "Project uses Nix shell for dev environment."),
-    ("renovate.json", "ci", "Project uses Renovate for dependency updates."),
-    ("dependabot.yml", "ci", "Project uses Dependabot for dependency updates."),
-]
-
-# Files whose contents we extract dependency lists from.
-DEP_FILES = [
-    "package.json",
-    "pyproject.toml",
-    "requirements.txt",
-    "Cargo.toml",
-    "go.mod",
-    "Gemfile",
-    "composer.json",
-    "platformio.ini",
-    "library.properties",
-]
-
-# Documentation files to grep for decision-narrative phrases.
-DOC_FILES_PATTERN = ["README.md", "AGENTS.md", "CLAUDE.md"]
-DOC_DIRS = ["docs"]
-
-# Decision-narrative phrases (case-insensitive). Each match becomes a candidate.
-DOC_PHRASES = [
-    r"\bwe\s+chose\b",
-    r"\bwe\s+picked\b",
-    r"\bwe\s+decided\b",
-    r"\bdecided\s+to\b",
-    r"\bdecided\s+against\b",
-    r"\binstead\s+of\b",
-    r"\brather\s+than\b",
-    r"\bwhy\s+not\b",
-    r"\brejected\b",
-    r"\bsuperseded\s+by\b",
-]
-
-# ---------- template-profile detection (task-5, v0.21.0) ----------
-#
-# Classification delegates to the shared semantic registry. Detection is
-# advisory here; strict validation belongs to adr-lint. ADR-005 supersedes
-# ADR-003's canonical-only storage contract.
-
-def detect_template_profile(text: str) -> str:
-    """Classify ADR text with the shared semantic profile registry."""
-    return detect_profile(text)
+class AuditError(Exception):
+    """The audit could not run. Distinct from the audit finding something."""
 
 
-# Default skip globs (non-source / non-doc noise + existing ADR & backlog content).
-# docs/adr is skipped because existing ADRs are already recorded decisions —
-# scanning them just produces grep noise from the Decision sections.
-# backlog/** is skipped because Backlog.md task narratives (decided to, instead
-# of) describe TASK-level choices, not ADR-level architecture.
-DEFAULT_SKIP_GLOBS = [
-    "node_modules/**",
-    "vendor/**",
-    ".git/**",
-    "dist/**",
-    "build/**",
-    "target/**",
-    ".venv/**",
-    "venv/**",
-    "__pycache__/**",
-    ".pytest_cache/**",
-    ".mypy_cache/**",
-    "docs/adr/**",
-    "backlog/**",
-]
+def _run(argv: List[str], cwd: Path, stdin_text: Optional[str] = None,
+         timeout: int = 600) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        argv,
+        cwd=str(cwd),
+        input=stdin_text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
 
 
-def glob_to_regex(glob: str) -> re.Pattern:
-    """Same translator as bin/adr-judge. Brace expansion {a,b,c} added in v0.12.2."""
-    out: List[str] = []
-    i = 0
-    while i < len(glob):
-        c = glob[i]
-        if c == "*":
-            if i + 1 < len(glob) and glob[i + 1] == "*":
-                if i + 2 < len(glob) and glob[i + 2] == "/":
-                    out.append("(?:.*/)?")
-                    i += 3
-                else:
-                    out.append(".*")
-                    i += 2
-            else:
-                out.append("[^/]*")
-                i += 1
-        elif c == "?":
-            out.append("[^/]")
-            i += 1
-        elif c == "{":
-            close = glob.find("}", i + 1)
-            if close == -1 or "{" in glob[i + 1:close]:
-                out.append(re.escape(c))
-                i += 1
-            else:
-                inner = glob[i + 1:close]
-                alts = inner.split(",")
-                alt_patterns = [
-                    glob_to_regex(a).pattern.lstrip("^").rstrip("$") if a else ""
-                    for a in alts
-                ]
-                out.append("(?:" + "|".join(alt_patterns) + ")")
-                i = close + 1
-        else:
-            out.append(re.escape(c))
-            i += 1
-    return re.compile("^" + "".join(out) + "$")
+# ---------------------------------------------------------------------------
+# Half one: are the decisions any good?
+# ---------------------------------------------------------------------------
 
-
-def any_skip(rel_path: str, skip_regexes: List[re.Pattern]) -> bool:
-    return any(r.match(rel_path) for r in skip_regexes)
-
-
-# ---------- candidate extractors ----------
-
-
-def scan_tooling(root: Path) -> List[Dict]:
-    out: List[Dict] = []
-    for filename, kind, narrative in TOOLING_MARKERS:
-        p = root / filename
-        if p.is_file():
-            out.append(
-                {
-                    "id": f"tooling-{filename.lower().replace('.', '-')}",
-                    "title": narrative,
-                    "decision_type": kind,
-                    "evidence_files": [filename],
-                    "details": {},
-                }
-            )
-    if (root / ".github" / "workflows").is_dir():
-        wfs = sorted(
-            p.name for p in (root / ".github" / "workflows").iterdir() if p.suffix in (".yml", ".yaml")
-        )
-        if wfs:
-            out.append(
-                {
-                    "id": "tooling-github-actions",
-                    "title": "Project uses GitHub Actions for CI.",
-                    "decision_type": "ci",
-                    "evidence_files": [f".github/workflows/{n}" for n in wfs],
-                    "details": {"workflow_count": len(wfs)},
-                }
-            )
-    return out
-
-
-def _safe_read(p: Path, max_bytes: int = 1024 * 256) -> Optional[str]:
+def run_lint(adr_dir: Path, repo_root: Path, strict: bool) -> Dict:
+    script = _BIN_DIR / "adr-lint"
+    if not script.is_file():
+        raise AuditError(f"adr-lint not found at {script}")
+    argv = [sys.executable, str(script), "--format", "json",
+            "--repo-root", str(repo_root), str(adr_dir)]
+    if strict:
+        argv.insert(3, "--strict")
     try:
-        if p.stat().st_size > max_bytes:
-            return None
-        return p.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-
-
-def scan_dependencies(root: Path) -> List[Dict]:
-    out: List[Dict] = []
-    for filename in DEP_FILES:
-        p = root / filename
-        if not p.is_file():
-            continue
-        text = _safe_read(p)
-        if text is None:
-            continue
-        deps = _extract_deps(filename, text)
-        if not deps:
-            # Even an empty extract is informative — surfaces presence.
-            deps = ["(parser produced no dependency list — file present)"]
-        out.append(
-            {
-                "id": f"deps-{filename.lower().replace('.', '-')}",
-                "title": f"Dependency choices in {filename}",
-                "decision_type": "dependency",
-                "evidence_files": [filename],
-                "details": {"sample": deps[:30]},
-            }
+        result = _run(argv, repo_root)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise AuditError(f"adr-lint did not run ({exc})") from exc
+    if result.returncode == 2:
+        raise AuditError(
+            f"adr-lint could not run: {(result.stderr or result.stdout).strip()[:400]}"
         )
-    return out
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise AuditError(f"adr-lint returned unreadable JSON ({exc})") from exc
 
-
-def _extract_deps(filename: str, text: str) -> List[str]:
-    """Best-effort dependency list per file type. Heuristic, not a parser."""
-    deps: List[str] = []
-    if filename == "package.json":
-        try:
-            data = json.loads(text)
-            for k in ("dependencies", "devDependencies", "peerDependencies"):
-                if isinstance(data.get(k), dict):
-                    deps.extend(sorted(data[k].keys()))
-        except json.JSONDecodeError:
-            pass
-    elif filename == "pyproject.toml":
-        # Cheap regex rather than tomllib (3.11+) — works for both poetry and PEP 621 layouts.
-        for m in re.finditer(r"^([A-Za-z0-9_.-]+)\s*=\s*['\"][^'\"]*['\"]", text, re.MULTILINE):
-            name = m.group(1)
-            if name.lower() in {"name", "version", "description", "readme", "requires-python", "license", "authors"}:
-                continue
-            deps.append(name)
-        for m in re.finditer(r'"([A-Za-z0-9_.-]+)"\s*[,\]]', text):
-            deps.append(m.group(1))
-    elif filename == "requirements.txt":
-        for line in text.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            m = re.match(r"^([A-Za-z0-9_.\-\[\]]+)", line)
-            if m:
-                deps.append(m.group(1))
-    elif filename == "Cargo.toml":
-        in_deps = False
-        for line in text.splitlines():
-            s = line.strip()
-            if s.startswith("[dependencies"):
-                in_deps = True
-                continue
-            if s.startswith("["):
-                in_deps = False
-            if in_deps:
-                m = re.match(r"^([A-Za-z0-9_-]+)\s*=", s)
-                if m:
-                    deps.append(m.group(1))
-    elif filename == "go.mod":
-        for m in re.finditer(r"^\s*([\w./-]+)\s+v\d", text, re.MULTILINE):
-            deps.append(m.group(1))
-    elif filename == "Gemfile":
-        for m in re.finditer(r"^\s*gem\s+['\"]([^'\"]+)['\"]", text, re.MULTILINE):
-            deps.append(m.group(1))
-    elif filename == "composer.json":
-        try:
-            data = json.loads(text)
-            for k in ("require", "require-dev"):
-                if isinstance(data.get(k), dict):
-                    deps.extend(sorted(data[k].keys()))
-        except json.JSONDecodeError:
-            pass
-    elif filename == "platformio.ini":
-        for m in re.finditer(r"^\s*lib_deps\s*=\s*(.*)$", text, re.MULTILINE):
-            deps.extend([p.strip() for p in m.group(1).split() if p.strip()])
-        for kw in ("framework", "platform", "board"):
-            m = re.search(rf"^\s*{kw}\s*=\s*(.+)$", text, re.MULTILINE)
-            if m:
-                deps.append(f"{kw}={m.group(1).strip()}")
-    elif filename == "library.properties":
-        for kw in ("name", "version", "depends"):
-            m = re.search(rf"^{kw}\s*=\s*(.+)$", text, re.MULTILINE)
-            if m:
-                deps.append(f"{kw}={m.group(1).strip()}")
-    return deps
-
-
-def scan_doc_decisions(root: Path, skip_regexes: List[re.Pattern]) -> List[Dict]:
-    """Grep README / AGENTS / CLAUDE / docs for decision-narrative phrases.
-
-    Emits ONE candidate per file (not per matching line) with up to 5 example
-    snippets in details.snippets. This prevents long docs from producing dozens
-    of near-duplicate candidates.
-    """
-    out: List[Dict] = []
-    phrase_re = re.compile("|".join(DOC_PHRASES), re.IGNORECASE)
-    candidates_paths: List[Path] = []
-    for n in DOC_FILES_PATTERN:
-        p = root / n
-        if p.is_file():
-            candidates_paths.append(p)
-    for d in DOC_DIRS:
-        dp = root / d
-        if dp.is_dir():
-            for fp in dp.rglob("*.md"):
-                rel = fp.relative_to(root).as_posix()
-                if any_skip(rel, skip_regexes):
-                    continue
-                candidates_paths.append(fp)
-
-    next_id = 1
-    MAX_SNIPPETS_PER_FILE = 5
-    for fp in candidates_paths:
-        text = _safe_read(fp)
-        if not text:
-            continue
-        rel = fp.relative_to(root).as_posix()
-        if any_skip(rel, skip_regexes):
-            continue
-        snippets: List[Dict] = []
-        match_count = 0
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            if phrase_re.search(line):
-                match_count += 1
-                if len(snippets) < MAX_SNIPPETS_PER_FILE:
-                    snippets.append({"line": lineno, "text": line.strip()[:240]})
-        if not snippets:
-            continue
-        out.append(
-            {
-                "id": f"doc-quote-{next_id:03d}",
-                "title": f"Documented decision narrative in {rel}",
-                "decision_type": "documented",
-                "evidence_files": [rel],
-                "details": {
-                    "match_count": match_count,
-                    "snippets": snippets,
-                },
-            }
-        )
-        next_id += 1
-    return out
-
-
-def scan_template_profiles(root: Path) -> List[Dict]:
-    """Flag unsupported or hybrid ADRs in docs/adr/ for /adr-kit:migrate.
-
-    The default skip glob `docs/adr/**` only applies to the decision-phrase
-    doc scan; this scanner deliberately targets the ADR directory itself.
-    All three supported profiles produce no finding. Unknown and hybrid files
-    need an explicit source profile or human review before safe conversion.
-    """
-    adr_dir = root / "docs" / "adr"
-    if not adr_dir.is_dir():
-        return []
-
-    declared: Optional[str] = None
-    cfg_path = adr_dir / ".adr-kit.json"
-    cfg_text = _safe_read(cfg_path) if cfg_path.is_file() else None
-    if cfg_text:
-        try:
-            cfg = json.loads(cfg_text)
-            value = cfg.get("template", {}).get("profile")
-            if isinstance(value, str) and value in SUPPORTED_PROFILES:
-                declared = value
-        except (json.JSONDecodeError, AttributeError):
-            pass
-
-    out: List[Dict] = []
-    next_id = 1
-    for fp in sorted(adr_dir.glob("*.md")):
-        text = _safe_read(fp)
-        if text is None:
-            continue
-        profile = detect_template_profile(text)
-        if profile not in ("unknown", "hybrid"):
-            continue
-        rel = fp.relative_to(root).as_posix()
-        details: Dict = {
-            "template_profile": profile,
-            "suggestion": (
-                "Add explicit format frontmatter or run /adr-kit:migrate "
-                "with a supported source and target profile."
-            ),
+    summary = payload.get("summary") or {}
+    failures = [
+        {
+            "adr": item.get("file"),
+            "gate": finding.get("gate"),
+            "code": finding.get("code"),
+            "summary": finding.get("summary"),
         }
-        if declared:
-            details["declared_profile"] = declared
-        out.append(
-            {
-                "id": f"template-profile-{next_id:03d}",
-                "title": f"{rel} has an unsupported or ambiguous ADR body format ({profile})",
-                "decision_type": "template_profile",
-                "evidence_files": [rel],
-                "details": details,
-            }
+        for item in payload.get("files", [])
+        for finding in item.get("findings", [])
+        if finding.get("level") == "FAIL"
+    ]
+    return {
+        "clean": not failures,
+        "total": summary.get("total", 0),
+        "fail": summary.get("fail", 0),
+        "advisory": summary.get("advisory", 0),
+        "failures": failures,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Half two: does the code obey them?
+# ---------------------------------------------------------------------------
+
+def whole_codebase_diff(repo_root: Path) -> str:
+    """Every tracked file as one addition, via a diff against the empty tree.
+
+    The right-hand side is the working tree, not HEAD, so a local run answers
+    the question the person actually asked -- is the code in front of me on
+    course? -- and matches the `worktree` snapshot the require rules read. In a
+    CI checkout the two are the same bytes, so nothing changes there. Untracked
+    files are outside this by construction: git cannot diff what it does not
+    track, and an audit that silently skipped them would be worse than one that
+    says so.
+    """
+    try:
+        result = _run(
+            ["git", "diff", "--unified=0", "--no-color", EMPTY_TREE],
+            repo_root,
         )
-        next_id += 1
-    return out
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise AuditError(f"git diff against the empty tree failed ({exc})") from exc
+    if result.returncode != 0:
+        raise AuditError(
+            "git diff against the empty tree failed: "
+            f"{(result.stderr or '').strip()[:300]}"
+        )
+    return result.stdout
 
 
-# ---------- top-level ----------
+def read_diff(source: str) -> str:
+    if source == "-":
+        return sys.stdin.read()
+    try:
+        return Path(source).read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise AuditError(f"cannot read diff {source}: {exc}") from exc
 
 
-def main() -> int:
-    p = argparse.ArgumentParser(
+def run_judge(
+    diff_text: str,
+    adr_dir: Path,
+    repo_root: Path,
+    snapshot: str,
+    max_diff_bytes: int,
+    llm: bool,
+) -> Dict:
+    script = _BIN_DIR / "adr-judge"
+    if not script.is_file():
+        raise AuditError(f"adr-judge not found at {script}")
+    if not diff_text.strip():
+        return {"clean": True, "violations": [], "empty": True}
+
+    argv = [
+        sys.executable, str(script),
+        "--diff", "-",
+        "--adr-dir", str(adr_dir),
+        "--repo-root", str(repo_root),
+        "--snapshot", snapshot,
+        "--max-diff-bytes", str(max_diff_bytes),
+        "--json",
+    ]
+    if llm:
+        argv.append("--llm")
+    try:
+        result = _run(argv, repo_root, stdin_text=diff_text)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise AuditError(f"adr-judge did not run ({exc})") from exc
+    if result.returncode == 2:
+        raise AuditError(
+            f"adr-judge could not run: {(result.stderr or result.stdout).strip()[:400]}"
+        )
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise AuditError(f"adr-judge returned unreadable JSON ({exc})") from exc
+
+    findings = payload.get("findings")
+    violations = [
+        finding
+        for finding in (findings if isinstance(findings, list) else [])
+        if isinstance(finding, dict) and finding.get("severity") == "violation"
+    ]
+    return {"clean": not violations, "violations": violations, "empty": False}
+
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+def exit_code(lint: Dict, judge: Dict) -> int:
+    bad_adrs = not lint["clean"]
+    bad_code = not judge["clean"]
+    if bad_adrs and bad_code:
+        return EXIT_BOTH
+    if bad_adrs:
+        return EXIT_ADR_QUALITY
+    if bad_code:
+        return EXIT_CODE_VIOLATION
+    return EXIT_OK
+
+
+def render_text(lint: Dict, judge: Dict, mode: str, code: int) -> str:
+    lines = [f"[adr-audit] {mode}"]
+
+    if lint["clean"]:
+        lines.append(
+            f"  decisions: OK   {lint['total']} ADR(s), "
+            f"{lint['advisory']} advisory"
+        )
+    else:
+        lines.append(f"  decisions: FAIL {lint['fail']} of {lint['total']} ADR(s)")
+        for failure in lint["failures"][:10]:
+            lines.append(
+                f"    {failure['adr']}  {failure['gate']}  {failure['summary']}"
+            )
+        if len(lint["failures"]) > 10:
+            lines.append(f"    ... and {len(lint['failures']) - 10} more")
+
+    if judge.get("empty"):
+        lines.append("  code:      OK   nothing to judge (empty diff)")
+    elif judge["clean"]:
+        lines.append("  code:      OK   no violations of an Accepted ADR")
+    else:
+        lines.append(f"  code:      FAIL {len(judge['violations'])} violation(s)")
+        for violation in judge["violations"][:10]:
+            where = violation.get("path") or "?"
+            line = violation.get("line")
+            location = f"{where}:{line}" if line else where
+            lines.append(
+                f"    {violation.get('adr', '?')}  {location}  "
+                f"{violation.get('message', '')}".rstrip()
+            )
+        if len(judge["violations"]) > 10:
+            lines.append(f"    ... and {len(judge['violations']) - 10} more")
+
+    lines.append(f"  verdict:   exit {code} ({_VERDICTS[code]})")
+    return "\n".join(lines)
+
+
+_VERDICTS = {
+    EXIT_OK: "on course",
+    EXIT_CODE_VIOLATION: "the code violates an Accepted ADR",
+    EXIT_ADR_QUALITY: "the ADR set fails its own gates",
+    EXIT_BOTH: "both the ADRs and the code need work",
+}
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
         prog="adr-audit",
-        description="Scan a project for decision-shaped artefacts (used by /adr-kit:init).",
+        description="Lint the decisions and judge the code in one command.",
+        epilog=(
+            "Exit codes: 0 clean, 1 code violation, 3 ADR-quality failure, "
+            "4 both, 2 the audit could not run."
+        ),
     )
-    p.add_argument("--root", default=".", help="Project root to scan. Default: current directory.")
-    p.add_argument(
-        "--output",
-        default=None,
-        help="Write JSON to this path instead of stdout. Use 'docs/adr/.adr-kit-init-candidates.json' to drop next to the ADRs.",
+    parser.add_argument("--adr-dir", default="docs/adr")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--format", choices=["text", "json"], default="text")
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="Treat every advisory ADR finding as a failure.",
     )
-    p.add_argument(
-        "--skip",
-        action="append",
-        default=[],
-        help="Glob patterns to skip (in addition to the defaults: node_modules/**, vendor/**, .git/**, etc.). Can be repeated.",
+    parser.add_argument(
+        "--llm", action="store_true",
+        help="Also run the judge's LLM pass for llm_judge ADRs.",
     )
-    args = p.parse_args()
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--diff", default=None, metavar="PATH",
+        help="Judge this unified diff ('-' for stdin). The hook and PR case.",
+    )
+    scope.add_argument(
+        "--whole-codebase", action="store_true",
+        help=(
+            "Judge every tracked file as newly added, so forbid rules reach "
+            "code no recent diff touched. Uses the CI-sized diff budget."
+        ),
+    )
+    parser.add_argument(
+        "--max-diff-bytes", type=int, default=None,
+        help=f"Diff budget. Default {WHOLE_CODEBASE_DIFF_BUDGET} whole-codebase.",
+    )
+    parser.add_argument(
+        "--snapshot", choices=["staged", "worktree", "diff"], default=None,
+        help="Post-image source for require_pattern. Default worktree.",
+    )
+    args = parser.parse_args(argv)
+
+    repo_root = Path(args.repo_root).resolve()
+    adr_dir = Path(args.adr_dir)
+    if not adr_dir.is_absolute():
+        adr_dir = repo_root / adr_dir
 
     try:
-        root = Path(args.root).resolve()
-        if not root.is_dir():
-            print(f"[adr-audit] ERROR: --root not a directory: {root}", file=sys.stderr)
-            return 2
-        skip_globs = list(DEFAULT_SKIP_GLOBS) + list(args.skip)
-        skip_regexes = [glob_to_regex(g) for g in skip_globs]
-
-        candidates: List[Dict] = []
-        candidates.extend(scan_tooling(root))
-        candidates.extend(scan_dependencies(root))
-        candidates.extend(scan_doc_decisions(root, skip_regexes))
-        candidates.extend(scan_template_profiles(root))
-
-        payload = {
-            "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "repo_root": str(root),
-            "candidate_count": len(candidates),
-            "candidates": candidates,
-        }
-        text = json.dumps(payload, indent=2)
-        if args.output:
-            outp = Path(args.output)
-            if not outp.is_absolute():
-                outp = root / outp
-            outp.parent.mkdir(parents=True, exist_ok=True)
-            outp.write_text(text + "\n", encoding="utf-8")
-            print(
-                f"[adr-audit] wrote {len(candidates)} candidates to {outp.relative_to(root)}",
-                file=sys.stderr,
-            )
+        if args.whole_codebase:
+            mode = "whole codebase"
+            diff_text = whole_codebase_diff(repo_root)
+            budget = args.max_diff_bytes or WHOLE_CODEBASE_DIFF_BUDGET
         else:
-            print(text)
-        return 0
-    except KeyboardInterrupt:
-        return 2
-    except OSError as e:
-        print(f"[adr-audit] ERROR: {e}", file=sys.stderr)
-        return 2
+            mode = "diff"
+            diff_text = read_diff(args.diff or "-")
+            budget = args.max_diff_bytes or WHOLE_CODEBASE_DIFF_BUDGET
+
+        lint = run_lint(adr_dir, repo_root, args.strict)
+        judge = run_judge(
+            diff_text, adr_dir, repo_root,
+            args.snapshot or "worktree", budget, args.llm,
+        )
+    except AuditError as exc:
+        print(f"adr-audit: {exc}", file=sys.stderr)
+        return EXIT_TOOLING
+
+    code = exit_code(lint, judge)
+    if args.format == "json":
+        print(json.dumps(
+            {
+                "mode": mode,
+                "decisions": lint,
+                "code": judge,
+                "exit_code": code,
+                "verdict": _VERDICTS[code],
+            },
+            indent=2, ensure_ascii=False,
+        ))
+    else:
+        print(render_text(lint, judge, mode, code))
+    return code
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stderr.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+    raise SystemExit(main())

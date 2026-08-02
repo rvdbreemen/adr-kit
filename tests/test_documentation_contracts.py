@@ -10,6 +10,11 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).parent.parent
+if str(REPO_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from client_generation_model import WORKFLOW_IDS  # noqa: E402
+
 ADR_TEMPLATE = REPO_ROOT / "templates" / "adr-template.md"
 AGENT_INSTALL = REPO_ROOT / "INSTALL-AGENT.md"
 README = REPO_ROOT / "README.md"
@@ -160,7 +165,10 @@ def test_first_class_client_docs_and_skill_metadata_are_english():
         *sorted((REPO_ROOT / "codex" / "skills").glob("*/SKILL.md")),
         *sorted((REPO_ROOT / "copilot" / "skills").glob("*/SKILL.md")),
     ]
-    assert len(skill_files) == 48
+    # One skill per workflow, per client. Derived from the registry rather than
+    # hardcoded, so adding a workflow does not fail this test with a number
+    # that says nothing about the English-metadata contract it is checking.
+    assert len(skill_files) == len(WORKFLOW_IDS) * 3
     for path in skill_files:
         text = path.read_text(encoding="utf-8")
         match = re.search(r"^description:\s*(.+)$", text, re.MULTILINE)

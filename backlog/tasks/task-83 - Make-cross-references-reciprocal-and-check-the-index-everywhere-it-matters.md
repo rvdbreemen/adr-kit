@@ -1,15 +1,34 @@
 ---
 id: TASK-83
 title: 'Make cross-references reciprocal, and check the index everywhere it matters'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-01 10:34'
+updated_date: '2026-08-02 18:30'
 labels:
   - spec-gap
   - R7
   - index
   - lint
 dependencies: []
+modified_files:
+  - bin/adr
+  - bin/adr-lint
+  - bin/adr-index
+  - bin/adr_index_core.py
+  - bin/adr_catalog.py
+  - bin/adr_schema.py
+  - bin/adr-guardian
+  - schemas/adr-frontmatter.schema.json
+  - templates/githooks/pre-commit
+  - templates/github-workflows/adr-index-check.yml
+  - .github/actions/adr-index-check/action.yml
+  - skills/adr/SKILL.md
+  - skills/guardian/SKILL.md
+  - skills/install-hooks/SKILL.md
+  - tests/test_adr_cross_references.py
+  - tests/test_adr_index_freshness.py
+  - tests/test_otgw_corpus.py
 priority: medium
 ordinal: 88500
 ---
@@ -28,9 +47,23 @@ R7 also says the LLM decides when a cross-reference is warranted. That is judgem
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 When an ADR gains a reference to another, the referenced ADR gains the reciprocal entry through a supported command
-- [ ] #2 adr-lint gains a gate for dangling and one-sided Related Decisions, at the appropriate severity
-- [ ] #3 The guardian sweep and the pre-commit hook check index freshness, not only the release path
-- [ ] #4 A downstream project installing adr-kit gets an index-freshness check in its own CI
-- [ ] #5 The authoring path asks the model to decide which cross-references are warranted, and the mechanism writes both sides once decided
+- [x] #1 When an ADR gains a reference to another, the referenced ADR gains the reciprocal entry through a supported command
+- [x] #2 adr-lint gains a gate for dangling and one-sided Related Decisions, at the appropriate severity
+- [x] #3 The guardian sweep and the pre-commit hook check index freshness, not only the release path
+- [x] #4 A downstream project installing adr-kit gets an index-freshness check in its own CI
+- [x] #5 The authoring path asks the model to decide which cross-references are warranted, and the mechanism writes both sides once decided
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`bin/adr relate A --to B` writes a `related` frontmatter entry on **both** ADRs in one transaction, regenerating the indexes with it; `--remove` unwinds both the same way. Frontmatter rather than prose, because reference bookkeeping is a mutation the kit has always permitted on an Accepted record (`bin/adr supersede` writes `superseded_by` into one) while editing its body is not. A pair that already has a supersession relationship is refused rather than doubled.
+
+`adr-lint` gates the declared links only: dangling → FAIL, one-sided → FAIL. Prose Related Decisions is deliberately **not** gated. It is free-form, names decisions from other repositories and ADRs not yet written, and adr-lint routinely runs on a fragment — `bin/adr accept` lints exactly one file, where every prose reference resolves to nothing. Gating that reports a fact about the invocation, not about the code, which ADR-009 forbids; an earlier draft did gate prose reciprocity and produced 57 advisories on this repository's own healthy 18-ADR set. `related` is machine-written, so a broken one can only come from a hand edit or a half-applied write.
+
+Index freshness now has three checks at the strength each can honestly claim. The guardian nudges at SessionStart, in-process because `check` may never spawn, behind an mtime precondition that is a skip and not a proof (a hand-edited index is newer than every ADR and still wrong — pinned by a test). It stays silent for a project that has never generated an index at all. The commit hook warns rather than blocks, because it reads the worktree while the commit is the staged snapshot. CI blocks, and now ships downstream as `.github/actions/adr-index-check` plus a copyable `templates/github-workflows/adr-index-check.yml`.
+
+Rendering moved from `bin/adr-index` into `bin/adr_index_core.py` (output unchanged) so the guardian can ask the generator its question without spawning it. The authoring skill now asks the model to decide which cross-references are warranted and to let `adr relate` write both sides.
+
+24 new tests in `tests/test_adr_cross_references.py` and `tests/test_adr_index_freshness.py`; full suite green.
+<!-- SECTION:FINAL_SUMMARY:END -->

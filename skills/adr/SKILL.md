@@ -722,12 +722,12 @@ If you answered "No" to any of these, improve the ADR.
 
 The full adr-kit toolset wraps this skill with three operational modes:
 
-- **`/adr-kit:init`** — one-shot bootstrap of the kit in an existing project: hooks `CLAUDE.md`, drops `.claude/adr-kit-guide.md`, runs `bin/adr-audit` to enumerate decision-shaped artefacts, walks the user through batched approval to generate Accepted ADRs, installs the pre-commit hook. Use this once per project.
+- **`/adr-kit:init`** — one-shot bootstrap of the kit in an existing project: hooks `CLAUDE.md`, drops `.claude/adr-kit-guide.md`, runs `bin/adr-discover` to enumerate decision-shaped artefacts, walks the user through batched approval to generate Accepted ADRs, installs the pre-commit hook. Use this once per project.
 - **`/adr-kit:judge`** — in-session review of a staged git diff against existing ADRs. Runs the deterministic `bin/adr-judge` for declarative `Enforcement` rules, then evaluates `llm_judge: true` ADRs in the active Claude Code session. On violation, walks three resolution paths (new ADR / supersede / fix code).
 - **`/adr-kit:install-hooks`** — install or uninstall the pre-commit hook. Default-on after `/adr-kit:init` (or `/adr-kit:upgrade`).
 - **`/adr-kit:upgrade`** — for users on v0.11: migrate to the v0.12 footprint without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
 - **`/adr-kit:lint`** — validate ADR file content against the four verification gates (Completeness / Evidence / Clarity / Consistency). The deterministic CLI is `bin/adr-lint`; the skill drives the heuristic gates.
-- **`bin/adr-doctor`** — local health check for agent start and finish: strict lint, generated-index freshness, shipped-but-Proposed ADRs, old Proposed ADRs, changed evidence behind Accepted ADRs, and missing named gates. Material drift auto-triggers a local `bin/adr-audit --root ...` pass and includes the audit summary in the doctor output. Use `--fix-index` to regenerate the index before checking it.
+- **`bin/adr-doctor`** — local health check for agent start and finish: strict lint, generated-index freshness, shipped-but-Proposed ADRs, old Proposed ADRs, changed evidence behind Accepted ADRs, and missing named gates. Material drift auto-triggers a local `bin/adr-discover --root ...` pass and includes the audit summary in the doctor output. Use `--fix-index` to regenerate the index before checking it.
 - **`/adr-kit:migrate`** — preview metadata changes or convert between MADR,
   Nygard, and canonical profiles; guided handling remains for legacy shapes.
 

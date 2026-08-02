@@ -194,10 +194,10 @@ Confirm to the user with one line naming the action (`created` / `appended` / `r
 
 ## Step 2 — Candidate discovery
 
-Run `bin/adr-audit` to scan the project. Use `--output` to drop the result next to the existing ADRs:
+Run `bin/adr-discover` to scan the project. Use `--output` to drop the result next to the existing ADRs:
 
 ```bash
-$ADR_KIT/bin/adr-audit --root . --output docs/adr/.adr-kit-init-candidates.json
+$ADR_KIT/bin/adr-discover --root . --output docs/adr/.adr-kit-init-candidates.json
 ```
 
 (`$ADR_KIT` is the plugin path resolved in step 1a.)

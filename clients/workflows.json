@@ -40,6 +40,18 @@
       ]
     },
     {
+      "id": "audit",
+      "description": "Lint the ADRs and judge the code in one run, over a diff or the whole codebase. Read-only.",
+      "title": "Audit ADRs and code",
+      "mutates": false,
+      "procedure": [
+        "Run `python <plugin-root>/bin/adr-audit --whole-codebase --adr-dir docs/adr --repo-root .`, or `--diff -` with a piped unified diff for the hook and pull-request case.",
+        "Read the exit code before the output: 0 clean, 1 the code violates an Accepted ADR, 3 the ADR set fails its own gates, 4 both, 2 the audit could not run.",
+        "Report the two failures separately and name their owners; never collapse a code violation and an ADR-quality failure into one verdict, and never present exit 2 as a pass.",
+        "Add `--llm` only with explicit user confirmation, because it spends money per opted-in ADR."
+      ]
+    },
+    {
       "id": "context",
       "description": "Find the Architecture Decision Records most relevant to a task before implementation. Read-only and deterministic.",
       "title": "ADR context",
