@@ -6,6 +6,22 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **Setup and upgrade detect the local embedding runtime** and offer a way
+  forward instead of leaving the gap to be discovered later
+  (`adr-settings --check-embedding`, `bin/adr_embedding_runtime.py`). A runtime
+  with an embedding model needs no question; without one, three routes are
+  offered - install, point at a runtime you already run, or use a remote
+  endpoint. The download size is stated before any pull begins, and a smaller
+  model is offered next to the 4.7 GB one. Installing third-party software
+  requires explicit consent and never silent elevation; declining leaves a
+  working installation. Without a detected GPU the remote route is recommended,
+  because an embedding model on CPU cannot meet the 2 s hook budget of ADR-015 -
+  a speed problem, not a capability one. The GPU check declares itself a
+  heuristic. A missing runtime is reported as the normal outcome it is:
+  retrieval keeps working on lexical ranking.
+
+### Added
+
 - **`/adr-kit:settings` and `bin/adr-settings`**: one place to see and change every
   knob, with the provenance of each value (project, machine-local, environment
   override, or code default). Two things were unreachable before: `judge.llm_enabled`

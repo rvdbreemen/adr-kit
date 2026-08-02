@@ -314,6 +314,25 @@ def apply_unset(adr_dir: Path, schema: Dict, key: str) -> List[str]:
     return [f"{key} unset; the code default applies again", f"updated {path}"]
 
 
+def _load_runtime_module():
+    """Import bin/adr_embedding_runtime.py by path, without touching sys.path."""
+    import importlib.machinery
+    import importlib.util
+
+    name = "adr_embedding_runtime"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(
+        name, str(Path(__file__).resolve().parent / f"{name}.py")
+    )
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="adr-settings",
@@ -325,12 +344,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--list", action="store_true", help="list every settable key and exit")
     parser.add_argument("--set", default=None, metavar="KEY=VALUE")
     parser.add_argument("--unset", default=None, metavar="KEY")
+    parser.add_argument(
+        "--check-embedding",
+        action="store_true",
+        help=(
+            "probe for a local embedding runtime and report the routes forward. "
+            "Read-only: installs nothing, changes nothing, and treats a missing "
+            "runtime as a normal outcome."
+        ),
+    )
     args = parser.parse_args(argv)
 
     adr_dir = Path(args.adr_dir)
     schema = load_schema()
 
     try:
+        if args.check_embedding:
+            runtime = _load_runtime_module()
+            report = runtime.assess()
+            if args.format == "json":
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+                return 0
+            for line in runtime.render(report):
+                print(line)
+            return 0
         if args.set and args.unset:
             raise SettingsError("--set and --unset are mutually exclusive")
         if args.list:

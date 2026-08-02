@@ -3,15 +3,25 @@ id: TASK-87
 title: >-
   Detect the local embedding runtime at setup, and offer install, configure or
   remote
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-01 10:55'
+updated_date: '2026-08-02 01:32'
 labels:
   - spec-gap
   - R16
   - setup
   - embeddings
 dependencies: []
+modified_files:
+  - bin/adr_embedding_runtime.py
+  - bin/adr-settings
+  - skills/setup/SKILL.md
+  - skills/upgrade/SKILL.md
+  - tests/test_adr_embedding_runtime.py
+  - CHANGELOG.md
+  - codex/
+  - copilot/
 priority: high
 ordinal: 92500
 ---
@@ -41,12 +51,34 @@ Whatever the user picks lands in the settings surface (TASK-78) so it can be cha
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Setup and upgrade detect whether a local runtime is reachable and whether it carries an embedding model, reusing the existing probe rather than a second implementation
-- [ ] #2 A reachable runtime with a suitable model makes local embedding the default with no question asked
-- [ ] #3 An absent runtime produces a clear report plus three offered routes: install, configure an existing or alternative runtime, or use a remote endpoint
-- [ ] #4 No GPU produces a warning before any download starts, with the remote route recommended
-- [ ] #5 Download size is stated before a model pull begins
-- [ ] #6 Installing third-party software happens only on explicit consent, never with silent elevation, and declining leaves a working installation
-- [ ] #7 The chosen route is written to the settings surface and can be changed later
-- [ ] #8 Detection failure is a normal outcome: setup completes, and the kit works without embeddings
+- [x] #1 Setup and upgrade detect whether a local runtime is reachable and whether it carries an embedding model, reusing the existing probe rather than a second implementation
+- [x] #2 A reachable runtime with a suitable model makes local embedding the default with no question asked
+- [x] #3 An absent runtime produces a clear report plus three offered routes: install, configure an existing or alternative runtime, or use a remote endpoint
+- [x] #4 No GPU produces a warning before any download starts, with the remote route recommended
+- [x] #5 Download size is stated before a model pull begins
+- [x] #6 Installing third-party software happens only on explicit consent, never with silent elevation, and declining leaves a working installation
+- [x] #7 The chosen route is written to the settings surface and can be changed later
+- [x] #8 Detection failure is a normal outcome: setup completes, and the kit works without embeddings
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`adr-settings --check-embedding` backed by `bin/adr_embedding_runtime.py`, wired into the setup and upgrade skills as step 4c.
+
+Three states, each with the answer a setup step can act on. `ready` asks nothing, because there is no question when the answer is already yes. `runtime-without-model` offers the pull with the download size stated first - 4.7 GB is a decision, not a detail - and a smaller variant alongside. `absent` reports the normal outcome it is, saying in the same sentence that retrieval keeps working on lexical ranking, then offers install, configure-an-existing-runtime, or remote.
+
+The three things the task flagged as needing care rather than code:
+
+- **Installing third-party software is consent-gated.** The route says so in its own note, promises no silent elevation, and states that declining leaves a working installation. adr-kit still installs nothing itself; it names the commands.
+- **The GPU check declares itself a heuristic**, in the payload and in the rendered output. `nvidia-smi`, Apple Silicon and a Windows video-controller query each answer part of it. Without acceleration the remote route becomes the recommendation, and the warning says why in terms of speed: an embedding model on CPU cannot meet the 2 s hook budget of ADR-015, which would turn the feature into a regression nobody sees. Ollama runs on CPU either way.
+- **Size before download**, with `nomic-embed-text` offered next to `qwen3-embedding:8b`.
+
+Detection reuses the shape of the existing doctor probe rather than a second implementation: stdlib urllib, one loopback address, 1 s budget, every failure treated as absent. Embedding models are told apart from chat models by name marker, because Ollama does not label them and pulling a manifest per model would cost more than the answer is worth.
+
+Verified live on this machine: nine embedding models found and the RTX 3080 detected via nvidia-smi, so the report correctly asks nothing.
+
+Packaging caught what Windows always catches: three new entrypoints landed in the git index as 100644. Fixed to 100755 before the contract test could ship broken.
+
+Gates: 1287 passed / 12 skipped, adapter drift clean, adr-lint --strict clean.</finalSummary>
+<!-- SECTION:FINAL_SUMMARY:END -->
