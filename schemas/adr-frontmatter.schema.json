@@ -87,6 +87,14 @@
       "pattern": "^ADR-[0-9]{3,4}$",
       "description": "Successor ADR id when this ADR is superseded."
     },
+    "related": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^ADR-[0-9]{3,4}$"
+      },
+      "description": "ADR ids this ADR is related to, written on both sides by `bin/adr relate`. Symmetric: if A lists B, B lists A."
+    },
     "format": {
       "type": "string",
       "enum": [

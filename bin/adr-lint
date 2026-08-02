@@ -657,6 +657,114 @@ def _status_line(text: str) -> Optional[str]:
     return None
 
 
+def detect_reference_issues(
+    files: List[Path],
+    report_files: Optional[List[Path]] = None,
+) -> Dict[int, List[Dict[str, str]]]:
+    """Integrity of the *declared* `related` links, on both sides.
+
+    Supersession has an integrity check; a plain cross-reference had none, so an
+    ADR could name ADR-042 forever while ADR-042 never learned it was named, and
+    nothing noticed if ADR-042 turned out not to exist. `bin/adr relate` closed
+    the writing half by putting the link in frontmatter and writing both sides
+    in one transaction. This is the reading half.
+
+    **Only the `related` frontmatter field is gated, never the prose section**,
+    and that boundary is the whole design rather than a shortcut:
+
+    * Prose `## Related Decisions` is free-form. It legitimately names decisions
+      from another repository, ADRs not written yet, and ADRs outside whatever
+      subset is being linted. adr-lint routinely runs on a fragment -- `bin/adr
+      accept` lints exactly one file -- where every prose reference resolves to
+      nothing. A gate that fires there is reporting a fact about the invocation,
+      not about the code, which is the same reason the judge treats
+      `require_pattern` under `--snapshot diff` as advisory. ADR-009 forbids
+      exactly this kind of unactionable finding. `bin/adr-related` still lists
+      prose dangling links for a human who asks for them.
+    * `related` is machine-written. `bin/adr relate` resolves the target before
+      writing and writes both entries together, so a dangling or one-sided one
+      can only come from a hand edit or a half-applied write. That is the same
+      class of defect as a half supersession link, it is unambiguous, and it is
+      fixable on an Accepted record too, because frontmatter reference
+      bookkeeping is a permitted mutation where editing the body is not.
+
+    `files` is the lookup corpus; `report_files` narrows which of them may
+    produce a finding, matching detect_frontmatter_consistency so a single-file
+    lint still resolves references against the whole directory.
+
+    The known-set is built from filenames rather than parsed records on purpose:
+    a malformed ADR should be reported as malformed, not make every reference
+    pointing at it read as dangling.
+    """
+    known: Dict[int, Path] = {}
+    for path in files:
+        match = ADR_FILENAME_RE.match(path.name)
+        if match:
+            known.setdefault(int(match.group(1)), path)
+
+    declared_links: Dict[int, Set[int]] = {}
+    for num, path in known.items():
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        raw_frontmatter, _body = split_frontmatter(text)
+        try:
+            declared = parse_frontmatter(raw_frontmatter)
+        except FrontmatterError:
+            declared = {}
+        declared_links[num] = {
+            int(item.split("-")[1]) for item in _declared_related(declared)
+        } - {num}
+
+    wanted = (
+        {_path_key(fp) for fp in report_files} if report_files is not None else None
+    )
+    issues: Dict[int, List[Dict[str, str]]] = {}
+
+    def add(num: int, level: str, code: str, message: str) -> None:
+        if wanted is not None and _path_key(known[num]) not in wanted:
+            return
+        issues.setdefault(num, []).append(
+            {"level": level, "code": code, "message": message}
+        )
+
+    for num in sorted(declared_links):
+        for ref in sorted(declared_links[num]):
+            if ref not in known:
+                add(
+                    num,
+                    "FAIL",
+                    "REFERENCE_DANGLING",
+                    f"related lists ADR-{ref:03d}, which is not in this directory; "
+                    f"run `adr relate ADR-{num:03d} --to ADR-{ref:03d} --remove` "
+                    f"to drop it, or restore the missing ADR",
+                )
+            elif num not in declared_links.get(ref, set()):
+                add(
+                    num,
+                    "FAIL",
+                    "REFERENCE_ONE_SIDED",
+                    f"related lists ADR-{ref:03d}, but ADR-{ref:03d} does not list "
+                    f"ADR-{num:03d} back; run `adr relate ADR-{num:03d} --to "
+                    f"ADR-{ref:03d}` to write both sides, or --remove to drop it",
+                )
+    return issues
+
+
+def _declared_related(declared: Dict) -> List[str]:
+    """The `related` frontmatter list, normalized, ignoring junk entries."""
+    values = declared.get("related")
+    if not isinstance(values, list):
+        return []
+    out: List[str] = []
+    for item in values:
+        match = re.fullmatch(r"ADR-(\d{1,4})", str(item).strip())
+        if match:
+            out.append(f"ADR-{int(match.group(1)):03d}")
+    return out
+
+
 def detect_supersession_conflicts(files: List[Path]) -> Dict[int, List[str]]:
     """Detect supersession-integrity problems for the consistency gate.
 
@@ -1252,6 +1360,7 @@ def lint_file(
     supersession: Optional[Dict[int, List[str]]] = None,
     frontmatter_consistency: Optional[Dict[int, List[str]]] = None,
     strict_mode: bool = False,
+    reference_issues: Optional[Dict[int, List[Dict[str, str]]]] = None,
 ) -> Dict:
     """Lint one file. Returns a dict ready for JSON serialisation."""
     m = ADR_FILENAME_RE.match(fp.name)
@@ -1422,6 +1531,20 @@ def lint_file(
             findings.append({
                 "gate": "consistency", "level": level,
                 "details": issues, "summary": "; ".join(issues),
+            })
+        # Reference findings carry their own severity (ADR-009: never FAIL an
+        # author for a record they are not allowed to edit), so they are added
+        # as separate findings rather than folded into the one consistency
+        # level above.
+        for issue in (reference_issues or {}).get(adr_num, []):
+            findings.append({
+                "gate": "consistency",
+                "level": "FAIL" if strict_mode else (
+                    "ADVISORY" if file_advisory else issue["level"]
+                ),
+                "code": issue["code"],
+                "details": [issue["message"]],
+                "summary": issue["message"],
             })
 
     if "policy" in enabled_gates and "policy" not in skip_gates:
@@ -1678,12 +1801,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         if "consistency" in gates
         else {}
     )
+    reference_issues = (
+        detect_reference_issues(corpus, report_files=files)
+        if "consistency" in gates
+        else {}
+    )
 
     file_results = [
         lint_file(
             fp, cfg, args.strict_from, gates, duplicates,
             required_sections, ignore, supersession,
             frontmatter_consistency, args.strict,
+            reference_issues=reference_issues,
         ) for fp in files
     ]
     migration_notices = [

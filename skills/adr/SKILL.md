@@ -419,7 +419,24 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 - Update Status: `Proposed` -> `Accepted`.
 - Add the implementation date in the Status line: `Accepted. Date: YYYY-MM-DD.`
 - Append the matching `Accepted` transition to `## Status History`; never rewrite an earlier entry.
-- Add a `## Related Decisions` entry to any other ADR that newly relates.
+- **Decide which cross-references are warranted, then let the tool write both
+  sides.** Read the existing set (`bin/adr-index --adr-dir docs/adr --format md`
+  is the compact map) and ask, for each candidate, whether a reader arriving at
+  the *other* ADR would need to know this one exists. That judgement is yours;
+  no regex can make it. It is a real relationship when the two decisions
+  constrain each other, when one is the reason the other is possible, or when
+  changing one would force a rethink of the other. It is not a relationship
+  merely because both mention the same file.
+  - For each one you decide on: `bin/adr relate ADR-NEW --to ADR-OTHER`. It
+    writes the `related` field on **both** ADRs in one transaction and
+    regenerates the indexes, so neither side can end up carrying half a link.
+    Wrong call? `--remove` unwinds both sides the same way.
+  - Prose in `## Related Decisions` still counts and still reads well; keep
+    writing it. What it cannot do is update the other ADR, which is why the
+    reciprocal link goes in frontmatter. A backwards-only prose citation is
+    normal and is never flagged.
+  - Do not hand-edit the `related` field. `adr-lint` FAILs a one-sided one,
+    because the only way to produce one is a hand edit or a half-applied write.
 - Refresh the generated README, compact Markdown index, and JSON graph with
   `bin/adr-index docs/adr/`.
 - Run `bin/adr-doctor --fix-index docs/adr/` or `bin/adr-lint --strict docs/adr/` before treating the ADR set as clean.

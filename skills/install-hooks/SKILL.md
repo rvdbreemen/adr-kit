@@ -128,6 +128,10 @@ them silently, because a workflow file is the project's business:
   Proposed decision nobody accepted.
 - **`adr-guardian-audit.yml`** — the weekly staleness sweep, reported into one
   tracking issue.
+- **`adr-index-check.yml`** — fails when the generated indexes no longer match
+  the ADRs. The commit hook can only warn about this, because it reads the
+  worktree while the commit is the staged snapshot; CI checks out the commit
+  itself, so it is the only place the block is honest.
 
 Copy on request into `.github/workflows/`, and tell the user the checkout must
 use `fetch-depth: 0` or the diff has only one side.

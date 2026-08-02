@@ -697,6 +697,102 @@ def command_set_status(args, status: str, status_line: str, default_reason: str)
     return [f"{status.lower()}: {path.name}"]
 
 
+def command_relate(args) -> List[str]:
+    """Write a cross-reference on both sides, or remove it from both.
+
+    Supersession has always been reciprocal: `bin/adr supersede` writes the
+    predecessor's `superseded_by` and the successor's `supersedes` in one
+    transaction, so neither side can carry half a link. A plain cross-reference
+    had no such writer. An ADR could cite ADR-009 forever while ADR-009 never
+    learned it was cited, which is exactly the half-link the supersession check
+    refuses to tolerate.
+
+    The link goes in frontmatter, next to `supersedes`, not into the prose. That
+    keeps this inside the mutation envelope the kit already permits on an
+    Accepted record -- reference bookkeeping, never the decision itself. The
+    body of an Accepted ADR stays untouched here, as it must.
+
+    A pair that already has a supersession relationship is refused rather than
+    doubled: superseded-by is the stronger and more specific edge, and recording
+    both would let a reader believe there are two relationships where there is
+    one.
+    """
+    adr_dir = Path(args.adr_dir)
+    left_id = normalize_adr_id(args.adr)
+    right_id = normalize_adr_id(args.to)
+    if left_id == right_id:
+        raise AdrLifecycleError("an ADR cannot be related to itself")
+    left_path = find_adr_file(adr_dir, left_id)
+    right_path = find_adr_file(adr_dir, right_id)
+
+    left_data, left_body = load_adr(left_path)
+    right_data, right_body = load_adr(right_path)
+
+    for this_id, this_data, other_id in (
+        (left_id, left_data, right_id),
+        (right_id, right_data, left_id),
+    ):
+        if other_id in (this_data.get("supersedes") or []):
+            raise AdrLifecycleError(
+                f"{this_id} already supersedes {other_id}; supersession is the "
+                "stronger relationship and is already recorded on both sides"
+            )
+        if this_data.get("superseded_by") == other_id:
+            raise AdrLifecycleError(
+                f"{this_id} is already superseded by {other_id}; supersession is "
+                "the stronger relationship and is already recorded on both sides"
+            )
+
+    def apply(data: Dict, other_id: str) -> bool:
+        current = [normalize_adr_id(item) or item for item in (data.get("related") or [])]
+        wanted = [item for item in current if item != other_id]
+        if not args.remove:
+            wanted.append(other_id)
+        wanted = sorted(set(wanted))
+        if wanted == sorted(set(current)):
+            return False
+        # An empty list would be an assertion that the question was asked and
+        # the answer was none. It was not: the link was simply removed. Drop the
+        # key so absent keeps meaning "nothing declared here".
+        if wanted:
+            data["related"] = wanted
+        else:
+            data.pop("related", None)
+        return True
+
+    left_changed = apply(left_data, right_id)
+    right_changed = apply(right_data, left_id)
+    if not left_changed and not right_changed:
+        verb = "not related" if args.remove else "already related"
+        return [f"{left_id} and {right_id} are {verb}; nothing to do"]
+
+    # The signer is resolved once, before any write, so a machine with no
+    # configured signer refuses the whole operation instead of half of it.
+    changed_by = resolve_signer(adr_dir, args.changed_by)
+    action = "Unrelated" if args.remove else "Related"
+    changes: List[Tuple[Path, str]] = []
+    for path, data, body, other_id in (
+        (left_path, left_data, left_body, right_id),
+        (right_path, right_data, right_body, left_id),
+    ):
+        body = ensure_status_history(path, data, body, (str(data.get("status")), args.date))
+        body = append_status_history(
+            body,
+            str(data.get("status")),
+            changed_by,
+            args.reason or f"{action} to {other_id}",
+            "adr-kit lifecycle",
+            args.date,
+        )
+        changes.append((path, render_frontmatter(data) + body))
+    _commit_lifecycle_changes(adr_dir, changes)
+    joiner = "no longer related to" if args.remove else "related to"
+    return [
+        f"{left_path.name}: {joiner} {right_id}",
+        f"{right_path.name}: {joiner} {left_id}",
+    ]
+
+
 def command_supersede(args) -> List[str]:
     adr_dir = Path(args.adr_dir)
     old_id = normalize_adr_id(args.old)
@@ -952,6 +1048,19 @@ def build_parser() -> argparse.ArgumentParser:
     reject.add_argument("adr")
     add_common_args(reject)
 
+    relate = sub.add_parser(
+        "relate",
+        help="record a cross-reference between two ADRs on both sides at once",
+    )
+    relate.add_argument("adr")
+    relate.add_argument("--to", required=True, help="the other ADR id")
+    relate.add_argument(
+        "--remove",
+        action="store_true",
+        help="drop the cross-reference from both sides instead of adding it",
+    )
+    add_common_args(relate)
+
     supersede = sub.add_parser("supersede", help="supersede an ADR by another ADR")
     supersede.add_argument("old")
     supersede.add_argument("--by", required=True, help="successor ADR id")
@@ -994,6 +1103,8 @@ def main(argv: List[str] | None = None) -> int:
                 f"Rejected, {args.date}.",
                 "Rejected decision",
             )
+        elif args.command == "relate":
+            lines = command_relate(args)
         elif args.command == "supersede":
             lines = command_supersede(args)
         elif args.command == "document":

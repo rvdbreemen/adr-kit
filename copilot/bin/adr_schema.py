@@ -59,6 +59,13 @@ FRONTMATTER_FIELD_ORDER = (
 )
 
 OPTIONAL_FRONTMATTER_FIELD_ORDER = (
+    # `related` is the symmetric counterpart of supersedes/superseded_by: a
+    # declared, machine-written cross-reference rather than a prose mention.
+    # It lives in frontmatter for the same reason those two do -- writing a
+    # back-reference into an Accepted record is reference bookkeeping, which
+    # `bin/adr supersede` has always been allowed to do, while editing an
+    # Accepted body is not. `bin/adr relate` writes both sides at once.
+    "related",
     "topics",
     "aliases",
     "components",
@@ -381,6 +388,17 @@ def validate_frontmatter(data: Dict) -> List[str]:
     for ref in data.get("supersedes", []) if isinstance(data.get("supersedes"), list) else []:
         if not re.fullmatch(r"ADR-\d{3,4}", ref):
             issues.append(f"supersedes entry {ref!r} must be an ADR-NNN string")
+
+    # `related` is optional, so an absent key is fine; a present one must hold
+    # ADR ids, because the whole point is that a machine can resolve it.
+    related = data.get("related")
+    if related is not None:
+        if not isinstance(related, list) or not all(isinstance(item, str) for item in related):
+            issues.append("related must be a list of strings")
+        else:
+            for ref in related:
+                if not re.fullmatch(r"ADR-\d{3,4}", ref):
+                    issues.append(f"related entry {ref!r} must be an ADR-NNN string")
 
     profile = data.get("format")
     if profile is not None and profile not in SUPPORTED_PROFILES:

@@ -1,0 +1,30 @@
+# Generated-index freshness on every pull request.
+#
+# The lifecycle CLI regenerates README.md, ADR-INDEX.md and ADR-INDEX.json
+# inside its own transaction, so anything written through `bin/adr` keeps them
+# true. An ADR edited by hand -- or written straight to disk by a coding agent,
+# which is the common case in a harness -- does not. The index is what every
+# other tool and every agent reads first, so a stale one quietly misinforms
+# everything downstream.
+#
+# The commit hook warns about this; it cannot block, because it reads the
+# worktree while the commit is the staged snapshot. Here the checkout is the
+# commit, so blocking is honest.
+#
+# Copy into .github/workflows/ of your project.
+name: ADR index freshness
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  adr-index-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-index-check@main
+        with:
+          adr-dir: docs/adr

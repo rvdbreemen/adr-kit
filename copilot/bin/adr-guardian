@@ -398,6 +398,41 @@ def _stale_artifact_lines(report: Dict) -> List[str]:
     return lines
 
 
+def _stale_index_lines(adr_dir: Path) -> List[str]:
+    """Nudge lines when the generated indexes no longer match the ADRs.
+
+    The lifecycle CLI regenerates all three artefacts inside its own
+    transaction, so anything written through `bin/adr` keeps them true. An ADR
+    edited by hand -- or written straight to disk by a model with a Write tool,
+    which is the common case in a coding harness -- leaves them stale with
+    nothing to say so until CI notices. This is the cheapest place to notice.
+
+    In-process by contract: `check` never spawns. The mtime precondition is a
+    fast skip, not proof; a hand-edited index is newer than every ADR and still
+    wrong, so when the timestamps look fresh this stays silent and the real
+    check (`adr-index --check`, run by the sweep, the commit hook and CI) is
+    what certifies. Any failure to read is silence, never a false alarm.
+    """
+    try:
+        core = _load_sibling("adr_index_core")
+        # A project with none of the three artefacts never generated an index
+        # and is not asking to be nagged into starting. One present means the
+        # project keeps an index, and then all three have to stay true.
+        if not any((adr_dir / name).exists() for name in core.INDEX_ARTIFACTS):
+            return []
+        if core.index_probably_fresh(adr_dir):
+            return []
+        stale = core.stale_index_artifacts(adr_dir)
+    except Exception:
+        return []
+    if not stale:
+        return []
+    return [
+        f"  • index:     {', '.join(stale)} no longer matches the ADRs"
+        "   STALE → bin/adr-index docs/adr"
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Due-tier computation
 # ---------------------------------------------------------------------------
@@ -660,6 +695,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     # A stale wrapper counts as a due item so it surfaces even when both
     # sweep tiers are fresh; it rides the same nudge cooldown as the tiers.
     artifact_lines = _stale_artifact_lines(_artifact_report(adr_dir.parent.parent))
+    artifact_lines.extend(_stale_index_lines(adr_dir))
     now = _now_utc()
     adr_count = _count_adrs(adr_dir)
 
