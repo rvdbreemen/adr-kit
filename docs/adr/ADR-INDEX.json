@@ -101,7 +101,7 @@
       "path": "ADR-004-layered-adr-context-injection.md",
       "format": "canonical",
       "status": "Accepted",
-      "date": "2026-07-05",
+      "date": "2026-08-03",
       "decision_summary": "Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo...",
       "topics": [],
       "aliases": [],
@@ -198,7 +198,7 @@
       "path": "ADR-007-json-adr-graph-index-for-agent-retrieval.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-23",
+      "date": "2026-08-03",
       "decision_summary": "Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be...",
       "topics": [],
       "aliases": [],
@@ -350,7 +350,7 @@
       "path": "ADR-011-adopt-deterministic-readiness-and-human-gated-grilling-across-the-adr-lifecycle.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-20",
+      "date": "2026-08-03",
       "decision_summary": "Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i...",
       "topics": [],
       "aliases": [],
@@ -843,6 +843,262 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-020",
+      "title": "Embed the Query Where the Query Is Asked, and Read Authority From the Index",
+      "path": "ADR-020-embed-the-query-where-the-query-is-asked-and-read-authority-from-the-index.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact...",
+      "topics": [
+        "embeddings",
+        "lifecycle authority",
+        "retrieval",
+        "semantic proximity"
+      ],
+      "aliases": [
+        "authority join",
+        "query embedding",
+        "vector layer"
+      ],
+      "components": [
+        "adr-context",
+        "adr-embed",
+        "lifecycle hooks"
+      ],
+      "symbols": [
+        "query_adr_context",
+        "search",
+        "staleness"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Compute corpus embeddings only in an explicit build step.",
+          "Embed the query in the path that asks it, including a hook, when the store is present and a backend is configured.",
+          "Read status, supersededby and authority from ADR-INDEX.json on every search, never from the stored entry.",
+          "Drop a stored entry whose adrid is absent from the index.",
+          "Name the retrieval route — vector or lexical — in the output the user sees.",
+          "Fall back to lexical ranking and exit 0 on any backend failure, timeout, or malformed response.",
+          "Keep the query-embedding path inside spec R21's ceiling, with a backend timeout strictly below it, verified by a test.",
+          "Keep the 100 ms pre- and post-tool events on the index-only route.",
+          "Read the store with the standard library only.",
+          "Record, per entry: the embedding model identity, the vector dimension, and a content hash of the source ADR.",
+          "Keep hook injection fail-open and the commit-time judge fail-closed."
+        ],
+        "must_not": [
+          "Re-embed the corpus during a query or a hook.",
+          "Let a lifecycle command depend on a reachable embedding backend.",
+          "Let a similarity score confer authority on a Proposed, Superseded, Rejected or Deprecated decision.",
+          "Answer from vectors without saying so when the lexical route was used instead.",
+          "Require a running daemon for retrieval to function at all.",
+          "Hand-edit the store, or treat it as an authoring surface.",
+          "Introduce a hosted vector service."
+        ],
+        "exceptions": [
+          "A remote embedding endpoint is permitted when the user has selected one through the settings surface, having been told the latency and privacy consequence. It is never the default and never selected by probing."
+        ],
+        "verification": [
+          "adr-query-embedding-v1: the named gate anchoring this decision in source. It covers the three acceptance cases above and the R21 latency bound."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-query-embedding-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-021",
+      "title": "Let the Session-Scoped Hooks Regenerate a Stale ADR Index",
+      "path": "ADR-021-let-the-session-scoped-hooks-regenerate-a-stale-adr-index.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: the session-scoped hooks regenerate a stale index in-process; the edit-tier hooks stay read-only and s...",
+      "topics": [
+        "hooks",
+        "index freshness",
+        "retrieval"
+      ],
+      "aliases": [
+        "hook write",
+        "stale index"
+      ],
+      "components": [
+        "adr-index",
+        "lifecycle hooks"
+      ],
+      "symbols": [
+        "index_probably_fresh",
+        "IndexQueryError"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Probe index freshness before every retrieval, at a cost bounded by the measured 2.8 ms probe rather than a full load.",
+          "Regenerate in-process, never by spawning the generator.",
+          "Restrict regeneration to session-start and user-prompt-submit.",
+          "Render an actionable staleness message on any event that finds the index stale and does not regenerate it.",
+          "Guard regeneration with a lock; a session that cannot acquire it reads what is present and continues without waiting.",
+          "Skip regeneration and render the message when the projected render cost exceeds the event's declared budget.",
+          "Keep every hook fail-open: any fault in this path exits 0 with whatever context was available."
+        ],
+        "must_not": [
+          "Write from pre-tool-use, post-tool-use, or the plan-exit branch.",
+          "Block, wait, or retry on a contended lock.",
+          "Write any artefact other than the generated index set.",
+          "Return empty output when the index is stale — silence is the defect this decision exists to remove."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "adr-hook-index-refresh-v1: the named gate anchoring this decision in source, covering the write-then-prompt sequence, the concurrent-hook case, and the budget bail-out."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-hook-index-refresh-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-022",
+      "title": "Make Open Questions Append-Only for a Proposed ADR",
+      "path": "ADR-022-make-open-questions-append-only-for-a-proposed-adr.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: ## Open Questions is append-only while an ADR is Proposed, because it removes the incentive at its sou...",
+      "topics": [
+        "grilling",
+        "lint",
+        "readiness"
+      ],
+      "aliases": [
+        "append-only",
+        "open questions"
+      ],
+      "components": [
+        "adr",
+        "adr-lint",
+        "adr-readiness"
+      ],
+      "symbols": [
+        "ANSWERED_LINE_RE",
+        "open_questions_resolved"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Treat the disappearance of an open question from a Proposed ADR, without a matching answered line, as a lint FAIL.",
+          "Quote the vanished question text in the finding, so the fix is obvious.",
+          "Distinguish \"answered\" from \"absent\" in the readiness signal.",
+          "Degrade to advisory, with a stated reason, where the previous state cannot be read.",
+          "Keep bin/adr answer the supported way to close a question."
+        ],
+        "must_not": [
+          "Introduce a second artefact recording the grilling exchange.",
+          "Block on an Accepted ADR — this constraint governs the Proposed window, where the questions are live.",
+          "Treat an empty ## Open Questions section as evidence that questions were resolved.",
+          "Pass silently where the check cannot see."
+        ],
+        "exceptions": [
+          "Outside a git repository, or where the ADR has no recorded prior state, the finding is advisory."
+        ],
+        "verification": [
+          "adr-open-questions-append-only-v1: the named gate anchoring this decision in source, covering the delete case, the answer case, and the no-history case."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-open-questions-append-only-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-023",
+      "title": "Record the Pull-Request Guard as a Fail-Closed Tier",
+      "path": "ADR-023-record-the-pull-request-guard-as-a-fail-closed-tier.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b...",
+      "topics": [
+        "enforcement",
+        "hooks",
+        "pull request"
+      ],
+      "aliases": [
+        "fail-closed tier",
+        "PR guard"
+      ],
+      "components": [
+        "adr-judge",
+        "lifecycle hooks"
+      ],
+      "symbols": [
+        "adr_pr_guard",
+        "looks_like_pr_create"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Keep the three injection tiers of ADR-004 fail-open and non-blocking.",
+          "Restrict fail-closed hook behaviour to the pull-request moment; the commit tier is otherwise the only blocking mechanism.",
+          "Judge the branch diff, not a single commit, at that moment.",
+          "Label the verdict as advisory, naming the enforcing gates, on any client that cannot return a permission decision.",
+          "Record such a client as a degradation, with its user-visible effect, its reason and its backstop.",
+          "Stay inside the budget the manifest declares for the event.",
+          "Fail open on tooling failure: a guard that cannot run must not block a pull request."
+        ],
+        "must_not": [
+          "Block an edit, a prompt, a session start, or a compaction.",
+          "Render a denial as ordinary injected context on a client that cannot enforce it.",
+          "Spend on a model pass where the verdict cannot be acted on and the user has not asked for it.",
+          "Extend fail-closed behaviour to a moment the user is not present for."
+        ],
+        "exceptions": [
+          "ADRKITHOOKDISABLE and the per-ADR override of spec R2.1 apply here as they do at commit time. A gate that cannot be overridden with a reason is overridden outside the tool."
+        ],
+        "verification": [
+          "adr-pr-guard-tier-v1: the named gate anchoring this decision in source, covering the deny path, the advisory path, and the fail-open path."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-pr-guard-tier-v1",
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_pr_guard.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -879,6 +1135,12 @@
     {
       "source": "ADR-004",
       "target": "ADR-002",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-004",
+      "target": "ADR-023",
       "type": "related",
       "resolved": true
     },
@@ -946,6 +1208,12 @@
       "source": "ADR-007",
       "target": "ADR-014",
       "type": "amended-by",
+      "resolved": true
+    },
+    {
+      "source": "ADR-007",
+      "target": "ADR-021",
+      "type": "related",
       "resolved": true
     },
     {
@@ -1053,6 +1321,12 @@
     {
       "source": "ADR-011",
       "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-011",
+      "target": "ADR-022",
       "type": "related",
       "resolved": true
     },
@@ -1251,6 +1525,84 @@
     {
       "source": "ADR-019",
       "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-019",
+      "target": "ADR-023",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-020",
+      "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-020",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-020",
+      "target": "ADR-016",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-020",
+      "target": "ADR-018",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-021",
+      "target": "ADR-007",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-021",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-021",
+      "target": "ADR-020",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-022",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-022",
+      "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-023",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-023",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-023",
+      "target": "ADR-019",
       "type": "related",
       "resolved": true
     }

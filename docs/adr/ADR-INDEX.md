@@ -25,3 +25,7 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-017 | Accepted | `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}` | Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a... |
 | ADR-018 | Accepted | `hooks/adr_hook_core.py`, `bin/adr_query.py` | Chosen option: a local precomputed vector store that the query and hook paths only read, because it delivers semantic... |
 | ADR-019 | Accepted | - | Chosen option: keep the silence, and record why — this ADR is the record. |
+| ADR-020 | Proposed | - | Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact... |
+| ADR-021 | Proposed | - | Chosen option: the session-scoped hooks regenerate a stale index in-process; the edit-tier hooks stay read-only and s... |
+| ADR-022 | Proposed | - | Chosen option: ## Open Questions is append-only while an ADR is Proposed, because it removes the incentive at its sou... |
+| ADR-023 | Proposed | - | Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b... |
