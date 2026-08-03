@@ -34,6 +34,36 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **`/adr-kit:audit` can reach the gates its own rationale rests on.** The
+  command exists because "a clean judge over a set of vague ADRs proves nothing,
+  because vague rules cannot be violated" -- and vagueness is what the `evidence`
+  and `clarity` gates measure. Neither was reachable: `run_lint` built a fixed
+  argument list and never passed `--gates`, and `--strict` does not help because
+  it adds `schema` only. `--gates` now passes through, and the audit skill states
+  which set produced a green answer, because "the audit is green" means different
+  things at different sets.
+
+- **The clarity gate's acronym check no longer fires on this project's own
+  vocabulary.** Turning the gate on reported four failures across fourteen
+  findings, of which exactly one was a genuine unexplained acronym. The rest were
+  `LLM` -- the product's subject -- literal status tokens the records quote
+  (`FAIL`, `DUE`, `TODO`), and fragments of filenames matched inside identifiers
+  (`SKILL` in `SKILL.md`, `INDEX` in `ADR-INDEX.json`).
+
+  The repair was to bound the heuristic, not to edit the records. Expanding `LLM`
+  in an Accepted Decision to satisfy a check is precisely the contortion R15
+  names -- "choosing words the decision would not otherwise use" -- and two of the
+  four records are Superseded, where the text is immutable outright. The gate now
+  skips fenced blocks, inline code spans and acronyms inside identifiers, and
+  the allowlist carries this ecosystem's vocabulary. A negative control proves it
+  still fails on three unexpanded acronyms in prose.
+
+- **A whole-codebase audit runs on a cadence.** `templates/github-workflows/adr-audit.yml`
+  ships for downstream projects and runs here weekly. It asks the one question no
+  per-diff gate can answer -- does the code as it stands obey the decisions as
+  they stand -- and is report-only, because a weekly sweep that turns the default
+  branch red for a pre-existing violation teaches people to ignore it.
+
 - **The embedding model a user consents to download is now recorded.** Setup
   asks for consent to a 4.7 GB `qwen3-embedding:8b` pull, and the chosen model
   had nowhere to live: `adr-embed` hardcoded `nomic-embed-text` and accepted an

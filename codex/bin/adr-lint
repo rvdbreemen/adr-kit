@@ -583,10 +583,27 @@ def gate_evidence(text: str) -> Optional[List[Tuple[int, str]]]:
 # technical vocabulary or terms this toolkit defines everywhere else. Demanding
 # an inline expansion for these produces noise, not clarity.
 CLARITY_ACRONYM_ALLOWLIST = frozenset({
-    "ADR", "API", "CLI", "CSV", "HTML", "HTTP", "HTTPS", "JSON", "MADR",
-    "MCP", "PR", "REST", "RFC", "SDK", "SQL", "TASK", "TOML", "URI", "URL",
-    "UTC", "UUID", "XML", "YAML",
+    # Ordinary technical vocabulary.
+    "ADR", "API", "CLI", "CPU", "CSV", "DNS", "GPU", "HTML", "HTTP", "HTTPS",
+    "IDE", "JSON", "LLM", "MADR", "MCP", "NFR", "PR", "REST", "RFC", "SDK",
+    "SQL", "SSH", "TASK", "TLS", "TOML", "URI", "URL", "UTC", "UUID", "XML",
+    "YAML",
+    # This kit's own verdict and status vocabulary. These are literal tokens a
+    # record quotes from output it is describing -- "the gate reports FAIL", "an
+    # [adr-guardian] ... DUE block" -- not abbreviations a reader needs
+    # expanded. Asking an author to write "FAIL (failure)" would make the record
+    # worse in order to satisfy a check.
+    "PASS", "FAIL", "SKIP", "WARN", "INFO", "NOTE", "DUE", "TODO",
 })
+
+# An acronym inside an identifier is not prose. `SKILL.md`, `ADR-INDEX.json` and
+# `TODO(ADR-042)` all matched the bare word-boundary pattern, so the gate asked
+# authors to expand a fragment of a filename.
+_CLARITY_IDENTIFIER_CHARS = set("._-/\\")
+
+# Inline code spans are blanked rather than removed, so reported line positions
+# stay true to the source.
+_CLARITY_CODE_SPAN_RE = re.compile(r"`[^`]*`")
 
 
 def gate_clarity(text: str) -> Optional[List[Tuple[int, str]]]:
@@ -604,12 +621,29 @@ def gate_clarity(text: str) -> Optional[List[Tuple[int, str]]]:
     acro_re = re.compile(r"\b[A-Z]{3,5}\b")
     seen_with_expansion: Set[str] = set()
     flagged: List[Tuple[int, str]] = []
+    in_fence = False
     for i, ln in enumerate(_strip_frontmatter_lines(text)):
         if ln is None:  # frontmatter line: keeps numbering, skips analysis
             continue
-        for m in acro_re.finditer(ln):
+        if ln.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            # A fenced block is code, output or configuration. An acronym there
+            # is a literal the record quotes, and it cannot carry an inline
+            # expansion without changing what it quotes.
+            continue
+        scannable = _CLARITY_CODE_SPAN_RE.sub(
+            lambda m: " " * len(m.group(0)), ln
+        )
+        for m in acro_re.finditer(scannable):
             acro = m.group(0)
             if acro in CLARITY_ACRONYM_ALLOWLIST:
+                continue
+            before = scannable[m.start() - 1] if m.start() else ""
+            after = scannable[m.end()] if m.end() < len(scannable) else ""
+            if (before in _CLARITY_IDENTIFIER_CHARS
+                    or after in _CLARITY_IDENTIFIER_CHARS):
                 continue
             # 'ACRONYM (expansion)' — a '(' immediately after the acronym.
             tail = ln[m.end():m.end() + 100]

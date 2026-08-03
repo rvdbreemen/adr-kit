@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_LINT = REPO_ROOT / "bin" / "adr-lint"
 
@@ -120,3 +122,79 @@ def test_shipped_adrs_pass_the_acceptance_gate_set(tmp_path):
             capture_output=True, text=True, encoding="utf-8",
         )
         assert result.returncode == 0, f"{adr} fails its own acceptance gates"
+
+
+# ---------------------------------------------------------------------------
+# The acronym heuristic is bounded to findings an author can act on (TASK-111)
+# ---------------------------------------------------------------------------
+
+def _clarity(tmp_path, insert: str) -> int:
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
+    body = source.read_text(encoding="utf-8").replace(
+        "## Decision Drivers", "## Decision Drivers\n\n" + insert
+    )
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / "ADR-020-x.md").write_text(body, encoding="utf-8")
+    return subprocess.run(
+        [sys.executable, str(ADR_LINT), "--gates", "clarity", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    ).returncode
+
+
+def test_three_unexpanded_acronyms_in_prose_still_fail(tmp_path):
+    """The negative control. Bounding a heuristic must not disable it."""
+    assert _clarity(
+        tmp_path, "* The OTGW firmware talks to the HVAC unit over the MQTT bridge.\n"
+    ) != 0
+
+
+def test_an_acronym_in_an_inline_code_span_is_not_prose(tmp_path):
+    assert _clarity(
+        tmp_path, "* Config keys `OTGW`, `HVAC` and `MQTT` are read verbatim.\n"
+    ) == 0
+
+
+def test_an_acronym_in_a_fenced_block_is_not_prose(tmp_path):
+    """A fenced block quotes code, output or configuration.
+
+    An acronym there cannot carry an inline expansion without changing what the
+    record is quoting -- the gate would be asking the author to falsify an
+    example.
+    """
+    assert _clarity(tmp_path, "```\nOTGW HVAC MQTT\n```\n") == 0
+
+
+def test_an_expanded_acronym_passes(tmp_path):
+    assert _clarity(
+        tmp_path,
+        "* The OTGW (OpenTherm Gateway) drives the HVAC (heating) unit over "
+        "MQTT (a message broker).\n",
+    ) == 0
+
+
+def test_two_acronyms_stay_below_the_threshold(tmp_path):
+    """Deliberately conservative: a false positive costs a blocked decision."""
+    assert _clarity(tmp_path, "* The OTGW firmware talks to the HVAC unit.\n") == 0
+
+
+@pytest.mark.parametrize("term", ["LLM", "FAIL", "DUE", "TODO", "PASS"])
+def test_this_projects_own_vocabulary_is_not_an_unexplained_acronym(term):
+    """`LLM` is the product's subject; `FAIL` and `DUE` are literal output tokens.
+
+    Asking an author to write "FAIL (failure)" makes the record worse in order
+    to satisfy a check, which is the contortion spec R15 exists to prevent.
+    """
+    import importlib.machinery
+    import importlib.util
+
+    name = "adr_lint_allowlist_probe"
+    cached = sys.modules.get(name)
+    if cached is None:
+        loader = importlib.machinery.SourceFileLoader(name, str(ADR_LINT))
+        spec = importlib.util.spec_from_loader(name, loader)
+        cached = importlib.util.module_from_spec(spec)
+        sys.modules[name] = cached
+        loader.exec_module(cached)
+
+    assert term in cached.CLARITY_ACRONYM_ALLOWLIST

@@ -70,6 +70,27 @@ and do not present its silence as a pass.
   plainly. A rule added after a file was written has never been applied to that
   file. Offer a remediation task rather than a large unrequested edit.
 
+## Which gates a green audit covers
+
+By default the lint half runs `completeness`, `audit` and `consistency` -- the
+structural gates, which have exact answers. **A green audit at the default set
+is not a statement that the records are sharp**, and this command's own
+rationale turns on that distinction: a clean judge over vague ADRs proves
+nothing, because vague rules cannot be violated.
+
+`--gates` passes a set through to `adr-lint`. `--gates all` adds `schema`,
+`evidence`, `clarity`, `policy` and `quality`.
+
+| Question | Gate set |
+|---|---|
+| Are the records structurally sound? | default |
+| Are they sharp enough to be violated? | `--gates all` |
+| Would they survive release? | `--strict` |
+
+Say which set produced the answer when you report it. "The audit is green" is a
+different claim depending on the set, and the reader cannot tell from the
+verdict line alone.
+
 ## Where it fits
 
 - `/adr-kit:judge` judges one staged diff at commit time. Narrower and faster.
