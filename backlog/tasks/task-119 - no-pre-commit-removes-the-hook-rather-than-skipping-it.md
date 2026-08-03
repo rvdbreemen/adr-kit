@@ -1,9 +1,10 @@
 ---
 id: TASK-119
 title: '--no-pre-commit removes the hook rather than skipping it'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 22:10'
+updated_date: '2026-08-03 23:57'
 labels:
   - setup
   - cli
@@ -35,8 +36,32 @@ Option 3 is the one that closes the actual hole, since the surprising case is no
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `setup-project.py` can write the instruction layout without touching `.githooks/pre-commit` at all
-- [ ] #2 Removing a pre-commit hook is expressed by a flag whose name says removal
-- [ ] #3 A hook the kit did not write — no `ADR_KIT_WRAPPER_VERSION` stamp — is not removed without an explicit confirmation
-- [ ] #4 A test asserts that the skip flag leaves an existing foreign hook byte-identical
+- [x] #1 `setup-project.py` can write the instruction layout without touching `.githooks/pre-commit` at all
+- [x] #2 Removing a pre-commit hook is expressed by a flag whose name says removal
+- [x] #3 A hook the kit did not write — no `ADR_KIT_WRAPPER_VERSION` stamp — is not removed without an explicit confirmation
+- [x] #4 A test asserts that the skip flag leaves an existing foreign hook byte-identical
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Option 1 from the task, and AC#3 turned out to be already satisfied.
+
+**Three states now**, where there were two: `--no-pre-commit` leaves the file exactly as it is, `--remove-pre-commit` removes adr-kit's hook, and passing both is refused rather than resolved. Guessing which one a caller meant is how a destructive default gets reintroduced.
+
+**AC#3 was already true, which I established by testing rather than reading.** `_pre_commit_changes` has always checked for the `adr-kit pre-commit hook` marker: a foreign hook is never deleted, and the install path raises rather than overwriting one. So the defect was narrower than the task assumed — the missing third state and the misleading name, not the safety check. Both are verified anyway, because a guarantee nobody tests is a guarantee that decays.
+
+Five cases, all measured:
+
+| invocation | existing hook | outcome |
+|---|---|---|
+| `--no-pre-commit` | foreign | byte-identical |
+| `--no-pre-commit` | ours | byte-identical |
+| `--remove-pre-commit` | ours | removed |
+| `--remove-pre-commit` | foreign | byte-identical |
+| both flags | any | refused, exit 1 |
+
+CHANGELOG carries the upgrade note: a script relying on `--no-pre-commit` to uninstall wants `--remove-pre-commit`.
+
+Full suite: 1543 passed, 13 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->
