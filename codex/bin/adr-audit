@@ -334,6 +334,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not adr_dir.is_absolute():
         adr_dir = repo_root / adr_dir
 
+    # A scope must be named. Defaulting to stdin looks convenient and is the one
+    # shape that can answer wrongly in silence: with stdin closed -- a CI step, a
+    # cron job, a script that used to call the old `bin/adr-audit` discovery
+    # scanner and was never renamed -- the diff reads empty, nothing is judged,
+    # and the command prints "on course" and exits 0. A tool that cannot check
+    # must not pretend it did, so it refuses instead and says which flag to add.
+    if not args.whole_codebase and args.diff is None:
+        print(
+            "adr-audit: name a scope. Use --whole-codebase to audit every tracked "
+            "file, or --diff PATH ('-' for stdin) to audit one diff.\n"
+            "  (Looking for the init discovery scanner? It is now bin/adr-discover.)",
+            file=sys.stderr,
+        )
+        return EXIT_TOOLING
+
     try:
         if args.whole_codebase:
             mode = "whole codebase"
@@ -341,7 +356,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             budget = args.max_diff_bytes or WHOLE_CODEBASE_DIFF_BUDGET
         else:
             mode = "diff"
-            diff_text = read_diff(args.diff or "-")
+            diff_text = read_diff(args.diff)
             budget = args.max_diff_bytes or WHOLE_CODEBASE_DIFF_BUDGET
 
         lint = run_lint(adr_dir, repo_root, args.strict)

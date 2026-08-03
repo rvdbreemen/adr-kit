@@ -333,3 +333,46 @@ def test_the_audit_workflow_reaches_every_client(client):
     """AC#5: usable from CI and a hook without a second wrapper, on any client."""
     assert (REPO_ROOT / client / "skills" / "audit" / "SKILL.md").is_file()
     assert (REPO_ROOT / client / "bin" / "adr-audit").is_file()
+
+
+def test_a_bare_invocation_refuses_instead_of_reporting_on_course(tmp_path):
+    """The rename hazard, made loud.
+
+    Defaulting to stdin is the one shape that can answer wrongly in silence.
+    With stdin closed -- a CI step, a cron job, or a script that still calls
+    `bin/adr-audit` meaning the old discovery scanner -- the diff reads empty,
+    nothing is judged, and the command would print "on course" and exit 0. A
+    tool that cannot check must not pretend it did.
+    """
+    root = _repo(tmp_path, source="import sys\n")
+    (root / "docs" / "adr" / "ADR-001-decision-1.md").write_text(
+        _adr(1, enforcement=FORBID_PRINT), encoding="utf-8"
+    )
+    _commit(root)
+
+    result = subprocess.run(
+        [sys.executable, str(ADR_AUDIT), "--repo-root", str(root),
+         "--adr-dir", "docs/adr"],
+        cwd=str(root), input="", capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+    )
+
+    assert result.returncode == EXIT_TOOLING
+    assert "on course" not in result.stdout
+    assert "name a scope" in result.stderr
+    # And it points a stranded caller at the command they actually wanted.
+    assert "bin/adr-discover" in result.stderr
+
+
+def test_an_explicit_empty_diff_is_still_clean(tmp_path):
+    """`--diff -` with nothing staged is a real answer, not a missing scope."""
+    root = _repo(tmp_path, source="import sys\n")
+    (root / "docs" / "adr" / "ADR-001-decision-1.md").write_text(
+        _adr(1, enforcement=FORBID_PRINT), encoding="utf-8"
+    )
+    _commit(root)
+
+    code, payload, _result = _audit(root, "--diff", "-", stdin_text="")
+
+    assert code == EXIT_OK
+    assert payload["code"]["empty"] is True
