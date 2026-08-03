@@ -1,8 +1,8 @@
 ---
 id: "ADR-019"
 title: "Keep the End-of-Session Hooks Deliberately Silent"
-status: "Proposed"
-date: "2026-08-02"
+status: "Accepted"
+date: "2026-08-03"
 binding: false
 gate: null
 documents_shipped: false
@@ -31,7 +31,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-02.
+Accepted, 2026-08-03.
 
 ## Status History
 
@@ -42,6 +42,11 @@ status_history:
     changed_by: "User: Robert van den Breemen"
     reason: TASK-86 requires the Stop/SessionEnd silence to be a recorded decision rather than an undocumented no-op
     changed_via: adr-kit
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
