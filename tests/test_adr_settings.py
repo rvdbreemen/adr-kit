@@ -143,3 +143,55 @@ def test_list_names_every_settable_key(adr_dir):
     assert "lifecycle.signer" in keys
     assert "judge.llm_enabled" in keys
     assert "guardian.llm_stale_days" in keys
+
+
+def test_a_stored_credential_is_never_printed_back(adr_dir):
+    """The docstring promised this from day one; nothing implemented it.
+
+    `adr-settings --all` rendered `judge.openai_api_key` like any other string,
+    so a key stored in the gitignored local file came straight back out onto the
+    terminal. The file is not the exposure -- the terminal is: scrollback,
+    screenshots, and a pasted bug report all carry it. A settings screen needs to
+    answer "is a credential configured?", never "what is it".
+    """
+    secret = "sk-do-not-print-me-4242"
+    _run(adr_dir, "--set", f"judge.openai_api_key={secret}")
+
+    text = _run(adr_dir, "--all")
+    payload = _run(adr_dir, "--all", "--format", "json")
+
+    assert secret not in text.stdout, "the text renderer echoed the credential"
+    assert secret not in payload.stdout, "the JSON output echoed the credential"
+
+    rows = {row["key"]: row for row in json.loads(payload.stdout)["settings"]}
+    row = rows["judge.openai_api_key"]
+    assert row["secret"] is True
+    assert row["value"] == "<set>", "presence must still be reportable"
+    assert row["source"] == "machine-local"
+    # And it is still stored, so the judge can use it.
+    assert _local(adr_dir)["judge"]["openai_api_key"] == secret
+
+
+def test_an_absent_credential_reads_as_not_set(adr_dir):
+    payload = _run(adr_dir, "--all", "--format", "json")
+
+    row = {r["key"]: r for r in json.loads(payload.stdout)["settings"]}["judge.openai_api_key"]
+
+    assert row["value"] is None
+    assert row["secret"] is True
+
+
+def test_the_credential_environment_variable_is_reported_as_a_boolean(adr_dir):
+    """Presence is actionable; the value is not."""
+    import os
+
+    env = {**dict(os.environ), "ADR_KIT_OPENAI_API_KEY": "sk-from-the-environment"}
+    result = subprocess.run(
+        [sys.executable, str(SETTINGS), "--adr-dir", str(adr_dir), "--all", "--format", "json"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, env=env,
+    )
+
+    assert "sk-from-the-environment" not in result.stdout
+    row = {r["key"]: r for r in json.loads(result.stdout)["settings"]}["judge.openai_api_key"]
+    assert row["env_present"] is True
+    assert row["env_var"] == "ADR_KIT_OPENAI_API_KEY"

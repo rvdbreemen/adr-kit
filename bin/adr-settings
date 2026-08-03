@@ -85,6 +85,14 @@ ENV_OVERRIDES = {
     "judge.backend": ("ADR_KIT_LLM_CMD", "an explicit command bypasses the registry"),
 }
 
+# Keys whose value must never be rendered, mapped to the environment variable
+# that can also supply them. The module docstring has always promised this;
+# until now nothing implemented it, and `adr-settings --all` printed a stored
+# API key back in full.
+SECRET_KEYS = {
+    "judge.openai_api_key": "ADR_KIT_OPENAI_API_KEY",
+}
+
 # Keys worth surfacing by default. The schema holds more; these are the ones a
 # user actually turns.
 FEATURED = [
@@ -278,11 +286,27 @@ def describe(adr_dir: Path, schema: Dict, keys: List[str], env: Dict[str, str]) 
             "source": source,
             "scope": "machine-local" if is_local(key) else "project",
         }
+        if key in SECRET_KEYS:
+            # A settings screen needs to answer "is a credential configured?",
+            # never "what is it". Echoing the value would put it in terminal
+            # scrollback, screenshots and pasted bug reports -- the file it came
+            # from is gitignored, but a terminal is not. The presence boolean is
+            # the whole of what a reader can act on.
+            row["value"] = "<set>" if _is_set(value) else None
+            row["secret"] = True
+            env_name = SECRET_KEYS[key]
+            if env_name:
+                row["env_present"] = bool(env.get(env_name))
+                row["env_var"] = env_name
         override = ENV_OVERRIDES.get(key)
         if override and env.get(override[0]):
             row["env_override"] = f"{override[0]} is set: {override[1]}"
         rows.append(row)
     return rows
+
+
+def _is_set(value: object) -> bool:
+    return bool(value) and str(value).strip() != ""
 
 
 def render_text(rows: List[Dict], adr_dir: Path) -> List[str]:
@@ -294,8 +318,16 @@ def render_text(rows: List[Dict], adr_dir: Path) -> List[str]:
         "",
     ]
     for row in rows:
-        value = "(unset)" if row["value"] is None and row["source"] == "unset" else json.dumps(row["value"])
+        if row.get("secret"):
+            value = "<set>" if row["value"] else "(not set)"
+        elif row["value"] is None and row["source"] == "unset":
+            value = "(unset)"
+        else:
+            value = json.dumps(row["value"])
         lines.append(f"  {row['key']:<{width}}  {value}   [{row['source']}]")
+        if row.get("secret") and row.get("env_var"):
+            state = "set" if row.get("env_present") else "not set"
+            lines.append(f"  {'':<{width}}  {row['env_var']} is {state} in this environment")
         if row.get("env_override"):
             lines.append(f"  {'':<{width}}  !! {row['env_override']}")
     return lines

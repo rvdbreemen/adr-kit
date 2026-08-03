@@ -101,6 +101,7 @@ that change what ADR Kit does; full detail, including the patch releases, is in
 
 | Version | What landed | Why it matters |
 | --- | --- | --- |
+| **0.44.0** | `/adr-kit:audit` answers "are we still on course?" by linting the decisions and judging the code in one run, over a diff or the whole codebase ([the init scanner is now `bin/adr-discover`](#command-reference)). A local precomputed vector layer for retrieval ([ADR-018](docs/adr/ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md)), `adr relate` writing a cross-reference on both sides at once, `adr answer` keeping a grilling question with its answer, a configurable signer, `/adr-kit:settings`, and a pre-PR branch guard. | A clean judge over vague ADRs proves nothing, and a sharp ADR set nobody checks the code against is documentation rather than governance. Whole-codebase mode reaches files no recent diff touched, which is where a rule added after the code was written has never applied. |
 | **0.40.0** | [Index-first selective context](docs/selective-context.md): `ADR-INDEX.json` schema v2 is the local query database for the CLI, MCP, hooks, status, doctor, and guardian. ADRs can carry retrieval metadata (topics, aliases, components, symbols, scope) and a compact `Must` / `Must Not` / `Exceptions` / `Verification` Decision Contract. Project retrieval probes report expected inclusions and exclusions. | Retrieval stops scaling with the size of your ADR set, and every match explains itself. Lifecycle context is now authority-aware: Accepted governs, Proposed is advisory, historical is opt-in. |
 | **0.39.0** | [`packaging/version-sites.json`](packaging/version-sites.json) declares every version-bearing file; `scripts/bump-version.py X.Y.Z` writes them all in one command ([ADR-013](docs/adr/ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md)). | Releasing 0.38.0 took nine hand-edits over four discovery rounds. It is now one command plus a `--check` drift gate. |
 | **0.38.0** | [docs/RELEASING.md](docs/RELEASING.md) as the enforced runbook for all three marketplaces, a version-consistency gate, a tag-triggered publish workflow, and the repo-level `/release-adr-kit` command ([ADR-012](docs/adr/ADR-012-release-to-the-three-coding-agent-marketplaces-from-the-public-repository.md)). | One tag now publishes Claude Code, Codex, and Copilot consistently instead of drifting apart. |
@@ -421,6 +422,7 @@ architect remains part of the decision.
 | `/adr-kit:setup` | one-time write | no | Lighter alternative: stub plus guide only, no audit, no hook. Idempotent. |
 | `/adr-kit:context [topic]` | read-only lookup | yes | Load the 3 to 5 most relevant ADRs before implementing; verify lifecycle status in the source ADR. |
 | `/adr-kit:judge` | deliberate check | yes | Interactively review a staged diff against the ADRs, including the LLM pass for `llm_judge: true` ADRs, with three resolution paths per violation. |
+| `/adr-kit:audit` | deliberate check | yes | Are we still on course? Lints the decisions and judges the code in one run, over a diff or the whole codebase. Separate exit codes for an ADR-quality failure and a code violation. Read-only. |
 | `/adr-kit:review [base-ref]` | deliberate check | yes | Audit a branch/PR range: enforce ADRs on the committed diff, then discover undocumented decisions from diff plus stated intent and draft them as Proposed. |
 | `/adr-kit:guardian [cheap\|llm\|all]` | health sweep | yes | Run the due guardian tier(s); LLM tier asks before spending unless project configuration explicitly enables autorun. |
 | `/adr-kit:lint [path]` | deliberate check | no | Validate ADRs against the four gates; PASS / ADVISORY / FAIL with citations. Read-only. |
@@ -428,6 +430,7 @@ architect remains part of the decision.
 | `/adr-kit:supersede [ADR-NNN]` | guided write | no | Replace a decision: graph first, Proposed draft, approval-gated status flip, verified chain. |
 | `/adr-kit:retire [path]` | deliberate check | no | Rank Accepted ADRs for retirement on four deterministic signals. Read-only. |
 | `/adr-kit:migrate [path]` | guided rewrite | no | Add invariant metadata or convert between MADR, Nygard, and canonical profiles. Preview, then confirm. |
+| `/adr-kit:settings` | guided write | no | One surface for every knob: shows each setting, its current value, and where that value came from (default, project file, machine-local file, or environment). Also `--check-embedding`. |
 | `/adr-kit:install-hooks` | installer | no | Install or remove the pre-commit hook and the project-scoped guardian hook entry. |
 | `/adr-kit:upgrade` | refresh driver | no | Refresh stale copied artifacts after a plugin update; also the legacy v0.11 to v0.12 migration. |
 
@@ -605,7 +608,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.43.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.44.0
         with:
           adr-dir: docs/adr/
 ```
@@ -619,7 +622,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.43.0
+    rev: v0.44.0
     hooks:
       - id: adr-judge
 ```

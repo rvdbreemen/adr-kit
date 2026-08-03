@@ -27,6 +27,7 @@ import json
 import re
 import subprocess
 import sys
+import textwrap
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -108,14 +109,28 @@ def test_a_decayed_adr_outranks_a_merely_old_one():
 # AC#6: the real scorer is on a shipped path
 # ---------------------------------------------------------------------------
 
-def test_readiness_reads_the_weighted_scorer_not_three_booleans():
+def test_readiness_reads_the_weighted_scorer_not_three_booleans(tmp_path):
+    """Assert on a fixture, not on this repository's lifecycle state.
+
+    The first version of this test read `docs/adr` with `all_proposed=True` and
+    required at least one Proposed record. That held until ADR-019 was accepted,
+    at which point the repository had none and the test failed while the code it
+    guards was fine. A test whose premise is "somebody has an unfinished ADR
+    right now" measures the calendar, not the scorer.
+    """
     from adr_readiness import build_readiness_report
 
-    report = build_readiness_report(
-        REPO_ROOT / "docs" / "adr", evaluated_on=date(2026, 8, 2), all_proposed=True
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "ADR-001-decision-one.md").write_text(
+        _proposed_adr(1), encoding="utf-8"
     )
 
-    assert report["adrs"], "this repository should carry at least one Proposed ADR"
+    report = build_readiness_report(
+        adr_dir, evaluated_on=date(2026, 8, 2), all_proposed=True
+    )
+
+    assert report["adrs"], "the fixture carries one Proposed ADR"
     for item in report["adrs"]:
         assert item["quality"]["source"] == "adr-quality", (
             "readiness fell back to the structural booleans; the scorer is "
@@ -123,6 +138,64 @@ def test_readiness_reads_the_weighted_scorer_not_three_booleans():
         )
         assert item["quality"]["threshold"] == adr_quality_core.QUALITY_THRESHOLD
         assert "below_threshold" in item["quality"]
+        # The weighted scorer and the three booleans disagree on this record on
+        # purpose: it has a decision, no verified_in and no open questions, so
+        # the booleans would score it exactly 0.667. Anything else proves the
+        # number came from the four gates.
+        assert item["quality"]["score"] != 0.667
+
+
+def _proposed_adr(num: int) -> str:
+    return textwrap.dedent(f"""\
+        ---
+        id: "ADR-{num:03d}"
+        title: "Decision {num}"
+        status: "Proposed"
+        date: "2026-05-01"
+        binding: false
+        gate: null
+        documents_shipped: false
+        verified_in: []
+        supersedes: []
+        superseded_by: null
+        ---
+
+        # ADR-{num:03d} Decision {num}
+
+        ## Status
+
+        Proposed, 2026-05-01.
+
+        ## Context and Problem Statement
+
+        Concrete context naming bin/adr-quality as the affected code path.
+
+        ## Decision Outcome
+
+        Chosen option: score records with the four weighted gates, because the
+        three structural booleans cannot tell a sharp record from an empty one.
+
+        ## Considered Options
+
+        * Weighted gates.
+        * Three booleans.
+
+        ## Consequences
+
+        **Positive:**
+        - A real number.
+
+        **Negative:**
+        - Reading every file costs more than reading three fields.
+
+        ## Related Decisions
+
+        - None.
+
+        ## References
+
+        - bin/adr-quality
+        """)
 
 
 def test_the_scorer_is_importable_and_scores_a_directory():

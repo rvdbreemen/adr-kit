@@ -4,6 +4,13 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.44.0] - 2026-08-03
+
+### Added
+
+- TODO: describe this release.
+
 ### Changed
 
 - **The prompt hook returns five ADRs and honours the configured limit** (spec R5).

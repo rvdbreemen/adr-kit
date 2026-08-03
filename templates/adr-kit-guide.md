@@ -1,4 +1,4 @@
-<!-- adr-kit-guide v0.43.0 -->
+<!-- adr-kit-guide v0.44.0 -->
 <!-- Canonical project-side ADR guide. Copied from the plugin's templates/adr-kit-guide.md to .claude/adr-kit-guide.md by /adr-kit:init, /adr-kit:upgrade, and /adr-kit:setup. -->
 <!-- This file is plain markdown — readable by Claude Code, headless `claude -p`, shell scripts in pre-commit hooks, evaluator scripts, and any agent that doesn't process @-imports. Do not embed Claude-Code-specific syntax inside this file. -->
 
@@ -31,12 +31,14 @@ ADR files live at `docs/adr/ADR-NNN-kebab-case-title.md`. They are versioned, im
 | `/adr-kit:context` | Rank the ADRs most relevant to a task. Verify lifecycle status in the source ADR before treating it as binding. | no — model can self-call |
 | `/adr-kit:judge` | Interactive judge against a staged diff. Runs declarative checks + in-session LLM check for `llm_judge: true` ADRs. Walks resolution paths on violation. | no — model can self-call |
 | `/adr-kit:review` | Audit a branch or PR against existing ADRs and discover undocumented decisions. | no — model can self-call |
+| `/adr-kit:audit` | Lint the decisions and judge the code in one run, over a diff or the whole codebase. Separate exit codes for an ADR-quality failure and a code violation. | no — model can self-call |
 | `/adr-kit:lint` | Validate existing ADRs against the four verification gates. | yes |
 | `/adr-kit:related` | Show inbound/outbound ADR references and dangling links. | no — model can self-call |
 | `/adr-kit:supersede` | Guide a Proposed successor and reciprocal lifecycle update. | yes |
 | `/adr-kit:retire` | Rank Accepted ADRs for retirement; never mutates them. | yes |
 | `/adr-kit:migrate` | Preview metadata or body-profile migration; MADR, Nygard, and canonical are supported. | yes |
 | `/adr-kit:setup` | Append `## ADR Kit` block to `CLAUDE.md` (idempotent). | yes |
+| `/adr-kit:settings` | Show every knob, its current value, and where that value came from (default, project file, machine-local file, environment). | yes |
 | `/adr-kit:upgrade` | Migrate v0.11 → v0.12 footprint without re-running the heavy audit. | yes |
 | `/adr-kit:install-hooks` | Install or uninstall the pre-commit hook; also manages the guardian's project-scoped SessionStart hook. | yes |
 | `/adr-kit:guardian` | Run the ADR-set health sweep for due tier(s). Cheap tier is free; LLM tier confirms cost first. | no — model can self-call |
