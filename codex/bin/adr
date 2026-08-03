@@ -469,6 +469,19 @@ def command_new(args) -> List[str]:
     # _yaml_scalar; creation did not.
     body = body.replace("user@example.com", _yaml_scalar(resolve_signer(adr_dir, args.changed_by)))
     _commit_lifecycle_changes(adr_dir, [(destination, body)])
+    # Say it now, while the author is here. Retrieval metadata is optional
+    # frontmatter that nothing used to ask about, and 12 of this repository's
+    # 28 records ended up with none -- including the one that defines context
+    # injection, which a query about context injection therefore did not return.
+    # The tool cannot fill these in without inventing them, so it names them
+    # instead, in the same shape the signer proposal uses.
+    print(
+        f"[adr-kit] {destination.name} has no retrieval metadata yet. Fill in "
+        f"topics, aliases and components before accepting it, or an agent's "
+        f"query will not surface this decision. Components name what the ADR "
+        f"*defines*, not everything it touches.",
+        file=sys.stderr,
+    )
     return [f"created: {destination} ({profile})"]
 
 

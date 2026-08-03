@@ -481,3 +481,133 @@ def test_a_real_option_beside_a_placeholder_still_counts_as_one(tmp_path):
 
     assert result.returncode != 0
     assert "1 alternative(s) considered" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Retrieval metadata: an Accepted ADR nobody can find (TASK-118)
+# ---------------------------------------------------------------------------
+
+def _strip_retrieval_metadata(text: str) -> str:
+    import re
+
+    for key in ("topics", "aliases", "components", "symbols"):
+        text = re.sub(rf"^{key}:\n(?:  - .*\n)+", f"{key}: []\n", text, flags=re.M)
+    return text
+
+
+def test_an_accepted_adr_with_no_retrieval_metadata_is_reported(tmp_path):
+    """`binding: true` used to be a precondition, and it made this inert.
+
+    Measured on this repository: all 12 records carrying no retrieval metadata
+    escaped through that single condition, every one of them `binding: false` --
+    ADR-004 among them, so a query about context injection did not return the
+    decision that defines context injection. Being non-binding means a decision
+    does not gate code; it does not mean it should be invisible.
+    """
+    import json
+
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-004-*.md"))[0]
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / source.name).write_text(
+        _strip_retrieval_metadata(source.read_text(encoding="utf-8")), encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(ADR_LINT), "--format", "json", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    codes = [
+        f["code"]
+        for entry in json.loads(result.stdout)["files"]
+        for f in entry["findings"]
+        if f.get("code")
+    ]
+
+    assert "SELECTIVE_CONTEXT_METADATA" in codes, result.stdout
+
+
+def test_the_finding_runs_in_the_default_gate_set():
+    """It was emitted under `policy`, which is not in DEFAULT_GATES.
+
+    An advisory in a gate nobody runs is not an advisory; it is silence.
+    """
+    source = (REPO_ROOT / "bin" / "adr-lint").read_text(encoding="utf-8")
+
+    assert "completeness" in DEFAULT_GATES
+    assert '"gate": "completeness",\n        "level": "FAIL" if mode == "strict"' in source
+
+
+def test_populated_metadata_produces_no_finding(tmp_path):
+    """The shipped ADR-004, as annotated, must be quiet."""
+    import json
+
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-004-*.md"))[0]
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / source.name).write_text(
+        source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(ADR_LINT), "--format", "json", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    codes = [
+        f["code"]
+        for entry in json.loads(result.stdout)["files"]
+        for f in entry["findings"]
+        if f.get("code")
+    ]
+
+    assert "SELECTIVE_CONTEXT_METADATA" not in codes
+
+
+def test_a_global_scope_record_is_exempt(tmp_path):
+    """`context_scope: global` is injected regardless of the query, so a
+    retrieval miss cannot happen to it."""
+    import json
+
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-004-*.md"))[0]
+    text = _strip_retrieval_metadata(source.read_text(encoding="utf-8"))
+    text = text.replace("context_scope: null", 'context_scope: "global"')
+    if 'context_scope: "global"' not in text:
+        text = text.replace("superseded_by: null", 'superseded_by: null\ncontext_scope: "global"')
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / source.name).write_text(text, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(ADR_LINT), "--format", "json", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    codes = [
+        f["code"]
+        for entry in json.loads(result.stdout)["files"]
+        for f in entry["findings"]
+        if f.get("code")
+    ]
+
+    assert "SELECTIVE_CONTEXT_METADATA" not in codes
+
+
+def test_adr_new_names_the_metadata_it_cannot_fill_in(tmp_path):
+    """The tool cannot invent topics, so it says so while the author is there.
+
+    Same shape as the signer proposal: propose, never assume.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Decision",
+         "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "retrieval metadata" in result.stderr
+    assert "topics" in result.stderr and "components" in result.stderr
+    assert "defines" in result.stderr, (
+        "the components rule is the part authors get wrong"
+    )

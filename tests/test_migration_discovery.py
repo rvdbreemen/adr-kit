@@ -157,7 +157,17 @@ def test_reported_nygard_path_becomes_strict_clean_after_approved_steps(
     lint = run(str(LINT), "--strict", "--format", "json", str(normalized))
 
     assert lint.returncode == 0, lint.stdout + lint.stderr
-    assert json.loads(lint.stdout)["summary"]["pass"] == 1
+    payload = json.loads(lint.stdout)
+
+    # One advisory survives, and it is the honest one: a Nygard record imported
+    # from another toolchain carries no topics, aliases or components, so an
+    # agent's query will not surface it. Migration deliberately never invents
+    # them. The finding is the migrating team's to-do list, not a defect in the
+    # migration -- which is why it is ADVISORY and does not fail the run.
+    findings = [f for entry in payload["files"] for f in entry["findings"]]
+    assert [f.get("code") for f in findings] == ["SELECTIVE_CONTEXT_METADATA"], findings
+    assert findings[0]["level"] == "ADVISORY"
+    assert payload["summary"]["fail"] == 0
 
 
 def test_plan_normalizes_common_madr_frontmatter_deterministically(tmp_path):

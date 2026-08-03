@@ -215,8 +215,6 @@ def test_lint_metadata_finding_defaults_advisory_and_can_be_strict(tmp_path):
             [
                 sys.executable,
                 str(BIN / "adr-lint"),
-                "--gates",
-                "policy",
                 "--format",
                 "json",
                 str(path),
@@ -228,12 +226,32 @@ def test_lint_metadata_finding_defaults_advisory_and_can_be_strict(tmp_path):
         )
         outcomes[mode] = (result.returncode, json.loads(result.stdout))
 
-    assert outcomes["advisory"][0] == 0
-    assert outcomes["advisory"][1]["files"][0]["bucket"] == "ADVISORY"
+    # No --gates: the finding moved out of `policy`, which nobody runs, into the
+    # default set. An advisory in a gate nobody runs is not an advisory, and that
+    # is how 12 of this repository's 28 records went unfindable unnoticed.
+    #
+    # Assert on the finding rather than the exit code. This fixture is a
+    # deliberately minimal stub, so it also trips completeness and consistency;
+    # what this test is about is the level the metadata finding carries.
+    def metadata_finding(payload):
+        return next(
+            (
+                f
+                for entry in payload["files"]
+                for f in entry["findings"]
+                if f.get("code") == "SELECTIVE_CONTEXT_METADATA"
+            ),
+            None,
+        )
+
+    advisory = metadata_finding(outcomes["advisory"][1])
+    assert advisory is not None, outcomes["advisory"][1]
+    assert advisory["level"] == "ADVISORY"
+
+    strict = metadata_finding(outcomes["strict"][1])
+    assert strict is not None, outcomes["strict"][1]
+    assert strict["level"] == "FAIL"
     assert outcomes["strict"][0] == 1
-    finding = outcomes["strict"][1]["files"][0]["findings"][0]
-    assert finding["code"] == "SELECTIVE_CONTEXT_METADATA"
-    assert finding["level"] == "FAIL"
 
 
 def test_doctor_status_guardian_and_context_surface_dogfood_health():

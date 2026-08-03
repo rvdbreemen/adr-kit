@@ -34,6 +34,27 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **An Accepted ADR with no retrieval metadata is now reported.** The check
+  existed and was almost inert: `binding: true` was a precondition, and all 12
+  records in this repository carrying no `topics`, `aliases` or `components`
+  escaped through that one condition -- every one of them `binding: false`.
+  ADR-004 was among them, so a query saying "fail open lifecycle hook context
+  injection" did not return the decision that defines context injection.
+
+  Being non-binding means a decision does not gate code; it does not mean the
+  decision should be invisible. The precondition is gone, and the finding moved
+  from `policy` -- a gate not in the default set -- into `completeness`, because
+  an advisory in a gate nobody runs is silence rather than an advisory.
+
+  It stays ADVISORY by default and becomes a failure under
+  `context.retrieval_completeness: strict`. The exemptions that mean "findable by
+  another route" remain: `context_scope: global` is injected regardless of the
+  query, and a populated Decision Contract gives the ranker text to match on.
+
+  `bin/adr new` now names the three fields it cannot fill in without inventing
+  them, including the rule authors get wrong: components name what the ADR
+  *defines*, not everything it touches.
+
 - **BREAKING: an ADR listing fewer than two alternatives now fails the
   completeness gate.** R0 states that a record giving only the outcome cannot be
   re-evaluated later, and a decision that cannot be re-evaluated cannot be
