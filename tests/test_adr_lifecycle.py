@@ -14,9 +14,24 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# `ADR-*.md` also matches ADR-INDEX.md, which every lifecycle command writes in
+# the same transaction as the record. `glob` yields filesystem order, not sorted
+# order, so `next(glob("ADR-*.md"))` returned the record on Windows and the
+# generated index on Linux -- a test that passed locally and failed in CI while
+# the code it guards was fine. Anchor on the digits and there is only one match.
+ADR_RECORD_GLOB = "ADR-[0-9]*.md"
+
 ADR = REPO_ROOT / "bin" / "adr"
 ADR_INDEX = REPO_ROOT / "bin" / "adr-index"
 ADR_SCHEMA = REPO_ROOT / "bin" / "adr_schema.py"
+
+
+def _created_adr(adr_dir: Path) -> Path:
+    """The one numbered ADR a `bin/adr new` fixture just created."""
+    records = sorted(adr_dir.glob(ADR_RECORD_GLOB))
+    assert len(records) == 1, f"expected exactly one ADR, found {[p.name for p in records]}"
+    return records[0]
 
 
 def _load_schema_module():
@@ -626,8 +641,6 @@ def test_adr_new_quotes_an_actor_containing_a_colon(tmp_path):
     import subprocess
     import sys
 
-    import yaml
-
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     result = subprocess.run(
@@ -640,10 +653,25 @@ def test_adr_new_quotes_an_actor_containing_a_colon(tmp_path):
     )
     assert result.returncode == 0, result.stderr
 
-    created = next(adr_dir.glob("ADR-*.md"))
-    text = created.read_text(encoding="utf-8")
+    text = _created_adr(adr_dir).read_text(encoding="utf-8")
     block = re.search(r"```yaml\n(status_history:.*?)\n```", text, re.DOTALL)
     assert block, "no status_history block was written"
+
+    # Assert the quoted shape without a parser first, so this guards the
+    # regression on every run. The sibling test above reaches for PyYAML and is
+    # therefore skipped wherever PyYAML is absent -- which is every CI runner
+    # here, because ADR-016 makes zero runtime dependencies load-bearing and the
+    # workflow installs pytest and nothing else. A check that only runs on the
+    # one machine that happens to have the library is not a check.
+    assert 'changed_by: "User: Robert van den Breemen"' in block.group(1), (
+        "the actor was substituted unquoted; a raw colon makes the block "
+        "unparseable to every YAML reader outside adr-kit's own mini-parser"
+    )
+
+    # Then, where a real parser exists, prove it actually parses.
+    yaml = pytest.importorskip(
+        "yaml", reason="PyYAML absent; the structural assertion above still ran"
+    )
     parsed = yaml.safe_load(block.group(1))
     assert parsed["status_history"][0]["changed_by"] == "User: Robert van den Breemen"
 
@@ -663,7 +691,7 @@ def test_lifecycle_refuses_to_sign_on_the_users_behalf(tmp_path):
 
     assert result.returncode != 0
     assert "no signer configured" in result.stderr
-    assert not list(adr_dir.glob("ADR-*.md")), "nothing may be written on refusal"
+    assert not list(adr_dir.glob(ADR_RECORD_GLOB)), "nothing may be written on refusal"
 
 
 def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
@@ -684,7 +712,7 @@ def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    created = next(adr_dir.glob("ADR-*.md"))
+    created = _created_adr(adr_dir)
     assert 'changed_by: "User: Configured Human"' in created.read_text(encoding="utf-8")
 
 

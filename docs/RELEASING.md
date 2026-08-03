@@ -118,6 +118,40 @@ of them read Markdown. Feature branches do not run `validate`, so a Markdown
 defect can sit unseen from the commit that introduced it until the release PR
 opens, which is the worst moment to find it.
 
+**Your machine has libraries the runners do not.** CI installs `pytest` and
+nothing else, because ADR-016 makes zero runtime dependencies load-bearing. A
+test that imports a third-party module therefore passes locally and fails on
+all six runners at once. This also bit v0.44.0: a `import yaml` in
+`tests/test_adr_lifecycle.py` was green on a developer machine with PyYAML
+installed and red everywhere else. Run the suite once with the extras hidden
+before opening the release PR:
+
+```bash
+python - <<'PY'
+import sys
+from importlib.abc import MetaPathFinder
+
+BLOCKED = {"yaml", "requests", "httpx", "numpy", "pydantic"}
+
+
+class Block(MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in BLOCKED:
+            raise ImportError(f"No module named '{fullname}'")
+        return None
+
+
+sys.meta_path.insert(0, Block())
+import pytest
+sys.exit(pytest.main(["-q"]))
+PY
+```
+
+Skips are fine — `pytest.importorskip` is the supported way to reach for an
+optional library. Failures are not. If a check matters enough to guard a
+regression, assert the structural form unconditionally and use the library only
+for the stronger parse on machines that have it.
+
 **If `ADR Enforcement (declarative)` fails on the release PR with `exceeds
 --max-diff-bytes=...`, that is the cap, not a violation.** The gate judges
 `origin/main...HEAD`, which for a release PR is the whole development branch,
