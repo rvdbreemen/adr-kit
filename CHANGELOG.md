@@ -4,6 +4,39 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The signer is derived from `git config user.name` when it names a person**,
+  instead of refusing until someone configured one by hand. v0.44.0 made that
+  refusal a breaking change: a fresh clone, a container and a CI runner all
+  failed at the first lifecycle command, `bin/adr new` included. Reading a git
+  identity is not the tool signing on your behalf -- R8.1 forbids "a default
+  that names the tool", and a git identity is the opposite of that: a value the
+  human configured on this machine, which every commit in the repository already
+  carries.
+
+  Two properties survive. The derived actor is **announced** on use, because a
+  name that lands in an immutable Status History should never be one the user did
+  not know was written. And an identity that is configured but names a machine --
+  `github-actions[bot]`, `runner`, a bare `user` -- is refused rather than
+  adopted, because R8 asks for evidence of which *human* accepted. Precedence is
+  unchanged otherwise: `--changed-by`, then `lifecycle.signer`, then the derived
+  value, then the refusal.
+
+### Added
+
+- **`bin/adr signer --suggest` proposes an identity at install and upgrade
+  time.** It reads the signed-in GitHub account (`gh api user`, when the CLI is
+  available) and `git config user.name`, ranks them, and shows each with its
+  source -- a proposal you cannot trace is one you cannot judge. It writes
+  nothing: the setup flow shows the candidates and the user chooses. `--format
+  json` gives a caller the same list. `/adr-kit:setup`, `/adr-kit:init` and
+  `/adr-kit:upgrade` now run it, and `init` does so before the step that creates
+  ADRs rather than discovering the refusal halfway through a batch.
+- **`bin/adr signer` reports where the current value came from** -- the
+  machine-local file, or a derived git identity -- because "why is this the
+  name?" is the question that surface exists to answer.
+
 
 ## [0.44.0] - 2026-08-03
 
