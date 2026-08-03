@@ -17,9 +17,24 @@ from project_setup import (
 )
 
 
+CLIENT_ALIASES = {
+    "claude-code-cli": "claude",
+    "codex-cli": "codex",
+    "github-copilot-cli": "copilot",
+}
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="adr-kit:setup")
-    parser.add_argument("--project-root", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "workspace",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="Project to set up. Equivalent to --project-root; accepted "
+        "positionally because that is the form the setup skills documented.",
+    )
+    parser.add_argument("--project-root", type=Path, default=None)
     parser.add_argument(
         "--plugin-root",
         type=Path,
@@ -27,8 +42,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--clients",
-        default="claude,codex,copilot",
-        help="Comma-separated selected native clients.",
+        default=None,
+        help="Comma-separated selected native clients: claude, codex, copilot. "
+        "Full client ids such as codex-cli are accepted and normalised.",
+    )
+    parser.add_argument(
+        "--client",
+        default=None,
+        help="Alias for --clients, singular. Accepts a short name or a full "
+        "client id.",
     )
     parser.add_argument("--global-settings", type=Path)
     parser.add_argument("--dry-run", action="store_true")
@@ -37,10 +59,49 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _selected_clients(raw: str | None) -> list[str]:
+    """Normalise whatever the caller wrote into the short names settings use.
+
+    Both spellings reach this command from real callers: the settings surface
+    and this script's own default use `claude`/`codex`/`copilot`, while every
+    skill and workflow that names a client elsewhere uses the full ids from
+    `clients/capabilities.json`. Accepting one and failing on the other with a
+    `KeyError` -- which is what shipped -- means the documented invocation dies
+    on a dictionary lookup after argparse has already accepted it.
+    """
+    if raw is None:
+        raw = "claude,codex,copilot"
+    selected = []
+    for item in raw.split(","):
+        name = item.strip()
+        if not name:
+            continue
+        name = CLIENT_ALIASES.get(name, name)
+        if name not in ("claude", "codex", "copilot"):
+            raise SystemExit(
+                f"adr-kit:setup: unknown client {item.strip()!r}; expected one "
+                f"of claude, codex, copilot (or the full ids "
+                f"{', '.join(sorted(CLIENT_ALIASES))})"
+            )
+        if name not in selected:
+            selected.append(name)
+    return selected
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    root = args.project_root.resolve()
-    clients = [item.strip() for item in args.clients.split(",") if item.strip()]
+    if args.client and args.clients:
+        raise SystemExit(
+            "adr-kit:setup: pass --client or --clients, not both; they mean "
+            "the same thing"
+        )
+    if args.workspace and args.project_root and args.workspace != args.project_root:
+        raise SystemExit(
+            "adr-kit:setup: the positional workspace and --project-root "
+            "disagree; pass one"
+        )
+    root = (args.project_root or args.workspace or Path.cwd()).resolve()
+    clients = _selected_clients(args.client or args.clients)
     try:
         effective = resolve_settings(root, global_path=args.global_settings)
         clients = [
