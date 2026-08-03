@@ -36,6 +36,7 @@ HOOK_RUNTIME_FILES = (
     "hooks/run-hook.cmd",
     "hooks/adr-hook.py",
     "hooks/adr_hook_core.py",
+    "hooks/adr_pr_guard.py",
     "hooks/adapters/__init__.py",
     "hooks/adapters/claude.py",
     "hooks/adapters/codex.py",

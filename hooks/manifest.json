@@ -79,7 +79,7 @@
     },
     {
       "id": "plan-exit",
-      "command": "plan-exit",
+      "command": "pre-tool-use",
       "matcher": "ExitPlanMode",
       "outcome": "task-context",
       "latency_budget_ms": 100,
@@ -109,7 +109,8 @@
         "claude-code-cli": "PreToolUse",
         "codex-cli": "PreToolUse",
         "github-copilot-cli": null
-      }
+      },
+      "runner_timeout_sec": 5
     },
     {
       "id": "subagent-start",

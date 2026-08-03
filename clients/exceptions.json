@@ -14,6 +14,12 @@
       "user_effect": "Proactive deterministic checks and PostToolUse verification replace pre-edit context injection."
     },
     {
+      "id": "codex-pr-guard-advisory-only",
+      "fixture": "clients/fixtures/codex-pr-guard-advisory-only.json",
+      "rationale": "The Codex hook adapter has no permission decision to return, so the pr-create guard cannot stop the tool call the way it does on Claude Code.",
+      "user_effect": "The branch is still judged and the violation is shown, labelled as not enforced at this moment; the pre-commit hook and CI remain the blocking gates."
+    },
+    {
       "id": "copilot-lifecycle-event-limit",
       "fixture": "clients/fixtures/copilot-lifecycle-event-limit.json",
       "rationale": "Copilot CLI does not expose SubagentStart or PreCompact lifecycle hooks.",

@@ -4,6 +4,67 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.44.1] - 2026-08-03
+
+A hotfix. In v0.44.0 **every ADR hook was dead on Codex and Copilot**, ADR
+injection could be deleted entirely by a single character on Windows, the plan
+exit moment never fired on any client, and the Windows native hook returned one
+of four governing ADRs on an edit. If you installed v0.44.0, upgrade.
+
+### Fixed
+
+- **Every hook exited 1 on Codex and Copilot.** `hooks/adr_pr_guard.py` was
+  never listed in the generated file set, so the mirrored `adr-hook.py` raised
+  `ModuleNotFoundError` at import and produced nothing for *any* event, not only
+  the pull-request guard. The adapter drift check reported `changed=0` the whole
+  time, because a file that is not declared cannot be found missing. It is
+  declared now, and a new test asserts the invariant rather than the file list:
+  every module the generated entrypoint imports must resolve inside that
+  client's tree.
+
+- **One character could delete the whole injection on Windows.** The entrypoint
+  wrote its frame with `print()`, which encodes through `sys.stdout` -- cp1252 on
+  a default Windows console. An ADR title carrying an em dash came out as byte
+  `0x97`, which is not valid UTF-8; a title carrying anything cp1252 cannot
+  represent raised `UnicodeEncodeError`, which the fail-open `except` swallowed
+  into zero bytes and exit 0. Silent, total loss of context, with no trace. The
+  frame is now written as UTF-8 bytes past the platform's text layer, so there is
+  no text encoder left to fail. `bin/adr-mcp` was fixed the same way in v0.42.0;
+  this was the same defect one process over.
+
+- **Leaving plan mode never asked anything.** The `plan-exit` event was
+  registered with `"command": "plan-exit"`, which reaches the hook as the literal
+  event name, compacts to `planexit`, matches no alias, and falls through to a
+  no-op. Measured: that invocation returned 0 bytes where the same payload
+  returned a full injection under `pre-tool-use`. It now uses `pre-tool-use` with
+  the `ExitPlanMode` matcher, exactly as the pull-request guard already did.
+  Twenty-four existing tests passed over the dead path because they called the
+  hook's internals; the new dispatch matrix drives the process instead.
+
+- **The Windows native hook is no longer preferred.** Rebuilt from current source
+  and measured against the Python oracle on this repository, it still returned
+  **one of four** governing ADRs before an edit, four of five at prompt time, and
+  nothing at all for plan exit. `run-hook.cmd` preferred it whenever it existed,
+  so on Windows the binary silently narrowed governance and made the two fixes
+  above invisible. It now runs only when `ADR_KIT_NATIVE_HOOK=1` is set, and the
+  Python path -- which its own README calls the protocol oracle -- answers by
+  default. The binary still ships; restoring the preference is gated on it
+  passing the parity certification that README describes.
+
+- **The pull-request guard was killed after one second.** `hooks/manifest.json`
+  declared a 5000 ms budget for `pr-create` while the generated `hooks.json`
+  carried the 1 s default, because the entry omitted `runner_timeout_sec`. A warm
+  declarative-only run measures ~0.8 s, so the guard was inside the noise of its
+  own cap before an LLM pass was involved at all.
+
+- **Codex no longer claims to gate what it cannot stop.** With the guard now
+  reaching Codex, the adapter had no permission decision to return, so a
+  violation would have rendered as an ordinary context injection -- the cost of
+  the judge with none of its effect. The verdict is now labelled as advisory and
+  names the gates that do hold, and the degradation is recorded in
+  `clients/exceptions.json` and `clients/capabilities.json`.
+
 ### Changed
 
 - **The signer is derived from `git config user.name` when it names a person**,

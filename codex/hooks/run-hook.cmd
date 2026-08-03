@@ -9,7 +9,11 @@ set "ADR_HOOK_EVENT=%~1"
 set "ADR_HOOK_CLIENT=%~2"
 if "%ADR_HOOK_EVENT%"=="" exit /b 0
 if "%ADR_HOOK_CLIENT%"=="" set "ADR_HOOK_CLIENT=claude-code-cli"
-if exist "%ADR_HOOK_NATIVE%" (
+REM The native host is opt-in until it passes the parity certification its own
+REM README describes. Measured on this repository at v0.44.0: it returned one of
+REM four governing ADRs on an edit, four of five at prompt time, and nothing at
+REM all for ExitPlanMode. Preferring it silently narrowed governance on Windows.
+if "%ADR_KIT_NATIVE_HOOK%"=="1" if exist "%ADR_HOOK_NATIVE%" (
     "%ADR_HOOK_NATIVE%" --client "%ADR_HOOK_CLIENT%" --event "%ADR_HOOK_EVENT%"
     exit /b 0
 )
@@ -42,7 +46,10 @@ case "$OS" in
   Linux) NATIVE="$SCRIPT_DIR/bin/linux-$ARCH/adr-hook" ;;
   *) NATIVE="" ;;
 esac
-if [ -n "$NATIVE" ] && [ -x "$NATIVE" ]; then
+# Opt-in for the same reason as the Windows branch above: the native host has
+# not passed the parity certification, and a hook that returns fewer governing
+# ADRs than the oracle is worse than one that is simply slower.
+if [ "${ADR_KIT_NATIVE_HOOK:-}" = "1" ] && [ -n "$NATIVE" ] && [ -x "$NATIVE" ]; then
   "$NATIVE" --client "$CLIENT" --event "$EVENT" || true
   exit 0
 fi

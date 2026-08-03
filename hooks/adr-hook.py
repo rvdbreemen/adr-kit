@@ -43,6 +43,27 @@ def _pr_guard(envelope) -> tuple[str, str] | None:
     return verdict["reason"], "pr-guard-deny"
 
 
+def _emit(response) -> None:
+    """Write the response as UTF-8 bytes, past the platform's text layer.
+
+    `print()` encodes through `sys.stdout`, which is cp1252 on a default Windows
+    console. An ADR title carrying an em dash came out as byte 0x97 — not valid
+    UTF-8, so a client decoding the frame as UTF-8 gets nothing usable; a title
+    carrying anything cp1252 cannot represent raised `UnicodeEncodeError`, which
+    the fail-open `except BaseException` swallowed into zero bytes and exit 0.
+    Silent, total loss of the injection, on the platform `clients/capabilities.json`
+    marks release-required.
+
+    Writing bytes removes the failure rather than handling it: there is no text
+    layer left to encode wrongly, so no encoding error can reach the fail-open
+    catch and hide there. `bin/adr-mcp` reconfigures its stdout for the same
+    reason (TASK-69); this is the same defect one process over.
+    """
+    frame = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+    sys.stdout.buffer.write(frame.encode("utf-8") + b"\n")
+    sys.stdout.buffer.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--client", required=True, choices=tuple(ADAPTERS))
@@ -59,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
         context, kind = _pr_guard(envelope) or evaluate(envelope)
         response = ADAPTERS[args.client](envelope.event, context, kind)
         if response:
-            print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+            _emit(response)
     except BaseException:
         # Optional hooks can never replace deterministic pre-commit enforcement.
         return 0

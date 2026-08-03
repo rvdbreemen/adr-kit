@@ -1,0 +1,1 @@
+{"exception_id":"codex-pr-guard-advisory-only","client":"codex-cli","expected_effect":"verdict-rendered-as-labelled-advisory-pre-commit-and-ci-enforce"}
