@@ -1,0 +1,59 @@
+name: ADR index freshness (adr-kit)
+description: >
+  Fail when docs/adr/README.md, ADR-INDEX.md or ADR-INDEX.json no longer match
+  the ADRs they are generated from. Deterministic, key-free, and model-free.
+
+inputs:
+  adr-dir:
+    description: ADR directory relative to the checked-out repository.
+    required: false
+    default: docs/adr
+  python-version:
+    description: Python version used for ADR Kit's stdlib-only runtime.
+    required: false
+    default: "3.11"
+
+outputs:
+  conclusion:
+    description: Either fresh or stale.
+    value: ${{ steps.index.outputs.conclusion }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # The commit hook can only warn about this: it reads the worktree while the
+    # commit is the staged snapshot, so a partial commit would make a block
+    # there refuse correct work. CI checks out the commit itself, where worktree
+    # and commit are the same bytes, which is why the block belongs here.
+    - name: Check generated ADR indexes
+      id: index
+      shell: bash
+      env:
+        ADR_DIR: ${{ inputs.adr-dir }}
+      run: |
+        RUNNER="${GITHUB_ACTION_PATH}/../../../bin/adr-index"
+        if python "$RUNNER" "$ADR_DIR" --check; then
+          echo "conclusion=fresh" >> "$GITHUB_OUTPUT"
+          echo "ADR indexes are current." >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+        echo "conclusion=stale" >> "$GITHUB_OUTPUT"
+        {
+          echo "### ADR indexes are stale"
+          echo
+          echo "The generated index no longer matches the ADRs in \`$ADR_DIR\`."
+          echo "Every other tool reads the index first, so a stale one misleads"
+          echo "the next reader and the next agent."
+          echo
+          echo '```'
+          echo "bin/adr-index $ADR_DIR"
+          echo '```'
+          echo
+          echo "Commit the regenerated files."
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "::error title=ADR index is stale::Run bin/adr-index $ADR_DIR and commit the result."
+        exit 1

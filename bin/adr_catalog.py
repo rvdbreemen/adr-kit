@@ -314,14 +314,23 @@ def decision_contract(text: str) -> Dict[str, List[str]]:
     return contract
 
 
-def _related_ids(text: str) -> List[str]:
-    related = section_text(text, "related")
-    return sorted(
-        {
-            f"ADR-{int(match.group(1)):03d}"
-            for match in ADR_TOKEN_RE.finditer(related)
-        }
-    )
+def related_ids(text: str, declared: Optional[Dict] = None) -> List[str]:
+    """Related-decision ids, from the prose section and the `related` field.
+
+    Both are read because both are real. Prose is what an author writes by
+    hand and what every ADR predating `bin/adr relate` carries; the frontmatter
+    field is what the command writes on both sides so the link is reciprocal
+    and machine-resolvable. A link declared either way is a link.
+    """
+    ids = {
+        f"ADR-{int(match.group(1)):03d}"
+        for match in ADR_TOKEN_RE.finditer(section_text(text, "related"))
+    }
+    for item in (declared or {}).get("related") or []:
+        normalized = normalize_adr_id(item)
+        if normalized:
+            ids.add(normalized)
+    return sorted(ids)
 
 
 def load_adr_record(path: Path) -> Dict:
@@ -376,7 +385,7 @@ def load_adr_record(path: Path) -> Dict:
     if adr_id is None:
         adr_id = path.stem
 
-    related_ids = [item for item in _related_ids(text) if item != adr_id]
+    related = [item for item in related_ids(text, metadata) if item != adr_id]
     supersedes = [item for item in _ids(metadata.get("supersedes")) if item != adr_id]
     superseded_by = normalize_adr_id(metadata.get("superseded_by"))
     if superseded_by == adr_id:
@@ -424,7 +433,7 @@ def load_adr_record(path: Path) -> Dict:
         "verified_in": _strings(metadata.get("verified_in")),
         "supersedes": supersedes,
         "superseded_by": superseded_by,
-        "related_ids": related_ids,
+        "related_ids": related,
         "amended_by": amended_by,
         "open_questions": open_questions,
         "metadata_findings": sorted(

@@ -16,7 +16,10 @@ use std::time::{Duration, SystemTime};
 const MAX_INPUT: u64 = 64 * 1024;
 const MAX_CONTEXT: usize = 4 * 1024;
 const MAX_PARENT: usize = 8 * 1024;
-const MAX_RESULTS: usize = 3;
+// spec R5: five, matching adr_hook_core.DEFAULT_MAX_RESULTS. A test asserts
+// the two stay equal, because a platform-dependent difference in what an
+// agent is told is worse than a missing feature: nobody sees it happen.
+const MAX_RESULTS: usize = 5;
 const QUEUE_MAX_BYTES: u64 = 256 * 1024;
 
 #[derive(Clone)]

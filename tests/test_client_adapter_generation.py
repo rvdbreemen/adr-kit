@@ -20,6 +20,10 @@ GEN = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = GEN
 SPEC.loader.exec_module(GEN)
 
+# The canonical workflow set lives in the model module; assert against it
+# rather than a literal, so adding a workflow is one edit and not three.
+MODEL = sys.modules["client_generation_model"]
+
 
 def _files(root: Path) -> dict[str, tuple[bytes, int]]:
     return {
@@ -52,7 +56,7 @@ def test_registry_and_workflows_are_exactly_three_clients():
 
     assert capabilities["program_scope"]["first_class_clients"] == list(GEN.CLIENT_IDS)
     assert list(workflows["clients"]) == list(GEN.CLIENT_IDS)
-    assert len(workflows["workflows"]) == 15
+    assert len(workflows["workflows"]) == len(MODEL.WORKFLOW_IDS)
     assert [item["id"] for item in workflows["workflows"]] == sorted(
         item["id"] for item in workflows["workflows"]
     )

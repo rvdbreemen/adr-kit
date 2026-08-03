@@ -194,10 +194,10 @@ Confirm to the user with one line naming the action (`created` / `appended` / `r
 
 ## Step 2 — Candidate discovery
 
-Run `bin/adr-audit` to scan the project. Use `--output` to drop the result next to the existing ADRs:
+Run `bin/adr-discover` to scan the project. Use `--output` to drop the result next to the existing ADRs:
 
 ```bash
-$ADR_KIT/bin/adr-audit --root . --output docs/adr/.adr-kit-init-candidates.json
+$ADR_KIT/bin/adr-discover --root . --output docs/adr/.adr-kit-init-candidates.json
 ```
 
 (`$ADR_KIT` is the plugin path resolved in step 1a.)
@@ -206,8 +206,24 @@ The output is a JSON file with:
 - `tooling-*` candidates (build system, CI, runtime markers)
 - `deps-*` candidates (one per dependency manifest found)
 - `doc-quote-*` candidates (one per documentation file containing decision-narrative phrases, with up to 5 example snippets)
+- `history-*` candidates from the git log: commit subjects that announce a
+  change of direction, the files rewritten far more often than the rest, and
+  the order in which tooling and dependencies arrived.
 
-Open the file. Tell the user the headline counts: `<N total candidates: <X> tooling, <Y> dependency, <Z> documented>`.
+**Every candidate carries `source`, and the difference matters.** `source:
+"tree"` is a fact about a file that exists. `source: "history"` is a claim
+someone typed once, in a hurry, possibly about a decision that was reversed
+three commits later — those candidates carry a `why_this_is_weak` note saying
+so. Never write an ADR from a history candidate without confirming it against
+the code as it stands now. Do surface them: the *why* of an existing codebase
+lives in its history, which is exactly what a working-tree scan cannot see.
+
+`history.available: false` means the scan could not read a history (no git, no
+commits, not a repository). Say so plainly rather than presenting a tree-only
+scan as complete.
+
+Open the file. Tell the user the headline counts: `<N total candidates: <X>
+tooling, <Y> dependency, <Z> documented, <H> from history>`.
 
 ## Step 3 — Deep LLM curation
 
@@ -222,12 +238,34 @@ Process candidates in **batches of 5–10**. For each batch:
 
 1. Print a numbered list with: candidate id, your proposed classification, your reasoning (one sentence), and (for `keep`) the proposed ADR title and decision_type.
 2. Ask the user: `Approve all [yes] | reject specific (list ids) | drop classification suggestion (id → drop) | refine title/type (id → ...)`.
-3. Apply the user's choices. For every `keep` candidate, use the lifecycle
-   command to create `docs/adr/ADR-NNN-<kebab-title>.md` with
-   `Status: Proposed, <today>`. Never silently accept reconstructed history.
+3. Apply the user's choices. For every `keep` candidate, create the record with
+   the lifecycle command, **named explicitly**:
+
+   ```bash
+   $ADR_KIT/bin/adr new "<Title>" --adr-dir docs/adr
+   ```
+
+   Do not write the file with the Write tool. `bin/adr new` allocates the next
+   number, honours `template.profile`, writes `Status: Proposed, <today>`, and
+   regenerates all three indexes inside one transaction. A hand-written file
+   gets none of that, and the index it leaves behind is stale from the moment
+   it lands.
+
    Include an `## Enforcement` block when the rule is declarative,
    `llm_judge: true` when it is not, or omit the section when no code surface
    exists.
+
+   **When the decision is already shipped, record that.** An init scan is
+   reconstructing decisions the code already implements, so set
+   `documents_shipped: true` and list the concrete evidence in `verified_in`
+   (the candidate's `evidence_files` are exactly that). Use:
+
+   ```bash
+   $ADR_KIT/bin/adr document ADR-NNN --verified-in <path> [--verified-in <path>]
+   ```
+
+   This is not a shortcut to acceptance; it is the honest metadata, and it is
+   what makes step 3b's supported path available at all.
 4. Explain and select grill depth per candidate:
    - **compact confirmation** only when chosen decision, rationale,
      alternatives, and consequences each have direct cited evidence;
@@ -242,7 +280,55 @@ Process candidates in **batches of 5–10**. For each batch:
 
 Do not race ahead. Wait for the user's response per batch.
 
-When all candidates are processed, summarise: `<created N new ADRs, merged M, dropped K>`.
+## Step 3b — Acceptance, and what "never silently accept" actually forbids
+
+Reconstructing a decision the code already implements is documentation, not
+authorisation: nobody is being asked to approve a new direction, they are being
+asked to confirm that the record matches what already ships. That is why the
+kit has an auto-accept path at all, and init is what it exists for.
+
+What "never silently accept" forbids is the *silently*, not the accepting. So:
+
+1. Show the user the batch of records and what each one documents.
+2. Ask once, explicitly, for that batch:
+   `Accept these <N> as documentation of shipped behaviour? [yes / grill first / list ids to hold back]`
+3. On `yes`, accept each through the supported path:
+
+   ```bash
+   $ADR_KIT/bin/adr accept ADR-NNN --auto --auto-mode auto --repo-root .
+   ```
+
+   `--auto` is not a bypass. It re-runs every acceptance gate and additionally
+   demands `documents_shipped: true`, at least one `verified_in` pointer, no
+   unresolved Open Questions, and a quality score above the configured
+   threshold. A record that fails any of those refuses to accept and tells you
+   which one. That refusal is the point: it is the difference between "the user
+   approved this batch" and "the record is good enough to stand".
+4. Anything held back, or anything `--auto` refused, stays `Proposed` and gets
+   `/adr-kit:grill ADR-NNN`.
+
+Never accept without step 2's question, and never accept a record the user has
+not seen. Batch approval selects *which* records; each still passes its own
+gates on its own.
+
+When all candidates are processed, summarise: `<created N new ADRs, accepted A
+as shipped documentation, held B for grilling, merged M, dropped K>`.
+
+## Step 3c — Verify the index rather than assuming it
+
+Every lifecycle command regenerates the indexes in its own transaction, so
+after a clean run this passes. Run it anyway, because "should have" is not a
+guarantee and a stale index misinforms every later reader and every agent:
+
+```bash
+$ADR_KIT/bin/adr-index docs/adr --check
+```
+
+Exit 0 means the three generated artefacts match the ADRs. **Init does not
+finish while this is non-zero.** On failure, run `$ADR_KIT/bin/adr-index
+docs/adr` to regenerate, then re-run the check and say what was stale — a
+record written outside the lifecycle command is the usual cause, and the user
+should know it happened.
 
 ## Step 4 — Hook installation
 
@@ -403,9 +489,17 @@ Suggest a first commit: `git add docs/adr/ .claude/adr-kit-guide.md CLAUDE.md .g
 ## Constraints
 
 - **Do not skip steps.** Each step has an idempotency story; running them in order produces a consistent project state.
-- **Batch selection, individual acceptance.** Do not silently mass-generate or
-  accept ADRs. Five to ten candidates may be triaged per round, but every
-  decision receives its own grill and explicit acceptance.
+- **Batch selection, individual gates.** Do not silently mass-generate or
+  accept ADRs. Five to ten candidates may be triaged per round; the user
+  approves a batch, and every record still passes its own acceptance gates on
+  its own through `bin/adr accept --auto`. A record the user has not seen is
+  never accepted, and a record that fails a gate is never accepted regardless
+  of what the batch answer was.
+- **Reconstruction is documentation, not authorisation.** Init records
+  decisions the code already implements, which is why `--auto` exists and why
+  it demands `documents_shipped: true` and a `verified_in` pointer before it
+  will run. A decision that is *not* already shipped is a new decision: it goes
+  through `/adr-kit:grill` and ordinary acceptance, never `--auto`.
 - **Resolve the plugin path dynamically.** The kit lives at `~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/<version>/`. Use the `ls | sort -V | tail -1` resolver above; do not hardcode a version.
 - **Preserve user CLAUDE.md content.** Only the marked stub block (or a v0.11-style `## ADR Kit Rules` section being replaced) may be modified. Everything else stays byte-exact.
 - **Re-runnable.** A second invocation on a project where init already succeeded should detect the existing footprint and either skip or refresh, not regenerate.

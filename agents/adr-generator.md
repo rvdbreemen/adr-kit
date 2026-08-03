@@ -157,7 +157,7 @@ If a gate cannot pass, do not save the file. Tell the user which gate fails and 
 If the ADR has a code surface — that is, if a future code change could violate the decision in a way that's recognisable from the diff — propose an `## Enforcement` section. Three patterns:
 
 - **Declarative.** The rule can be expressed as regex / glob / forbidden-import. Example: "no String class in hot paths" maps to `forbid_pattern: \\bString\\b ... in src/**`. Build a JSON block per `schemas/adr-enforcement.schema.json`. This is the preferred form because the pre-commit hook (`bin/adr-judge`) catches violations deterministically.
-- **LLM-judgeable.** The rule needs a model's judgement (semantic compliance, intent reading). Set `"llm_judge": true`. When the opt-in LLM pass is enabled, a `VIOLATION` blocks the commit; when it is disabled or unavailable, only declarative rules run. Deeper review is available via `/adr-kit:judge`.
+- **LLM-judgeable.** The rule needs a model's judgement (semantic compliance, intent reading). This is the DEFAULT: leave `llm_judge` out and the pass judges this ADR. Say `"llm_judge": false` with an `llm_judge_reason` only when the declarative rules already state the whole rule, or when the decision has no code surface at all. A `VIOLATION` blocks the commit; an unavailable backend degrades to advisory. Cost follows scope, so give every rule a `path_glob`: an ADR whose block declares no glob is judged on every commit rather than on the commits that touch it.
 - **Manual review only.** No code surface (governance, process, organisational decision). Omit the section AND add one line in the ADR body explaining *why* it has no code surface. The judge skips ADRs without an Enforcement block silently; the explanation tells reviewers (Check 7 in `instructions/adr.review.md`) it's intentional.
 
 Propose the block to the user with a clear rationale ("Declarative: the rule maps cleanly to a regex on added lines"). Let the user accept, edit, or downgrade to `llm_judge: true`. Do not invent rules the user did not endorse.
@@ -280,8 +280,7 @@ If "do nothing" was rejected, document why. If it was the right choice, this ADR
      "message": "Use AllowedSymbol instead."}
   ],
   "forbid_import": [],
-  "require_pattern": [],
-  "llm_judge": false
+  "require_pattern": []
 }
 ```
 ```

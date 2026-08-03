@@ -103,6 +103,40 @@ Also read the Enforcement coverage percent for the trend history:
 Extract `summary.coverage_pct` from `/tmp/guardian-status.json`. You will pass it
 to the stamp call below so the trend log records coverage per sweep.
 
+### 2c-ante. Quality decay of Accepted ADRs (adr-quality)
+
+```bash
+"$ADR_KIT/bin/adr-quality" --adr-dir docs/adr --status Accepted 2>&1 | tail -20
+```
+
+Quality is checked once, at acceptance, and then frozen. An ADR does not stay
+sharp on its own: the code moves, the references rot, the alternatives stop
+being the live ones. This is the only place that notices, and it is free — four
+deterministic gates, no model. Exit 1 means at least one Accepted record is
+below the threshold.
+
+**Response (mix-by-finding-type: Stale ADR):** name the record and its score.
+An Accepted body is immutable, so do **not** offer to rewrite it. The honest
+routes are a supersession (`/adr-kit:adr`) or a retirement, and a decayed score
+is a reason to ask whether the decision still holds — not proof that it does
+not. Never auto-apply either.
+
+### 2c-bis. Generated-index freshness (adr-index)
+
+```bash
+"$ADR_KIT/bin/adr-index" docs/adr/ --check 2>&1 | tail -5
+```
+
+Exit 1 means `README.md`, `ADR-INDEX.md` or `ADR-INDEX.json` no longer matches
+the ADRs they are generated from. The lifecycle CLI regenerates all three inside
+its own transaction, so a stale index means an ADR was edited by hand or written
+straight to disk — the common case when a coding agent uses a Write tool.
+
+**Response (mix-by-finding-type: Health):** this one is safe to fix, because the
+files are generated rather than authored. Offer to run `bin/adr-index docs/adr`
+and show the diff. Do not fix it silently: the regenerated index is a commit the
+user has to make.
+
 ### 2d. Stamp cheap tier
 
 After completing 2a–2c, record the sweep. The `--retire-seen` argument must contain

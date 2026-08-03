@@ -258,7 +258,6 @@ None.
       "path_glob": "tests/fixtures/cli/latency-corpus.json",
       "message": "The 2000 ms hard ceiling is the ADR-015 contract; changing it requires superseding or amending ADR-015."
     }
-  ],
-  "llm_judge": false
+  ]
 }
 ```

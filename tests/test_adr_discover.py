@@ -1,4 +1,4 @@
-"""End-to-end tests for bin/adr-audit.
+"""End-to-end tests for bin/adr-discover.
 
 The scanner is deterministic — given the same project state, the candidate
 JSON is reproducible. These tests verify shape and key signal extraction.
@@ -10,12 +10,12 @@ import textwrap
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ADR_AUDIT = REPO_ROOT / "bin" / "adr-audit"
+ADR_DISCOVER = REPO_ROOT / "bin" / "adr-discover"
 
 
 def _run(project_root: Path, *extra):
     result = subprocess.run(
-        [sys.executable, str(ADR_AUDIT), "--root", str(project_root), *extra],
+        [sys.executable, str(ADR_DISCOVER), "--root", str(project_root), *extra],
         capture_output=True, text=True, encoding="utf-8",
     )
     if not result.stdout.strip():
@@ -106,7 +106,7 @@ def test_output_writes_file(tmp_path):
     (tmp_path / "Makefile").write_text("all:\n\techo ok\n")
     out_path = tmp_path / "candidates.json"
     result = subprocess.run(
-        [sys.executable, str(ADR_AUDIT), "--root", str(tmp_path), "--output", str(out_path)],
+        [sys.executable, str(ADR_DISCOVER), "--root", str(tmp_path), "--output", str(out_path)],
         capture_output=True, text=True, encoding="utf-8",
     )
     assert result.returncode == 0

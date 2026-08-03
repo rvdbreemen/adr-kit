@@ -91,8 +91,15 @@ def test_queue_ranking_is_stable_explainable_and_priority_ordered():
 def test_cache_is_atomic_disposable_bounded_and_fails_open(tmp_path):
     path = tmp_path / ".adr-kit-readiness.json"
     now = datetime(2026, 7, 20, 12, tzinfo=timezone.utc)
+    # Every item carries a signal on purpose. Since TASK-82 a Proposed ADR with
+    # nothing attached -- sharp, unlinked, unshipped, asking nothing -- drops out
+    # of the queue rather than padding it, so a fixture of quality-1.0 unlinked
+    # records would now yield one action and test nothing about the cache.
     payload = build_queue_cache(
-        _report([_item(f"ADR-{number:03d}", linked=number == 1) for number in range(1, 8)]),
+        _report([
+            _item(f"ADR-{number:03d}", linked=number == 1, quality=0.4)
+            for number in range(1, 8)
+        ]),
         generated_at=now,
     )
     assert payload["authoritative"] is False

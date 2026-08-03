@@ -33,9 +33,25 @@
       "provenance": "declared bin entrypoint"
     },
     {
+      "path": "bin/adr-discover",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-discover command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
       "path": "bin/adr-doctor",
       "ownership": "runtime",
       "purpose": "ADR Kit adr-doctor command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
+      "path": "bin/adr-embed",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-embed command",
       "invocation": "direct-or-python",
       "expected_mode": "100755",
       "provenance": "declared bin entrypoint"
@@ -156,6 +172,14 @@
       "path": "bin/adr-retire",
       "ownership": "runtime",
       "purpose": "ADR Kit adr-retire command",
+      "invocation": "direct-or-python",
+      "expected_mode": "100755",
+      "provenance": "declared bin entrypoint"
+    },
+    {
+      "path": "bin/adr-settings",
+      "ownership": "runtime",
+      "purpose": "ADR Kit adr-settings command",
       "invocation": "direct-or-python",
       "expected_mode": "100755",
       "provenance": "declared bin entrypoint"

@@ -419,7 +419,24 @@ In your `docs/adr/README.md`, replace these with categories that match your doma
 - Update Status: `Proposed` -> `Accepted`.
 - Add the implementation date in the Status line: `Accepted. Date: YYYY-MM-DD.`
 - Append the matching `Accepted` transition to `## Status History`; never rewrite an earlier entry.
-- Add a `## Related Decisions` entry to any other ADR that newly relates.
+- **Decide which cross-references are warranted, then let the tool write both
+  sides.** Read the existing set (`bin/adr-index --adr-dir docs/adr --format md`
+  is the compact map) and ask, for each candidate, whether a reader arriving at
+  the *other* ADR would need to know this one exists. That judgement is yours;
+  no regex can make it. It is a real relationship when the two decisions
+  constrain each other, when one is the reason the other is possible, or when
+  changing one would force a rethink of the other. It is not a relationship
+  merely because both mention the same file.
+  - For each one you decide on: `bin/adr relate ADR-NEW --to ADR-OTHER`. It
+    writes the `related` field on **both** ADRs in one transaction and
+    regenerates the indexes, so neither side can end up carrying half a link.
+    Wrong call? `--remove` unwinds both sides the same way.
+  - Prose in `## Related Decisions` still counts and still reads well; keep
+    writing it. What it cannot do is update the other ADR, which is why the
+    reciprocal link goes in frontmatter. A backwards-only prose citation is
+    normal and is never flagged.
+  - Do not hand-edit the `related` field. `adr-lint` FAILs a one-sided one,
+    because the only way to produce one is a hand edit or a half-applied write.
 - Refresh the generated README, compact Markdown index, and JSON graph with
   `bin/adr-index docs/adr/`.
 - Run `bin/adr-doctor --fix-index docs/adr/` or `bin/adr-lint --strict docs/adr/` before treating the ADR set as clean.
@@ -705,12 +722,12 @@ If you answered "No" to any of these, improve the ADR.
 
 The full adr-kit toolset wraps this skill with three operational modes:
 
-- **`/adr-kit:init`** — one-shot bootstrap of the kit in an existing project: hooks `CLAUDE.md`, drops `.claude/adr-kit-guide.md`, runs `bin/adr-audit` to enumerate decision-shaped artefacts, walks the user through batched approval to generate Accepted ADRs, installs the pre-commit hook. Use this once per project.
+- **`/adr-kit:init`** — one-shot bootstrap of the kit in an existing project: hooks `CLAUDE.md`, drops `.claude/adr-kit-guide.md`, runs `bin/adr-discover` to enumerate decision-shaped artefacts, walks the user through batched approval to generate Accepted ADRs, installs the pre-commit hook. Use this once per project.
 - **`/adr-kit:judge`** — in-session review of a staged git diff against existing ADRs. Runs the deterministic `bin/adr-judge` for declarative `Enforcement` rules, then evaluates `llm_judge: true` ADRs in the active Claude Code session. On violation, walks three resolution paths (new ADR / supersede / fix code).
 - **`/adr-kit:install-hooks`** — install or uninstall the pre-commit hook. Default-on after `/adr-kit:init` (or `/adr-kit:upgrade`).
 - **`/adr-kit:upgrade`** — for users on v0.11: migrate to the v0.12 footprint without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
 - **`/adr-kit:lint`** — validate ADR file content against the four verification gates (Completeness / Evidence / Clarity / Consistency). The deterministic CLI is `bin/adr-lint`; the skill drives the heuristic gates.
-- **`bin/adr-doctor`** — local health check for agent start and finish: strict lint, generated-index freshness, shipped-but-Proposed ADRs, old Proposed ADRs, changed evidence behind Accepted ADRs, and missing named gates. Material drift auto-triggers a local `bin/adr-audit --root ...` pass and includes the audit summary in the doctor output. Use `--fix-index` to regenerate the index before checking it.
+- **`bin/adr-doctor`** — local health check for agent start and finish: strict lint, generated-index freshness, shipped-but-Proposed ADRs, old Proposed ADRs, changed evidence behind Accepted ADRs, and missing named gates. Material drift auto-triggers a local `bin/adr-discover --root ...` pass and includes the audit summary in the doctor output. Use `--fix-index` to regenerate the index before checking it.
 - **`/adr-kit:migrate`** — preview metadata changes or convert between MADR,
   Nygard, and canonical profiles; guided handling remains for legacy shapes.
 
@@ -728,7 +745,7 @@ The four verification gates and the supersession workflow defined in this file r
 Every new `Accepted` ADR with a code surface SHOULD carry an `## Enforcement` section so `bin/adr-judge` (run by the pre-commit hook) can guard the boundary against future drift. The block is a fenced JSON object validated against `schemas/adr-enforcement.schema.json`. Three patterns:
 
 - Declarative regex / glob rules (`forbid_pattern`, `forbid_import`, `require_pattern`) — preferred when the rule is mechanically expressible. Fastest at hook time, no LLM round-trip.
-- `"llm_judge": true` — for nuanced rules that need a model's judgement. As of v0.13.0 the pre-commit hook batches all `llm_judge` ADRs into ONE Claude Sonnet call (`claude -p --model claude-sonnet-4-6`) and blocks the commit on `VIOLATION`. Falls back to declarative-only when the `claude` CLI is missing — never blocks on tooling drift.
+- `llm_judge` — for nuanced rules that need a model's judgement. It DEFAULTS TO TRUE: omit the key and this ADR is judged. Each opted-in ADR gets its own isolated call (never batched, so no sibling's Decision text can flip a verdict), resolved through `judge.backend` rather than a pinned model. A `VIOLATION` blocks the commit; a missing or unauthenticated backend degrades to advisory and never blocks on tooling drift. To opt out, write `"llm_judge": false` together with an `"llm_judge_reason"` — the reason is what makes the opt-out durable across upgrades. Cost is bounded by scope: an ADR is judged only when the diff touches a file matching its rules' `path_glob`, so a block with no glob is judged on every commit.
 - Section omitted with an in-body explanation — for governance / process ADRs with no code surface.
 
 Authoring is part of the agent's Step 3b (see `agents/adr-generator.md`). Code review applies Check 7 (see `instructions/adr.review.md`) to confirm the block is set appropriately.

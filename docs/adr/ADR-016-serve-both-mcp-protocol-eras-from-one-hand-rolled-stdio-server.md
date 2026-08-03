@@ -888,8 +888,7 @@ implementation existing. The four `require_pattern` rules were added on
       "path_glob": "tests/test_adr_mcp.py",
       "message": "The conformance suite must keep exercising server/discover: it is the gate adr-mcp-dual-era-v1 (ADR-016)."
     }
-  ],
-  "llm_judge": false
+  ]
 }
 ```
 

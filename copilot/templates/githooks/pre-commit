@@ -51,7 +51,7 @@ set -e
 # freezes at install time. adr-guardian compares this stamp against the
 # installed plugin version and nudges /adr-kit:upgrade when the wrapper lags.
 # Maintained by scripts/bump-version.py; do not edit by hand.
-ADR_KIT_WRAPPER_VERSION="0.43.0"
+ADR_KIT_WRAPPER_VERSION="0.44.0"
 
 if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   echo "[adr-kit] hook disabled for this commit (ADR_KIT_HOOK_DISABLE=1)" >&2
@@ -222,6 +222,28 @@ if [ "$ADR_EXIT" -eq 2 ]; then
   echo "[adr-kit] Commit with ADR_KIT_HOOK_DISABLE=1 to bypass this check." >&2
 fi
 [ "$ADR_EXIT" -ne 0 ] && exit "$ADR_EXIT"
+
+# --- Generated-index freshness (advisory) --------------------------------------
+# The lifecycle CLI regenerates README.md, ADR-INDEX.md and ADR-INDEX.json inside
+# its own transaction, so anything written through `bin/adr` keeps them true. An
+# ADR edited by hand -- or written straight to disk by a coding agent -- does not,
+# and a stale index is exactly the artefact every other tool reads first.
+#
+# Advisory, not blocking, and the reason is not politeness: `adr-index --check`
+# reads the WORKTREE, while this commit is the staged snapshot. On a partial
+# commit those differ, so a block here could refuse a correct commit over a file
+# the author deliberately left unstaged. CI checks out the commit itself, where
+# worktree and commit are the same thing, and blocks there (adr-index-check.yml).
+if [ -n "$ADR_JUDGE" ] && git diff --cached --name-only | grep -qE '(^|/)docs/adr/ADR-[0-9]+.*\.md$'; then
+  _ADR_INDEX="$(dirname "$ADR_JUDGE")/adr-index"
+  if [ -f "$_ADR_INDEX" ]; then
+    if ! "$_PYTHON3" "$_ADR_INDEX" "$ROOT/docs/adr" --check >/dev/null 2>&1; then
+      echo "[adr-kit] WARN: the generated ADR indexes are stale in your worktree." >&2
+      echo "[adr-kit]       Run: $_PYTHON3 $_ADR_INDEX $ROOT/docs/adr   then stage the result." >&2
+      echo "[adr-kit]       CI blocks on this; the hook only warns (it reads the worktree, not the index)." >&2
+    fi
+  fi
+fi
 
 # Bounded, index-only ADR grilling advisories. This is a single fail-open
 # subprocess: no readiness sweep, per-ADR subprocess loop, model, network, or

@@ -14,7 +14,11 @@
       "outcome": "task-context",
       "runner_timeout_sec": 5,
       "latency_budget_ms": 500,
-      "latency": {"p50_ms": 50, "p95_ms": 150, "hard_timeout_ms": 500},
+      "latency": {
+        "p50_ms": 50,
+        "p95_ms": 150,
+        "hard_timeout_ms": 500
+      },
       "clients": {
         "claude-code-cli": "SessionStart",
         "codex-cli": "SessionStart",
@@ -28,7 +32,11 @@
       "outcome": "task-context",
       "runner_timeout_sec": 5,
       "latency_budget_ms": 500,
-      "latency": {"p50_ms": 75, "p95_ms": 250, "hard_timeout_ms": 500},
+      "latency": {
+        "p50_ms": 75,
+        "p95_ms": 250,
+        "hard_timeout_ms": 500
+      },
       "clients": {
         "claude-code-cli": "UserPromptSubmit",
         "codex-cli": "UserPromptSubmit",
@@ -41,7 +49,11 @@
       "matcher": "Edit|MultiEdit|Write",
       "outcome": "edit-governance",
       "latency_budget_ms": 100,
-      "latency": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
+      "latency": {
+        "p50_ms": 25,
+        "p95_ms": 50,
+        "hard_timeout_ms": 100
+      },
       "clients": {
         "claude-code-cli": "PreToolUse",
         "codex-cli": "PreToolUse",
@@ -54,11 +66,49 @@
       "matcher": "Edit|MultiEdit|Write",
       "outcome": "edit-governance",
       "latency_budget_ms": 100,
-      "latency": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
+      "latency": {
+        "p50_ms": 25,
+        "p95_ms": 50,
+        "hard_timeout_ms": 100
+      },
       "clients": {
         "claude-code-cli": "PostToolUse",
         "codex-cli": "PostToolUse",
         "github-copilot-cli": "postToolUse"
+      }
+    },
+    {
+      "id": "plan-exit",
+      "command": "plan-exit",
+      "matcher": "ExitPlanMode",
+      "outcome": "task-context",
+      "latency_budget_ms": 100,
+      "latency": {
+        "p50_ms": 25,
+        "p95_ms": 50,
+        "hard_timeout_ms": 100
+      },
+      "clients": {
+        "claude-code-cli": "PreToolUse",
+        "codex-cli": null,
+        "github-copilot-cli": null
+      }
+    },
+    {
+      "id": "pr-create",
+      "command": "pre-tool-use",
+      "matcher": "Bash",
+      "outcome": "enforcement",
+      "latency_budget_ms": 5000,
+      "latency": {
+        "p50_ms": 400,
+        "p95_ms": 2000,
+        "hard_timeout_ms": 5000
+      },
+      "clients": {
+        "claude-code-cli": "PreToolUse",
+        "codex-cli": "PreToolUse",
+        "github-copilot-cli": null
       }
     },
     {
@@ -67,7 +117,11 @@
       "matcher": null,
       "outcome": "task-context",
       "latency_budget_ms": 250,
-      "latency": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 250},
+      "latency": {
+        "p50_ms": 30,
+        "p95_ms": 100,
+        "hard_timeout_ms": 250
+      },
       "clients": {
         "claude-code-cli": "SubagentStart",
         "codex-cli": "SubagentStart",
@@ -80,7 +134,11 @@
       "matcher": null,
       "outcome": "lifecycle",
       "latency_budget_ms": 500,
-      "latency": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 500},
+      "latency": {
+        "p50_ms": 30,
+        "p95_ms": 100,
+        "hard_timeout_ms": 500
+      },
       "clients": {
         "claude-code-cli": "PreCompact",
         "codex-cli": "PreCompact",

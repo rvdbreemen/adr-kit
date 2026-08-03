@@ -233,7 +233,6 @@ Confirm the decision with:
       "path_glob": "docs/adr/ADR-INDEX.json",
       "message": "The generated ADR index must expose the normalized relationship graph."
     }
-  ],
-  "llm_judge": false
+  ]
 }
 ```

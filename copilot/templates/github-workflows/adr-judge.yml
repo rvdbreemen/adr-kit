@@ -1,0 +1,31 @@
+# ADR enforcement on every pull request.
+#
+# The pre-commit hook judges one commit; this judges the whole branch, which is
+# what the reviewer is actually being asked to accept. Declarative-only by
+# default: no LLM, no secrets, no API key.
+#
+# Copy into .github/workflows/ of your project. The checkout MUST use
+# fetch-depth: 0 so both sides of the diff exist.
+name: ADR enforcement
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  adr-judge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@main
+        with:
+          adr-dir: docs/adr/
+          # A release-sized branch diff needs more room than a single commit.
+          # This budget is deliberately separate from judge.max_diff_bytes, so
+          # raising it here does not weaken the commit-time gate.
+          max-diff-bytes: "33554432"

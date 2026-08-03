@@ -358,6 +358,10 @@ def mutate_status(
 ) -> str:
     data, body = load_adr(path)
     assert_legal_transition(str(data.get("status")), status)
+    # Signer resolution comes after legality on purpose: an illegal transition
+    # must report that it is illegal, not that it is unsigned. Validate the act
+    # before validating the actor.
+    changed_by = resolve_signer(path.parent, changed_by)
     body = ensure_status_history(path, data, body, (status, when))
     data["status"] = status
     data["date"] = when
@@ -457,7 +461,12 @@ def command_new(args) -> List[str]:
     body = body.replace('"Short Imperative Title"', json.dumps(args.title, ensure_ascii=False))
     body = body.replace("Short Imperative Title", args.title)
     body = body.replace("YYYY-MM-DD", args.date)
-    body = body.replace("user@example.com", args.changed_by)
+    # The placeholder sits inside the status_history YAML block, so the actor
+    # has to survive as a YAML scalar. "User: Robert" - the very shape R8 of
+    # spec.md prescribes - is a mapping to a YAML parser, and an unquoted one
+    # makes the whole block unparseable. accept/supersede already route through
+    # _yaml_scalar; creation did not.
+    body = body.replace("user@example.com", _yaml_scalar(resolve_signer(adr_dir, args.changed_by)))
     _commit_lifecycle_changes(adr_dir, [(destination, body)])
     return [f"created: {destination} ({profile})"]
 
@@ -533,12 +542,44 @@ def _run_json_tool(command: List[str]) -> Tuple[int, Dict]:
     return result.returncode, payload
 
 
+def _scaffold_residue(text: str) -> List[str]:
+    """Instruction lines from the shipped templates that survived authoring.
+
+    Every gate the auto path runs is structural: is the section present, does
+    the frontmatter parse, does the quality heuristic score high enough. An
+    untouched scaffold satisfies all three -- it is a complete, well-formed ADR
+    that happens to decide nothing, and it scored 0.88 against a 0.70 default.
+    Auto-accepting that would put "Chosen option: **Option A**, because state
+    the decisive rationale" into the record as an Accepted decision.
+
+    These strings are literal instructions to the author. Their presence is not
+    a heuristic about quality; it is proof that a section was never written.
+    """
+    markers = (
+        "because state the decisive rationale",
+        "State how implementation of the decision will be verified.",
+        "Describe the context and problem statement",
+        "{Describe",
+        "<!-- adr-kit:template-placeholder -->",
+    )
+    return [marker for marker in markers if marker in text]
+
+
 def _assert_auto_accept_eligible(path: Path, args, threshold: float) -> Dict:
     data, _body = load_adr(path)
     if data.get("documents_shipped") is not True:
         raise AdrLifecycleError("auto accept requires documents_shipped:true")
     if not data.get("verified_in"):
         raise AdrLifecycleError("auto accept requires at least one verified_in pointer")
+
+    residue = _scaffold_residue(path.read_text(encoding="utf-8"))
+    if residue:
+        raise AdrLifecycleError(
+            "auto accept blocked: the record still contains template instructions "
+            f"({'; '.join(repr(item) for item in residue)}). A scaffold is "
+            "structurally complete and decides nothing; write the sections, then "
+            "accept."
+        )
 
     lint_summary = _assert_acceptance_gates(path, args)
     quality_script = Path(__file__).resolve().with_name("adr-quality")
@@ -608,6 +649,13 @@ def command_document(args) -> List[str]:
     if not args.verified_in:
         raise AdrLifecycleError("document requires at least one --verified-in pointer")
     data, body = load_adr(path)
+    # `document` writes a history entry like every other lifecycle command, so
+    # it has to resolve a signer like every other lifecycle command. It did not,
+    # and wrote `changed_by: ""` -- which the audit gate then rejected, so an
+    # ADR that had just been correctly marked as documenting shipped behaviour
+    # could never be accepted. The failure surfaced two commands later, blaming
+    # acceptance for a defect introduced here.
+    changed_by = resolve_signer(adr_dir, args.changed_by)
     body = ensure_status_history(
         path, data, body, (str(data["status"]), args.date)
     )
@@ -616,7 +664,7 @@ def command_document(args) -> List[str]:
     body = append_status_history(
         body,
         data["status"],
-        args.changed_by,
+        changed_by,
         args.reason or "Documented already-shipped behavior",
         "adr-kit lifecycle",
         args.date,
@@ -686,6 +734,217 @@ def command_set_status(args, status: str, status_line: str, default_reason: str)
     )
     _commit_lifecycle_changes(adr_dir, [(path, changed)])
     return [f"{status.lower()}: {path.name}"]
+
+
+ANSWERED_LINE_RE = re.compile(
+    r"^\s*[-*+]\s*\[[xX]\]\s+(?P<question>.+?)\s+—\s+\*\*Answered\b", re.MULTILINE
+)
+
+
+def _open_questions_section(body: str) -> Tuple[int, int, str]:
+    """(start, end, text) of the Open Questions section body. Raises if absent."""
+    match = re.search(
+        r"^##\s+Open Questions\s*$\n(?P<body>.*?)(?=\n##\s+|\Z)",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        raise AdrLifecycleError(
+            "this ADR has no `## Open Questions` section; add one, or the answer "
+            "has nowhere durable to live"
+        )
+    return match.start("body"), match.end("body"), match.group("body")
+
+
+def command_answer(args) -> List[str]:
+    """Resolve an open question in place, keeping both halves of the exchange.
+
+    Grilling asks a question and gets an answer, and until now only one of the
+    two survived. `## Open Questions` holds unresolved items by design, and
+    acceptance requires the list to be empty, so an author who answered a
+    question had to *delete* it to accept the ADR. What remained was the Status
+    History: who flipped the status and when, never what they were asked.
+
+    That reasoning is exactly what a future reader needs to re-evaluate a
+    decision, and re-evaluation is what supersession depends on.
+
+    Nothing new had to be invented to fix it. `unresolved_open_questions`
+    already skips a `[x]` item, so a checked line with the answer written into
+    it survives acceptance untouched and stays in the record forever. This
+    command writes that line, so the convention is a mechanism rather than a
+    hope, and the signer and date come from the same resolution every other
+    lifecycle command uses.
+    """
+    adr_dir = Path(args.adr_dir)
+    adr_id = normalize_adr_id(args.adr)
+    path = find_adr_file(adr_dir, adr_id)
+    if not str(args.answer).strip():
+        raise AdrLifecycleError("an answer with no text is a deletion with extra steps")
+
+    data, body = load_adr(path)
+    start, end, section = _open_questions_section(body)
+
+    lines = section.splitlines()
+    unresolved = [
+        (index, line)
+        for index, line in enumerate(lines)
+        if re.match(r"^\s*[-*+]\s*(?:\[\s\]\s+)?\S", line)
+        and not re.match(r"^\s*[-*+]\s*\[[xX]\]", line)
+        and re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip().casefold().rstrip(".")
+        not in {"none", "no open questions", "no unresolved questions"}
+    ]
+    if not unresolved:
+        raise AdrLifecycleError(f"{adr_id} has no unresolved question to answer")
+
+    target = _select_question(unresolved, args.question)
+    index, line = target
+    question_text = re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip()
+    changed_by = resolve_signer(adr_dir, args.changed_by)
+    lines[index] = (
+        f"- [x] {question_text} — **Answered {args.date} by {changed_by}:** "
+        f"{str(args.answer).strip()}"
+    )
+
+    # splitlines() drops the section's trailing newline; putting it back is what
+    # keeps the blank line before the next heading, and a heading that loses its
+    # blank line stops being a heading to some Markdown readers.
+    rewritten = "\n".join(lines) + ("\n" if section.endswith("\n") else "")
+    body = body[:start] + rewritten + body[end:]
+    _commit_lifecycle_changes(adr_dir, [(path, render_frontmatter(data) + body)])
+    return [
+        f"answered in {path.name}: {question_text[:70]}",
+        "the question and its answer stay in the record; acceptance is no longer blocked by it",
+    ]
+
+
+def _select_question(unresolved: List[Tuple[int, str]], wanted: Optional[str]):
+    """Pick the question to answer: the only one, an index, or a substring."""
+    if wanted is None:
+        if len(unresolved) > 1:
+            listing = "; ".join(
+                f"{position}: "
+                + re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip()[:60]
+                for position, (_index, line) in enumerate(unresolved, 1)
+            )
+            raise AdrLifecycleError(
+                f"{len(unresolved)} unresolved questions; name one with "
+                f"--question <number|text>. {listing}"
+            )
+        return unresolved[0]
+
+    if re.fullmatch(r"\d+", str(wanted).strip()):
+        position = int(str(wanted).strip())
+        if not 1 <= position <= len(unresolved):
+            raise AdrLifecycleError(
+                f"--question {position} is out of range (1..{len(unresolved)})"
+            )
+        return unresolved[position - 1]
+
+    needle = str(wanted).casefold()
+    matches = [item for item in unresolved if needle in item[1].casefold()]
+    if not matches:
+        raise AdrLifecycleError(f"no unresolved question matches {wanted!r}")
+    if len(matches) > 1:
+        raise AdrLifecycleError(
+            f"{wanted!r} matches {len(matches)} unresolved questions; be more specific"
+        )
+    return matches[0]
+
+
+def command_relate(args) -> List[str]:
+    """Write a cross-reference on both sides, or remove it from both.
+
+    Supersession has always been reciprocal: `bin/adr supersede` writes the
+    predecessor's `superseded_by` and the successor's `supersedes` in one
+    transaction, so neither side can carry half a link. A plain cross-reference
+    had no such writer. An ADR could cite ADR-009 forever while ADR-009 never
+    learned it was cited, which is exactly the half-link the supersession check
+    refuses to tolerate.
+
+    The link goes in frontmatter, next to `supersedes`, not into the prose. That
+    keeps this inside the mutation envelope the kit already permits on an
+    Accepted record -- reference bookkeeping, never the decision itself. The
+    body of an Accepted ADR stays untouched here, as it must.
+
+    A pair that already has a supersession relationship is refused rather than
+    doubled: superseded-by is the stronger and more specific edge, and recording
+    both would let a reader believe there are two relationships where there is
+    one.
+    """
+    adr_dir = Path(args.adr_dir)
+    left_id = normalize_adr_id(args.adr)
+    right_id = normalize_adr_id(args.to)
+    if left_id == right_id:
+        raise AdrLifecycleError("an ADR cannot be related to itself")
+    left_path = find_adr_file(adr_dir, left_id)
+    right_path = find_adr_file(adr_dir, right_id)
+
+    left_data, left_body = load_adr(left_path)
+    right_data, right_body = load_adr(right_path)
+
+    for this_id, this_data, other_id in (
+        (left_id, left_data, right_id),
+        (right_id, right_data, left_id),
+    ):
+        if other_id in (this_data.get("supersedes") or []):
+            raise AdrLifecycleError(
+                f"{this_id} already supersedes {other_id}; supersession is the "
+                "stronger relationship and is already recorded on both sides"
+            )
+        if this_data.get("superseded_by") == other_id:
+            raise AdrLifecycleError(
+                f"{this_id} is already superseded by {other_id}; supersession is "
+                "the stronger relationship and is already recorded on both sides"
+            )
+
+    def apply(data: Dict, other_id: str) -> bool:
+        current = [normalize_adr_id(item) or item for item in (data.get("related") or [])]
+        wanted = [item for item in current if item != other_id]
+        if not args.remove:
+            wanted.append(other_id)
+        wanted = sorted(set(wanted))
+        if wanted == sorted(set(current)):
+            return False
+        # An empty list would be an assertion that the question was asked and
+        # the answer was none. It was not: the link was simply removed. Drop the
+        # key so absent keeps meaning "nothing declared here".
+        if wanted:
+            data["related"] = wanted
+        else:
+            data.pop("related", None)
+        return True
+
+    left_changed = apply(left_data, right_id)
+    right_changed = apply(right_data, left_id)
+    if not left_changed and not right_changed:
+        verb = "not related" if args.remove else "already related"
+        return [f"{left_id} and {right_id} are {verb}; nothing to do"]
+
+    # The signer is resolved once, before any write, so a machine with no
+    # configured signer refuses the whole operation instead of half of it.
+    changed_by = resolve_signer(adr_dir, args.changed_by)
+    action = "Unrelated" if args.remove else "Related"
+    changes: List[Tuple[Path, str]] = []
+    for path, data, body, other_id in (
+        (left_path, left_data, left_body, right_id),
+        (right_path, right_data, right_body, left_id),
+    ):
+        body = ensure_status_history(path, data, body, (str(data.get("status")), args.date))
+        body = append_status_history(
+            body,
+            str(data.get("status")),
+            changed_by,
+            args.reason or f"{action} to {other_id}",
+            "adr-kit lifecycle",
+            args.date,
+        )
+        changes.append((path, render_frontmatter(data) + body))
+    _commit_lifecycle_changes(adr_dir, changes)
+    joiner = "no longer related to" if args.remove else "related to"
+    return [
+        f"{left_path.name}: {joiner} {right_id}",
+        f"{right_path.name}: {joiner} {left_id}",
+    ]
 
 
 def command_supersede(args) -> List[str]:
@@ -766,16 +1025,147 @@ def command_supersede(args) -> List[str]:
     return [f"superseded: {old_path.name} -> {new_id}", f"updated successor: {new_path.name}"]
 
 
+
+# --- Signer resolution (spec R8/R8.1) -------------------------------------
+#
+# The actor written into Status History used to default to the literal
+# "adr-kit", so forgetting the flag produced a durable record saying the tool
+# accepted its own ADR. That is worse than an unsigned record: it is a false
+# attribution in the one place an auditor looks.
+#
+# The signer lives in the gitignored machine-local config, not in the tracked
+# one. A committed signer would put one person's name on every teammate's
+# acceptance.
+#
+# What this does NOT do, stated so nobody mistakes it: it does not prove a human
+# was present, and it authenticates nothing. It makes the signature attributable
+# and deliberate. Real non-repudiation needs signed commits, which is a separate
+# decision nobody has taken yet.
+
+LOCAL_CONFIG_NAME = ".adr-kit.local.json"
+
+
+def read_local_config(adr_dir: Path) -> dict:
+    """Read the machine-local config, or {} when absent or unreadable."""
+    try:
+        data = json.loads((Path(adr_dir) / LOCAL_CONFIG_NAME).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def configured_signer(adr_dir: Path) -> Optional[str]:
+    signer = (read_local_config(adr_dir).get("lifecycle") or {}).get("signer")
+    return signer.strip() if isinstance(signer, str) and signer.strip() else None
+
+
+def git_user_name() -> Optional[str]:
+    """`git config user.name`, offered as a proposal. Never adopted silently."""
+    try:
+        out = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    name = (out.stdout or "").strip()
+    return name or None
+
+
+def resolve_signer(adr_dir: Path, explicit: Optional[str]) -> str:
+    """Explicit flag, else configured signer, else refuse."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    signer = configured_signer(adr_dir)
+    if signer:
+        return signer
+    proposal = git_user_name()
+    if proposal:
+        hint = f'  python bin/adr signer --set "User: {proposal}"'
+    else:
+        hint = '  python bin/adr signer --set "User: <your name>"'
+    raise AdrLifecycleError(
+        "no signer configured, so this transition would be unsigned. "
+        "A Status History entry records who decided and when, and the tool must "
+        "not fill that in on your behalf. Set it once for this machine:"
+        f"\n{hint}\n"
+        "or pass --changed-by for a single command."
+    )
+
+
+def command_signer(args) -> List[str]:
+    """Show, set, or audit the machine-local signer."""
+    adr_dir = Path(args.adr_dir)
+    if args.set:
+        value = args.set.strip()
+        if not value:
+            raise AdrLifecycleError("--set needs a non-empty name")
+        path = adr_dir / LOCAL_CONFIG_NAME
+        data = read_local_config(adr_dir)
+        data.setdefault("lifecycle", {})["signer"] = value
+        _atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        return [
+            f"signer set: {value}",
+            f"written to {path} (machine-local, gitignored)",
+        ]
+
+    if args.audit:
+        offenders = []
+        for path in sorted(adr_dir.glob("ADR-*.md")):
+            try:
+                body = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for match in re.finditer(r"^\s*changed_by:\s*(.+)$", body, re.MULTILINE):
+                actor = match.group(1).strip().strip('"')
+                if actor in {"adr-kit", "unknown"}:
+                    offenders.append(f"{path.name}: changed_by {actor!r}")
+        if not offenders:
+            return ["no self-signed or unknown actors found"]
+        return [
+            "Status History entries with no human actor:",
+            *(f"  {line}" for line in offenders),
+            "",
+            "These predate the signer requirement. Correcting one means editing",
+            "history, so it is a deliberate act, not something this command does.",
+        ]
+
+    signer = configured_signer(adr_dir)
+    if signer:
+        return [f"signer: {signer}", f"source: {adr_dir / LOCAL_CONFIG_NAME}"]
+    proposal = git_user_name()
+    lines = ["signer: (unset) - lifecycle commands will refuse to write history"]
+    if proposal:
+        lines.append(f'proposal from git config user.name: python bin/adr signer --set "User: {proposal}"')
+    else:
+        lines.append('set one with: python bin/adr signer --set "User: <your name>"')
+    return lines
+
+
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--adr-dir", default="docs/adr", help="ADR directory")
     parser.add_argument("--date", default=date.today().isoformat(), help="transition date")
-    parser.add_argument("--changed-by", default="adr-kit", help="status history actor")
+    parser.add_argument(
+        "--changed-by",
+        default=None,
+        help=(
+            "status history actor. Defaults to lifecycle.signer from the "
+            "machine-local config; with neither, the command refuses rather "
+            "than signing on your behalf."
+        ),
+    )
     parser.add_argument("--reason", default=None, help="status history reason")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="adr", description="adr-kit lifecycle commands")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    signer = sub.add_parser("signer", help="show, set, or audit the status-history signer")
+    signer.add_argument("--adr-dir", default="docs/adr", help="ADR directory")
+    signer.add_argument("--set", default=None, metavar="NAME", help='e.g. "User: Robert van den Breemen"')
+    signer.add_argument("--audit", action="store_true", help="list history entries with no human actor")
 
     new = sub.add_parser("new", help="create a Proposed ADR from a selected profile")
     new.add_argument("title")
@@ -812,6 +1202,32 @@ def build_parser() -> argparse.ArgumentParser:
     reject.add_argument("adr")
     add_common_args(reject)
 
+    answer = sub.add_parser(
+        "answer",
+        help="resolve an open question in place, keeping the question and the answer",
+    )
+    answer.add_argument("adr")
+    answer.add_argument("--answer", required=True, help="the settled answer")
+    answer.add_argument(
+        "--question",
+        default=None,
+        help="which unresolved question: a 1-based number or distinctive text",
+    )
+    add_common_args(answer)
+
+    relate = sub.add_parser(
+        "relate",
+        help="record a cross-reference between two ADRs on both sides at once",
+    )
+    relate.add_argument("adr")
+    relate.add_argument("--to", required=True, help="the other ADR id")
+    relate.add_argument(
+        "--remove",
+        action="store_true",
+        help="drop the cross-reference from both sides instead of adding it",
+    )
+    add_common_args(relate)
+
     supersede = sub.add_parser("supersede", help="supersede an ADR by another ADR")
     supersede.add_argument("old")
     supersede.add_argument("--by", required=True, help="successor ADR id")
@@ -829,7 +1245,9 @@ def main(argv: List[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.command == "new":
+        if args.command == "signer":
+            lines = command_signer(args)
+        elif args.command == "new":
             lines = command_new(args)
         elif args.command == "profiles":
             lines = command_profiles(args)
@@ -852,6 +1270,10 @@ def main(argv: List[str] | None = None) -> int:
                 f"Rejected, {args.date}.",
                 "Rejected decision",
             )
+        elif args.command == "answer":
+            lines = command_answer(args)
+        elif args.command == "relate":
+            lines = command_relate(args)
         elif args.command == "supersede":
             lines = command_supersede(args)
         elif args.command == "document":

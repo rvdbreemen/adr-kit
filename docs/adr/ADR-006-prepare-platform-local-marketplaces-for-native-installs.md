@@ -184,6 +184,7 @@ Confirm the decision with:
   "forbid_pattern": [],
   "forbid_import": [],
   "require_pattern": [],
-  "llm_judge": false
+  "llm_judge": false,
+  "llm_judge_reason": "no code surface: this decision governs process or documentation, so there is no diff for a model to judge it against"
 }
 ```

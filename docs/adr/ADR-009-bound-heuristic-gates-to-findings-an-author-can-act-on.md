@@ -228,10 +228,11 @@ acceptance gate set, so the unsatisfiable condition cannot return unnoticed.
   "forbid_pattern": [],
   "forbid_import": [],
   "require_pattern": [
-    { "pattern": "CLARITY_ACRONYM_ALLOWLIST",
+    {
+      "pattern": "CLARITY_ACRONYM_ALLOWLIST",
       "path_glob": "bin/adr-lint",
-      "message": "The clarity gate must keep its reviewable allowlist rather than a tuned threshold (ADR-009)." }
-  ],
-  "llm_judge": false
+      "message": "The clarity gate must keep its reviewable allowlist rather than a tuned threshold (ADR-009)."
+    }
+  ]
 }
 ```

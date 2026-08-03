@@ -202,7 +202,8 @@ share.
 
 ```json
 {
-  "llm_judge": false
+  "llm_judge": false,
+  "llm_judge_reason": "no code surface: this decision governs process or documentation, so there is no diff for a model to judge it against"
 }
 ```
 

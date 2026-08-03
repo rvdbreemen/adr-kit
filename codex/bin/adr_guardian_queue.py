@@ -16,6 +16,11 @@ QUEUE_CACHE_NAME = ".adr-kit-readiness.json"
 QUEUE_MAX_ACTIONS = 3
 QUEUE_MAX_BYTES = 256 * 1024
 QUEUE_TTL_HOURS = 24
+# Mirrors adr_quality_core.QUALITY_THRESHOLD. Duplicated as a literal rather
+# than imported because this module is read on the hook path and must stay
+# dependency-free; the readiness report carries the real threshold with each
+# record, and that value wins when present.
+QUALITY_QUEUE_THRESHOLD = 0.70
 _COMMAND_RE = re.compile(r"^/adr-kit:grill ADR-\d{3,4}$")
 
 
@@ -48,6 +53,24 @@ def rank_proposed(report: dict) -> list[dict]:
         quality_score = (
             float(quality.get("score", 1.0)) if isinstance(quality, dict) else 1.0
         )
+        threshold = (
+            float(quality.get("threshold", QUALITY_QUEUE_THRESHOLD))
+            if isinstance(quality, dict)
+            else QUALITY_QUEUE_THRESHOLD
+        )
+        below_threshold = quality_score < threshold
+
+        # Quality used to be the last tiebreaker in the sort, which meant a
+        # sharp ADR and an empty one were both enrolled and only their order
+        # differed. Being below the threshold is now a reason to be here in its
+        # own right, and the absence of every reason is a reason to leave: a
+        # Proposed ADR that is sharp, unlinked, unshipped, not ready and asking
+        # nothing has no work attached to it, and listing it teaches the reader
+        # to skim the queue.
+        signals = (linked, shipped, ready, open_questions, below_threshold)
+        if not any(signals):
+            continue
+
         reasons = []
         if linked:
             reasons.append("active implementation link")
@@ -57,19 +80,25 @@ def rank_proposed(report: dict) -> list[dict]:
             reasons.append("ready for confirmation")
         if open_questions:
             reasons.append("open human questions")
+        if below_threshold:
+            reasons.append(f"quality {quality_score:.3f} below {threshold:.2f}")
         reasons.append(f"age {age_days} days")
-        reasons.append(f"quality {quality_score:.3f}")
+        if not below_threshold:
+            reasons.append(f"quality {quality_score:.3f}")
         candidates.append(
             {
                 "adr_id": item["adr_id"],
                 "classification": item.get("classification"),
                 "command": f"/adr-kit:grill {item['adr_id']}",
                 "reasons": reasons,
+                "quality_score": round(quality_score, 3),
+                "below_threshold": below_threshold,
                 "_rank": (
                     -int(linked),
                     -int(shipped),
                     -int(ready),
                     -int(open_questions),
+                    -int(below_threshold),
                     -age_days,
                     quality_score,
                     str(item["adr_id"]),

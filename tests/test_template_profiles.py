@@ -1,10 +1,10 @@
-"""Tests for template-profile detection and the adr-audit template_profile
+"""Tests for template-profile detection and the adr-discover template_profile
 finding (task-5: MADR / Nygard format compatibility).
 
 Three layers:
 1. detect_template_profile() classifies the fixtures correctly
    (canonical, madr, nygard, plus migrated counterparts as canonical).
-2. bin/adr-audit accepts supported MADR / Nygard shapes and flags only
+2. bin/adr-discover accepts supported MADR / Nygard shapes and flags only
    unsupported or hybrid profiles.
 3. The hand-migrated canonical versions of both fixtures pass bin/adr-lint
    strictly. The migrate skill performs the live mapping; these fixtures
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ADR_AUDIT = REPO_ROOT / "bin" / "adr-audit"
+ADR_DISCOVER = REPO_ROOT / "bin" / "adr-discover"
 ADR_LINT = REPO_ROOT / "bin" / "adr-lint"
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
 
@@ -33,9 +33,9 @@ NYGARD_MIGRATED = FIXTURES / "nygard-migrated" / "ADR-010-use-asynchronous-messa
 
 
 def _load_audit_module():
-    """bin/adr-audit has no .py extension; load it via SourceFileLoader."""
-    loader = importlib.machinery.SourceFileLoader("adr_audit", str(ADR_AUDIT))
-    spec = importlib.util.spec_from_loader("adr_audit", loader)
+    """bin/adr-discover has no .py extension; load it via SourceFileLoader."""
+    loader = importlib.machinery.SourceFileLoader("adr_discover", str(ADR_DISCOVER))
+    spec = importlib.util.spec_from_loader("adr_discover", loader)
     mod = importlib.util.module_from_spec(spec)
     loader.exec_module(mod)
     return mod
@@ -100,12 +100,12 @@ def test_single_madr_signal_is_not_enough():
     assert AUDIT.detect_template_profile(text) == "unknown"
 
 
-# ---------- layer 2: adr-audit flags madr / nygard ADRs ----------
+# ---------- layer 2: adr-discover flags madr / nygard ADRs ----------
 
 
 def _run_audit(project_root: Path):
     result = subprocess.run(
-        [sys.executable, str(ADR_AUDIT), "--root", str(project_root)],
+        [sys.executable, str(ADR_DISCOVER), "--root", str(project_root)],
         capture_output=True, text=True, encoding="utf-8",
     )
     assert result.returncode == 0, result.stderr
