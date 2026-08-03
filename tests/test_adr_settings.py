@@ -195,3 +195,82 @@ def test_the_credential_environment_variable_is_reported_as_a_boolean(adr_dir):
     row = {r["key"]: r for r in json.loads(result.stdout)["settings"]}["judge.openai_api_key"]
     assert row["env_present"] is True
     assert row["env_var"] == "ADR_KIT_OPENAI_API_KEY"
+
+
+# ---------------------------------------------------------------------------
+# The OpenAI-compatible backend writes completely, or not at all (TASK-107)
+# ---------------------------------------------------------------------------
+
+def _set_backend(tmp_path, *extra):
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-judge"),
+         "--adr-dir", str(adr_dir), *extra],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        cwd=tmp_path,
+    )
+    return result, adr_dir
+
+
+def test_an_incomplete_openai_compatible_choice_is_refused(tmp_path):
+    """A settings command that writes a config the judge degrades on is worse
+    than no command: it reports success and produces silence at commit time.
+
+    The other three backends already refused an incomplete choice; this one
+    exited 0 and wrote `{"backend": "openai-compatible", "llm_enabled": true}`
+    with no endpoint and no model.
+    """
+    result, adr_dir = _set_backend(tmp_path, "--set-backend", "openai-compatible")
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "--base-url" in result.stderr and "--model" in result.stderr
+    assert not (adr_dir / ".adr-kit.json").exists(), "a refused write must write nothing"
+
+
+def test_a_missing_base_url_alone_names_only_that(tmp_path):
+    result, _ = _set_backend(
+        tmp_path, "--set-backend", "openai-compatible", "--model", "some-model"
+    )
+
+    assert result.returncode == 2
+    assert "--base-url" in result.stderr
+    assert "--model" not in result.stderr.split("requires")[1].split(".")[0]
+
+
+def test_a_complete_choice_splits_across_the_two_files(tmp_path):
+    """The model is a team decision; the endpoint is a fact about this machine.
+
+    Repository-tracked configuration may select a backend and may never
+    introduce an endpoint, because anyone with commit access writes that file.
+    """
+    import json
+
+    result, adr_dir = _set_backend(
+        tmp_path, "--set-backend", "openai-compatible",
+        "--base-url", "http://127.0.0.1:1234/v1", "--model", "qwen2.5-coder",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    tracked = json.loads((adr_dir / ".adr-kit.json").read_text(encoding="utf-8"))
+    local = json.loads((adr_dir / ".adr-kit.local.json").read_text(encoding="utf-8"))
+
+    assert tracked["judge"]["backend"] == "openai-compatible"
+    assert tracked["judge"]["openai_model"] == "qwen2.5-coder"
+    assert "openai_base_url" not in tracked["judge"], (
+        "an endpoint in the tracked file is an endpoint anyone with commit "
+        "access can point elsewhere"
+    )
+    assert local["judge"]["openai_base_url"] == "http://127.0.0.1:1234/v1"
+
+
+def test_the_setup_skills_offer_the_openai_compatible_route():
+    """R16 says setup must find out and act; it cannot offer what it never names."""
+    text = (REPO_ROOT / "skills" / "init" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "openai-compatible" in text
+    assert "LM Studio" in text
+    assert "--base-url" in text

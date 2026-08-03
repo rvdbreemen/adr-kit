@@ -34,6 +34,20 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **The OpenAI-compatible judge backend is offered at init and writes
+  completely.** `/adr-kit:init` now names it as option 4, with LM Studio and its
+  default base URL `http://127.0.0.1:1234/v1`. `adr-judge --set-backend
+  openai-compatible` gained `--base-url` and refuses unless both it and
+  `--model` are given -- the other three backends already refused an incomplete
+  choice, and this one exited 0 while writing a configuration the judge would
+  then silently degrade on.
+
+  The two values deliberately land in different files: the model name in the
+  committed `docs/adr/.adr-kit.json`, because which model judges a team's diffs
+  is a team decision, and the base URL in the gitignored local file, because
+  where a runtime lives is a fact about one machine and a tracked file may
+  select a backend but never introduce an endpoint.
+
 - **The guardian sweep runs `bin/adr signer --audit`.** It already knew how to
   find history entries attributed to the toolkit or to nobody, and ran nowhere.
   The weekly cheap-tier sweep now reports them alongside the lint, retirement and

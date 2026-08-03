@@ -397,12 +397,16 @@ Where that call goes is your choice:
                  environment. adr-kit will never store a key in the repository.
   3. ollama      a local model. Nothing leaves the machine. Measured at ~3.4s
                  per call on a 12B model, so commits get noticeably slower.
+  4. openai-compatible
+                 any endpoint that speaks the OpenAI chat API -- LM Studio,
+                 vLLM, a self-hosted gateway. Nothing leaves the machine when
+                 the endpoint is local.
 
 Any backend that is unavailable degrades to declarative-only and never blocks a
 commit.
 ```
 
-Then ask: `Judge backend? [1] host  [2] openrouter  [3] ollama  [4] turn the LLM pass off (1)`
+Then ask: `Judge backend? [1] host  [2] openrouter  [3] ollama  [4] openai-compatible  [5] turn the LLM pass off (1)`
 
 Apply the answer with the kit's own command — do **not** hand-write the JSON, because the command validates what it wrote and refuses an incomplete choice. Resolve the plugin path first if it is not already in scope from step 1a:
 
@@ -424,6 +428,11 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
   ```bash
   "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend ollama --model <tag>
   ```
+- **openai-compatible** — ask for the base URL and the model the endpoint serves. LM Studio's default is `http://127.0.0.1:1234/v1`; its model list is on its Developer tab. Then:
+  ```bash
+  "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend openai-compatible     --base-url http://127.0.0.1:1234/v1 --model <model the endpoint serves>
+  ```
+  The two values land in different files on purpose: which model judges is a team decision and goes into the committed `docs/adr/.adr-kit.json`, while the base URL is a fact about this machine and goes into the gitignored local file. The command refuses an incomplete choice rather than writing a config the judge would then silently degrade on. If the endpoint needs a key, tell the user to export `ADR_KIT_OPENAI_API_KEY` in their own shell profile — never write one anywhere.
 - **off** — merge `{"judge": {"llm_enabled": false}}` into `docs/adr/.adr-kit.json`. Say plainly that the declarative gate still runs and that `/adr-kit:judge` still gives LLM review on demand.
 
 Ignore the local file in version control (idempotent):
