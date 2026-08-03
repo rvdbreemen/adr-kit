@@ -295,6 +295,39 @@ def rank(records: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
     return (positive or [item[2] for item in scored])[:MAX_RESULTS]
 
 
+def _project_config(workspace: Path) -> dict[str, Any]:
+    """The project config, or an empty one. Never raises; never blocks a hook."""
+    try:
+        raw = json.loads(
+            (workspace / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _switched_off(workspace: Path, block: str) -> bool:
+    """Honour `inject.enabled` and `watch.enabled` from the project config.
+
+    Both keys shipped in `schemas/adr-kit-config.schema.json` describing exactly
+    this behaviour -- "when false, the PreToolUse injector never emits context
+    and the hook is a no-op for this project" -- and neither was read by anything
+    a hook reaches. `inject.enabled` had one reader, `bin/adr-watch`, which no
+    client's `hooks.json` invokes. So a user who turned injection off was told
+    the hook was now a no-op, and the injection kept firing.
+
+    `guardian.enabled` has worked this way since v0.18, so the pattern is the
+    kit's own rather than a new invention. Only an explicit `false` switches a
+    tier off: a missing key, a missing file and a malformed file all mean on,
+    because a settings surface must not be able to silence governance by being
+    unreadable.
+    """
+    block_config = _project_config(workspace).get(block)
+    if not isinstance(block_config, dict):
+        return False
+    return block_config.get("enabled") is False
+
+
 def _configured_limit(workspace: Path) -> int:
     """context.default_limit when set, else the default. Bounded and fail-soft.
 
@@ -302,13 +335,7 @@ def _configured_limit(workspace: Path) -> int:
     that used to ignore it. The bound keeps a typo from turning one prompt into
     a context flood.
     """
-    try:
-        raw = json.loads(
-            (workspace / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
-        )
-    except (OSError, ValueError):
-        return DEFAULT_MAX_RESULTS
-    value = ((raw or {}).get("context") or {}).get("default_limit")
+    value = (_project_config(workspace).get("context") or {}).get("default_limit")
     if isinstance(value, int) and 1 <= value <= 20:
         return value
     return DEFAULT_MAX_RESULTS
@@ -541,6 +568,15 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
             joined = "\n".join(parts)[:MAX_CONTEXT_CHARS]
             return (joined, "plan-exit") if parts else ("", "noop")
         if tool not in WRITE_TOOLS:
+            return "", "noop"
+        # The edit tier is switchable per project, which is what the config
+        # schema has claimed since it shipped. PreToolUse is `inject`, PostToolUse
+        # is `watch`; they are separate because a team may want the pre-edit
+        # constraint without the post-edit backstop, or the reverse.
+        if _switched_off(
+            envelope.workspace,
+            "inject" if envelope.event == "PreToolUse" else "watch",
+        ):
             return "", "noop"
         path = _safe_edit_path(envelope)
         if path is None:

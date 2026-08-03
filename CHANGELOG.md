@@ -32,6 +32,24 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
   **Upgrade:** add `--confirm` to any script or workflow that accepts an ADR.
 
+### Fixed
+
+- **`inject.enabled` and `watch.enabled` now do what the schema says they do.**
+  Both keys shipped in `schemas/adr-kit-config.schema.json` promising that
+  setting one to `false` makes its hook a no-op for the project. Neither was
+  read by anything a hook reaches: `hooks/adr_hook_core.py` opened
+  `.adr-kit.json` exactly once, for `context.default_limit`, and
+  `inject.enabled`'s only reader was `bin/adr-watch`, which no client's
+  generated `hooks.json` invokes. A user who turned injection off was told the
+  hook was now a no-op, and the injection kept firing.
+
+  The two switches are independent -- `inject` is PreToolUse, `watch` is
+  PostToolUse -- because a team may want the pre-edit constraint without the
+  post-edit backstop. Only an explicit `false` switches a tier off: a missing
+  key, a missing file, a wrong type and an unparseable document all mean on,
+  because a settings surface must not be able to silence governance by being
+  broken.
+
 ### Added
 
 - **The OpenAI-compatible judge backend is offered at init and writes
