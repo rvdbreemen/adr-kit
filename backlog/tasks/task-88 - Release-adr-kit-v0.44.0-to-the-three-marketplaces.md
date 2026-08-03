@@ -4,7 +4,7 @@ title: Release adr-kit v0.44.0 to the three marketplaces
 status: In Progress
 assignee: []
 created_date: '2026-08-03 05:41'
-updated_date: '2026-08-03 09:52'
+updated_date: '2026-08-03 09:57'
 labels:
   - release
   - v0.44.0
@@ -31,8 +31,8 @@ Version chosen as a minor bump: under 0.x this project has bumped minor for feat
 - [x] #2 scripts/bump-version.py 0.44.0 writes every declared version site; no version is hand-edited
 - [x] #3 CHANGELOG.md carries a release-note-quality [0.44.0] section that leads with the bin/adr-audit breaking change
 - [x] #4 README describes what actually ships, including the new commands
-- [ ] #5 All five local gates pass: check-release-version, build-client-adapters --check, adr-lint --strict, adr-index --check, pytest
-- [ ] #6 The PR into main is green and handed to the maintainer to merge; no --admin, no branch-protection bypass
+- [x] #5 All five local gates pass: check-release-version, build-client-adapters --check, adr-lint --strict, adr-index --check, pytest
+- [x] #6 The PR into main is green and handed to the maintainer to merge; no --admin, no branch-protection bypass
 - [ ] #7 The tag v0.44.0 is pushed only after explicit maintainer confirmation, and release-publish.yml goes green
 - [ ] #8 main is merged back into dev through its own PR, verified with scripts/check-branch-sync.py
 - [ ] #9 install-agent-envs.py --clients all advances the local prepared-directory marketplace and all three clients report v0.44.0
@@ -52,4 +52,8 @@ Alle drie zaten er sinds TASK-77/87: feature-branches draaien `validate` niet, d
 **Structureel opgelost.** `docs/RELEASING.md` stap 3 beloofde "dezelfde gates die CI draait" en somde er vijf op die dat niet waren. Er staat nu markdownlint bij (versie en globs gepind, gelijk aan `validate.yml`) plus een suite-run die third-party imports blokkeert via een meta-path finder. Fix bewezen door de runner-omgeving te reproduceren, niet door erover te redeneren: 1434 geslaagd, 16 overgeslagen, 0 gefaald zonder PyYAML.
 
 **Ontwerpkeuze bij de yaml-test:** `pytest.importorskip` alleen zou de test op élke runner overslaan, terwijl hij de bug bewaakt die drie geshipte ADR's corrumpeerde. De gequote vorm wordt nu onvoorwaardelijk getoetst; PyYAML levert alleen nog het zwaardere parse-bewijs waar het bestaat.
+
+**CI groen op acab870 (2026-08-03).** Alle 12 checks SUCCESS: validate, pytest, de zes Python-matrixjobs (3.10/3.12 × ubuntu/macos/windows), ADR Enforcement, adr-readiness, adr-lint smoke, generated ADR indexes. PR-head is identiek aan lokale HEAD.
+
+Overdracht aan de maintainer voor de merge naar `main`. Niet gemerged met `--admin`, geen branch protection omzeild. Daarna: tag v0.44.0 (aparte toestemming), merge-back naar dev via eigen PR, en `install-agent-envs.py --clients all` met per-client verificatie.
 <!-- SECTION:NOTES:END -->
