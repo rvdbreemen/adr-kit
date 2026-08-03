@@ -121,4 +121,3 @@ on CPU either way. This is advice about speed, not a capability gate.
 
 Installing third-party software happens only on explicit consent, never with
 silent elevation, and declining must leave a working installation.
-
