@@ -34,6 +34,21 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **`setup-project.py --no-pre-commit` no longer deletes the hook.** The flag
+  reads as "do not install one" and meant "remove the one that is there", so a
+  project managing its git hooks another way -- husky, lefthook, a hand-written
+  script -- lost it to a flag whose name promises a non-act. Skipping was not
+  expressible at all: every invocation either installed this kit's hook or
+  removed whatever was at that path.
+
+  There are three states now. `--no-pre-commit` leaves the file exactly as it is,
+  `--remove-pre-commit` removes adr-kit's hook, and passing both is refused.
+  Removal stays bounded either way: a hook without this kit's marker is never
+  deleted and never overwritten.
+
+  **Upgrade:** a script relying on `--no-pre-commit` to uninstall wants
+  `--remove-pre-commit`.
+
 - **An Accepted ADR with no retrieval metadata is now reported.** The check
   existed and was almost inert: `binding: true` was a precondition, and all 12
   records in this repository carrying no `topics`, `aliases` or `components`

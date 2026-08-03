@@ -3,9 +3,10 @@ id: TASK-118
 title: >-
   Retrieval metadata is optional, so half the corpus went unfindable — make it a
   gate
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 21:38'
+updated_date: '2026-08-03 23:44'
 labels:
   - retrieval
   - lint
@@ -36,9 +37,34 @@ Note the ordering against TASK-94: semantic retrieval reduces how much this meta
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A lint finding reports an Accepted ADR with no topics, no aliases and no components; decide FAIL or ADVISORY and state the reason in the commit
-- [ ] #2 The finding is satisfiable by editing the record, per spec R15 — it names what is missing rather than scoring the record
-- [ ] #3 `bin/adr new` prompts for or scaffolds non-empty retrieval metadata, so a new ADR does not start unfindable
-- [ ] #4 A test asserts that an ADR with all three fields empty produces the finding, and that one with any of them populated does not
-- [ ] #5 The guidance states that components name what the ADR defines, not everything it touches — with ADR-004 as the worked example
+- [x] #1 A lint finding reports an Accepted ADR with no topics, no aliases and no components; decide FAIL or ADVISORY and state the reason in the commit
+- [x] #2 The finding is satisfiable by editing the record, per spec R15 — it names what is missing rather than scoring the record
+- [x] #3 `bin/adr new` prompts for or scaffolds non-empty retrieval metadata, so a new ADR does not start unfindable
+- [x] #4 A test asserts that an ADR with all three fields empty produces the finding, and that one with any of them populated does not
+- [x] #5 The guidance states that components name what the ADR defines, not everything it touches — with ADR-004 as the worked example
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+**The check already existed, and finding out why it never fired was the task.**
+
+`check_retrieval_metadata` has been in `bin/adr-lint` all along with four escape conditions. I measured which one each of the twelve bare records used, rather than guessing: **all twelve escaped through `binding is not True`**, and every one of them was `binding: false`.
+
+That precondition made the check almost inert. Being non-binding means a decision does not gate code; it does not mean it should be invisible. An Accepted ADR nobody can retrieve is a decision that will be re-made, which is the failure R0 exists to prevent.
+
+**Two changes, and the second matters as much as the first:**
+
+1. The `binding` precondition is gone.
+2. The finding moved from `policy` — a gate not in `DEFAULT_GATES` — into `completeness`. An advisory in a gate nobody runs is silence, not an advisory. That is the mechanism by which twelve records went unfindable for months with no report.
+
+AC#1's decision: **ADVISORY by default**, FAIL under `context.retrieval_completeness: strict`. Findability is a quality property, not a correctness one, and a hard failure would block acceptance of an otherwise sound record. Being *seen* was the missing half, not being blocking.
+
+The two exemptions that genuinely mean "findable another way" are kept: `context_scope: global` is injected regardless of the query, and a populated Decision Contract gives the ranker text to match on.
+
+AC#3: `bin/adr new` names the three fields it cannot fill without inventing them — the signer pattern, propose never assume — including the rule authors get wrong. That rule is not academic: giving ADR-004 the components it merely *reads* made it outrank ADR-018 on a vector-retrieval query.
+
+**Two tests changed rather than the code.** The retrieval-health test pinned the finding to `--gates policy` and now asserts on the finding's level rather than the exit code, since its fixture is a minimal stub that trips other gates too. The migration test asserted a migrated Nygard record lints clean; it now asserts that the one surviving advisory is the honest one — an imported record has no retrieval metadata, migration deliberately never invents any, so the finding is the migrating team's to-do list.
+
+Full suite: 1538 passed, 13 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->

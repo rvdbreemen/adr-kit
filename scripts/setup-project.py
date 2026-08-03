@@ -81,7 +81,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--global-settings", type=Path)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--no-pre-commit", action="store_true")
+    parser.add_argument(
+        "--no-pre-commit", action="store_true",
+        help="Leave .githooks/pre-commit exactly as it is: do not install one, "
+        "and do not remove one. Use this on a project that manages its git "
+        "hooks another way.",
+    )
+    parser.add_argument(
+        "--remove-pre-commit", action="store_true",
+        help="Remove adr-kit's pre-commit hook. Only ever removes a hook this "
+        "kit wrote; a foreign hook is left alone.",
+    )
     parser.add_argument("--format", choices=("human", "json"), default="human")
     return parser
 
@@ -136,15 +146,26 @@ def main(argv: list[str] | None = None) -> int:
             for client in clients
             if effective["values"]["clients"][client]["enabled"] is not False
         ]
+        # Three states, not two. `--no-pre-commit` used to mean "remove the
+        # hook", which is a destructive act behind a name that promises a
+        # non-act: a project using husky or a hand-written hook lost it to a
+        # flag that reads as "leave things alone". Skipping is now expressible
+        # and is what that name does; removal has its own name.
+        if args.no_pre_commit and args.remove_pre_commit:
+            raise SystemExit(
+                "adr-kit:setup: --no-pre-commit leaves the hook alone and "
+                "--remove-pre-commit deletes it; pass one"
+            )
         pre_commit = (
             effective["values"]["pre_commit"]["enabled"]
-            and not args.no_pre_commit
+            and not args.remove_pre_commit
         )
         changes, configure_hooks_path = collect_changes(
             root,
             args.plugin_root.resolve(),
             clients,
             pre_commit_enabled=pre_commit,
+            touch_pre_commit=not args.no_pre_commit,
         )
         diff = render_diff(changes, root)
         if not args.dry_run:

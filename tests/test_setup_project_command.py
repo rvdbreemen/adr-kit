@@ -179,3 +179,88 @@ def test_every_client_setup_path_asks_about_the_embedding_runtime(skill_path):
     setup never asked, so the user met the gap when retrieval quietly fell back.
     """
     assert "--check-embedding" in skill_path.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# The pre-commit hook has three states, not two (TASK-119)
+# ---------------------------------------------------------------------------
+
+FOREIGN_HOOK = "#!/bin/sh\n# husky\nexit 0\n"
+
+
+def _project(tmp_path: Path, hook_body: str | None = None) -> Path:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], capture_output=True, check=True)
+    if hook_body is not None:
+        (tmp_path / ".githooks").mkdir()
+        (tmp_path / ".githooks" / "pre-commit").write_text(hook_body, encoding="utf-8")
+    return tmp_path
+
+
+def _setup(ws: Path, *extra: str):
+    return subprocess.run(
+        [sys.executable, str(SETUP), "--project-root", str(ws), *extra],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ws,
+    )
+
+
+def test_no_pre_commit_leaves_a_foreign_hook_byte_identical(tmp_path):
+    """The flag reads as "do not install one" and used to mean "remove one".
+
+    A project using husky, lefthook or a hand-written hook lost it to a flag
+    whose name promises a non-act. Skipping was not expressible at all: every
+    invocation either installed this kit's hook or removed whatever was there.
+    """
+    ws = _project(tmp_path, FOREIGN_HOOK)
+    hook = ws / ".githooks" / "pre-commit"
+    before = hook.read_bytes()
+
+    result = _setup(ws, "--no-pre-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert hook.read_bytes() == before
+
+
+def test_no_pre_commit_leaves_our_own_hook_alone_too(tmp_path):
+    """"Leave it alone" means leave it alone, whoever wrote it."""
+    ws = _project(tmp_path)
+    assert _setup(ws).returncode == 0
+    hook = ws / ".githooks" / "pre-commit"
+    ours = hook.read_bytes()
+
+    result = _setup(ws, "--no-pre-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert hook.read_bytes() == ours
+
+
+def test_remove_pre_commit_removes_ours(tmp_path):
+    ws = _project(tmp_path)
+    assert _setup(ws).returncode == 0
+    hook = ws / ".githooks" / "pre-commit"
+    assert hook.exists()
+
+    result = _setup(ws, "--remove-pre-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert not hook.exists()
+
+
+def test_remove_pre_commit_will_not_delete_someone_elses_hook(tmp_path):
+    """Removal is bounded by the marker this kit writes into its own wrapper."""
+    ws = _project(tmp_path, FOREIGN_HOOK)
+    hook = ws / ".githooks" / "pre-commit"
+    before = hook.read_bytes()
+
+    result = _setup(ws, "--remove-pre-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert hook.read_bytes() == before
+
+
+def test_the_two_flags_contradict_each_other_and_are_refused(tmp_path):
+    ws = _project(tmp_path)
+
+    result = _setup(ws, "--no-pre-commit", "--remove-pre-commit")
+
+    assert result.returncode != 0
+    assert "pass one" in result.stderr
