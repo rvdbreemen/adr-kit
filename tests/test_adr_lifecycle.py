@@ -684,6 +684,13 @@ def test_lifecycle_refuses_to_sign_on_the_users_behalf(tmp_path):
     it passed or failed depending on whether the machine running it had a git
     name -- which is the environment-dependence that made the v0.44.0 release PR
     red on all six runners.
+
+    Nulling the global and system config is not enough on its own: `git config`
+    also reads the **repository-local** `.git/config`, and the subprocess would
+    otherwise inherit this repository as its working directory. That passed here
+    only because adr-kit's own checkout happens to set no local `user.name`; one
+    `git config --local user.name X` in a contributor's clone would break it.
+    Running from `tmp_path` leaves git no repository to discover at all.
     """
     import os
     import subprocess
@@ -704,6 +711,7 @@ def test_lifecycle_refuses_to_sign_on_the_users_behalf(tmp_path):
         [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "An Unsigned Decision",
          "--adr-dir", str(adr_dir)],
         capture_output=True, text=True, encoding="utf-8", check=False, env=env,
+        cwd=str(tmp_path),
     )
 
     assert result.returncode != 0
