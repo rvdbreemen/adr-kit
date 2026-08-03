@@ -34,6 +34,25 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **BREAKING: an ADR listing fewer than two alternatives now fails the
+  completeness gate.** R0 states that a record giving only the outcome cannot be
+  re-evaluated later, and a decision that cannot be re-evaluated cannot be
+  superseded honestly. That guarantee was an ADVISORY under `quality`, a gate
+  not in the default set -- so a one-option record passed every blocking gate.
+
+  Measured before promoting it: all 28 records in this repository already weigh
+  at least three options, so the set passes. Promoting a gate while the
+  project's own records would fail it is how a gate gets reverted.
+
+  Two placeholder spellings are exempt, because migration deliberately never
+  fabricates alternatives: the `/adr-kit:migrate` skill's HTML comment and
+  `bin/adr-migrate`'s `- TODO:` list item. Counting either as a real option
+  would fail every honest import on arrival. A real option beside a placeholder
+  still counts as one, so a half-filled section does not pass by accident.
+
+  **Upgrade:** name the option that lost. "Do nothing" counts, and is usually
+  true.
+
 - **`/adr-kit:audit` can reach the gates its own rationale rests on.** The
   command exists because "a clean judge over a set of vague ADRs proves nothing,
   because vague rules cannot be violated" -- and vagueness is what the `evidence`

@@ -1282,6 +1282,42 @@ def check_policy_gate(content: str, adr_id: str) -> List[Dict]:
     return findings
 
 
+def count_alternatives(content: str) -> Optional[int]:
+    """How many options the record weighed, or None when the section is absent.
+
+    Format-aware through `_section_text`, which maps the heading to the semantic
+    role: MADR writes `## Considered Options` and Nygard writes
+    `## Alternatives Considered`, and both have to be counted or the check would
+    silently skip whichever profile it was not written against.
+
+    A missing section is None rather than 0, because that is the completeness
+    gate's own finding to report -- two findings for one cause would tell the
+    author to fix the same thing twice.
+    """
+    text = _section_text(content, "## Alternatives Considered")
+    if not text:
+        return None
+    # Migration writes a placeholder when the source record listed nothing, and
+    # it deliberately never fabricates alternatives. There are two spellings:
+    # `/adr-kit:migrate`'s skill emits an HTML comment, `bin/adr-migrate` emits
+    # a `- TODO:` list item. Both mean "unknown, fill this in".
+    #
+    # Counting either as a real option would turn every honest import into a
+    # blocking failure and push a migrating team to disable the gate -- the
+    # outcome spec R15 exists to prevent. The placeholder already tells the
+    # author what to do; a section holding only placeholders is treated as
+    # absent, which is the completeness gate's own finding to report.
+    stripped = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    real_items = [
+        item for item in re.findall(r"^\s*[-*]\s+(\S.*)$", stripped, re.MULTILINE)
+        if not item.lstrip().upper().startswith("TODO")
+    ]
+    heading_items = re.findall(r"^###\s+\S", stripped, re.MULTILINE)
+    if not real_items and not heading_items:
+        return None
+    return len(real_items) + len(heading_items)
+
+
 def check_quality_gate(content: str, adr_id: str) -> List[Dict]:
     """Advisory quality checks. For comprehensive scoring, use bin/adr-quality (which runs 4 weighted gates with letter grades)."""
     findings: List[Dict] = []
@@ -1318,22 +1354,11 @@ def check_quality_gate(content: str, adr_id: str) -> List[Dict]:
             ),
         })
 
-    alternatives_text = _section_text(content, "## Alternatives Considered")
-    if alternatives_text:
-        # Count list items (- or *) or standalone paragraphs separated by blank lines.
-        list_items = re.findall(r"^[-*]\s+\S", alternatives_text, re.MULTILINE)
-        heading_items = re.findall(r"^###\s+\S", alternatives_text, re.MULTILINE)
-        total_items = len(list_items) + len(heading_items)
-        if total_items < 2:
-            findings.append({
-                "gate": "quality",
-                "severity": "ADVISORY",
-                "code": "QUALITY_FEW_ALTERNATIVES",
-                "message": (
-                    f"## Alternatives Considered has {total_items} item(s); "
-                    f"consider listing at least 2 alternatives (including 'do nothing')"
-                ),
-            })
+    # The alternatives count moved to the completeness gate as a FAIL. R0 is not
+    # a suggestion: a record that states only the outcome cannot be re-evaluated,
+    # and a decision that cannot be re-evaluated cannot be superseded honestly.
+    # Leaving it here as an advisory meant a one-option record passed every
+    # blocking gate. See count_alternatives and COMPLETENESS_FEW_ALTERNATIVES.
 
     return findings
 
@@ -1490,6 +1515,30 @@ def lint_file(
                 "gate": "completeness", "level": level,
                 "details": [s.replace("## ", "") for s in miss],
                 "summary": f"missing sections: {[s.replace('## ', '') for s in miss]}",
+            })
+        alternatives = count_alternatives(text)
+        if alternatives is not None and alternatives < 2:
+            # R0's guarantee, enforced rather than suggested. A record that
+            # states only the outcome cannot be re-evaluated later, and a
+            # decision that cannot be re-evaluated cannot be superseded
+            # honestly -- which is the whole mechanism this kit rests on.
+            # Satisfiable by editing the record, per spec R15: name the option
+            # that lost, and "do nothing" is always one.
+            level = level_for(
+                "completeness", adr_num, cfg, strict_from_override,
+                file_advisory, strict_mode,
+            )
+            findings.append({
+                "gate": "completeness",
+                "level": level,
+                "code": "COMPLETENESS_FEW_ALTERNATIVES",
+                "details": [f"{alternatives} alternative(s) listed"],
+                "summary": (
+                    f"{alternatives} alternative(s) considered; a decision needs "
+                    f"at least 2, because an outcome with nothing weighed "
+                    f"against it cannot be re-evaluated later ('do nothing' "
+                    f"counts)"
+                ),
             })
         open_questions = unresolved_open_questions(text)
         if open_questions:
