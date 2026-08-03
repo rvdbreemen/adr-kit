@@ -217,10 +217,11 @@ candidate guard is false and resolution is unchanged.
   "forbid_pattern": [],
   "forbid_import": [],
   "require_pattern": [
-    { "pattern": "_self_root",
+    {
+      "pattern": "_self_root",
       "path_glob": "templates/githooks/pre-commit",
-      "message": "The shipped hook must keep the checkout as a candidate engine root (ADR-008)." }
-  ],
-  "llm_judge": false
+      "message": "The shipped hook must keep the checkout as a candidate engine root (ADR-008)."
+    }
+  ]
 }
 ```

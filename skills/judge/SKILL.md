@@ -16,7 +16,9 @@ If `$ARGUMENTS` is `settings` (or the user asks what the judge is configured to 
 
 ## Step 0 — Judge settings
 
-This is the settings surface for judging. It lives here rather than under a separate `/adr-kit:settings` because the values are the judge's own, and because `scripts/settings.py` already owns an unrelated `adr-kit:settings` namespace (`.adr-kit/settings.json`, install and doctor preferences) — two commands called "settings" showing different keys would be worse than one command in the obvious place.
+This is the *deep* settings surface for judging: it validates a backend choice against the live registry, which a generic writer cannot do. `/adr-kit:settings` (TASK-78) is the shallow one that shows every knob in the kit with its provenance and writes plain values, and it points here for backend selection.
+
+The earlier reasoning for having no `/adr-kit:settings` was that two commands called "settings" would be worse than one in the obvious place. That held while the judge owned most of the knobs. It stopped holding once the status-history signer, the guardian cadence and the retrieval limits needed a home too, and once it turned out `judge.llm_enabled` could be switched on by a shipped writer but never off.
 
 Show what is configured now, always before changing anything:
 

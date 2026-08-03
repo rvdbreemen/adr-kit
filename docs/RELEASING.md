@@ -104,7 +104,66 @@ python scripts/build-client-adapters.py --check     # no adapter drift
 python bin/adr-lint --strict docs/adr
 python bin/adr-index --check docs/adr
 python -m pytest -q
+npx markdownlint-cli2@0.14.0 "skills/**/*.md" "codex/skills/**/*.md" \
+  "copilot/skills/**/*.md" "agents/**/*.md" "instructions/**/*.md" \
+  "examples/**/*.md" "templates/**/*.md"
 ```
+
+The markdownlint line pins the version and repeats the globs from
+`.github/workflows/validate.yml` deliberately: they must stay in step, and a
+different version resolves different rules. It was missing here until v0.44.0,
+where "all gates green locally" was true and the release PR still failed on a
+double blank line in a skill file — the rest of these gates are Python and none
+of them read Markdown. Feature branches do not run `validate`, so a Markdown
+defect can sit unseen from the commit that introduced it until the release PR
+opens, which is the worst moment to find it.
+
+**Your machine has libraries the runners do not.** CI installs `pytest` and
+nothing else, because ADR-016 makes zero runtime dependencies load-bearing. A
+test that imports a third-party module therefore passes locally and fails on
+all six runners at once. This also bit v0.44.0: a `import yaml` in
+`tests/test_adr_lifecycle.py` was green on a developer machine with PyYAML
+installed and red everywhere else. Run the suite once with the extras hidden
+before opening the release PR:
+
+```bash
+python - <<'PY'
+import sys
+from importlib.abc import MetaPathFinder
+
+BLOCKED = {"yaml", "requests", "httpx", "numpy", "pydantic"}
+
+
+class Block(MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in BLOCKED:
+            raise ImportError(f"No module named '{fullname}'")
+        return None
+
+
+sys.meta_path.insert(0, Block())
+import pytest
+sys.exit(pytest.main(["-q"]))
+PY
+```
+
+Skips are fine — `pytest.importorskip` is the supported way to reach for an
+optional library. Failures are not. If a check matters enough to guard a
+regression, assert the structural form unconditionally and use the library only
+for the stronger parse on machines that have it.
+
+**If `ADR Enforcement (declarative)` fails on the release PR with `exceeds
+--max-diff-bytes=...`, that is the cap, not a violation.** The gate judges
+`origin/main...HEAD`, which for a release PR is the whole development branch,
+and this repository counts most changes about three times because it ships
+mirrored `codex/` and `copilot/` distributions. The fix is to raise the
+`max-diff-bytes` input on `.github/actions/adr-judge` (default 32 MiB), **not**
+`judge.max_diff_bytes` in `docs/adr/.adr-kit.json` — that number is the
+pre-commit budget for a single commit and must stay small (ADR-015's latency
+budget). Never set either to 0 to get past it: the cap is what makes an
+unscanned diff fail closed instead of reporting an unearned success. This bit
+once at v0.43.0, where the diff was 2,281,314 bytes against a 2 MiB cap and
+scanned clean in 4.5 s once the budget fit.
 
 ### 3. Land on the public repo and tag
 

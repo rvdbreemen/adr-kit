@@ -9,6 +9,29 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from adr_catalog import build_relationships, load_adr_records, normalize_adr_id
+from adr_quality_core import QUALITY_THRESHOLD, score_path
+
+
+def _scored_quality(record: Dict, adr_dir: Optional[Path] = None) -> Optional[float]:
+    """The weighted four-gate score for this record, or None if unreadable.
+
+    Records carry a bare filename, so the directory has to come from the
+    caller. Without it every score silently fell back to the three booleans --
+    a fallback that looks like a number and is not the one it claims to be.
+    """
+    raw = record.get("path")
+    if not raw:
+        return None
+    path = Path(str(raw))
+    if not path.is_absolute() and adr_dir is not None and not path.exists():
+        path = Path(adr_dir) / path.name
+    result = score_path(path)
+    if not result:
+        return None
+    try:
+        return round(float(result["overall"]), 3)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 READINESS_SCHEMA_VERSION = 1
@@ -71,6 +94,7 @@ def implementation_evidence(
     paths_normalized: bool = False,
     path_pairs: Optional[Sequence[tuple[str, str]]] = None,
     cited_ids: Optional[Sequence[str]] = None,
+    adr_dir: Optional[Path] = None,
 ) -> Dict:
     """Return explicit, inspectable evidence for one ADR implementation link."""
     adr_id = record["adr_id"]
@@ -227,6 +251,7 @@ def readiness_for_record(
     paths_normalized: bool = False,
     path_pairs: Optional[Sequence[tuple[str, str]]] = None,
     cited_ids: Optional[Sequence[str]] = None,
+    adr_dir: Optional[Path] = None,
 ) -> Dict:
     mechanical = _mechanical_findings(record)
     human = [
@@ -236,14 +261,27 @@ def readiness_for_record(
         }
         for question in record.get("open_questions", [])
     ]
+    # Three booleans used to stand in for quality here, which meant a vague ADR
+    # and a sharp one scored identically as long as both had a decision line and
+    # a verified_in. The real weighted scorer existed the whole time behind
+    # `bin/adr-quality`; it is now importable, so this reads it. The booleans
+    # stay in `checks` because they are cheap, specific, and say *what* is
+    # missing where a single number only says how much.
     quality_checks = {
         "decision": bool(str(record.get("decision_text", "")).strip()),
         "evidence": bool(record.get("verified_in")),
         "open_questions_resolved": not bool(record.get("open_questions")),
     }
-    quality_score = round(
-        sum(1 for passed in quality_checks.values() if passed) / len(quality_checks), 3
-    )
+    quality_score = _scored_quality(record, adr_dir)
+    if quality_score is None:
+        # The scorer could not read the file. Fall back to the booleans rather
+        # than inventing a number, and say which one this is.
+        quality_score = round(
+            sum(1 for passed in quality_checks.values() if passed) / len(quality_checks), 3
+        )
+        quality_source = "structural-fallback"
+    else:
+        quality_source = "adr-quality"
     classification = _classification(record, mechanical, human)
     link = implementation_evidence(
         record,
@@ -278,7 +316,13 @@ def readiness_for_record(
         "human_findings": human,
         "mechanical_actions": [item["message"] for item in mechanical],
         "human_decisions": [item["message"] for item in human],
-        "quality": {"score": quality_score, "checks": quality_checks},
+        "quality": {
+            "score": quality_score,
+            "checks": quality_checks,
+            "source": quality_source,
+            "threshold": QUALITY_THRESHOLD,
+            "below_threshold": quality_score < QUALITY_THRESHOLD,
+        },
         "open_questions": list(record.get("open_questions", [])),
         "documents_shipped": bool(record.get("documents_shipped")),
         "verified_in": sorted(
@@ -334,6 +378,7 @@ def build_readiness_report(
             paths_normalized=True,
             path_pairs=path_pairs,
             cited_ids=cited_ids,
+            adr_dir=adr_dir,
         )
         for record in selected
     ]

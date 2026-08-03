@@ -4,6 +4,279 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.44.0] - 2026-08-03
+
+### Breaking changes
+
+**`bin/adr-audit` is a different program.** It used to be the init discovery
+scanner (`--root`, `--output`, `--skip`, printing candidate JSON). That scanner
+is now `bin/adr-discover`, with its flags and output unchanged, and `bin/adr-audit`
+is the new lint-plus-judge command. Rename every call that meant discovery. The
+kit's own callers — `bin/adr-doctor`, the init and adr skills, the validate
+workflow — were updated in the same change.
+
+A bare `bin/adr-audit` now refuses rather than answering. Defaulting to stdin was
+the one shape that could be wrong in silence: with stdin closed, an unrenamed
+script would read an empty diff, judge nothing, print `verdict: exit 0 (on
+course)` and pass. It exits 2 naming `--whole-codebase` and `--diff`, and points
+at `bin/adr-discover`.
+
+**Every lifecycle command refuses to run without a configured signer**, including
+`bin/adr new`. `--changed-by` used to default to the literal `adr-kit`; it has no
+default now, and on refusal the command writes nothing and exits non-zero.
+Affected: `new`, `accept`, `propose`, `reject`, `document`, `supersede`, and the
+new `relate` and `answer`. Because creation is on that list, an unprepared
+machine fails at the first record rather than the first acceptance. The setting,
+`lifecycle.signer`, lives in the gitignored `docs/adr/.adr-kit.local.json` and so
+cannot be inherited from the repository: every machine, container and CI runner
+needs its own. Run `python bin/adr signer --set "User: <your name>"` once per
+machine, or pass `--changed-by` every time.
+
+Three further changes alter behaviour without renaming anything:
+
+- **`llm_judge` defaults to `true`.** An Enforcement block that omits the key was
+  treated as opted out and never reached a model; it is judged now, and a
+  `VIOLATION` blocks the commit. With `judge.llm_enabled` true since v0.43.0, a
+  repository that changes nothing can go from zero model calls at commit time to
+  one per in-scope ADR, and can find a commit blocked that used to pass. An
+  explicit `"llm_judge": false` keeps the old behaviour; an ADR with no
+  Enforcement block is still skipped. Run `python bin/adr-migrate docs/adr/
+  --enable-llm-judge --dry-run` before upgrading, or set `judge.llm_enabled:
+  false` to keep the commit path model-free.
+- **The prompt-submit hook injects five ADRs where it injected three,** and
+  `context.default_limit` now reaches it. A project that already set that key for
+  the command line is affected most: `default_limit: 15` goes from three injected
+  ADRs per prompt to fifteen with no change on their side. Set it to the number
+  you want; `3` restores the old behaviour.
+- **`gh pr create` can now be denied.** A `PreToolUse` guard judges
+  `origin/<base>...HEAD` before the command runs and denies the tool call when
+  the branch violates an Accepted ADR. Its matcher is `Bash`, so every Bash tool
+  call spawns the hook — roughly 0.3 s per call on a Windows checkout. It takes
+  effect on upgrade with no action. There is no configuration key that disables
+  it; the opt-out is disabling the plugin. To clear one denial: fix the code,
+  supersede the decision, or set `ADR_KIT_OVERRIDE="ADR-NNN: reason"`.
+
+### Added
+
+- **`/adr-kit:audit` and `bin/adr-audit` ask both governance questions at once.**
+  A clean judge over vague ADRs proves nothing, because a vague rule cannot be
+  violated; a sharp ADR set nobody checks the code against is documentation, not
+  governance. The exit codes keep the two apart, because they have different
+  owners: 0 clean, 1 the code violates an Accepted ADR, 3 the ADR set fails its
+  own gates, 4 both, 2 the audit could not run. 3 and 4 sit above 1 so a caller
+  testing `!= 0` still blocks while a caller who cares can tell them apart.
+- **`--whole-codebase` reaches code no diff has ever touched.** A rule added
+  after a file was written has never been applied to that file, and never will be
+  by a gate that only sees changes. Mechanically it is a diff against the empty
+  tree, so every line reads as added and `forbid_pattern` applies repository
+  wide; the right-hand side is the working tree, so a local run answers about the
+  code in front of you. Such a diff is large by construction — this repository's
+  own is 9.85 MB — so the mode passes the CI-sized 32 MiB budget rather than
+  failing closed on size.
+- **The LLM pass is bounded by scope, not by the flag.** An ADR is judged only
+  when the diff touches a file matching its rules' `path_glob` set; a commit
+  outside every scope makes no model call, and a skipped ADR is recorded in the
+  `--json` attestation rather than disappearing. ADR-017 promised this in prose
+  and the code never did it — tolerable while `llm_judge` defaulted to false, and
+  the difference between one call and one call per ADR now that it does not. With
+  N opted-in ADRs, a commit touching M scopes costs M calls. **The trap:** a
+  block with no rules, or a rule without a `path_glob`, has no boundary to narrow
+  with and is judged on every commit. The shipped template emits exactly such an
+  empty block, so delete the section when a decision has no code surface.
+- **`bin/adr-migrate --enable-llm-judge`, the opt-out migration.** It removes the
+  legacy `"llm_judge": false` from Accepted ADRs so the true default applies —
+  removing the key rather than writing `true`, so there is one fewer thing to
+  re-flip if the default moves again. A rule-less block is marked no-code-surface
+  with a reason instead of becoming a call on every commit; `--force-enable
+  ADR-NNN` overrides that. `--except ADR-NNN --reason "..."` records a refusal,
+  and the reason is mandatory. `/adr-kit:upgrade` gained step 4b, which shows
+  each Decision with its rule count and asks before applying.
+- **`llm_judge_reason` makes an opt-out durable.** Since the default flipped, a
+  bare `"llm_judge": false` is ambiguous: deliberate refusal, or leftover from
+  the era when false was the default? A reason resolves it, and the memory lives
+  in the ADR rather than in a state file a fresh clone would lose. The migration
+  re-proposes a bare `false` and leaves a reasoned one alone.
+- **A local precomputed vector layer (ADR-018, superseding ADR-014).** Lexical
+  retrieval misses on vocabulary: ask "should the commit hook still run when the
+  model is unreachable?" and the ADR that says "fail open on tooling drift"
+  shares no token with the question. `adr-embed build` embeds every ADR into a
+  machine-local `docs/adr/.adr-kit-vectors.json`; `adr-embed query` finds
+  decisions by meaning. `build` is the only place in the kit that may call an
+  embedding model, and a human or a CI job invokes it, so nothing embeds because
+  someone typed a prompt. The read path is standard-library cosine over a file —
+  no numpy, no daemon, no network — which keeps ADR-016's zero dependencies and
+  ADR-015's 2 s hook budget intact. Staleness announces itself: every entry
+  records the model, the dimension and a content hash, and a changed dimension
+  refuses the store outright rather than scoring nonsense.
+
+  **What it does not do yet.** `adr-embed` is the only reader. `adr-context`,
+  `bin/adr_query.py` and the lifecycle hooks do not consult the store, so
+  everyday retrieval is unchanged and still lexical. Building a store today gives
+  you a queryable index and the contract the retrieval path will read; it does
+  not make `/adr-kit:context` semantic.
+- **`bin/adr-settings`, one surface for every knob.** Each row says where its
+  value came from — machine-local, project, default or unset — because "why is
+  this on?" is the question a settings screen exists to answer. Writes route
+  themselves: a signer lands in the gitignored local file, because writing one
+  person's name into the tracked file would sign every teammate's acceptances.
+  `--check-embedding` probes for a local embedding runtime read-only and reports
+  the routes forward, treating a missing runtime as a normal outcome.
+- **An OpenAI-compatible backend, so LM Studio and similar endpoints work.**
+  Configured through `judge.openai_base_url`, `judge.openai_model` and the
+  `ADR_KIT_OPENAI_API_KEY` environment variable. The base URL is machine-local by
+  design and refused in the tracked config: repository-tracked configuration may
+  select a backend but never introduce an endpoint, because an endpoint a
+  repository can name is an endpoint a repository can redirect.
+- **The branch is judged before the pull request exists.** Opening a PR is a
+  shell call, so a pre-tool guard intercepts `gh pr create` and judges the whole
+  branch first — earlier than CI can be, because CI only learns of the PR once it
+  is there. This is the one hook that may block, and that is the point. It fails
+  open on everything that is not a violation: no judge, no git, no base branch, a
+  timeout, a diff over the cap. Matching is anchored on the command shape, so
+  `gh pr list` and a comment mentioning the command do not fire it.
+- **Leaving plan mode asks for the ADRs the plan needs.** The `ExitPlanMode` tool
+  call is the moment a decision becomes an intention, which is the cheapest point
+  to notice that nobody wrote it down. Advisory: it never blocks the transition.
+- **`bin/adr relate` writes a cross-reference on both sides at once.**
+  Supersession was the only reciprocal writer; a plain cross-reference had none,
+  so an ADR could cite ADR-042 forever while ADR-042 never learned of it. The
+  link goes in a `related` frontmatter field, written to both records in one
+  transaction and unwound the same way by `--remove`. Frontmatter rather than
+  prose, because reference bookkeeping is a mutation the kit has always permitted
+  on an Accepted record while editing its body is not.
+- **`bin/adr answer` keeps a grilling question with its answer.** `## Open
+  Questions` holds unresolved items by design and acceptance requires the list to
+  be empty, so an author who answered a question had to delete it to accept the
+  ADR — leaving the Status History, which records who flipped the status, never
+  what they were asked. The command rewrites the item as `- [x] <question> —
+  **Answered <date> by <signer>:** <answer>`, which the parser already treats as
+  resolved, so both halves survive acceptance untouched.
+- **Index freshness is checked where it rots,** at the strength each place can
+  honestly claim. The guardian nudges at SessionStart, in-process because `check`
+  may not spawn, behind an mtime precondition that is a skip and not a proof. The
+  commit hook warns rather than blocks, because it reads the worktree while the
+  commit is the staged snapshot and a partial commit would otherwise be refused
+  wrongly. CI blocks, and now ships downstream as `.github/actions/adr-index-check`
+  plus a copyable workflow.
+- **Accepted ADRs are swept for quality decay.** Quality was checked once, at
+  acceptance, and then frozen; an ADR does not stay sharp on its own. `adr-quality
+  --adr-dir --status Accepted` scores them and exits 1 on decay, and the
+  guardian's cheap tier runs it. The response is a supersession or a retirement,
+  never a rewrite: an Accepted body is immutable.
+- **Quality drives the grilling queue.** A sub-threshold score is now a reason to
+  be queued in its own right, and the absence of every reason is a reason to
+  leave — a Proposed ADR that is sharp, unlinked, unshipped and asking nothing
+  drops out instead of teaching the reader to skim.
+- **The bootstrap scanner reads the git history.** `.git/**` was in the skip list
+  and all four scanners walked the working tree, which shows what a project is
+  but not how it got that way. It now reads decision-shaped commit subjects,
+  file-level churn, and the order tooling arrived. History candidates are stamped
+  `source: "history"` and carry a `why_this_is_weak` note: a file that exists is
+  a fact, a commit subject is a claim someone typed once, possibly about a
+  decision reversed three commits later. Everything fails open — no git, no
+  repository, no commits — because a bootstrap that refuses on a thin history is
+  worse than one that scans what it can and says which half is missing.
+- **Two shipped CI workflow templates,** offered by `/adr-kit:install-hooks`:
+  `adr-judge.yml` for the pull-request enforcement gate and `adr-index-check.yml`
+  for generated-index freshness. Both are declarative-only, with no model, no
+  secret and no API key. Both need `fetch-depth: 0` or only one side of the diff
+  exists.
+- **ADR-019 records why `Stop`, `SubagentStop` and `SessionEnd` stay silent.**
+  Answering "were decisions made this session?" honestly means reading a whole
+  session, which wants a model — and a session ends when nobody is watching, so a
+  hook that spends there spends on an event you cannot see fire and cannot
+  refuse. The question moved to `/adr-kit:audit` and `adr-suggest`, which run
+  when someone asks. `NOOP_EVENTS` now carries a reason per entry.
+- **The generated ADR graph carries `related` links.** `bin/adr_catalog.py`
+  derives `related_ids` from the prose section and the new frontmatter field, so
+  an `adr relate` link becomes an edge in `ADR-INDEX.json` and raises the
+  `context.weights.related_decisions` signal for both records. Nothing changes
+  for a project that never calls `relate`.
+- **Both new commands ship to all three certified clients,** so the canonical
+  workflow set is 17: Claude Code, Codex CLI and GitHub Copilot CLI each carry
+  `audit` and `settings`.
+
+### Changed
+
+- **Init accepts the ADRs it reconstructs, after asking once per batch.**
+  Reconstructing a decision the code already implements is documentation, not
+  authorisation: nobody approves a new direction, they confirm the record matches
+  what ships. `bin/adr accept --auto` is not a bypass — it demands
+  `documents_shipped: true`, a `verified_in` pointer, no unresolved Open
+  Questions and a quality score above the threshold, and refuses by name when one
+  fails. The skill names `bin/adr new` explicitly instead of gesturing at "the
+  lifecycle command".
+- **Init cannot finish on a stale index.** It runs `adr-index docs/adr --check`
+  as its last step and blocks on a non-zero.
+- **`docs/client-support.md` names the missing fail-closed edit floor on GitHub
+  Copilot CLI.** ADR-004 makes the pre-edit tier the one tier that refuses rather
+  than degrades; Copilot exposes no pre-tool event that can carry model context,
+  so on that client the floor does not exist and `postToolUse` reporting drift
+  after the write is a weaker guarantee by construction. The matrix said
+  "unsupported native event", which is accurate and tells a reader nothing.
+- **The `adr-judge` composite action always passes `--max-diff-bytes`,**
+  defaulting to 32 MiB, and a command-line value overrides `judge.max_diff_bytes`
+  outright. That key is the pre-commit number now and no longer governs the CI
+  gate. To keep your configured cap there, pass `with: max-diff-bytes: <value>`.
+- **The shipped pre-commit hook changed,** gaining the index-freshness warning.
+  A downstream project only gets it by re-running `/adr-kit:install-hooks` or
+  `/adr-kit:upgrade`; the guardian's wrapper-staleness nudge will say so.
+- **The grill nudge no longer waits for a model to read a sentence.**
+  `refresh-readiness` existed and only prose in the guardian skill ever called
+  it, so on a fresh clone the gitignored 24-hour cache stayed empty and the nudge
+  stayed silent. `adr-guardian check` now rebuilds the queue in-process when the
+  cache is missing or expired, skips entirely while a valid one exists, and fails
+  open in every direction.
+
+### Fixed
+
+- **`bin/adr-settings` printed a stored credential back.** `judge.openai_api_key`
+  rendered like any other string, so a key in the gitignored local file came
+  straight out onto the terminal on `--all`. The file was never the exposure; the
+  terminal is — scrollback, a screenshot, a pasted bug report. Secret keys now
+  render as `<set>` or `(not set)`, with the matching environment variable
+  reported as a boolean beside them. The value is still stored and still reaches
+  the judge.
+- **`bin/adr document` wrote an empty signer into the status history.** It
+  appends a history entry like every other lifecycle command and so must resolve
+  a signer like every other one; it did not. The audit gate then rejected the
+  entry, so an ADR correctly marked as documenting shipped behaviour could never
+  be accepted — and the failure surfaced two commands later, blaming acceptance.
+- **`bin/adr accept --auto` would have accepted an untouched template.** Every
+  gate it ran was structural, and a scaffold is structurally perfect: all
+  sections present, valid frontmatter, quality 0.88 against a 0.70 threshold. It
+  would have written "Chosen option: **Option A**, because state the decisive
+  rationale" into the record as an Accepted decision. It now refuses a record
+  still carrying template instructions, because their presence is not a heuristic
+  about quality — it is proof a section was never written.
+- **`bin/adr new` produced unparseable YAML for an actor containing a colon.** The
+  status-history placeholder was substituted verbatim, so `User: Robert van den
+  Breemen` broke the block it was written into.
+
+### Upgrade notes
+
+1. **Set a signer on every machine**, or no lifecycle command will run:
+   `python bin/adr signer --set "User: <your name>"`. It is machine-local by
+   design and cannot be inherited from the repository, so containers and CI
+   runners need their own.
+2. **Rename any direct call to `bin/adr-audit` that meant discovery** to
+   `bin/adr-discover`. A bare `bin/adr-audit` now exits 2 rather than answering.
+3. **Decide about the LLM pass before your next commit.** Run `python
+   bin/adr-migrate docs/adr/ --enable-llm-judge --dry-run` to see what the new
+   default covers, or set `judge.llm_enabled: false` to keep the commit path
+   model-free. Delete empty `## Enforcement` blocks: a block with no rules is
+   judged on every commit.
+4. **Re-run `/adr-kit:install-hooks` or `/adr-kit:upgrade`** to pick up the
+   changed pre-commit wrapper.
+5. **Check `context.default_limit`** if you had set it: it now applies at prompt
+   time as well as on the command line.
+6. **Gitignore `docs/adr/.adr-kit-vectors.json` before your first `adr-embed
+   build`.** It is derived, model-specific and different on every machine, and no
+   shipped command adds the line for you.
+7. **If your CI pins `judge.max_diff_bytes`,** pass it to the action explicitly:
+   `with: max-diff-bytes: <value>`.
+
 ## [0.43.0] - 2026-07-31
 
 ### Upgrade notes

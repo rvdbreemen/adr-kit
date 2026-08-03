@@ -14,9 +14,24 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# `ADR-*.md` also matches ADR-INDEX.md, which every lifecycle command writes in
+# the same transaction as the record. `glob` yields filesystem order, not sorted
+# order, so `next(glob("ADR-*.md"))` returned the record on Windows and the
+# generated index on Linux -- a test that passed locally and failed in CI while
+# the code it guards was fine. Anchor on the digits and there is only one match.
+ADR_RECORD_GLOB = "ADR-[0-9]*.md"
+
 ADR = REPO_ROOT / "bin" / "adr"
 ADR_INDEX = REPO_ROOT / "bin" / "adr-index"
 ADR_SCHEMA = REPO_ROOT / "bin" / "adr_schema.py"
+
+
+def _created_adr(adr_dir: Path) -> Path:
+    """The one numbered ADR a `bin/adr new` fixture just created."""
+    records = sorted(adr_dir.glob(ADR_RECORD_GLOB))
+    assert len(records) == 1, f"expected exactly one ADR, found {[p.name for p in records]}"
+    return records[0]
 
 
 def _load_schema_module():
@@ -612,3 +627,121 @@ def test_every_status_history_block_in_the_repo_parses():
 
     assert checked > 0, "no status_history blocks found; the glob or fence changed"
     assert not failures, "unparseable status_history blocks:\n  " + "\n  ".join(failures)
+
+
+def test_adr_new_quotes_an_actor_containing_a_colon(tmp_path):
+    """`User: <name>` is the actor shape spec.md R8 prescribes, and a raw colon
+    turns the status_history block into unparseable YAML.
+
+    accept and supersede route their actor through _yaml_scalar; creation did
+    not, and substituted the template placeholder verbatim. The block then
+    parsed for adr-kit's own mini-parser and failed for real YAML - the same
+    class of defect that corrupted three shipped ADRs before.
+    """
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    result = subprocess.run(
+        [
+            sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Decision With A Signer",
+            "--adr-dir", str(adr_dir),
+            "--changed-by", "User: Robert van den Breemen",
+        ],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    text = _created_adr(adr_dir).read_text(encoding="utf-8")
+    block = re.search(r"```yaml\n(status_history:.*?)\n```", text, re.DOTALL)
+    assert block, "no status_history block was written"
+
+    # Assert the quoted shape without a parser first, so this guards the
+    # regression on every run. The sibling test above reaches for PyYAML and is
+    # therefore skipped wherever PyYAML is absent -- which is every CI runner
+    # here, because ADR-016 makes zero runtime dependencies load-bearing and the
+    # workflow installs pytest and nothing else. A check that only runs on the
+    # one machine that happens to have the library is not a check.
+    assert 'changed_by: "User: Robert van den Breemen"' in block.group(1), (
+        "the actor was substituted unquoted; a raw colon makes the block "
+        "unparseable to every YAML reader outside adr-kit's own mini-parser"
+    )
+
+    # Then, where a real parser exists, prove it actually parses.
+    yaml = pytest.importorskip(
+        "yaml", reason="PyYAML absent; the structural assertion above still ran"
+    )
+    parsed = yaml.safe_load(block.group(1))
+    assert parsed["status_history"][0]["changed_by"] == "User: Robert van den Breemen"
+
+
+def test_lifecycle_refuses_to_sign_on_the_users_behalf(tmp_path):
+    """No configured signer and no flag means refuse, not sign as 'adr-kit'."""
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "An Unsigned Decision",
+         "--adr-dir", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+
+    assert result.returncode != 0
+    assert "no signer configured" in result.stderr
+    assert not list(adr_dir.glob(ADR_RECORD_GLOB)), "nothing may be written on refusal"
+
+
+def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
+    """The machine-local config supplies the actor; the flag stays optional."""
+    import json as _json
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.local.json").write_text(
+        _json.dumps({"lifecycle": {"signer": "User: Configured Human"}}), encoding="utf-8"
+    )
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Signed Decision",
+         "--adr-dir", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    created = _created_adr(adr_dir)
+    assert 'changed_by: "User: Configured Human"' in created.read_text(encoding="utf-8")
+
+
+def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path):
+    """Validate the act before the actor: the error must name the real problem."""
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Decision",
+         "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "accept", "ADR-001",
+         "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    # Accepted -> Proposed is illegal, and this call also has no signer.
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "propose", "ADR-001",
+         "--adr-dir", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+
+    assert result.returncode == 2
+    assert "illegal lifecycle transition" in result.stderr, (
+        "the signer check must not preempt the legality check; an illegal "
+        "transition has to report that it is illegal"
+    )

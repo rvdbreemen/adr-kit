@@ -67,7 +67,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
 
@@ -429,7 +429,18 @@ def parse_enforcement(adr_text: str, adr_path: Path) -> Optional[Dict]:
 # compiled as a regex or lands in an LLM prompt. Invalid blocks are reported
 # as ADVISORY config errors by the caller and are never used.
 ENFORCEMENT_KNOWN_KEYS = frozenset(
-    {"forbid_pattern", "forbid_import", "require_pattern", "llm_judge"}
+    {
+        "forbid_pattern",
+        "forbid_import",
+        "require_pattern",
+        "llm_judge",
+        # Why llm_judge is false. Since llm_judge defaults to TRUE (TASK-74),
+        # a bare `false` is ambiguous: it could be a deliberate opt-out or a
+        # leftover from the era when false was the default. A reason makes the
+        # opt-out durable -- the upgrade re-proposes a bare false and leaves a
+        # reasoned one alone.
+        "llm_judge_reason",
+    }
 )
 ENFORCEMENT_RULE_KEYS = frozenset({"pattern", "path_glob", "message"})
 
@@ -480,6 +491,14 @@ def validate_enforcement(data: Dict, deep: bool = False) -> List[str]:
     if "llm_judge" in data and not isinstance(data["llm_judge"], bool):
         issues.append(
             f"llm_judge must be a boolean, got {type(data['llm_judge']).__name__}"
+        )
+    reason = data.get("llm_judge_reason")
+    if "llm_judge_reason" in data and (not isinstance(reason, str) or not reason.strip()):
+        issues.append("llm_judge_reason must be a non-empty string")
+    if reason and data.get("llm_judge", True):
+        issues.append(
+            "llm_judge_reason records why the LLM pass is OFF; it is meaningless "
+            "with llm_judge true or absent"
         )
     if issues:
         return issues
@@ -1116,17 +1135,75 @@ def resolve_retired_ids(adrs: List[Tuple[str, Path, str]]) -> Dict[str, str]:
     return retired
 
 
+def enforcement_scope_globs(enforcement: Dict) -> Tuple[List[str], bool]:
+    """Return (globs, repo_wide) for an Enforcement block's declared scope.
+
+    ``repo_wide`` is True when the block cannot name its own boundary: either
+    it declares no rules at all, or at least one rule omits ``path_glob``.
+    That mirrors the declarative pass, where ``path_matches`` returns True for
+    a rule with no glob (:732-736) — a rule without a glob applies everywhere,
+    so an ADR without a glob is in scope everywhere.
+
+    The consequence is deliberate and worth stating where a reader will hit
+    it: a rule-less Enforcement block with ``llm_judge`` on costs one model
+    call on EVERY commit, because there is nothing to narrow it with. The
+    upgrade path proposes marking such an ADR as having no code surface
+    instead, precisely so that this does not happen by accident.
+    """
+    globs: List[str] = []
+    saw_rule = False
+    for kind in ("forbid_pattern", "forbid_import", "require_pattern"):
+        for rule in enforcement.get(kind, []) or []:
+            saw_rule = True
+            glob = (rule or {}).get("path_glob")
+            if not glob:
+                return [], True
+            globs.append(glob)
+    if not saw_rule:
+        return [], True
+    return globs, False
+
+
+def adr_scope_touched(enforcement: Dict, diff_paths: Optional[Iterable[str]]) -> bool:
+    """True when the diff touches this ADR's declared scope.
+
+    ``diff_paths`` of None means the caller did not supply a diff (dry-run
+    inspection): scope is then unknowable, so the ADR stays a target rather
+    than being silently dropped. Fail towards judging, not towards silence.
+    """
+    if diff_paths is None:
+        return True
+    globs, repo_wide = enforcement_scope_globs(enforcement)
+    if repo_wide:
+        return True
+    paths = list(diff_paths)
+    return any(path_matches(p, g) for g in globs for p in paths)
+
+
 def collect_llm_targets(
     adrs: List[Tuple[str, Path, str]],
     restrict_to: Optional[str] = None,
+    diff_paths: Optional[Iterable[str]] = None,
 ) -> Tuple[List[Dict], List[Dict]]:
-    """Return (targets, skipped) for Accepted ADRs with llm_judge:true.
+    """Return (targets, skipped) for Accepted ADRs the LLM pass should judge.
 
     targets: [{adr_id, title, decision}] — one isolated LLM call each.
     skipped: [{adr, reason}] — ADRs that opted into LLM judging but were
     dropped. Recorded rather than discarded so ``--json`` can attest to which
     decisions the pass actually covered (TASK-63 AC #7); a silently shrinking
     target set is exactly how a neutralised ADR stays invisible.
+
+    ``llm_judge`` DEFAULTS TO TRUE when the key is absent (TASK-74). An
+    Enforcement block that says nothing about it opts in, because the failure
+    mode of the old default was silent: this repository shipped seventeen ADRs
+    with ``llm_judge: false`` and a pass that was on by default yet had nothing
+    to judge. Only an explicit ``false`` opts out now.
+
+    ``diff_paths`` are the post-image paths of the diff under judgement. An
+    ADR is only a target when the diff touches its declared scope, which is
+    what ADR-017 promised in prose ("one model call per commit that touches
+    its scope") and what the code did not do. Without this filter, a
+    default-on ``llm_judge`` costs one call per Accepted ADR on every commit.
 
     ``restrict_to`` narrows the RESULT to one ADR id (--dry-run-enforcement)
     without narrowing the input: supersession is resolved over the whole ADR
@@ -1142,7 +1219,7 @@ def collect_llm_targets(
         enforcement = parse_enforcement(body, adr_path)
         if enforcement is None:
             continue
-        if not enforcement.get("llm_judge"):
+        if not enforcement.get("llm_judge", True):
             continue
         # From here on the ADR asked for LLM judging, so every drop is recorded.
         if validate_enforcement(enforcement):
@@ -1158,6 +1235,14 @@ def collect_llm_targets(
             continue
         if adr_id in retired:
             skipped.append({"adr": adr_id, "reason": retired[adr_id]})
+            continue
+        if not adr_scope_touched(enforcement, diff_paths):
+            # Not a defect and not a silent drop: the decision simply does not
+            # govern anything in this diff. Recorded so --json still shows why
+            # an opted-in ADR produced no verdict.
+            skipped.append(
+                {"adr": adr_id, "reason": "diff does not touch this ADR's scope"}
+            )
             continue
         title = extract_title(body)
         decision = extract_decision(body)
@@ -2371,6 +2456,19 @@ def main() -> int:
         "(or judge.llm_timeout_seconds in .adr-kit.json).",
     )
     p.add_argument(
+        "--max-diff-bytes",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Size cap for the judged diff in UTF-8 bytes, overriding "
+        "judge.max_diff_bytes for this invocation. 0 disables the cap. "
+        "Exists because one number cannot serve two workloads: the "
+        "pre-commit hook judges a single commit and is bound by ADR-015's "
+        "latency budget, while a CI gate judges origin/<base>...HEAD and "
+        "for a release PR that is the whole branch. Set the commit-sized "
+        "number in .adr-kit.json and pass the release-sized one here.",
+    )
+    p.add_argument(
         "--profile",
         action="store_true",
         help="Print per-rule-type timing breakdown after judging. Output goes "
@@ -2409,7 +2507,25 @@ def main() -> int:
         judge_cfg = cfg.get("judge") or {}
         skip_files = judge_cfg.get("skip_files") or []
         advisory_only = bool(judge_cfg.get("advisory_only", False))
-        max_diff_bytes = int(judge_cfg.get("max_diff_bytes", 1048576))
+        # Two workloads, two budgets. judge.max_diff_bytes is the commit-path
+        # number; --max-diff-bytes is what a CI gate passes for a whole-branch
+        # diff. Keeping them separate is the point: raising the CI limit must
+        # not silently raise the local one (TASK-73). A negative value is
+        # rejected rather than clamped, so a typo fails loudly instead of
+        # turning into an accidental "no cap".
+        if args.max_diff_bytes is not None:
+            if args.max_diff_bytes < 0:
+                print(
+                    f"[adr-judge] ERROR: --max-diff-bytes must be >= 0, got "
+                    f"{args.max_diff_bytes}. Use 0 to disable the cap.",
+                    file=sys.stderr,
+                )
+                return 2
+            max_diff_bytes = args.max_diff_bytes
+            max_diff_source = "--max-diff-bytes"
+        else:
+            max_diff_bytes = int(judge_cfg.get("max_diff_bytes", 1048576))
+            max_diff_source = "judge.max_diff_bytes"
 
         # LLM mode resolution. Precedence: ADR_KIT_NO_LLM env (highest,
         # force-off), then --llm, judge.llm_enabled (the user-facing per-commit
@@ -2511,9 +2627,11 @@ def main() -> int:
         if max_diff_bytes and diff_bytes > max_diff_bytes:
             print(
                 f"[adr-judge] ERROR: diff is {diff_bytes} bytes and exceeds "
-                f"judge.max_diff_bytes={max_diff_bytes}; enforcement was not "
+                f"{max_diff_source}={max_diff_bytes}; enforcement was not "
                 "performed. Split the staged change or set an explicit larger "
-                "non-negative project limit.",
+                "non-negative project limit. In CI, raise the gate's own "
+                "budget with --max-diff-bytes instead of editing "
+                "judge.max_diff_bytes, which governs the pre-commit path.",
                 file=sys.stderr,
             )
             return 2
@@ -2590,7 +2708,9 @@ def main() -> int:
             # dry-run is an interactive path, so the extra scan is free.
             llm_adrs = adrs if dry_run_target is None else collect_adrs(adr_dir)
             targets, llm_skipped = collect_llm_targets(
-                llm_adrs, restrict_to=dry_run_target
+                llm_adrs,
+                restrict_to=dry_run_target,
+                diff_paths=list(diff_files.keys()),
             )
             llm_attestation = {
                 "enabled": True,

@@ -219,6 +219,8 @@ def test_adr_new_uses_madr_default_config_and_cli_override(tmp_path):
         "Default Record",
         "--adr-dir",
         str(adr_dir),
+        "--changed-by",
+        "User: Test Signer",
         "--date",
         "2026-07-18",
     )
@@ -235,6 +237,8 @@ def test_adr_new_uses_madr_default_config_and_cli_override(tmp_path):
         "Configured Record",
         "--adr-dir",
         str(adr_dir),
+        "--changed-by",
+        "User: Test Signer",
         "--date",
         "2026-07-18",
     )
@@ -248,6 +252,8 @@ def test_adr_new_uses_madr_default_config_and_cli_override(tmp_path):
         "Override Record",
         "--adr-dir",
         str(adr_dir),
+        "--changed-by",
+        "User: Test Signer",
         "--profile",
         "canonical",
         "--date",
@@ -271,6 +277,8 @@ def test_lint_index_context_and_judge_read_every_profile(tmp_path):
             f"ADR-{index:03d}",
             "--adr-dir",
             str(adr_dir),
+            "--changed-by",
+            "User: Test Signer",
             "--date",
             "2026-07-18",
         )
@@ -404,6 +412,8 @@ def test_supersession_mutates_each_profile_without_changing_its_body_contract(
         "ADR-001",
         "--adr-dir",
         str(adr_dir),
+        "--changed-by",
+        "User: Test Signer",
         "--date",
         "2026-07-18",
     )
@@ -417,6 +427,8 @@ def test_supersession_mutates_each_profile_without_changing_its_body_contract(
         "ADR-002",
         "--adr-dir",
         str(adr_dir),
+        "--changed-by",
+        "User: Test Signer",
         "--date",
         "2026-07-18",
     )

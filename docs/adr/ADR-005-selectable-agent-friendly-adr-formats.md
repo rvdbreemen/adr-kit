@@ -210,7 +210,6 @@ suite passes on the supported Python runtime.
       "path_glob": "schemas/adr-kit-config.schema.json",
       "message": "The project config schema must expose MADR as the selectable default."
     }
-  ],
-  "llm_judge": false
+  ]
 }
 ```

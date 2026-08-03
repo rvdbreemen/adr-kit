@@ -273,7 +273,6 @@ None.
       "path_glob": "bin/adr-mcp",
       "message": "MCP must expose deterministic readiness without lifecycle mutation (ADR-011)."
     }
-  ],
-  "llm_judge": false
+  ]
 }
 ```

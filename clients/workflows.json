@@ -40,6 +40,18 @@
       ]
     },
     {
+      "id": "audit",
+      "description": "Lint the ADRs and judge the code in one run, over a diff or the whole codebase. Read-only.",
+      "title": "Audit ADRs and code",
+      "mutates": false,
+      "procedure": [
+        "Run `python <plugin-root>/bin/adr-audit --whole-codebase --adr-dir docs/adr --repo-root .`, or `--diff -` with a piped unified diff for the hook and pull-request case.",
+        "Read the exit code before the output: 0 clean, 1 the code violates an Accepted ADR, 3 the ADR set fails its own gates, 4 both, 2 the audit could not run.",
+        "Report the two failures separately and name their owners; never collapse a code violation and an ADR-quality failure into one verdict, and never present exit 2 as a pass.",
+        "Add `--llm` only with explicit user confirmation, because it spends money per opted-in ADR."
+      ]
+    },
+    {
       "id": "context",
       "description": "Find the Architecture Decision Records most relevant to a task before implementation. Read-only and deterministic.",
       "title": "ADR context",
@@ -165,6 +177,20 @@
         "Judge the merge-base range diff and audit the workspace for decision-shaped evidence.",
         "Report ordinary code findings, Accepted ADR conflicts, suspected undocumented decisions, and linked Proposed implementations separately.",
         "Draft Proposed ADRs only for candidates the user selects, update an existing Proposed record instead of duplicating it, and offer the exact client-native grill invocation."
+      ]
+    },
+    {
+      "id": "settings",
+      "description": "Show and change adr-kit settings with the provenance of each value, routing team decisions and personal facts to their own files.",
+      "title": "Show or change a setting",
+      "mutates": true,
+      "procedure": [
+        "Run `python <plugin-root>/bin/adr-settings --adr-dir docs/adr` and report every value with its provenance: project, machine-local, environment override, or code default.",
+        "Name the environment override explicitly when one is present, because a config value that is not taking effect is the question a settings screen exists to answer.",
+        "On a change, run `--set KEY=VALUE`; the value is typed and validated against the schema before it lands, and a refused write leaves no file behind.",
+        "State which file the write landed in: team decisions in the tracked config, personal or machine-specific facts in the gitignored local one.",
+        "For backend selection prefer `adr-judge --set-backend`, which validates the choice against the live registry; for hook installation defer to install-hooks, which needs its own consent.",
+        "Never print a credential; report only whether the environment carries one."
       ]
     },
     {

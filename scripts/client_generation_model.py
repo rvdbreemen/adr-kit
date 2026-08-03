@@ -12,6 +12,7 @@ from pathlib import Path
 CLIENT_IDS = ("claude-code-cli", "codex-cli", "github-copilot-cli")
 WORKFLOW_IDS = (
     "adr",
+    "audit",
     "context",
     "grill",
     "guardian",
@@ -23,6 +24,7 @@ WORKFLOW_IDS = (
     "related",
     "retire",
     "review",
+    "settings",
     "setup",
     "supersede",
     "upgrade",

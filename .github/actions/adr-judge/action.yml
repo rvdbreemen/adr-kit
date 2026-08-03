@@ -24,6 +24,22 @@ inputs:
     description: Python version to use when invoking bin/adr-judge.
     required: false
     default: "3.11"
+  max-diff-bytes:
+    description: >
+      Size cap in UTF-8 bytes for the PR diff this gate judges, passed to
+      bin/adr-judge as --max-diff-bytes. Deliberately separate from
+      judge.max_diff_bytes in .adr-kit.json: that number governs the
+      pre-commit hook, which judges one commit, while this gate judges
+      origin/<base>...HEAD — for a release PR, the whole development branch.
+      Raising this input does not raise the local commit budget.
+
+      The default of 33554432 (32 MiB) is sized for a release PR in a repo
+      that ships mirrored client distributions (adr-kit counts most changes
+      about three times). Set 0 to disable the cap, which is NOT recommended:
+      the cap is what makes an unscanned diff fail closed instead of
+      reporting a success it never verified.
+    required: false
+    default: "33554432"
 
 runs:
   using: composite
@@ -83,4 +99,5 @@ runs:
               --diff - \
               --adr-dir "${{ inputs.adr-dir }}" \
               --repo-root "$GITHUB_WORKSPACE" \
-              --snapshot worktree
+              --snapshot worktree \
+              --max-diff-bytes "${{ inputs.max-diff-bytes }}"

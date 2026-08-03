@@ -45,6 +45,7 @@ def _load_sibling(name: str):
 _load_sibling("adr_format")
 _load_sibling("adr_schema")
 _load_sibling("adr_catalog")
+_load_sibling("adr_quality_core")
 _load_sibling("adr_readiness")
 
 

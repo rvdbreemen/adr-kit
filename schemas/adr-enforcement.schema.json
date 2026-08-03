@@ -43,7 +43,14 @@
       }
     },
     "llm_judge": {
-      "type": "boolean"
+      "type": "boolean",
+      "default": true,
+      "description": "Whether the LLM pass evaluates the staged diff against this ADR's Decision text. DEFAULT TRUE as of TASK-74: an Enforcement block that omits the key opts in, and only an explicit false opts out. The previous opt-in default failed silently -- a pass that was on by default with an empty population judged nothing while looking active. Cost is bounded by scope, not by this flag: an ADR is only judged when the diff touches a file matching its rules' path_glob set. An Enforcement block that declares no rules, or a rule without a path_glob, has no boundary to narrow with and is therefore judged on EVERY commit; prefer marking such a decision as having no code surface."
+    },
+    "llm_judge_reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the LLM pass is off for this ADR. Only meaningful together with llm_judge:false. Since the default flipped to true, a bare false is ambiguous -- it may be a deliberate opt-out or a leftover from when false was the default. A reason makes the opt-out durable: the upgrade re-proposes a bare false and leaves a reasoned one alone. Typical value: 'no code surface -- this decision governs the release process, not code'."
     }
   },
   "additionalProperties": false

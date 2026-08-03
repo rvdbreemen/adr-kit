@@ -1,0 +1,456 @@
+#!/usr/bin/env python3
+"""adr-settings: show and change every adr-kit knob from one place.
+
+Before this existed a user changed settings in three disjoint places:
+`adr-judge --set-backend` for the LLM backend, `/adr-kit:install-hooks` for
+hooks, `bin/adr signer` for the actor, and a text editor for everything else.
+Two failures followed from that split. `judge.llm_enabled` could be switched on
+by a shipped writer but never off, and the signer had nowhere to live that a
+user would find.
+
+Two properties this command keeps visible rather than hiding.
+
+**Provenance.** A value is worth little without knowing where it came from. Every
+row says whether it is a project setting, a machine-local one, an environment
+override, or the code default -- because "why is this on?" is the question a
+settings screen exists to answer.
+
+**Which file.** Repository-tracked settings in `docs/adr/.adr-kit.json` are team
+decisions; machine-local ones in `.adr-kit.local.json` are personal, and the
+difference matters. A signer written to the tracked file would put one person's
+name on every teammate's acceptance. The command routes each write itself, and
+says where it landed.
+
+Never prints a secret. A credential is reported as a boolean about the
+environment, which is the only part of it a settings screen needs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCHEMA_PATH = REPO_ROOT / "schemas" / "adr-kit-config.schema.json"
+PROJECT_CONFIG_NAME = ".adr-kit.json"
+LOCAL_CONFIG_NAME = ".adr-kit.local.json"
+
+# Settings that are personal or machine-specific. Everything else in the schema
+# is a team decision and belongs in the tracked file.
+LOCAL_KEYS: Dict[str, Dict[str, Any]] = {
+    "lifecycle.signer": {
+        "type": "string",
+        "description": (
+            "Who is recorded as the actor in Status History. Personal, so never "
+            "committed: a shared signer is a false attribution, not a shortcut."
+        ),
+    },
+    "judge.openai_base_url": {
+        "type": "string",
+        "description": (
+            "Base URL of an OpenAI-compatible endpoint, e.g. LM Studio's "
+            "http://127.0.0.1:1234/v1. Machine-local by design: an endpoint a "
+            "repository could name is an endpoint a repository could redirect."
+        ),
+    },
+    "judge.openai_api_key": {
+        "type": "string",
+        "description": (
+            "Optional credential for that endpoint. A local runtime usually needs "
+            "none. Never committed, and never printed back."
+        ),
+    },
+    "judge.host_client": {
+        "type": "string",
+        "enum": ["claude-code-cli", "codex-cli", "github-copilot-cli"],
+        "description": (
+            "Which coding-client CLI answers the LLM pass. Machine-specific, and "
+            "deliberately not probed from PATH: on a machine with all three "
+            "installed, probe order would silently choose which vendor sees the "
+            "repository diff."
+        ),
+    },
+}
+
+# Environment variables that override or disable a setting at runtime. Reported
+# so a user is never puzzled by a config value that is not taking effect.
+ENV_OVERRIDES = {
+    "judge.llm_enabled": ("ADR_KIT_NO_LLM", "1 disables the LLM pass for one run"),
+    "judge.backend": ("ADR_KIT_LLM_CMD", "an explicit command bypasses the registry"),
+}
+
+# Keys whose value must never be rendered, mapped to the environment variable
+# that can also supply them. The module docstring has always promised this;
+# until now nothing implemented it, and `adr-settings --all` printed a stored
+# API key back in full.
+SECRET_KEYS = {
+    "judge.openai_api_key": "ADR_KIT_OPENAI_API_KEY",
+}
+
+# Keys worth surfacing by default. The schema holds more; these are the ones a
+# user actually turns.
+FEATURED = [
+    "judge.llm_enabled",
+    "judge.backend",
+    "judge.openrouter_model",
+    "judge.ollama_model",
+    "judge.max_diff_bytes",
+    "judge.advisory_only",
+    "judge.llm_timeout_seconds",
+    "judge.pre_commit_timeout_ms",
+    "context.default_limit",
+    "context.min_score",
+    "context.strict_index",
+    "guardian.enabled",
+    "guardian.drift_stale_days",
+    "guardian.llm_stale_days",
+    "guardian.nudge_cooldown_hours",
+    "inject.enabled",
+    "watch.enabled",
+    "retirement.threshold_days",
+    "lifecycle.signer",
+    "judge.host_client",
+    "judge.openai_base_url",
+]
+
+
+class SettingsError(Exception):
+    """Raised on an unknown key, an invalid value, or an unwritable config."""
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", newline="", dir=path.parent,
+        prefix=f".{path.name}.", suffix=".tmp", delete=False,
+    )
+    try:
+        with handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(handle.name, path)
+    except BaseException:
+        Path(handle.name).unlink(missing_ok=True)
+        raise
+
+
+def _read_json(path: Path) -> Dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_schema() -> Dict:
+    return _read_json(SCHEMA_PATH)
+
+
+def schema_node(schema: Dict, key: str) -> Optional[Dict]:
+    """Resolve a dotted key against the schema, or None when it is not tracked."""
+    node: Any = schema
+    for part in key.split("."):
+        props = (node or {}).get("properties") or {}
+        node = props.get(part)
+        if node is None:
+            return None
+    return node
+
+
+def is_local(key: str) -> bool:
+    return key in LOCAL_KEYS
+
+
+def known_keys(schema: Dict) -> List[str]:
+    keys: List[str] = []
+    for section, node in (schema.get("properties") or {}).items():
+        children = (node or {}).get("properties") or {}
+        if children:
+            keys.extend(f"{section}.{child}" for child in children)
+        else:
+            keys.append(section)
+    keys.extend(LOCAL_KEYS)
+    return sorted(set(keys))
+
+
+def _dig(data: Dict, key: str) -> Tuple[bool, Any]:
+    node: Any = data
+    for part in key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False, None
+        node = node[part]
+    return True, node
+
+
+def _plant(data: Dict, key: str, value: Any) -> None:
+    parts = key.split(".")
+    node = data
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
+    node[parts[-1]] = value
+
+
+def _uproot(data: Dict, key: str) -> bool:
+    parts = key.split(".")
+    node = data
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            return False
+        node = child
+    return node.pop(parts[-1], _MISSING) is not _MISSING
+
+
+_MISSING = object()
+
+
+def coerce(raw: str, node: Dict) -> Any:
+    """Turn a command-line string into the type the schema declares.
+
+    A settings command takes strings; a config file holds types. Coercing here
+    rather than writing the string means `--set guardian.enabled=false` does not
+    quietly store the truthy string "false".
+    """
+    declared = node.get("type") if node else None
+    text = raw.strip()
+    if declared == "boolean":
+        lowered = text.lower()
+        if lowered in {"true", "yes", "on", "1"}:
+            return True
+        if lowered in {"false", "no", "off", "0"}:
+            return False
+        raise SettingsError(f"expected a boolean, got {raw!r}")
+    if declared == "integer":
+        try:
+            return int(text)
+        except ValueError as exc:
+            raise SettingsError(f"expected an integer, got {raw!r}") from exc
+    if declared == "number":
+        try:
+            return float(text)
+        except ValueError as exc:
+            raise SettingsError(f"expected a number, got {raw!r}") from exc
+    if declared == "array":
+        return [part.strip() for part in text.split(",") if part.strip()]
+    return text
+
+
+def validate(key: str, value: Any, node: Dict) -> None:
+    declared = node.get("type")
+    if declared == "boolean" and not isinstance(value, bool):
+        raise SettingsError(f"{key}: expected a boolean")
+    if declared == "integer" and not isinstance(value, int):
+        raise SettingsError(f"{key}: expected an integer")
+    if declared in {"number", "integer"} and isinstance(value, (int, float)):
+        if "minimum" in node and value < node["minimum"]:
+            raise SettingsError(f"{key}: minimum is {node['minimum']}")
+        if "maximum" in node and value > node["maximum"]:
+            raise SettingsError(f"{key}: maximum is {node['maximum']}")
+    allowed = node.get("enum")
+    if allowed and value not in allowed:
+        raise SettingsError(f"{key}: expected one of {allowed}, got {value!r}")
+    if declared == "string" and isinstance(value, str) and not value.strip():
+        raise SettingsError(f"{key}: expected a non-empty string")
+
+
+def describe(adr_dir: Path, schema: Dict, keys: List[str], env: Dict[str, str]) -> List[Dict]:
+    project = _read_json(adr_dir / PROJECT_CONFIG_NAME)
+    local = _read_json(adr_dir / LOCAL_CONFIG_NAME)
+    rows: List[Dict] = []
+    for key in keys:
+        node = LOCAL_KEYS.get(key) or schema_node(schema, key) or {}
+        in_local, local_value = _dig(local, key)
+        in_project, project_value = _dig(project, key)
+        if in_local:
+            value, source = local_value, "machine-local"
+        elif in_project:
+            value, source = project_value, "project"
+        elif "default" in node:
+            value, source = node["default"], "default"
+        else:
+            value, source = None, "unset"
+        row = {
+            "key": key,
+            "value": value,
+            "source": source,
+            "scope": "machine-local" if is_local(key) else "project",
+        }
+        if key in SECRET_KEYS:
+            # A settings screen needs to answer "is a credential configured?",
+            # never "what is it". Echoing the value would put it in terminal
+            # scrollback, screenshots and pasted bug reports -- the file it came
+            # from is gitignored, but a terminal is not. The presence boolean is
+            # the whole of what a reader can act on.
+            row["value"] = "<set>" if _is_set(value) else None
+            row["secret"] = True
+            env_name = SECRET_KEYS[key]
+            if env_name:
+                row["env_present"] = bool(env.get(env_name))
+                row["env_var"] = env_name
+        override = ENV_OVERRIDES.get(key)
+        if override and env.get(override[0]):
+            row["env_override"] = f"{override[0]} is set: {override[1]}"
+        rows.append(row)
+    return rows
+
+
+def _is_set(value: object) -> bool:
+    return bool(value) and str(value).strip() != ""
+
+
+def render_text(rows: List[Dict], adr_dir: Path) -> List[str]:
+    width = max((len(row["key"]) for row in rows), default=0)
+    lines = [
+        f"Settings for {adr_dir}",
+        f"  project file      {adr_dir / PROJECT_CONFIG_NAME}   (tracked, team decisions)",
+        f"  machine-local     {adr_dir / LOCAL_CONFIG_NAME}   (gitignored, personal)",
+        "",
+    ]
+    for row in rows:
+        if row.get("secret"):
+            value = "<set>" if row["value"] else "(not set)"
+        elif row["value"] is None and row["source"] == "unset":
+            value = "(unset)"
+        else:
+            value = json.dumps(row["value"])
+        lines.append(f"  {row['key']:<{width}}  {value}   [{row['source']}]")
+        if row.get("secret") and row.get("env_var"):
+            state = "set" if row.get("env_present") else "not set"
+            lines.append(f"  {'':<{width}}  {row['env_var']} is {state} in this environment")
+        if row.get("env_override"):
+            lines.append(f"  {'':<{width}}  !! {row['env_override']}")
+    return lines
+
+
+def apply_set(adr_dir: Path, schema: Dict, key: str, raw: str) -> List[str]:
+    node = LOCAL_KEYS.get(key) or schema_node(schema, key)
+    if node is None:
+        raise SettingsError(
+            f"unknown setting {key!r}. Run --list to see every key this command knows."
+        )
+    value = coerce(raw, node)
+    validate(key, value, node)
+    target_name = LOCAL_CONFIG_NAME if is_local(key) else PROJECT_CONFIG_NAME
+    path = adr_dir / target_name
+    data = _read_json(path)
+    _plant(data, key, value)
+    _atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    scope = "machine-local, gitignored" if is_local(key) else "project, committed"
+    return [f"{key} = {json.dumps(value)}", f"written to {path} ({scope})"]
+
+
+def apply_unset(adr_dir: Path, schema: Dict, key: str) -> List[str]:
+    node = LOCAL_KEYS.get(key) or schema_node(schema, key)
+    if node is None:
+        raise SettingsError(f"unknown setting {key!r}")
+    path = adr_dir / (LOCAL_CONFIG_NAME if is_local(key) else PROJECT_CONFIG_NAME)
+    data = _read_json(path)
+    if not _uproot(data, key):
+        return [f"{key} was not set in {path}; nothing to do"]
+    _atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    return [f"{key} unset; the code default applies again", f"updated {path}"]
+
+
+def _load_runtime_module():
+    """Import bin/adr_embedding_runtime.py by path, without touching sys.path."""
+    import importlib.machinery
+    import importlib.util
+
+    name = "adr_embedding_runtime"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(
+        name, str(Path(__file__).resolve().parent / f"{name}.py")
+    )
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="adr-settings",
+        description="Show and change adr-kit settings, with provenance.",
+    )
+    parser.add_argument("--adr-dir", default="docs/adr", help="ADR directory")
+    parser.add_argument("--format", choices=["text", "json"], default="text")
+    parser.add_argument("--all", action="store_true", help="show every known key, not only the featured ones")
+    parser.add_argument("--list", action="store_true", help="list every settable key and exit")
+    parser.add_argument("--set", default=None, metavar="KEY=VALUE")
+    parser.add_argument("--unset", default=None, metavar="KEY")
+    parser.add_argument(
+        "--check-embedding",
+        action="store_true",
+        help=(
+            "probe for a local embedding runtime and report the routes forward. "
+            "Read-only: installs nothing, changes nothing, and treats a missing "
+            "runtime as a normal outcome."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    adr_dir = Path(args.adr_dir)
+    schema = load_schema()
+
+    try:
+        if args.check_embedding:
+            runtime = _load_runtime_module()
+            report = runtime.assess()
+            if args.format == "json":
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+                return 0
+            for line in runtime.render(report):
+                print(line)
+            return 0
+        if args.set and args.unset:
+            raise SettingsError("--set and --unset are mutually exclusive")
+        if args.list:
+            lines = known_keys(schema)
+        elif args.set:
+            if "=" not in args.set:
+                raise SettingsError("--set expects KEY=VALUE")
+            key, raw = args.set.split("=", 1)
+            lines = apply_set(adr_dir, schema, key.strip(), raw)
+        elif args.unset:
+            lines = apply_unset(adr_dir, schema, args.unset.strip())
+        else:
+            keys = known_keys(schema) if args.all else FEATURED
+            rows = describe(adr_dir, schema, keys, dict(os.environ))
+            if args.format == "json":
+                print(json.dumps({"adr_dir": str(adr_dir), "settings": rows}, indent=2, ensure_ascii=False))
+                return 0
+            lines = render_text(rows, adr_dir)
+    except SettingsError as exc:
+        print(f"adr-settings: {exc}", file=sys.stderr)
+        return 2
+
+    if args.format == "json" and not args.list:
+        print(json.dumps({"result": lines}, indent=2, ensure_ascii=False))
+    else:
+        for line in lines:
+            print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stderr.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+    raise SystemExit(main())

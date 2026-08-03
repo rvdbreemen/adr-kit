@@ -84,6 +84,12 @@ adr-kit extension for deterministic completeness:
 List unresolved human decisions as unchecked tasks. Accepted ADRs must have no
 unresolved items.
 
+Answer them with `bin/adr answer`, which rewrites an item as
+`- [x] <question> — **Answered <date> by <signer>:** <answer>`. A checked item
+is resolved, so it no longer blocks acceptance and stays in the record. Do not
+delete an answered question: the reasoning is what a future reader needs in
+order to re-evaluate the decision.
+
 ## Related Decisions
 
 - None.
@@ -100,7 +106,6 @@ Delete this optional adr-kit extension when no machine-checkable rule applies.
 {
   "forbid_pattern": [],
   "forbid_import": [],
-  "require_pattern": [],
-  "llm_judge": false
+  "require_pattern": []
 }
 ```

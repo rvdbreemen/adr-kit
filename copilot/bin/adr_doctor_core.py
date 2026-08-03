@@ -213,7 +213,7 @@ def run_doctor(args) -> Dict:
     bin_dir = Path(__file__).resolve().parent
     index_script = bin_dir / "adr-index"
     lint_script = bin_dir / "adr-lint"
-    audit_script = bin_dir / "adr-audit"
+    audit_script = bin_dir / "adr-discover"
 
     if args.fix_index:
         subprocess.run([sys.executable, str(index_script), str(adr_dir)], capture_output=True, text=True)

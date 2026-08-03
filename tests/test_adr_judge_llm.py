@@ -255,7 +255,12 @@ def test_llm_missing_binary_falls_back(tmp_path):
 
 
 def test_llm_no_targets_skips_call(tmp_path):
-    """ADRs without llm_judge:true don't trigger the LLM pass at all."""
+    """An explicit llm_judge:false keeps an ADR out of the LLM pass.
+
+    Since TASK-74 the key DEFAULTS to true, so this test states the only
+    remaining way to opt out. Before that flip the same fixture omitted the
+    key entirely and passed for a reason that no longer holds.
+    """
     declarative_only = textwrap.dedent("""\
         # ADR-002: No String
 
@@ -291,7 +296,8 @@ def test_llm_no_targets_skips_call(tmp_path):
         ## Enforcement
 
         ```json
-        {"forbid_pattern": [{"pattern": "\\\\bString\\\\b"}]}
+        {"forbid_pattern": [{"pattern": "\\\\bString\\\\b"}], "llm_judge": false,
+         "llm_judge_reason": "the regex above already states the whole rule"}
         ```
     """)
     proj = _make_project(tmp_path, {"ADR-002-nostring.md": declarative_only})
@@ -1105,7 +1111,7 @@ def test_backends_is_the_code_side_registry_the_decision_names():
     value: every command and every endpoint is on the code side of that line.
     """
     aj = _load_judge_module()
-    assert set(aj.BACKENDS) == {"host", "openrouter", "ollama"}
+    assert set(aj.BACKENDS) == {"host", "openrouter", "ollama", "openai-compatible"}
     assert all(callable(factory) for factory in aj.BACKENDS.values())
     assert aj.BACKEND_NAMES == tuple(aj.BACKENDS)
     # An unknown key is refused outright, not coerced into a default backend.
@@ -1119,10 +1125,12 @@ def test_backends_is_the_code_side_registry_the_decision_names():
 
 def test_backend_enum_and_default_match_the_decision():
     aj = _load_judge_module()
-    assert aj.BACKEND_NAMES == ("host", "openrouter", "ollama")
+    assert aj.BACKEND_NAMES == ("host", "openrouter", "ollama", "openai-compatible")
     assert aj.DEFAULT_BACKEND == "host"
     judge = CONFIG_SCHEMA["properties"]["judge"]["properties"]
-    assert judge["backend"]["enum"] == ["host", "openrouter", "ollama"]
+    # The enum and the code registry are one contract; assert they agree
+    # rather than restating the list, so adding a backend is one edit.
+    assert judge["backend"]["enum"] == list(aj.BACKEND_NAMES)
     assert judge["backend"]["default"] == "host"
     backend, _ = aj.resolve_llm_backend(
         {}, {"judge": {"host_client": "codex-cli"}}, None, {}
@@ -1496,3 +1504,127 @@ def test_set_backend_drops_the_retired_keys(tmp_path):
     assert "llm_model" not in config["judge"]
     assert config["judge"]["advisory_only"] is True, "unrelated settings survive"
     assert config["judge"]["ollama_model"] == "gemma4:12b"
+
+
+# ---------------------------------------------------------------------------
+# TASK-74: llm_judge defaults to true, and scope bounds the cost.
+# ---------------------------------------------------------------------------
+
+def _scoped_adr(glob: str | None) -> str:
+    """An Accepted ADR whose Enforcement block declares one rule.
+
+    `glob=None` produces a rule without a path_glob, which has no boundary and
+    is therefore in scope everywhere -- the same semantics the declarative
+    pass gives such a rule.
+    """
+    # A pattern that matches nothing in these fixtures, so the exit code
+    # reflects the LLM pass alone. The rule exists only to carry the glob,
+    # which is what declares the ADR's scope.
+    rule = {"pattern": "NEVER_MATCHES_IN_THESE_FIXTURES"}
+    if glob is not None:
+        rule["path_glob"] = glob
+    block = json.dumps({"forbid_pattern": [rule]})
+    return textwrap.dedent(f"""\
+        # ADR-001: Use eventual consistency for the audit log
+
+        ## Status
+
+        Accepted, 2026-04-25.
+
+        ## Decision
+
+        Reads of the audit log MUST tolerate a 5-second lag.
+
+        ## Alternatives Considered
+
+        - Strong consistency: rejected, too slow.
+        - Eventual consistency: accepted.
+
+        ## Consequences
+
+        **Positive:**
+        - Cheaper reads.
+
+        **Negative:**
+        - Stale reads possible.
+
+        ## Related Decisions
+
+        - None.
+
+        ## References
+
+        - None.
+
+        ## Enforcement
+
+        ```json
+        {block}
+        ```
+    """)
+
+
+DOCS_ONLY_DIFF = """\
+diff --git a/docs/readme.md b/docs/readme.md
+--- a/docs/readme.md
++++ b/docs/readme.md
+@@ -1 +1,2 @@
++a documentation line
+"""
+
+
+def test_llm_judge_defaults_to_true_when_key_absent(tmp_path):
+    """An Enforcement block that says nothing about llm_judge opts in."""
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": _scoped_adr("src/**")})
+    fake = _make_fake_claude(tmp_path, json.dumps({
+        "ADR-001": {"verdict": "VIOLATION", "reason": "reads the replica synchronously"}
+    }))
+    code, out = _run_judge(proj, SAMPLE_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake))
+
+    assert code == 1, "a default-on ADR must be able to block"
+    assert out["llm"]["targets"] == ["ADR-001"]
+
+
+def test_llm_pass_skips_an_adr_the_diff_does_not_touch(tmp_path):
+    """Scope, not the flag, is what bounds cost: no touch means no call."""
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": _scoped_adr("src/**")})
+    # A binary that fails loudly if it is ever spawned.
+    crashing = _make_fake_claude(tmp_path, "")
+    crashing.write_text("import sys; sys.exit(99)\n", encoding="utf-8")
+
+    code, out = _run_judge(
+        proj, DOCS_ONLY_DIFF, "--llm", "--llm-cmd", _fake_cmd(crashing)
+    )
+
+    assert code == 0
+    assert out["llm"]["targets"] == []
+    reasons = [s["reason"] for s in out["llm"]["skipped"] if s["adr"] == "ADR-001"]
+    assert reasons == ["diff does not touch this ADR's scope"], (
+        "an out-of-scope ADR must be recorded, not silently dropped"
+    )
+
+
+def test_rule_without_path_glob_is_in_scope_everywhere(tmp_path):
+    """No declared boundary means every commit, mirroring the declarative pass."""
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": _scoped_adr(None)})
+    fake = _make_fake_claude(tmp_path, json.dumps({"ADR-001": {"verdict": "OK"}}))
+
+    code, out = _run_judge(
+        proj, DOCS_ONLY_DIFF, "--llm", "--llm-cmd", _fake_cmd(fake)
+    )
+
+    assert code == 0
+    assert out["llm"]["targets"] == ["ADR-001"]
+    assert out["llm"]["evaluated"] == ["ADR-001"]
+
+
+def test_scope_matching_is_per_file_not_per_diff(tmp_path):
+    """One in-scope file among several is enough to make the ADR a target."""
+    mixed = DOCS_ONLY_DIFF + SAMPLE_DIFF
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": _scoped_adr("src/**")})
+    fake = _make_fake_claude(tmp_path, json.dumps({"ADR-001": {"verdict": "OK"}}))
+
+    code, out = _run_judge(proj, mixed, "--llm", "--llm-cmd", _fake_cmd(fake))
+
+    assert code == 0
+    assert out["llm"]["targets"] == ["ADR-001"]

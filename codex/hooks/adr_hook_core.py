@@ -21,7 +21,12 @@ from adr_query import IndexQueryError, query_adr_context
 MAX_INPUT_BYTES = 64 * 1024
 MAX_PARENT_CHARS = 8 * 1024
 MAX_CONTEXT_CHARS = 4 * 1024
-MAX_RESULTS = 3
+# spec.md R5 asks for five relevant ADRs at the moment work begins. This was 3,
+# and the documented knob (context.default_limit) never reached the hook, so a
+# user who set 5 still got 3. Both are fixed: the default is five, and the
+# project setting wins when it is present.
+DEFAULT_MAX_RESULTS = 5
+MAX_RESULTS = DEFAULT_MAX_RESULTS
 QUEUE_CACHE_NAME = ".adr-kit-readiness.json"
 QUEUE_MAX_BYTES = 256 * 1024
 WRITE_TOOLS = {
@@ -32,13 +37,33 @@ WRITE_TOOLS = {
     "create",
     "notebookedit",
 }
+PLAN_EXIT_TOOLS = {"exitplanmode", "exitplan", "planexit"}
+
+# Events this hook accepts and deliberately answers with nothing. Silence here
+# is a decision, not an oversight, so each entry carries its reason: a future
+# reader deciding whether to wire one of these up should inherit the argument
+# rather than re-derive it.
 NOOP_EVENTS = {
+    # The three end-of-work events. "Work finished -- were decisions made?" is a
+    # real question and this is where it would live, but answering it honestly
+    # means reading a whole session, which wants a model. Every hook here is
+    # deterministic, model-free and inside a 2 s budget (ADR-015); spending at
+    # session end would make this the first hook that costs money, on an event
+    # the user cannot see fire. Recorded as a deliberate silence in ADR-019.
     "stop",
     "subagentstop",
     "sessionend",
+    # Not about the work at all. A permission dialog and a notification are UI
+    # moments; injecting ADR context into either would put architectural text
+    # where the user is answering an unrelated question.
     "permissionrequest",
     "notification",
+    # The user stopped the agent. Adding output to an interrupt is the one time
+    # nobody wants more text.
     "interrupt",
+    # Compaction context is injected at PreCompact, while the transcript still
+    # exists. Afterwards there is nothing left to carry forward, so a second
+    # injection would be new context rather than preserved context.
     "postcompact",
 }
 EVENT_ALIASES = {
@@ -270,6 +295,24 @@ def rank(records: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
     return (positive or [item[2] for item in scored])[:MAX_RESULTS]
 
 
+def _configured_limit(workspace: Path) -> int:
+    """context.default_limit when set, else the default. Bounded and fail-soft.
+
+    Read here rather than threaded through, because the hook is the one caller
+    that used to ignore it. The bound keeps a typo from turning one prompt into
+    a context flood.
+    """
+    try:
+        raw = json.loads(
+            (workspace / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return DEFAULT_MAX_RESULTS
+    value = ((raw or {}).get("context") or {}).get("default_limit")
+    if isinstance(value, int) and 1 <= value <= 20:
+        return value
+    return DEFAULT_MAX_RESULTS
+
 def _query(
     workspace: Path,
     query: str,
@@ -280,11 +323,12 @@ def _query(
     index = _index_path(workspace)
     if index is None:
         return []
+    limit = _configured_limit(workspace)
     try:
         outcome = query_adr_context(
             query,
             index.parent,
-            limit=MAX_RESULTS,
+            limit=limit,
             strict_index=True,
             include_history=False,
             statuses=("Accepted", "Proposed"),
@@ -296,7 +340,7 @@ def _query(
         item
         for item in outcome["results"]
         if item.get("status") in {"Accepted", "Proposed"}
-    ][:MAX_RESULTS]
+    ][:limit]
 
 
 def _safe_edit_path(envelope: Envelope) -> Path | None:
@@ -401,6 +445,27 @@ def _proposed_advisory(
     return "\n".join(lines)[:MAX_CONTEXT_CHARS]
 
 
+def _plan_text(envelope: Envelope) -> str:
+    """The plan a plan-exit tool call carries, bounded like every other input."""
+    raw = _first(envelope.tool_input, "plan", "content", "text", "summary")
+    return (_bounded_text(raw, MAX_CONTEXT_CHARS) or "").strip()
+
+
+def _plan_decision_prompt(client: str) -> str:
+    """Ask the question this moment exists for.
+
+    Deliberately a question and not a gate. A hook that blocked here would teach
+    people to write an empty ADR to get past it, which is the failure mode that
+    produced six rule-less Enforcement blocks in this very repository.
+    """
+    return (
+        "Before leaving plan mode: does this plan make an architectural decision "
+        "no ADR records yet? A new dependency, an interface or contract change, a "
+        "shift in a non-functional requirement, or a new pattern all qualify. If "
+        "so, write it now with " + _client_grill(client, "") + " while the "
+        "reasoning is still in front of you; afterwards it becomes justification."
+    )
+
 def evaluate(envelope: Envelope) -> tuple[str, str]:
     compact_event = re.sub(r"[^a-z]", "", envelope.event.lower())
     if compact_event in NOOP_EVENTS:
@@ -452,6 +517,29 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
         return ("\n".join(parts)[:MAX_CONTEXT_CHARS], "prompt") if parts else ("", "noop")
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")
+        if envelope.event == "PreToolUse" and tool in PLAN_EXIT_TOOLS:
+            # Leaving plan mode: the plan is complete and no code exists yet.
+            # Cheapest moment to notice a missing decision, and the only one
+            # where the answer can still shape the implementation instead of
+            # justifying it afterwards. Same contract as every other hook:
+            # deterministic, injection-only, model-free, never blocking.
+            plan = _plan_text(envelope)
+            if not plan:
+                return "", "noop"
+            selected = _query(envelope.workspace, plan)
+            governing = [item for item in selected if item.get("status") == "Accepted"]
+            advisory = [item for item in selected if item.get("status") == "Proposed"]
+            parts = [
+                part
+                for part in (
+                    _render(governing, "ADRs that govern this plan:"),
+                    _render(advisory, "Advisory Proposed ADRs for this plan:"),
+                    _plan_decision_prompt(envelope.client),
+                )
+                if part
+            ]
+            joined = "\n".join(parts)[:MAX_CONTEXT_CHARS]
+            return (joined, "plan-exit") if parts else ("", "noop")
         if tool not in WRITE_TOOLS:
             return "", "noop"
         path = _safe_edit_path(envelope)

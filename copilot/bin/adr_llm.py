@@ -52,7 +52,8 @@ TOOL = "adr-kit"
 BACKEND_HOST = "host"
 BACKEND_OPENROUTER = "openrouter"
 BACKEND_OLLAMA = "ollama"
-BACKEND_NAMES = (BACKEND_HOST, BACKEND_OPENROUTER, BACKEND_OLLAMA)
+BACKEND_OPENAI_COMPATIBLE = "openai-compatible"
+BACKEND_NAMES = (BACKEND_HOST, BACKEND_OPENROUTER, BACKEND_OLLAMA, BACKEND_OPENAI_COMPATIBLE)
 DEFAULT_BACKEND = BACKEND_HOST
 
 # Non-interactive entry point of each certified client (ADR-010), verified
@@ -78,6 +79,22 @@ LOCAL_CONFIG_NAME = ".adr-kit.local.json"
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
 OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate"
+OLLAMA_EMBED_ENDPOINT = "http://127.0.0.1:11434/api/embeddings"
+
+# An OpenAI-compatible base URL turns one backend into a family: LM Studio, a
+# self-hosted vLLM, a corporate gateway, an Azure deployment. They all speak the
+# chat-completions shape OpenRouter already speaks, so the only thing missing was
+# the ability to point somewhere else.
+#
+# SECURITY, and the reason this is NOT a project setting: ADR-017 holds that
+# repository-tracked configuration may SELECT a backend but never INTRODUCE an
+# endpoint. A base URL read from the committed config would let a cloned repo
+# point the judge at an attacker's server and exfiltrate the diff. It is read
+# from the machine-local file or the environment only, and refused in
+# .adr-kit.json by name.
+OPENAI_BASE_URL_ENV = "ADR_KIT_OPENAI_BASE_URL"
+OPENAI_KEY_ENV = "ADR_KIT_OPENAI_API_KEY"
+LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
 DEFAULT_OLLAMA_MODEL = "gemma4:12b"
 
 # Config keys that would carry a credential. docs/adr/.adr-kit.json is
@@ -288,6 +305,19 @@ class LLMBackend:
         raise NotImplementedError
 
 
+    def embed(self, texts: List[str], model: str, timeout_s: int) -> Optional[List[List[float]]]:
+        """Return one vector per text, or None when this backend cannot embed.
+
+        Optional by design. ADR-018 puts embedding in a build step, so a backend
+        that only generates text is not broken - it simply has nothing to offer
+        here, and the caller falls back to another route rather than failing.
+        """
+        return None
+
+    def embed_unavailable_reason(self) -> Optional[str]:
+        return f"the {self.kind} backend does not expose an embeddings endpoint"
+
+
 class SubprocessBackend(LLMBackend):
     """Spawn a client CLI, feed it the prompt on stdin, read stdout.
 
@@ -371,9 +401,26 @@ class HttpBackend(LLMBackend):
     def _post(
         self, payload: Dict, headers: Dict[str, str], timeout_s: int, adr_id: str
     ) -> Optional[Dict]:
+        return self._post_to(self.endpoint, payload, headers, timeout_s, adr_id)
+
+    def _post_to(
+        self,
+        endpoint: str,
+        payload: Dict,
+        headers: Dict[str, str],
+        timeout_s: int,
+        adr_id: str,
+    ) -> Optional[Dict]:
+        """POST to an explicit endpoint.
+
+        The judge always posts to `self.endpoint`; embedding posts to a sibling
+        path on the same host. Parameterising the URL keeps one set of failure
+        semantics -- every fault degrades to None -- instead of a second copy
+        that would drift.
+        """
         body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
-            self.endpoint,
+            endpoint,
             data=body,
             headers={"Content-Type": "application/json", **headers},
             method="POST",
@@ -508,6 +555,119 @@ class OllamaBackend(HttpBackend):
         return response if isinstance(response, str) else None
 
 
+    def embed(self, texts, model, timeout_s):
+        """Ollama embeds one text per call; there is no batch endpoint."""
+        vectors = []
+        for text in texts:
+            data = self._post_to(
+                OLLAMA_EMBED_ENDPOINT,
+                {"model": model, "prompt": text},
+                {},
+                timeout_s,
+                "embed",
+            )
+            if data is None:
+                return None
+            vector = data.get("embedding")
+            if not isinstance(vector, list) or not vector:
+                return None
+            vectors.append([float(value) for value in vector])
+        return vectors
+
+    def embed_unavailable_reason(self):
+        return None
+
+
+class OpenAICompatibleBackend(HttpBackend):
+    """Any endpoint speaking the OpenAI chat-completions shape.
+
+    LM Studio on its default port, a self-hosted vLLM, a corporate gateway. The
+    request body is the one OpenRouter already uses, so this class exists for
+    one reason: the endpoint is configurable.
+
+    Where that endpoint comes from is the whole security story. It is read from
+    the machine-local config or the environment, never from the committed one.
+    A repository that could name the endpoint could name an attacker's server
+    and the judge would post the diff to it.
+    """
+
+    kind = BACKEND_OPENAI_COMPATIBLE
+
+    def __init__(self, base_url: Optional[str], model: Optional[str], api_key: Optional[str]):
+        self.base_url = (base_url or "").rstrip("/")
+        self.model = model
+        self.api_key = api_key
+        self.endpoint = f"{self.base_url}/chat/completions" if self.base_url else ""
+
+    def describe(self) -> str:
+        return f"{self.kind}: {self.model or '<unset>'} via {self.endpoint or '<no base url>'}"
+
+    def unavailable_reason(self) -> Optional[str]:
+        if not self.base_url:
+            return (
+                f"no base URL configured; set judge.openai_base_url in "
+                f"{LOCAL_CONFIG_NAME} or export {OPENAI_BASE_URL_ENV} "
+                f"(LM Studio's default is {LM_STUDIO_BASE_URL})"
+            )
+        if not self.model:
+            return "judge.openai_model is unset; name the model the endpoint serves"
+        return None
+
+    def judge(self, prompt: str, timeout_s: int, adr_id: str) -> Optional[str]:
+        headers = {}
+        # A local runtime usually needs no key; a gateway usually does. Sending
+        # an empty Authorization header would make a keyless local endpoint
+        # reject a request that should have worked.
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"},
+        }
+        data = self._post(payload, headers, timeout_s, adr_id)
+        if data is None:
+            return None
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            print(
+                f"[adr-judge] WARN: {self.kind} returned no choices for {adr_id}",
+                file=sys.stderr,
+            )
+            return None
+        content = (choices[0].get("message") or {}).get("content")
+        return content if isinstance(content, str) else None
+    def embed(self, texts, model, timeout_s):
+        if not self.base_url:
+            return None
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        data = self._post_to(
+            f"{self.base_url}/embeddings",
+            {"model": model, "input": list(texts)},
+            headers,
+            timeout_s,
+            "embed",
+        )
+        if data is None:
+            return None
+        rows = data.get("data")
+        if not isinstance(rows, list) or len(rows) != len(texts):
+            return None
+        vectors = []
+        for row in rows:
+            vector = (row or {}).get("embedding")
+            if not isinstance(vector, list) or not vector:
+                return None
+            vectors.append([float(value) for value in vector])
+        return vectors
+
+    def embed_unavailable_reason(self):
+        return self.unavailable_reason()
+
+
+
 def _host_backend(
     judge_cfg: Dict, local_cfg: Dict, warnings: List[str]
 ) -> Optional[SubprocessBackend]:
@@ -548,6 +708,34 @@ def _ollama_backend(
     return OllamaBackend(str(judge_cfg.get("ollama_model") or DEFAULT_OLLAMA_MODEL))
 
 
+def _openai_compatible_backend(
+    judge_cfg: Dict, local_cfg: Dict, warnings: List[str]
+) -> OpenAICompatibleBackend:
+    """Endpoint and credential from the machine, model from the project.
+
+    The split is deliberate. WHICH model to judge with is a team decision and
+    belongs in the committed config; WHERE the endpoint lives is a property of
+    this machine, and letting a repository name it would hand a cloned project
+    the ability to redirect the diff.
+    """
+    env = os.environ
+    local_judge = local_cfg.get("judge") or {}
+    base_url = env.get(OPENAI_BASE_URL_ENV) or local_judge.get("openai_base_url")
+    api_key = env.get(OPENAI_KEY_ENV) or local_judge.get("openai_api_key")
+    model = judge_cfg.get("openai_model") or local_judge.get("openai_model")
+    if judge_cfg.get("openai_base_url"):
+        warnings.append(
+            "judge.openai_base_url in the committed config is ignored: an endpoint "
+            "read from a repository could redirect the diff to a server the "
+            f"repository chose. Put it in {LOCAL_CONFIG_NAME} or export "
+            f"{OPENAI_BASE_URL_ENV}."
+        )
+    return OpenAICompatibleBackend(
+        str(base_url) if base_url else None,
+        str(model) if model else None,
+        str(api_key) if api_key else None,
+    )
+
 # THE registry ADR-017 names. A dict rather than an if-chain because the whole
 # security argument rests on config selecting a KEY here and never supplying a
 # value: judge.backend is looked up in this table or refused, so committed
@@ -557,6 +745,7 @@ BACKENDS = {
     BACKEND_HOST: _host_backend,
     BACKEND_OPENROUTER: _openrouter_backend,
     BACKEND_OLLAMA: _ollama_backend,
+    BACKEND_OPENAI_COMPATIBLE: _openai_compatible_backend,
 }
 
 

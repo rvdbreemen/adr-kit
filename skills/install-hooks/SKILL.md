@@ -115,6 +115,32 @@ echo "docs/adr/.adr-kit-state.json" >> .gitignore
 
 Verify it is not already present first (idempotent). The state file is per-machine and must never be committed.
 
+## CI gates — offer the shipped workflow templates
+
+The git hook judges one commit. Two gates that a hook cannot cover ship as
+copyable workflows in `templates/github-workflows/`; offer them, do not install
+them silently, because a workflow file is the project's business:
+
+- **`adr-judge.yml`** — judges the whole branch on every pull request. This is
+  what the reviewer is actually being asked to accept, and it uses the CI-sized
+  diff budget so raising it never weakens the commit-time gate.
+- **`adr-readiness.yml`** — refuses to merge implementation that is linked to a
+  Proposed decision nobody accepted.
+- **`adr-guardian-audit.yml`** — the weekly staleness sweep, reported into one
+  tracking issue.
+- **`adr-index-check.yml`** — fails when the generated indexes no longer match
+  the ADRs. The commit hook can only warn about this, because it reads the
+  worktree while the commit is the staged snapshot; CI checks out the commit
+  itself, so it is the only place the block is honest.
+
+Copy on request into `.github/workflows/`, and tell the user the checkout must
+use `fetch-depth: 0` or the diff has only one side.
+
+Note for Claude Code users: the branch is also judged *before* the pull request
+exists, by the pre-tool guard on `gh pr create`. The workflow remains worth
+installing anyway - it covers pushes from a laptop, a different client, and
+anyone not working through an agent at all.
+
 ## Constraints
 
 - **Never silently overwrite a pre-existing user hook.** Always detect, show, ask.

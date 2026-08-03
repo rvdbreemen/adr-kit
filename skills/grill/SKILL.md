@@ -37,8 +37,25 @@ fenced as untrusted evidence.
 5. Select the earliest unresolved decision dependency.
 6. Ask exactly one question. Include a recommended answer and cited evidence
    when possible. Never ask the user for a fact the repository can establish.
-7. Record the answer in the Proposed ADR immediately. Keep unresolved human
-   decisions as unchecked items under `## Open Questions`.
+7. Record the answer immediately, and record the **question with it**:
+
+   ```bash
+   python <plugin-root>/bin/adr answer ADR-NNN --question "<distinctive text|number>" --answer "<the settled answer>"
+   ```
+
+   This rewrites the item as `- [x] <question> — **Answered <date> by
+   <signer>:** <answer>`. Both halves then survive acceptance: `## Open
+   Questions` holds only *unresolved* items by design, and a checked item is
+   not one, so nothing has to be deleted to satisfy the acceptance gate.
+
+   Never delete an answered question. The reasoning behind a decision is
+   exactly what a future reader needs in order to re-evaluate it, and
+   re-evaluation is what supersession depends on. Deleting it leaves the Status
+   History, which records who flipped the status and when — never what they
+   were asked.
+
+   Keep genuinely unresolved decisions as unchecked items under `## Open
+   Questions`; those still block acceptance, which is the point.
 8. Once the decision facts are settled, propose bounded `topics`, `aliases`,
    `components`, `symbols`, `context_scope`, and `## Decision Contract`
    content from those facts. Show them to the human as retrieval metadata, not

@@ -390,8 +390,7 @@ blocking, and repository-tracked config cannot introduce a command.
     }
   ],
   "forbid_import": [],
-  "require_pattern": [],
-  "llm_judge": false
+  "require_pattern": []
 }
 ```
 

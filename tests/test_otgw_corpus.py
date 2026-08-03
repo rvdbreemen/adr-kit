@@ -161,7 +161,12 @@ def test_metadata_dry_run_is_read_only_and_failures_are_actionable():
     assert all(
         any(
             keyword in issue
-            for keyword in ("status", "supersedes", "superseded_by")
+            # `related` joined this set with TASK-83, which made the field a
+            # declared, reciprocal cross-reference. This corpus was already
+            # using it with that meaning; it fails here for the same reason
+            # `supersedes` does -- the flow-style list adr-kit's YAML subset
+            # does not parse -- and it is actionable in exactly the same way.
+            for keyword in ("status", "supersedes", "superseded_by", "related")
         )
         for item in failures
         for issue in item["issues"]
