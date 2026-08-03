@@ -104,7 +104,19 @@ python scripts/build-client-adapters.py --check     # no adapter drift
 python bin/adr-lint --strict docs/adr
 python bin/adr-index --check docs/adr
 python -m pytest -q
+npx markdownlint-cli2@0.14.0 "skills/**/*.md" "codex/skills/**/*.md" \
+  "copilot/skills/**/*.md" "agents/**/*.md" "instructions/**/*.md" \
+  "examples/**/*.md" "templates/**/*.md"
 ```
+
+The markdownlint line pins the version and repeats the globs from
+`.github/workflows/validate.yml` deliberately: they must stay in step, and a
+different version resolves different rules. It was missing here until v0.44.0,
+where "all gates green locally" was true and the release PR still failed on a
+double blank line in a skill file — the rest of these gates are Python and none
+of them read Markdown. Feature branches do not run `validate`, so a Markdown
+defect can sit unseen from the commit that introduced it until the release PR
+opens, which is the worst moment to find it.
 
 **If `ADR Enforcement (declarative)` fails on the release PR with `exceeds
 --max-diff-bytes=...`, that is the cap, not a violation.** The gate judges
