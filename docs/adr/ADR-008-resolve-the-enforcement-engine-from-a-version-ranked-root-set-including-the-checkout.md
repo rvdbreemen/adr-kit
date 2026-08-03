@@ -11,6 +11,17 @@ verified_in:
 supersedes: []
 superseded_by: null
 format: "madr"
+topics:
+  - "enforcement engine"
+  - "root resolution"
+  - "version ranking"
+aliases:
+  - "engine discovery"
+  - "checkout root"
+  - "pre-commit wrapper"
+components:
+  - "githooks"
+  - "adr-judge"
 ---
 
 <!-- markdownlint-disable MD025 -->

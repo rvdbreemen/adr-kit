@@ -72,7 +72,7 @@ command.
 - **Accept:** show an acceptance packet containing decision, rationale,
   alternatives, consequences, evidence, scope, conflicts, lifecycle effect,
   retrieval metadata, and Decision Contract. Require an explicit `yes` in the
-  active session, then invoke `adr accept`.
+  active session, then invoke `adr accept ... --confirm`.
 - **Reject:** invoke the existing reject lifecycle only after the user selects
   that outcome.
 - **Defer:** keep Proposed, record the reason plus a re-evaluation date or

@@ -10,9 +10,21 @@
       "status": "Superseded",
       "date": "2026-07-30",
       "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "cost control",
+        "llm judge",
+        "opt-in",
+        "pre-commit"
+      ],
+      "aliases": [
+        "concurrency guard",
+        "judge cost",
+        "per-commit LLM"
+      ],
+      "components": [
+        "adr-judge",
+        "githooks"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -41,9 +53,21 @@
       "status": "Accepted",
       "date": "2026-05-31",
       "decision_summary": "Implement the ADR Guardian as a dumb SessionStart detector plus in-session smart sweep, with two-tier cadence and no...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "cadence",
+        "guardian",
+        "session start",
+        "staleness"
+      ],
+      "aliases": [
+        "ADR rot",
+        "drift detector",
+        "two-tier sweep"
+      ],
+      "components": [
+        "adr-guardian",
+        "lifecycle hooks"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -72,9 +96,20 @@
       "status": "Superseded",
       "date": "2026-07-18",
       "decision_summary": "Keep the canonical seven-section template as the only storage format.",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "import",
+        "storage format",
+        "template"
+      ],
+      "aliases": [
+        "canonical template",
+        "MADR import",
+        "Nygard import"
+      ],
+      "components": [
+        "adr-lint",
+        "adr-migrate"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -103,9 +138,23 @@
       "status": "Accepted",
       "date": "2026-08-03",
       "decision_summary": "Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "context injection",
+        "edit tier",
+        "fail closed",
+        "fail open",
+        "hooks"
+      ],
+      "aliases": [
+        "enforcement floor",
+        "injection tiers",
+        "layered injection",
+        "PreToolUse context"
+      ],
+      "components": [
+        "adr-judge",
+        "lifecycle hooks"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -134,9 +183,21 @@
       "status": "Accepted",
       "date": "2026-07-18",
       "decision_summary": "Chosen option: support selectable madr, nygard, and canonical body profiles through one semantic format registry, and...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "body profile",
+        "format registry",
+        "template"
+      ],
+      "aliases": [
+        "MADR default",
+        "selectable profile",
+        "semantic roles"
+      ],
+      "components": [
+        "adr",
+        "adr-lint",
+        "adr-migrate"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -169,9 +230,20 @@
       "status": "Accepted",
       "date": "2026-07-18",
       "decision_summary": "Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "installation",
+        "marketplace",
+        "platform-local"
+      ],
+      "aliases": [
+        "native install",
+        "plugin registration",
+        "prepared directory"
+      ],
+      "components": [
+        "install-agent-envs",
+        "marketplace manifests"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -200,9 +272,22 @@
       "status": "Accepted",
       "date": "2026-08-03",
       "decision_summary": "Chosen option: generate a versioned JSON node-and-edge graph from one shared, format-aware semantic record loader, be...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "generated artefact",
+        "graph",
+        "index",
+        "retrieval"
+      ],
+      "aliases": [
+        "ADR-INDEX.json",
+        "agent retrieval",
+        "node and edge graph"
+      ],
+      "components": [
+        "adr-context",
+        "adr-index",
+        "adr_query"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -233,9 +318,20 @@
       "status": "Accepted",
       "date": "2026-07-20",
       "decision_summary": "Chosen option: add the checkout as another candidate root, ranked by manifest version like every other root, because...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "enforcement engine",
+        "root resolution",
+        "version ranking"
+      ],
+      "aliases": [
+        "checkout root",
+        "engine discovery",
+        "pre-commit wrapper"
+      ],
+      "components": [
+        "adr-judge",
+        "githooks"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -268,9 +364,20 @@
       "status": "Accepted",
       "date": "2026-08-03",
       "decision_summary": "Chosen option: bound the gate to the region and vocabulary where a finding is actionable, because it restores the gat...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "clarity",
+        "false positive",
+        "heuristic gate",
+        "lint scope"
+      ],
+      "aliases": [
+        "acronym expansion",
+        "actionable finding",
+        "bounded heuristic"
+      ],
+      "components": [
+        "adr-lint"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -352,9 +459,22 @@
       "status": "Accepted",
       "date": "2026-08-03",
       "decision_summary": "Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i...",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "grilling",
+        "human gate",
+        "open questions",
+        "readiness"
+      ],
+      "aliases": [
+        "acceptance packet",
+        "deterministic readiness",
+        "one question at a time"
+      ],
+      "components": [
+        "adr",
+        "adr-mcp",
+        "adr-readiness"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -386,9 +506,21 @@
       "status": "Accepted",
       "date": "2026-07-22",
       "decision_summary": "Chosen: the documented-runbook-plus-tag-triggered-gate option.",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "marketplace",
+        "release",
+        "runbook",
+        "tag gate"
+      ],
+      "aliases": [
+        "public repository source",
+        "release process",
+        "three marketplaces"
+      ],
+      "components": [
+        "release workflows",
+        "scripts"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -417,9 +549,20 @@
       "status": "Accepted",
       "date": "2026-07-22",
       "decision_summary": "Chosen: the declarative registry with a writer.",
-      "topics": [],
-      "aliases": [],
-      "components": [],
+      "topics": [
+        "registry",
+        "release tooling",
+        "versioning"
+      ],
+      "aliases": [
+        "bump writer",
+        "single source of version",
+        "version sites"
+      ],
+      "components": [
+        "bump-version",
+        "packaging"
+      ],
       "symbols": [],
       "context_scope": "selective",
       "decision_contract": {
@@ -1370,7 +1513,8 @@
       "decision_contract": {
         "must": [
           "Gate only the declared related frontmatter for existence and reciprocity.",
-          "Keep the gate satisfiable in a single-file lint, so bin/adr accept can run it.",
+          "Keep the gate satisfiable in a single-file lint given --context-dir, so bin/adr accept can run it.",
+          "Pass --context-dir from any caller reproducing the acceptance gate set; a caller that omits it is testing something else.",
           "Leave ## Related Decisions prose ungated.",
           "Keep bin/adr relate the supported way to create a link, writing both sides in one transaction."
         ],

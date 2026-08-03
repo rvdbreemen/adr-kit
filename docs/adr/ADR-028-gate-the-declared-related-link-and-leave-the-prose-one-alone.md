@@ -103,6 +103,19 @@ and the vocabulary where a finding is actionable. There, metadata was excluded
 from a prose check because metadata cannot carry an inline expansion. Here, prose
 is excluded from a link check because prose is not a link.
 
+**The declared link needs the directory, and the caller has to supply it.** A
+single-file lint cannot resolve a declared link either — the target is a file it
+was never given. `bin/adr accept` already solves this with `--context-dir`, which
+hands the linter the sibling ADRs to resolve against while it still reports on
+the one file it was asked about. That flag is therefore part of this contract
+rather than a convenience: any caller reproducing the acceptance gates must pass
+it, or it is not reproducing them.
+
+This is not theoretical. Writing the first `related` link onto ADR-007 broke a
+test that ran the full acceptance gate set without `--context-dir`; the record
+itself accepted cleanly the whole time. The failure was in the caller, and it
+would have recurred for every future cross-reference.
+
 **What this leaves uncovered, stated plainly.** A prose reference to an ADR that
 does not exist, or that was renumbered, is not caught by any gate. That is the
 cost. It is bounded by the fact that a prose reference is read by a human, who
@@ -122,8 +135,10 @@ produces no finding.
 ### Must
 
 * Gate only the declared `related` frontmatter for existence and reciprocity.
-* Keep the gate satisfiable in a single-file lint, so `bin/adr accept` can run
-  it.
+* Keep the gate satisfiable in a single-file lint given `--context-dir`, so
+  `bin/adr accept` can run it.
+* Pass `--context-dir` from any caller reproducing the acceptance gate set; a
+  caller that omits it is testing something else.
 * Leave `## Related Decisions` prose ungated.
 * Keep `bin/adr relate` the supported way to create a link, writing both sides in
   one transaction.

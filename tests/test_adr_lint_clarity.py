@@ -98,14 +98,25 @@ def test_summary_counts_every_distinct_acronym(tmp_path):
 
 
 def test_shipped_adrs_pass_the_acceptance_gate_set(tmp_path):
-    """The records this repository ships must be acceptable by its own tooling."""
+    """The records this repository ships must be acceptable by its own tooling.
+
+    `--context-dir` is not optional decoration here: it is what `bin/adr accept`
+    passes, and without it this test does not reproduce the acceptance path it
+    claims to. A single-file lint cannot resolve a declared `related` link,
+    because the target is a file it was never given -- so the moment any shipped
+    ADR gained a cross-reference, this test failed on a record that accepts
+    cleanly. Reproduced: ADR-007 with `related: [ADR-021]` fails without the flag
+    and passes with it.
+    """
     for adr in ("ADR-006", "ADR-007"):
         matches = sorted((REPO_ROOT / "docs" / "adr").glob(f"{adr}-*.md"))
         assert matches, f"{adr} not found"
         result = subprocess.run(
             [sys.executable, str(ADR_LINT), "--format", "json", "--strict",
              "--gates", "schema,completeness,audit,evidence,clarity,consistency,policy",
-             "--repo-root", str(REPO_ROOT), str(matches[0])],
+             "--repo-root", str(REPO_ROOT),
+             "--context-dir", str(REPO_ROOT / "docs" / "adr"),
+             str(matches[0])],
             capture_output=True, text=True, encoding="utf-8",
         )
         assert result.returncode == 0, f"{adr} fails its own acceptance gates"

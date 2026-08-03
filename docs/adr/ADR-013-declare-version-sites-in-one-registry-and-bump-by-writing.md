@@ -10,6 +10,17 @@ verified_in: []
 supersedes: []
 superseded_by: null
 format: "madr"
+topics:
+  - "versioning"
+  - "registry"
+  - "release tooling"
+aliases:
+  - "version sites"
+  - "bump writer"
+  - "single source of version"
+components:
+  - "bump-version"
+  - "packaging"
 ---
 
 <!-- markdownlint-disable MD025 -->

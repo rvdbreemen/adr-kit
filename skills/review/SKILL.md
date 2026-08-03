@@ -140,7 +140,8 @@ Ask the user which items to act on. For each picked item:
 - **Supersession candidate**: follow the supersession workflow from `skills/adr/SKILL.md` (new ADR with `Supersedes ADR-<old>`, old ADR's Status line updated only after the new one is Accepted).
 
 Never auto-accept: use the authoring acceptance packet, require same-session
-explicit confirmation, and delegate to `adr accept`. If the user picks nothing,
+explicit confirmation, and delegate to `adr accept ... --confirm`. If the user
+picks nothing,
 that is a valid outcome - report and done.
 
 ## Step 6 - Wrap-up

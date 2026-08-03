@@ -12,6 +12,19 @@ superseded_by: null
 related:
   - "ADR-022"
 format: "madr"
+topics:
+  - "grilling"
+  - "readiness"
+  - "human gate"
+  - "open questions"
+aliases:
+  - "deterministic readiness"
+  - "one question at a time"
+  - "acceptance packet"
+components:
+  - "adr-readiness"
+  - "adr-mcp"
+  - "adr"
 ---
 
 <!-- markdownlint-disable MD025 -->

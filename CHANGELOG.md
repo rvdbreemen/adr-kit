@@ -6,6 +6,41 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Changed
 
+- **BREAKING: `bin/adr accept` now requires `--confirm`.** Acceptance is the one
+  lifecycle transition that decides rather than records, and it writes a name and
+  a date into a Status History that is immutable afterwards. Since v0.44.1 derives
+  the signer from `git config user.name`, the common case became one where an
+  accept nobody meant to run wrote the user's own name into a record they never
+  saw -- and R8's own argument is that a false attribution is worse than a missing
+  one.
+
+  What the flag buys is narrow and worth stating exactly: an acceptance can no
+  longer happen *by accident* -- from a script written against an older interface,
+  from a CI job, from an agent following a stale instruction. It does not stop a
+  caller who deliberately passes it, and nothing at the process level could: an
+  agent runs with the user's own terminal, working directory and environment.
+
+  Inferring presence from `sys.stdin.isatty()` was tried first and is wrong on
+  Windows, which `clients/capabilities.json` marks release-required: a subprocess
+  with `stdin=DEVNULL` reports `isatty() == True`, because `NUL` is a character
+  device. A presence test that says "someone is there" for the null device is
+  worse than no test, because it reads as a guarantee.
+
+  `bin/adr accept --auto` is unchanged, because spec R1 grants the init flow that
+  exception explicitly. The gates still run first, so a record that cannot be
+  accepted reports why rather than asking for a flag.
+
+  **Upgrade:** add `--confirm` to any script or workflow that accepts an ADR.
+
+### Added
+
+- **The guardian sweep runs `bin/adr signer --audit`.** It already knew how to
+  find history entries attributed to the toolkit or to nobody, and ran nowhere.
+  The weekly cheap-tier sweep now reports them alongside the lint, retirement and
+  status sections.
+
+### Changed
+
 - **The signer is derived from `git config user.name` when it names a person**,
   instead of refusing until someone configured one by hand. v0.44.0 made that
   refusal a breaking change: a fresh clone, a container and a CI runner all

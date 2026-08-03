@@ -14,6 +14,17 @@ related:
   - "ADR-026"
   - "ADR-028"
 format: "madr"
+topics:
+  - "heuristic gate"
+  - "clarity"
+  - "lint scope"
+  - "false positive"
+aliases:
+  - "bounded heuristic"
+  - "actionable finding"
+  - "acronym expansion"
+components:
+  - "adr-lint"
 ---
 
 <!-- markdownlint-disable MD025 -->

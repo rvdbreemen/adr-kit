@@ -36,7 +36,7 @@
         "Use `madr` as the default; support `nygard` and `canonical` only when returned as available, and never invent a profile or template.",
         "Qualify `<subject>` as a consequential, difficult-to-reverse decision before creating a record; do not create an ADR for an ordinary reversible implementation choice.",
         "Create a Proposed record, then follow the canonical grill protocol for context, decision, alternatives, consequences, risks, mitigations, evidence, scope, ownership, conflicts, and Open Questions.",
-        "Show the final acceptance packet and require an explicit `yes` in this active session before invoking `adr accept`; require Completeness, Evidence, Clarity, and Consistency and supersede rather than rewriting Accepted decisions."
+        "Show the final acceptance packet and require an explicit `yes` in this active session before invoking `adr accept ... --confirm`; require Completeness, Evidence, Clarity, and Consistency and supersede rather than rewriting Accepted decisions."
       ]
     },
     {
@@ -74,7 +74,7 @@
         "Ask one unresolved decision question at a time in dependency order and include a recommended answer with cited evidence when possible; never ask the user for a fact the repository can settle.",
         "Record each human answer in the Proposed ADR, keep unresolved items under Open Questions, and recompute readiness after each answer.",
         "From settled facts, propose bounded retrieval metadata and Decision Contract content for human review; never invent constraints or silently enrich an Accepted ADR.",
-        "End as Accepted, Rejected, explicitly deferred, or not-an-ADR. For acceptance show decision, rationale, alternatives, consequences, evidence, scope, conflicts, and lifecycle effect; require explicit `yes` in this active session and then invoke `adr accept`."
+        "End as Accepted, Rejected, explicitly deferred, or not-an-ADR. For acceptance show decision, rationale, alternatives, consequences, evidence, scope, conflicts, and lifecycle effect; require explicit `yes` in this active session and then invoke `adr accept ... --confirm`."
       ]
     },
     {

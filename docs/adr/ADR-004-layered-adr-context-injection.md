@@ -11,6 +11,20 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-023"
+topics:
+  - "context injection"
+  - "fail open"
+  - "fail closed"
+  - "hooks"
+  - "edit tier"
+aliases:
+  - "layered injection"
+  - "injection tiers"
+  - "enforcement floor"
+  - "PreToolUse context"
+components:
+  - "lifecycle hooks"
+  - "adr-judge"
 ---
 # ADR-004 Layered ADR Context Injection for Agent Work
 

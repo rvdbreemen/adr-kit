@@ -12,6 +12,19 @@ superseded_by: null
 related:
   - "ADR-021"
 format: "madr"
+topics:
+  - "graph"
+  - "index"
+  - "retrieval"
+  - "generated artefact"
+aliases:
+  - "ADR-INDEX.json"
+  - "node and edge graph"
+  - "agent retrieval"
+components:
+  - "adr-index"
+  - "adr-context"
+  - "adr_query"
 ---
 
 <!-- markdownlint-disable MD025 -->

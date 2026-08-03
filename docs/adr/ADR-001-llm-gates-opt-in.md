@@ -9,6 +9,18 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: "ADR-017"
+topics:
+  - "llm judge"
+  - "pre-commit"
+  - "cost control"
+  - "opt-in"
+aliases:
+  - "per-commit LLM"
+  - "judge cost"
+  - "concurrency guard"
+components:
+  - "adr-judge"
+  - "githooks"
 ---
 # ADR-001 Make Per-Commit LLM Gates Opt-In
 
