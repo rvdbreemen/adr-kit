@@ -8,6 +8,33 @@ import json
 import sys
 from pathlib import Path
 
+def _use_utf8_output() -> None:
+    """Print the diff as UTF-8, whatever the console claims to be.
+
+    A dry run against this repository crashed with `UnicodeEncodeError` on
+    U+2192 in the rendered diff, after four change lines had already been
+    printed -- so the user saw a traceback where the summary belonged and could
+    reasonably conclude the run had half-applied. On Windows the default console
+    encoding is cp1252, and instruction text legitimately contains arrows, dashes
+    and quotation marks it cannot represent.
+
+    `errors="replace"` on stderr rather than a hard failure: a diagnostic line
+    losing one glyph is better than a diagnostic line raising.
+    """
+    for stream, kwargs in (
+        (sys.stdout, {"encoding": "utf-8"}),
+        (sys.stderr, {"encoding": "utf-8", "errors": "replace"}),
+    ):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(**kwargs)
+            except (ValueError, OSError):
+                # A detached or non-seekable stream; the default encoding stays.
+                pass
+
+
+_use_utf8_output()
+
 from adr_settings import SettingsError, resolve_settings
 from project_setup import (
     SetupError,

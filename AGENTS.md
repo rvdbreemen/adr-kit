@@ -28,3 +28,9 @@ agents working in `adr-kit`.
   package layout, or user-facing workflow.
 - Before marking work done, make sure the task status and notes in Backlog are
   updated to match the actual change.
+
+<!-- ADR-KIT CODEX START -->
+## ADR Kit
+
+Read `.adr-kit/ADR-guide.md` before architectural changes. Architecture decisions live in `docs/adr/`. Use `$adr-kit:context` before implementation, `$adr-kit:adr` for new decisions, and `$adr-kit:judge` before commit.
+<!-- ADR-KIT CODEX END -->
