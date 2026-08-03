@@ -34,6 +34,24 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **The embedding model a user consents to download is now recorded.** Setup
+  asks for consent to a 4.7 GB `qwen3-embedding:8b` pull, and the chosen model
+  had nowhere to live: `adr-embed` hardcoded `nomic-embed-text` and accepted an
+  override only on the command line. Under ADR-018 a model-identity mismatch
+  marks the store stale, so the visible outcome was either a wasted download or
+  retrieval quietly falling back to lexical ranking -- the discover-it-later
+  failure R16 exists to prevent.
+
+  `embedding.model` and `embedding.enabled` are declared in the config schema
+  and shown by `/adr-kit:settings`; `adr-embed build` reads the configured model
+  as its default; and setup writes it immediately after a successful pull. The
+  model name is project-scoped because which model embeds a team's ADRs is a
+  team decision.
+
+  `adr-embed build` is also now named in the setup skill. The string `adr-embed`
+  previously appeared in no skill, template, workflow or README, so the build
+  step the vector layer depends on was not discoverable anywhere a user looks.
+
 - **`inject.enabled` and `watch.enabled` now do what the schema says they do.**
   Both keys shipped in `schemas/adr-kit-config.schema.json` promising that
   setting one to `false` makes its hook a no-op for the project. Neither was

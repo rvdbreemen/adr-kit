@@ -113,6 +113,22 @@ on CPU either way. This is advice about speed, not a capability gate.
 Installing third-party software happens only on explicit consent, never with
 silent elevation, and declining must leave a working installation.
 
+**Record the model the user consented to, then build once.** A 4.7 GB download
+that nothing writes down is a wasted download: `adr-embed build` falls back to
+its own default, and under ADR-018 a model-identity mismatch marks the store
+stale, so retrieval quietly stays on lexical ranking. Immediately after a
+successful pull:
+
+```bash
+python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set embedding.model=<model>
+python3 "$ADR_KIT/bin/adr-embed" build --adr-dir docs/adr
+```
+
+The model name goes in the committed config because which model embeds a team's
+ADRs is a team decision; where the runtime serving it lives does not. The build
+is an explicit step by design — nothing embeds because a prompt was submitted —
+and it is re-run when the ADRs change, which `adr-embed status` reports.
+
 ## Step 4d — The signer: propose, never assume
 
 Every lifecycle command writes a Status History entry naming who decided, and it

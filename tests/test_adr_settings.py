@@ -274,3 +274,101 @@ def test_the_setup_skills_offer_the_openai_compatible_route():
     assert "openai-compatible" in text
     assert "LM Studio" in text
     assert "--base-url" in text
+
+
+# ---------------------------------------------------------------------------
+# The embedding model the user consented to is written down (TASK-109)
+# ---------------------------------------------------------------------------
+
+def _embed_module():
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    name = "adr_embed_under_test"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(
+        name, str(REPO_ROOT / "bin" / "adr-embed")
+    )
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+def test_the_configured_embedding_model_is_used(tmp_path):
+    """R16 asks the user to consent to a 4.7 GB download; it has to be recorded.
+
+    `adr-embed` hardcoded `nomic-embed-text` and accepted an override only on the
+    command line, so the model a user agreed to had nowhere to live. Under
+    ADR-018 a model-identity mismatch marks the store stale, making the visible
+    outcome either a wasted download or retrieval quietly falling back.
+    """
+    import json
+
+    embed = _embed_module()
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.json").write_text(
+        json.dumps({"embedding": {"model": "qwen3-embedding:8b"}}), encoding="utf-8"
+    )
+
+    assert embed._configured_model(adr_dir) == "qwen3-embedding:8b"
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param(None, id="no-file"),
+        pytest.param("{not json", id="malformed"),
+        pytest.param({}, id="empty"),
+        pytest.param({"embedding": {}}, id="block-without-model"),
+        pytest.param({"embedding": {"model": "   "}}, id="blank"),
+        pytest.param({"embedding": "qwen"}, id="wrong-type"),
+    ],
+)
+def test_an_unusable_setting_falls_through_to_the_default(tmp_path, config):
+    """Fail-soft: refusing to build over a typo is a worse trade than building
+    with the default and recording that identity honestly."""
+    import json
+
+    embed = _embed_module()
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    if config is not None:
+        (adr_dir / ".adr-kit.json").write_text(
+            config if isinstance(config, str) else json.dumps(config), encoding="utf-8"
+        )
+
+    assert embed._configured_model(adr_dir) is None
+
+
+def test_the_setting_is_declared_and_featured():
+    """A key the settings surface cannot show is a key nobody will find."""
+    import json
+
+    schema = json.loads(
+        (REPO_ROOT / "schemas" / "adr-kit-config.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "embedding" in schema["properties"]
+    assert "model" in schema["properties"]["embedding"]["properties"]
+
+    settings = (REPO_ROOT / "bin" / "adr-settings").read_text(encoding="utf-8")
+    assert '"embedding.model"' in settings
+    assert '"embedding.enabled"' in settings
+
+
+def test_setup_records_the_model_and_names_the_build_step():
+    """`adr-embed` appeared in no skill, template, workflow or README.
+
+    The build step R6.1 depends on was not discoverable anywhere a user looks.
+    """
+    text = (REPO_ROOT / "skills" / "setup" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "--set embedding.model=" in text
+    assert "adr-embed" in text and "build" in text
