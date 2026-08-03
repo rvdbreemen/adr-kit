@@ -266,7 +266,7 @@
       "path": "ADR-009-bound-heuristic-gates-to-findings-an-author-can-act-on.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-18",
+      "date": "2026-08-03",
       "decision_summary": "Chosen option: bound the gate to the region and vocabulary where a finding is actionable, because it restores the gat...",
       "topics": [],
       "aliases": [],
@@ -669,7 +669,7 @@
       "path": "ADR-017-run-the-llm-judge-by-default-on-the-host-agent-model.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-30",
+      "date": "2026-08-03",
       "decision_summary": "Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a...",
       "topics": [
         "backend selection",
@@ -1099,6 +1099,306 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-024",
+      "title": "Ask for a Missing ADR at the Pull-Request Moment, Inside the Guard",
+      "path": "ADR-024-ask-for-a-missing-adr-at-the-pull-request-moment-inside-the-guard.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: extend the guard, because the moment is already intercepted, the user is already present, and the cost...",
+      "topics": [
+        "hooks",
+        "missing decisions",
+        "pull request"
+      ],
+      "aliases": [
+        "PR moment",
+        "suggest nudge"
+      ],
+      "components": [
+        "adr-suggest",
+        "lifecycle hooks"
+      ],
+      "symbols": [
+        "adr_pr_guard",
+        "judge_branch"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Emit the missing-ADR nudge from the same interception that runs the judge.",
+          "Keep the nudge advisory: it may never deny, and may never change a verdict.",
+          "Produce nothing when the branch carries no candidate decisions.",
+          "Stay inside the event's declared budget with both passes running.",
+          "Fail open: a failure in the suggest pass must not affect the judge verdict or the tool call."
+        ],
+        "must_not": [
+          "Run the missing-ADR question on an unattended event.",
+          "Spend on a model pass the user has not seen start and cannot refuse.",
+          "Present a suggestion in a form that reads as a verdict.",
+          "Block a pull request on the absence of an ADR."
+        ],
+        "exceptions": [
+          "A project may add a pullrequest workflow of its own. This decision governs what adr-kit turns on by default, not what a team may choose."
+        ],
+        "verification": [
+          "adr-pr-suggest-v1: the named gate anchoring this decision in source, covering the both-signals case, the clean-branch case, and the advisory-never-denies case."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-pr-suggest-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-025",
+      "title": "Separate What Tracked Configuration May Select From What Only a Machine May Introduce",
+      "path": "ADR-025-separate-what-tracked-configuration-may-select-from-what-only-a-machine-may-introduce.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: repository-tracked configuration may select among backends an operator has enabled, and may never intr...",
+      "topics": [
+        "configuration",
+        "llm routing",
+        "security"
+      ],
+      "aliases": [
+        "select never introduce",
+        "trust boundary"
+      ],
+      "components": [
+        "adr-judge",
+        "adr-settings"
+      ],
+      "symbols": [
+        "apply_backend_setting",
+        "SECRET_KEYS"
+      ],
+      "context_scope": "global",
+      "decision_contract": {
+        "must": [
+          "Resolve backend choice from an enum to a command table defined in code.",
+          "Refuse a credential found in repository-tracked configuration, naming the environment variable to use instead.",
+          "Keep endpoint hosts, credentials and the lifecycle signer machine-local.",
+          "Apply the same rule to the embedding backend as to the judge backend.",
+          "Report credential presence as a boolean about the environment, never as a value.",
+          "Refuse an incomplete backend selection rather than writing a configuration the judge will silently degrade on."
+        ],
+        "must_not": [
+          "Execute a command, an argument vector or an endpoint that originates in a tracked file.",
+          "Select a backend by probing which binaries happen to exist on the machine.",
+          "Print, log or echo a stored credential.",
+          "Widen the legacy judge.llmcmd allowlist to accommodate a new backend; add the backend to the enum instead."
+        ],
+        "exceptions": [
+          "The legacy judge.llmcmd allowlist is retained for existing projects. It is frozen: no new entries, no new flags."
+        ],
+        "verification": [
+          "adr-config-trust-boundary-v1: the named gate anchoring this decision in source, covering the credential refusal, the command-string refusal, and the redacted settings output."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-config-trust-boundary-v1",
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_settings.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-026",
+      "title": "Record the Combined Audit Command and Its Five-Way Exit Contract",
+      "path": "ADR-026-record-the-combined-audit-command-and-its-five-way-exit-contract.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: one command running both halves, with five exit codes.",
+      "topics": [
+        "audit",
+        "cli contract",
+        "exit codes"
+      ],
+      "aliases": [
+        "adr-audit",
+        "adr-discover"
+      ],
+      "components": [
+        "adr-audit",
+        "adr-discover"
+      ],
+      "symbols": [
+        "EXIT_ADR_QUALITY",
+        "EXIT_CODE_VIOLATION"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Run both the lint and the judge in a single invocation.",
+          "Return 0, 1, 2, 3 or 4 according to the table above, and nothing else.",
+          "Refuse a bare invocation with exit 2, naming the discovery command.",
+          "Implement whole-codebase mode as a diff against the empty tree, bounded by the declared diff budget.",
+          "Keep bin/adr-discover the name of the init-time repository scanner."
+        ],
+        "must_not": [
+          "Collapse the ADR-quality failure and the code-violation failure into one exit code.",
+          "Report success when no mode was selected.",
+          "Reuse the name adr-audit for anything but the combined command.",
+          "Exceed the diff budget silently; a truncated whole-codebase run must say what it dropped."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "adr-audit-exit-contract-v1: the named gate anchoring this decision in source. It asserts each of the five exit codes against a fixture, so the contract is enforced rather than described."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-audit-exit-contract-v1",
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_audit_command.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-027",
+      "title": "Derive the Lifecycle Signer From a Person-Named Git Identity, Announced",
+      "path": "ADR-027-derive-the-lifecycle-signer-from-a-person-named-git-identity-announced.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: derive from git config user.name when it names a person, and announce it.",
+      "topics": [
+        "audit trail",
+        "identity",
+        "lifecycle"
+      ],
+      "aliases": [
+        "changed_by",
+        "signer"
+      ],
+      "components": [
+        "adr",
+        "adr-settings"
+      ],
+      "symbols": [
+        "person_shaped",
+        "resolve_signer"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Resolve the actor in the order: explicit flag, machine-local config, derived git identity, refusal.",
+          "Announce a derived actor on stderr, naming its source and the command that would set a different one.",
+          "Refuse an identity that names a machine rather than a person, and say which value was rejected.",
+          "Keep the configured signer machine-local.",
+          "Propose candidates at install and upgrade without writing any of them.",
+          "Write nothing when the resolution refuses."
+        ],
+        "must_not": [
+          "Write a generic or tool-shaped actor into a Status History entry.",
+          "Adopt a derived identity without announcing it.",
+          "Store a signer in repository-tracked configuration.",
+          "Refuse on a command that attributes no decision, where a person-named identity is available."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "adr-signer-derivation-v1: the named gate anchoring this decision in source, covering derivation, announcement, precedence, the machine-identity refusal, and the write-nothing behaviour of --suggest."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-signer-derivation-v1",
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_signer_discovery.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-028",
+      "title": "Gate the Declared Related Link and Leave the Prose One Alone",
+      "path": "ADR-028-gate-the-declared-related-link-and-leave-the-prose-one-alone.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-03",
+      "decision_summary": "Chosen option: gate the declared link, leave the prose alone.",
+      "topics": [
+        "cross-references",
+        "lint"
+      ],
+      "aliases": [
+        "reference gate",
+        "related link"
+      ],
+      "components": [
+        "adr-lint"
+      ],
+      "symbols": [
+        "detect_reference_issues"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Gate only the declared related frontmatter for existence and reciprocity.",
+          "Keep the gate satisfiable in a single-file lint, so bin/adr accept can run it.",
+          "Leave ## Related Decisions prose ungated.",
+          "Keep bin/adr relate the supported way to create a link, writing both sides in one transaction."
+        ],
+        "must_not": [
+          "Resolve prose identifiers as links.",
+          "Require the whole ADR directory for a check that a single-file lint must pass.",
+          "Fail a one-sided link silently; a half link is a FAIL with both sides named."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "adr-reference-gate-scope-v1: the named gate anchoring this decision in source, covering the dangling case, the one-sided case, and the prose-is-ignored case."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-reference-gate-scope-v1",
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_cross_references.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -1249,6 +1549,18 @@
     {
       "source": "ADR-009",
       "target": "ADR-007",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-009",
+      "target": "ADR-026",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-009",
+      "target": "ADR-028",
       "type": "related",
       "resolved": true
     },
@@ -1475,6 +1787,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-017",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-018",
       "target": "ADR-004",
       "type": "related",
@@ -1603,6 +1921,78 @@
     {
       "source": "ADR-023",
       "target": "ADR-019",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-023",
+      "target": "ADR-024",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-024",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-024",
+      "target": "ADR-019",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-024",
+      "target": "ADR-023",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-025",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-025",
+      "target": "ADR-018",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-025",
+      "target": "ADR-020",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-026",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-026",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-027",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-028",
+      "target": "ADR-007",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-028",
+      "target": "ADR-009",
       "type": "related",
       "resolved": true
     }

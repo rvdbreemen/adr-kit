@@ -29,3 +29,8 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-021 | Proposed | - | Chosen option: the session-scoped hooks regenerate a stale index in-process; the edit-tier hooks stay read-only and s... |
 | ADR-022 | Proposed | - | Chosen option: ## Open Questions is append-only while an ADR is Proposed, because it removes the incentive at its sou... |
 | ADR-023 | Proposed | - | Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b... |
+| ADR-024 | Proposed | - | Chosen option: extend the guard, because the moment is already intercepted, the user is already present, and the cost... |
+| ADR-025 | Proposed | - | Chosen option: repository-tracked configuration may select among backends an operator has enabled, and may never intr... |
+| ADR-026 | Proposed | - | Chosen option: one command running both halves, with five exit codes. |
+| ADR-027 | Proposed | - | Chosen option: derive from git config user.name when it names a person, and announce it. |
+| ADR-028 | Proposed | - | Chosen option: gate the declared link, leave the prose alone. |

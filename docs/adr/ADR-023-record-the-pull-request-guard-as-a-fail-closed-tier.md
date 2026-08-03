@@ -13,6 +13,7 @@ superseded_by: null
 related:
   - "ADR-004"
   - "ADR-019"
+  - "ADR-024"
 topics:
   - "hooks"
   - "enforcement"
@@ -56,6 +57,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-023 corrects ADR-019's every-hook-is-model-free premise
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-03
+    status: Proposed
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-024 applies the pull-request tier ADR-023 established
     changed_via: adr-kit lifecycle
 ```
 

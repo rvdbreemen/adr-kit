@@ -3,9 +3,10 @@ id: TASK-100
 title: >-
   Record what /adr-kit:audit is, its exit-code contract, and the name it took
   over
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-03 19:32'
+updated_date: '2026-08-03 20:53'
 labels:
   - adr
   - cli
@@ -29,9 +30,21 @@ Spec: R15.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An ADR states what `/adr-kit:audit` runs, why lint and judge belong in one pass, and why the exit codes are five rather than two
-- [ ] #2 The whole-codebase mode is recorded as a diff against the empty tree, with the diff budget that bounds it
-- [ ] #3 The rename of the old `adr-audit` to `adr-discover` is recorded, with the ambiguity it removes
-- [ ] #4 The refusal of a bare invocation is recorded, including the failure it replaced
+- [x] #1 An ADR states what `/adr-kit:audit` runs, why lint and judge belong in one pass, and why the exit codes are five rather than two
+- [x] #2 The whole-codebase mode is recorded as a diff against the empty tree, with the diff budget that bounds it
+- [x] #3 The rename of the old `adr-audit` to `adr-discover` is recorded, with the ambiguity it removes
+- [x] #4 The refusal of a bare invocation is recorded, including the failure it replaced
 - [ ] #5 A test asserts each of the five exit codes on a fixture, so the contract is enforced and not merely described
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-03 20:53
+---
+ADR-026 written and Proposed, passing all gates. It carries the five-way exit table with an owner column, the whole-codebase-as-empty-tree interpretation with its diff budget, the `adr-audit` → `adr-discover` rename, and the bare-invocation refusal including the failure it replaced.
+
+AC#5 stays open: the ADR names the gate `adr-audit-exit-contract-v1` and points `verified_in` at `tests/test_adr_audit_command.py`, but the test asserting each of the five exit codes against a fixture is not written yet. Under the kit's own rule the gate anchor has to exist in source before the record can be accepted, so this task blocks acceptance of ADR-026 rather than the other way round.
+---
+<!-- COMMENTS:END -->

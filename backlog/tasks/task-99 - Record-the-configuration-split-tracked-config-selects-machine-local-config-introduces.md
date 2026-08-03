@@ -3,9 +3,10 @@ id: TASK-99
 title: >-
   Record the configuration split: tracked config selects, machine-local config
   introduces
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 19:32'
+updated_date: '2026-08-03 20:53'
 labels:
   - adr
   - security
@@ -31,10 +32,26 @@ Spec: R12.1, R13, R8.1.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An ADR states the select-never-introduce rule and names the threat: the tracked file is writable by anyone with commit access
-- [ ] #2 It states that backend choice is an enum resolving to a command table in code, not a command string in config
-- [ ] #3 It states that a credential in the tracked file is refused with the environment variable named, and why refusing beats silently using it
-- [ ] #4 It states that the same rule binds the embedding backend, one registry and one setting
-- [ ] #5 It names what belongs machine-local instead: endpoint host, credentials, signer
-- [ ] #6 An Enforcement block guards the settings surface, or the ADR explains why the rule cannot be expressed mechanically
+- [x] #1 An ADR states the select-never-introduce rule and names the threat: the tracked file is writable by anyone with commit access
+- [x] #2 It states that backend choice is an enum resolving to a command table in code, not a command string in config
+- [x] #3 It states that a credential in the tracked file is refused with the environment variable named, and why refusing beats silently using it
+- [x] #4 It states that the same rule binds the embedding backend, one registry and one setting
+- [x] #5 It names what belongs machine-local instead: endpoint host, credentials, signer
+- [x] #6 An Enforcement block guards the settings surface, or the ADR explains why the rule cannot be expressed mechanically
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+ADR-025 written and Proposed, passing all gates.
+
+It records the rule as **selection versus introduction** rather than as "public versus secret", which is the framing that makes it decidable: choosing among options an operator already sanctioned, against creating an option the operator never saw.
+
+Two things the ADR settles beyond the task's ACs:
+
+**The existing `judge.llm_cmd` allowlist is named as the weaker half, not as the pattern.** An allowlist is a denylist wearing better clothes — every new backend widens it, and the widening is where the mistake lands. It is retained for backward compatibility and **frozen**: no new entries, no new flags. New backends go in the enum. Without that sentence the ADR would have blessed the mechanism it exists to contain.
+
+**AC#6 is answered as "explain why not".** The rule cannot be expressed as a `forbid_pattern`: it is about where a value lives and what shape it has, not about a string appearing in a diff. The Decision Contract carries the named gate `adr-config-trust-boundary-v1` and `verified_in: tests/test_adr_settings.py` instead, which is the ADR-004 route for a decision whose surface a regex cannot reach.
+
+Acceptance is the maintainer's action.
+<!-- SECTION:FINAL_SUMMARY:END -->
