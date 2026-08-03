@@ -142,6 +142,40 @@ own ADR. When the signer is unset and none is supplied, the command must **refus
 rather than sign on the user's behalf. An unsigned acceptance is a bug; a
 self-signed one is a lie in the audit trail.
 
+### R8.2 — A git identity may be adopted, announced, when it names a person
+
+*Added after v0.44.0, which shipped the refusal above as a breaking change: a
+fresh clone, a container and a CI runner all failed at the first lifecycle
+command, `bin/adr new` included.*
+
+The refusal was stricter than R8.1 requires. R8.1 forbids a default that **names
+the tool** — the `adr-kit` actor, where the toolkit writes itself into the record
+as the decider. `git config user.name` is the opposite of that: a value the human
+configured on this machine, which every commit in the repository already carries.
+It is a configured value, not an assumed one.
+
+So the lifecycle commands may adopt it, under two conditions that preserve what
+R8.1 was protecting:
+
+- **Announced, never silent.** A derived actor is printed when it is used. A name
+  that lands in an immutable Status History must never be one the user did not
+  know was being written. This is weaker than the confirmation R8.1 asks of the
+  *installer*, and deliberately so: a lifecycle command is not an install flow and
+  cannot stop to ask, but it can refuse to be quiet.
+- **A person, never a machine.** `github-actions[bot]`, `runner`, `jenkins`, a
+  bare `user` or `root`: these are configured values that name a machine. They
+  fall through to the refusal, because R8 asks for evidence of which *human*
+  accepted a decision, and a bot's name under an acceptance is the same false
+  attribution a committed signer would be.
+
+Precedence: `--changed-by`, then the configured `lifecycle.signer`, then the
+derived git identity, then refuse.
+
+The installer's obligation in R8.1 is unchanged and comes first in practice:
+setup, init and upgrade propose a candidate — from the signed-in GitHub account
+as well as git — and write it only once the user chooses. The derivation is the
+floor for machines where nobody ran that flow, not a replacement for it.
+
 ## R9 — Grilling until the ADR is sharp
 
 adr-kit itself evaluates whether an ADR is good enough. When it is not:

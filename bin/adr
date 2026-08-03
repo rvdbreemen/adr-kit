@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1060,7 +1061,7 @@ def configured_signer(adr_dir: Path) -> Optional[str]:
 
 
 def git_user_name() -> Optional[str]:
-    """`git config user.name`, offered as a proposal. Never adopted silently."""
+    """`git config user.name`, or None."""
     try:
         out = subprocess.run(
             ["git", "config", "user.name"],
@@ -1073,16 +1074,146 @@ def git_user_name() -> Optional[str]:
     return name or None
 
 
-def resolve_signer(adr_dir: Path, explicit: Optional[str]) -> str:
-    """Explicit flag, else configured signer, else refuse."""
+# Identities that are configured but are not a person. Adopting one would put a
+# machine's name under a human acceptance, which is the exact thing R8 exists to
+# prevent -- so these fall through to the refusal, where a human is asked.
+_NON_PERSON_SIGNER_RE = re.compile(
+    r"(?i)^(?:"
+    r".*\[bot\]|"
+    r"github[-_ ]?actions?|dependabot|renovate(?:\[bot\])?|"
+    r"semantic-release|release[-_ ]?bot|.*\bbot\b|"
+    r"ci|build|builder|runner|jenkins|buildkite|circleci|travis|"
+    r"root|admin|administrator|user|unknown|your name|"
+    r"adr-kit"
+    r")$"
+)
+
+
+def github_identity() -> List[Dict[str, str]]:
+    """The signed-in GitHub account's real name and login, if `gh` can say.
+
+    Asked for at install and upgrade time, never on the lifecycle hot path: it
+    is a network call through someone else's CLI, and a tool that blocks an ADR
+    write on GitHub being reachable would be trading a good property for a bad
+    one.
+    """
+    if shutil.which("gh") is None:
+        return []
+    try:
+        out = subprocess.run(
+            ["gh", "api", "user", "--jq", "{name: .name, login: .login}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    try:
+        payload = json.loads(out.stdout or "{}")
+    except (json.JSONDecodeError, ValueError):
+        return []
+    found: List[Dict[str, str]] = []
+    if isinstance(payload, dict):
+        if payload.get("name"):
+            found.append({"name": str(payload["name"]).strip(),
+                          "source": "gh api user (.name)"})
+        if payload.get("login"):
+            found.append({"name": str(payload["login"]).strip(),
+                          "source": "gh api user (.login)"})
+    return found
+
+
+def signer_candidates() -> List[Dict[str, str]]:
+    """Ranked identities to propose at install or upgrade time.
+
+    Ordered by how well each names a human: the GitHub profile name first
+    because it is the one a person actually chose to be called, then the git
+    identity that already signs their commits, then the GitHub login. Each
+    carries its source, because a proposal the user cannot trace is one they
+    cannot judge -- and this value ends up in an immutable Status History.
+
+    Duplicates collapse: on most machines the GitHub name and `git config
+    user.name` are the same string, and offering it twice would look like two
+    different options.
+    """
+    raw: List[Dict[str, str]] = []
+    github = github_identity()
+    raw.extend(entry for entry in github if entry["source"].endswith("(.name)"))
+    name = git_user_name()
+    if name:
+        raw.append({"name": name, "source": "git config user.name"})
+    raw.extend(entry for entry in github if entry["source"].endswith("(.login)"))
+
+    seen: set[str] = set()
+    candidates: List[Dict[str, str]] = []
+    for entry in raw:
+        key = entry["name"].casefold()
+        if key in seen or not person_shaped(entry["name"]):
+            continue
+        seen.add(key)
+        candidates.append({
+            "name": entry["name"],
+            "source": entry["source"],
+            "actor": f"User: {entry['name']}",
+        })
+    return candidates
+
+
+def person_shaped(name: Optional[str]) -> bool:
+    """Does this identity plausibly name a human who could accept a decision?"""
+    if not name or not name.strip():
+        return False
+    candidate = name.strip()
+    if _NON_PERSON_SIGNER_RE.match(candidate):
+        return False
+    # An email-only identity is a person, but a bare address reads badly in a
+    # history line; git's user.name is expected to be a name.
+    return not candidate.startswith("<") and "@" not in candidate.split()[0]
+
+
+def resolve_signer(
+    adr_dir: Path,
+    explicit: Optional[str],
+    announce: bool = True,
+) -> str:
+    """Explicit flag, then configured signer, then git, then refuse.
+
+    Reading `git config user.name` is not the tool signing on someone's behalf.
+    R8.1 forbids "a default that names the tool" -- the old `adr-kit` actor,
+    where the toolkit wrote itself into the record as the decider. A git
+    identity is the opposite of that: it is a value the human configured on
+    this machine, and every commit in the repository already carries it.
+
+    What survives from the stricter version is the *silence*, not the refusal.
+    A derived actor is announced on stderr the first time it is used, because a
+    name that lands in an immutable Status History should never be one the user
+    did not know was being written. And an identity that is configured but is
+    not a person -- `github-actions[bot]`, `runner`, a bare `user` -- is refused
+    rather than adopted, since R8 asks for evidence of which *human* accepted.
+    """
     if explicit and explicit.strip():
         return explicit.strip()
     signer = configured_signer(adr_dir)
     if signer:
         return signer
+
     proposal = git_user_name()
+    if person_shaped(proposal):
+        actor = f"User: {proposal.strip()}"
+        if announce:
+            print(
+                f"[adr-kit] signing as {actor!r}, from git config user.name.\n"
+                f'[adr-kit] set a different one with: python bin/adr signer --set "User: <name>"',
+                file=sys.stderr,
+            )
+        return actor
+
     if proposal:
-        hint = f'  python bin/adr signer --set "User: {proposal}"'
+        hint = (
+            f'  python bin/adr signer --set "User: <your name>"\n'
+            f"  (git config user.name is {proposal!r}, which does not name a person)"
+        )
     else:
         hint = '  python bin/adr signer --set "User: <your name>"'
     raise AdrLifecycleError(
@@ -1131,15 +1262,58 @@ def command_signer(args) -> List[str]:
             "history, so it is a deliberate act, not something this command does.",
         ]
 
+    if args.suggest:
+        candidates = signer_candidates()
+        current = configured_signer(adr_dir)
+        if getattr(args, "format", "text") == "json":
+            print(json.dumps(
+                {"configured": current, "candidates": candidates},
+                indent=2, ensure_ascii=False,
+            ))
+            return []
+        if current:
+            return [
+                f"already configured: {current}",
+                f"  in {adr_dir / LOCAL_CONFIG_NAME}",
+                "Re-run with --set to change it.",
+            ]
+        if not candidates:
+            return [
+                "no signer candidate found on this machine.",
+                "  git config user.name is unset or does not name a person,",
+                "  and the GitHub CLI is unavailable or not signed in.",
+                'Set one: python bin/adr signer --set "User: <your name>"',
+            ]
+        lines = ["Signer candidates found on this machine:"]
+        for index, candidate in enumerate(candidates, 1):
+            lines.append(f"  {index}. {candidate['actor']}   [{candidate['source']}]")
+        lines.append("")
+        lines.append("Nothing is written until you choose. To adopt the first:")
+        lines.append(f"  python bin/adr signer --set \"{candidates[0]['actor']}\"")
+        return lines
+
     signer = configured_signer(adr_dir)
     if signer:
-        return [f"signer: {signer}", f"source: {adr_dir / LOCAL_CONFIG_NAME}"]
+        return [
+            f"signer: {signer}",
+            f"source: {adr_dir / LOCAL_CONFIG_NAME} (machine-local, gitignored)",
+        ]
+
     proposal = git_user_name()
+    if person_shaped(proposal):
+        return [
+            f"signer: User: {proposal.strip()}",
+            "source: git config user.name (derived, not written to any file)",
+            'override for this machine: python bin/adr signer --set "User: <name>"',
+        ]
+
     lines = ["signer: (unset) - lifecycle commands will refuse to write history"]
     if proposal:
-        lines.append(f'proposal from git config user.name: python bin/adr signer --set "User: {proposal}"')
-    else:
-        lines.append('set one with: python bin/adr signer --set "User: <your name>"')
+        lines.append(
+            f"git config user.name is {proposal!r}, which does not name a person, "
+            "so it is not adopted"
+        )
+    lines.append('set one with: python bin/adr signer --set "User: <your name>"')
     return lines
 
 
@@ -1166,6 +1340,16 @@ def build_parser() -> argparse.ArgumentParser:
     signer.add_argument("--adr-dir", default="docs/adr", help="ADR directory")
     signer.add_argument("--set", default=None, metavar="NAME", help='e.g. "User: Robert van den Breemen"')
     signer.add_argument("--audit", action="store_true", help="list history entries with no human actor")
+    signer.add_argument(
+        "--suggest",
+        action="store_true",
+        help=(
+            "propose signer candidates found on this machine (git config, and the "
+            "signed-in GitHub account when `gh` is available). Read-only: it writes "
+            "nothing, so a setup flow can show them and let the user choose."
+        ),
+    )
+    signer.add_argument("--format", choices=["text", "json"], default="text")
 
     new = sub.add_parser("new", help="create a Proposed ADR from a selected profile")
     new.add_argument("title")
