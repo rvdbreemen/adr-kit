@@ -3,10 +3,10 @@ id: TASK-90
 title: >-
   Ship adr_pr_guard.py to the client mirrors, and smoke-test every generated
   hook tree
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 18:57'
-updated_date: '2026-08-03 18:57'
+updated_date: '2026-08-03 20:15'
 labels:
   - P0
   - regression
@@ -42,8 +42,22 @@ Introduced by commit `323a38a` (TASK-76, the pre-PR branch guard); `git tag --co
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 hooks/adr_pr_guard.py is listed in HOOK_RUNTIME_FILES and mirrored to codex/ and copilot/
-- [ ] #2 Each generated hooks/adr-hook.py runs a synthetic session-start envelope and exits 0 on all three clients
-- [ ] #3 A CI step executes every generated hook entrypoint once per client and fails on a non-zero exit, so an undeclared import cannot pass again
-- [ ] #4 The fix ships as v0.44.1, since v0.44.0 is released with the defect
+- [x] #1 hooks/adr_pr_guard.py is listed in HOOK_RUNTIME_FILES and mirrored to codex/ and copilot/
+- [x] #2 Each generated hooks/adr-hook.py runs a synthetic session-start envelope and exits 0 on all three clients
+- [x] #3 A CI step executes every generated hook entrypoint once per client and fails on a non-zero exit, so an undeclared import cannot pass again
+- [x] #4 The fix ships as v0.44.1, since v0.44.0 is released with the defect
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`adr_pr_guard.py` joined `HOOK_RUNTIME_FILES` in `scripts/client_generation_model.py`, and both generated trees now carry it.
+
+Reproduced before fixing: a `gh pr create` payload through `codex/hooks/adr-hook.py` and `copilot/hooks/adr-hook.py` gave `rc=1`, 0 bytes, `ModuleNotFoundError: No module named 'adr_pr_guard'` — and because the import is at module scope, that was the answer for *every* event, not only the guard.
+
+The drift check was confirmed to discriminate: deleting `codex/hooks/adr_pr_guard.py` and running `build-client-adapters.py --check` now exits 1; regenerating and re-running exits 0. Before the declaration it reported `changed=0` over the same broken state.
+
+`tests/test_adr_hook_dispatch_matrix.py` adds the invariant rather than the file list: every module the generated entrypoint imports must resolve inside that client's tree. It fails on the pre-fix state for both clients. The same module drives every manifest event through the real process on all three clients — 23 cases, all green.
+
+Shipped in v0.44.1.
+<!-- SECTION:FINAL_SUMMARY:END -->
