@@ -302,3 +302,107 @@ def test_every_manifest_event_a_client_offers_is_in_the_registry():
                 missing.append((client_id, event["id"]))
 
     assert not missing, f"registry does not cover: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# The support matrix derives its claims (TASK-115)
+# ---------------------------------------------------------------------------
+
+MATRIX = REPO_ROOT / "docs" / "client-support.md"
+
+
+def test_the_lifecycle_table_is_not_hand_written():
+    """It was three hardcoded strings, which is why it could be wrong.
+
+    `Plan exit | supported (ExitPlanMode)` sat in this file through a release in
+    which that event never fired, because nothing derived the row and so nothing
+    could contradict it.
+    """
+    source = (REPO_ROOT / "scripts" / "client_certification.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "LIFECYCLE_COLUMNS" in source
+    assert "hooks/manifest.json" in source
+    assert "| Claude Code CLI | Accepted global only |" not in source, (
+        "a hardcoded lifecycle row is back"
+    )
+
+
+LABELS = {
+    "claude-code-cli": "Claude Code CLI",
+    "codex-cli": "Codex CLI",
+    "github-copilot-cli": "GitHub Copilot CLI",
+}
+
+
+def _lifecycle_section() -> list[str]:
+    """Only the lifecycle table.
+
+    The document opens with a per-platform surface table whose rows begin with
+    the same client labels, so an unscoped search reads the wrong one -- which
+    is what these tests did on the first run.
+    """
+    lines = MATRIX.read_text(encoding="utf-8").splitlines()
+    start = next(
+        index for index, line in enumerate(lines)
+        if line.startswith("## Lifecycle retrieval support")
+    )
+    return lines[start:]
+
+
+def _cells(row: str) -> list[str]:
+    """Split a Markdown row on unescaped pipes."""
+    import re
+
+    return [cell.strip() for cell in re.split(r"(?<!\\)\|", row)[1:-1]]
+
+
+def test_every_cell_matches_the_manifest():
+    """The document and the registry must not be able to disagree."""
+    import json
+
+    manifest = json.loads(
+        (REPO_ROOT / "hooks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    events = {event["id"]: event for event in manifest["events"]}
+    section = _lifecycle_section()
+
+    for event_id in ("plan-exit", "pr-create", "post-tool-use", "session-start"):
+        for client, native in events[event_id]["clients"].items():
+            label = LABELS[client]
+            row = next(
+                line for line in section if line.startswith(f"| {label} |")
+            )
+            if native is None:
+                assert "no native event" in row, (event_id, client, row)
+            else:
+                assert f"`{native}`" in row, (event_id, client, row)
+
+
+def test_the_table_states_what_it_does_not_claim():
+    """Registered is not the same as working, and the file has to say so.
+
+    Conflating them is the exact failure this task exists to fix; separating
+    them is what lets the table be derived at all.
+    """
+    text = MATRIX.read_text(encoding="utf-8")
+
+    assert "does not say the wiring behind it works" in text
+    assert "Evidence" in text, "the evidence class must stay visible"
+
+
+def test_a_matcher_pipe_cannot_break_the_table():
+    """`Edit|MultiEdit|Write` is a regex alternation inside a Markdown cell.
+
+    Unescaped, its pipes end the cell and shift every column right -- a table
+    that renders as nonsense while every underlying value is correct.
+    """
+    section = _lifecycle_section()
+    header = next(line for line in section if line.startswith("| Client |"))
+    rows = [line for line in section if line.startswith("| ") and "CLI |" in line]
+
+    assert rows, "the lifecycle rows are missing"
+    for row in rows:
+        assert "Edit|MultiEdit" not in row, f"unescaped matcher pipe: {row}"
+        assert len(_cells(row)) == len(_cells(header)), f"column count drifted: {row}"

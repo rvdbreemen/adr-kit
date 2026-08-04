@@ -34,6 +34,23 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **The client support matrix derives its lifecycle table instead of asserting
+  it.** Those rows were three hardcoded strings, which is exactly why the
+  document could claim capabilities that did not exist: nothing derived them, so
+  nothing could contradict them. `Plan exit | supported (ExitPlanMode)` sat in
+  the file through a release in which that event never fired.
+
+  Each cell is now the manifest's own answer for that client -- the client's
+  native event name, or an explicit "no native event" -- so a capability cannot
+  appear unless it is registered, and `--check` fails the build when the file
+  drifts from `hooks/manifest.json`. Rows for the post-edit backstop and the
+  shell-tool/pull-request moment appear for the first time.
+
+  The table now makes one claim rather than two: it says a moment is
+  *registered*, and says explicitly that it does not say the wiring works. That
+  second question belongs to the dispatch tests, and separating the two is what
+  makes the table derivable at all.
+
 - **The capability registry no longer lags the manifest it governs.**
   `clients/capabilities.json` lists `hooks/manifest.json` under
   `ownership.canonical` and carried neither of the two most recently added

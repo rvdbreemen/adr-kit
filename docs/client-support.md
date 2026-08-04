@@ -9,11 +9,23 @@
 
 ## Lifecycle retrieval support
 
-| Client | Session global | Prompt/task query | Edit query | Plan exit | Subagent/compaction |
-|---|---|---|---|---|---|
-| Claude Code CLI | Accepted global only | Accepted governing + Proposed advisory | supported | supported (ExitPlanMode) | preserves parent context |
-| Codex CLI | Accepted global only | Accepted governing + Proposed advisory | supported | no plan-mode event | preserves parent context |
-| GitHub Copilot CLI | supported task context | Accepted governing + Proposed advisory | unsupported native event | no plan-mode event | unsupported native events |
+Derived from `hooks/manifest.json`, which is the registry of what each
+client is *wired for*. A cell names that client's own event, or states
+that the client offers none.
+
+This table makes one claim and not two. It says a moment is registered;
+it does not say the wiring behind it works. That second question belongs
+to the dispatch tests, which drive every registered event through the
+real entrypoint on every client -- and it is a question worth keeping
+separate, because `Plan exit | supported (ExitPlanMode)` sat in this file
+through a release in which that event never fired. The Evidence column
+above says how the wiring was verified.
+
+| Client | Session global | Prompt/task query | Edit query | Post-edit backstop | Plan exit | Shell tool / PR moment | Subagent | Compaction |
+|---|---|---|---|---|---|---|---|---|
+| Claude Code CLI | `SessionStart` | `UserPromptSubmit` | `PreToolUse` / `Edit\|MultiEdit\|Write` | `PostToolUse` / `Edit\|MultiEdit\|Write` | `PreToolUse` / `ExitPlanMode` | `PreToolUse` / `Bash` | `SubagentStart` | `PreCompact` |
+| Codex CLI | `SessionStart` | `UserPromptSubmit` | `PreToolUse` / `Edit\|MultiEdit\|Write` | `PostToolUse` / `Edit\|MultiEdit\|Write` | no native event | `PreToolUse` / `Bash` | `SubagentStart` | `PreCompact` |
+| GitHub Copilot CLI | `sessionStart` | `userPromptSubmitted` | no native event | `postToolUse` / `Edit\|MultiEdit\|Write` | no native event | no native event | no native event | no native event |
 
 All retrieval is local, bounded, and index-first. Unsupported native lifecycle events are not advertised; deterministic pre-commit enforcement remains the backstop.
 

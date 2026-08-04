@@ -141,6 +141,92 @@ def validate(bundle: object, candidate: str, release_candidate: bool, max_age_da
     return errors
 
 
+#: Which manifest event answers each column of the lifecycle table.
+LIFECYCLE_COLUMNS = (
+    ("Session global", "session-start"),
+    ("Prompt/task query", "user-prompt-submit"),
+    ("Edit query", "pre-tool-use"),
+    ("Post-edit backstop", "post-tool-use"),
+    ("Plan exit", "plan-exit"),
+    ("Shell tool / PR moment", "pr-create"),
+    ("Subagent", "subagent-start"),
+    ("Compaction", "pre-compact"),
+)
+
+
+def _lifecycle_rows(labels: dict) -> list:
+    """Derive the lifecycle table from the manifest instead of asserting it.
+
+    These rows were three hardcoded strings, which is exactly why the document
+    could claim capabilities that did not exist: nothing derived them, so
+    nothing could contradict them. `Plan exit | supported (ExitPlanMode)` stayed
+    true-looking for as long as somebody had typed it, through a release in
+    which that event never fired at all.
+
+    Now each cell is the manifest's own answer for that client -- the native
+    event name when the client offers the moment, and an explicit "no native
+    event" when it does not. A capability cannot appear here unless it is
+    registered, and `--check` fails the build when the file drifts from the
+    manifest.
+
+    Falls back to a stated absence rather than raising: this renderer runs
+    inside release certification, and a missing manifest should fail the
+    manifest's own gate, not the document that reads it.
+    """
+    import json
+    from pathlib import Path as _Path
+
+    manifest_path = _Path(__file__).resolve().parents[1] / "hooks" / "manifest.json"
+    try:
+        events = {
+            event["id"]: event
+            for event in json.loads(manifest_path.read_text(encoding="utf-8"))["events"]
+        }
+    except (OSError, ValueError, KeyError, TypeError):
+        return [
+            "",
+            "## Lifecycle retrieval support",
+            "",
+            "_Unavailable: hooks/manifest.json could not be read, so no claim is"
+            " made here rather than an unverified one._",
+        ]
+
+    header = " | ".join(name for name, _ in LIFECYCLE_COLUMNS)
+    rows = [
+        "",
+        "## Lifecycle retrieval support",
+        "",
+        "Derived from `hooks/manifest.json`, which is the registry of what each",
+        "client is *wired for*. A cell names that client's own event, or states",
+        "that the client offers none.",
+        "",
+        "This table makes one claim and not two. It says a moment is registered;",
+        "it does not say the wiring behind it works. That second question belongs",
+        "to the dispatch tests, which drive every registered event through the",
+        "real entrypoint on every client -- and it is a question worth keeping",
+        "separate, because `Plan exit | supported (ExitPlanMode)` sat in this file",
+        "through a release in which that event never fired. The Evidence column",
+        "above says how the wiring was verified.",
+        "",
+        f"| Client | {header} |",
+        "|---|" + "---|" * len(LIFECYCLE_COLUMNS),
+    ]
+    for client in CLIENTS:
+        cells = []
+        for _name, event_id in LIFECYCLE_COLUMNS:
+            event = events.get(event_id)
+            native = (event or {}).get("clients", {}).get(client)
+            if not native:
+                cells.append("no native event")
+                continue
+            matcher = (event or {}).get("matcher")
+            # A matcher is a regex alternation, so its pipes have to be escaped
+            # or they end the table cell and silently shift every column right.
+            escaped = str(matcher).replace("|", r"\|") if matcher else ""
+            cells.append(f"`{native}`" + (f" / `{escaped}`" if matcher else ""))
+        rows.append(f"| {labels[client]} | " + " | ".join(cells) + " |")
+    return rows
+
 def support_matrix(bundle: dict) -> str:
     labels = {
         "claude-code-cli": "Claude Code CLI",
@@ -165,15 +251,8 @@ def support_matrix(bundle: dict) -> str:
             f"| {labels[client]} | CLI | {platforms['windows']['status']} | "
             f"{platforms['macos']['status']} | {platforms['linux']['status']} | {status} |"
         )
+    lines.extend(_lifecycle_rows(labels))
     lines.extend([
-        "",
-        "## Lifecycle retrieval support",
-        "",
-        "| Client | Session global | Prompt/task query | Edit query | Plan exit | Subagent/compaction |",
-        "|---|---|---|---|---|---|",
-        "| Claude Code CLI | Accepted global only | Accepted governing + Proposed advisory | supported | supported (ExitPlanMode) | preserves parent context |",
-        "| Codex CLI | Accepted global only | Accepted governing + Proposed advisory | supported | no plan-mode event | preserves parent context |",
-        "| GitHub Copilot CLI | supported task context | Accepted governing + Proposed advisory | unsupported native event | no plan-mode event | unsupported native events |",
         "",
         "All retrieval is local, bounded, and index-first. Unsupported native lifecycle events are not advertised; deterministic pre-commit enforcement remains the backstop.",
         "",
