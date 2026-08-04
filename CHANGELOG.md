@@ -34,6 +34,27 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **`UserPromptSubmit` can retrieve semantically, and says when it did not.**
+  The hook entrypoint supplies a query embedder for that one event; the 100 ms
+  edit-tier events stay on the index-only route, because a round trip does not
+  fit 100 ms at any realistic ADR count. The split is a named constant in the
+  entrypoint rather than a condition inside a branch, so widening it is a change
+  a reviewer sees.
+
+  When an embedder was supplied and the answer still came from word overlap, the
+  injected block says so and points at `adr-embed status`. Where no store exists
+  nothing is claimed, because the note exists to flag a *degraded* answer and
+  printing it everywhere would train people to ignore it.
+
+  The query is embedded with the model recorded in the store. A different model
+  produces numbers of the right shape and no meaning -- similarities computed
+  across two vector spaces -- and nothing downstream could tell.
+
+  Measured on this repository, 28 ADRs at 768 dimensions with the backend
+  stubbed: p50 16 ms, p95 64 ms against a declared 400/500 ms budget. That
+  bounds adr-kit's own work; the round trip is network-bound, carries its own
+  2 s timeout, and every failure falls back to lexical.
+
 - **The query engine can rank by vector similarity, and says which route
   answered.** `query_adr_context` takes an optional `embedder` callable; given
   one, and a vector store, it reorders the candidates by cosine similarity and

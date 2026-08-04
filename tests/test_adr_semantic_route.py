@@ -253,3 +253,96 @@ def test_the_route_is_reported_on_every_outcome(project):
 
     assert _query(project, "alpha")["route"] == "lexical"
     assert _query(project, "alpha", embedder=lambda _q: [1.0, 0.0])["route"] == "vector"
+
+
+# ---------------------------------------------------------------------------
+# The hook path, driven through the real process (TASK-94 AC#2)
+# ---------------------------------------------------------------------------
+
+def _fire(workspace: Path, event: str, payload: dict) -> bytes:
+    body = dict(payload)
+    body["cwd"] = str(workspace)
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "hooks" / "adr-hook.py"),
+         "--client", "claude-code-cli", "--event", event],
+        input=json.dumps(body).encode("utf-8"), capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    return result.stdout
+
+
+def test_the_prompt_event_falls_back_audibly_when_the_backend_is_absent(project):
+    """A store with no reachable backend must say the answer is degraded.
+
+    This is the case a user actually hits: they built a store, then the runtime
+    was not running. Silence would be indistinguishable from a healthy lexical
+    answer, and from "no ADR was relevant".
+    """
+    _write_store(project, {"ADR-001": [1.0, 0.0], "ADR-002": [0.0, 1.0]})
+
+    frame = _fire(project.parent.parent, "user-prompt-submit",
+                  {"hook_event_name": "UserPromptSubmit", "prompt": "alpha"})
+
+    assert b"fell back to lexical" in frame
+
+
+def test_no_store_means_no_claim_about_semantic_retrieval(project):
+    """Without a store the hook never promised vectors, so it says nothing.
+
+    The note exists to flag a *degraded* answer. Printing it where semantic
+    retrieval was never configured would train users to ignore it.
+    """
+    frame = _fire(project.parent.parent, "user-prompt-submit",
+                  {"hook_event_name": "UserPromptSubmit", "prompt": "alpha"})
+
+    assert frame, "the lexical answer is still injected"
+    assert b"fell back to lexical" not in frame
+
+
+def test_the_edit_tier_never_embeds(project):
+    """ADR-020 keeps the 100 ms events on the index-only route.
+
+    An embedding round trip does not fit 100 ms at any realistic ADR count, so
+    the edit tier must not even be offered an embedder -- and therefore must
+    never print the fallback note, which only appears when one was supplied.
+    """
+    _write_store(project, {"ADR-001": [1.0, 0.0], "ADR-002": [0.0, 1.0]})
+    (project.parent.parent / "src").mkdir(exist_ok=True)
+    (project.parent.parent / "src" / "thing.py").write_text("x\n", encoding="utf-8")
+
+    for event in ("pre-tool-use", "post-tool-use"):
+        frame = _fire(project.parent.parent, event, {
+            "hook_event_name": "PreToolUse" if event == "pre-tool-use" else "PostToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": "src/thing.py"},
+        })
+        assert b"fell back to lexical" not in frame, event
+
+
+def test_the_entrypoint_decides_which_events_may_embed():
+    """The split is a named constant, not a condition buried in a branch.
+
+    Widening it is a decision -- it puts a network round trip on a tighter
+    budget -- so it should be one line a reviewer can see.
+    """
+    source = (REPO_ROOT / "hooks" / "adr-hook.py").read_text(encoding="utf-8")
+
+    assert "EMBEDDING_EVENTS = {\"UserPromptSubmit\"}" in source
+
+
+def test_the_retrieval_core_still_cannot_reach_the_network():
+    """The guarantee threading an embedder through was designed to preserve."""
+    import ast
+
+    forbidden = {"urllib", "http", "socket", "ssl", "requests", "httpx",
+                 "subprocess", "asyncio"}
+    for module in (REPO_ROOT / "hooks" / "adr_hook_core.py",
+                   REPO_ROOT / "bin" / "adr_query.py"):
+        tree = ast.parse(module.read_text(encoding="utf-8"), filename=str(module))
+        roots = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                roots.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                roots.add(node.module.split(".")[0])
+        assert not roots & forbidden, (module.name, sorted(roots & forbidden))

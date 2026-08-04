@@ -43,6 +43,30 @@ def _pr_guard(envelope) -> tuple[str, str] | None:
     return verdict["reason"], "pr-guard-deny"
 
 
+#: Events whose declared budget can absorb an embedding round trip. ADR-020
+#: draws the line here: `session-start` and `user-prompt-submit` carry 500 ms
+#: while the edit-tier events carry 100 ms, and a round trip does not fit
+#: 100 ms at any realistic ADR count. Widening this set is a decision.
+EMBEDDING_EVENTS = {"UserPromptSubmit"}
+
+
+def _embedder_for(envelope):
+    """Supply a query embedder, but only where the budget allows one.
+
+    Built here rather than inside `adr_hook_core` on purpose: that module must
+    stay unable to reach a model or the network, and this entrypoint is already
+    the one hook-path file allowed to reach out -- it spawns `adr-judge` for the
+    pull-request guard.
+    """
+    if envelope.event not in EMBEDDING_EVENTS:
+        return None
+    try:
+        from adr_embed_query import embedder_for
+    except ImportError:
+        return None
+    return embedder_for(envelope.workspace / "docs" / "adr")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--client", required=True, choices=tuple(ADAPTERS))
@@ -56,7 +80,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if duplicate_event(envelope):
             return 0
-        context, kind = _pr_guard(envelope) or evaluate(envelope)
+        context, kind = _pr_guard(envelope) or evaluate(
+            envelope, _embedder_for(envelope)
+        )
         response = ADAPTERS[args.client](envelope.event, context, kind)
         if response:
             print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))

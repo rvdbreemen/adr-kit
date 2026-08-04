@@ -345,11 +345,22 @@ def _query(
     query: str,
     *,
     path: str | None = None,
-) -> list[dict[str, Any]]:
-    """Use the shared index-first outcome contract and fail open on any fault."""
+    embedder: Any = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Rank the ADRs for this query, and report which route answered.
+
+    `embedder` is a callable the *entrypoint* supplies, never something this
+    module imports. This file must not be able to reach a model or the network
+    -- a test asserts that by walking its imports -- and dependency injection is
+    what lets ADR-020's query-time embedding happen without weakening that.
+
+    The route travels with the results because a silent degradation is the
+    failure this whole path keeps producing: an empty or lexical answer reads
+    exactly like "no ADR was relevant".
+    """
     index = _index_path(workspace)
     if index is None:
-        return []
+        return [], "none"
     limit = _configured_limit(workspace)
     try:
         outcome = query_adr_context(
@@ -360,14 +371,16 @@ def _query(
             include_history=False,
             statuses=("Accepted", "Proposed"),
             paths=(path,) if path else (),
+            embedder=embedder,
         )
     except (IndexQueryError, OSError, UnicodeError, ValueError):
-        return []
-    return [
+        return [], "none"
+    selected = [
         item
         for item in outcome["results"]
         if item.get("status") in {"Accepted", "Proposed"}
     ][:limit]
+    return selected, str(outcome.get("route", "lexical"))
 
 
 def _safe_edit_path(envelope: Envelope) -> Path | None:
@@ -493,7 +506,15 @@ def _plan_decision_prompt(client: str) -> str:
         "reasoning is still in front of you; afterwards it becomes justification."
     )
 
-def evaluate(envelope: Envelope) -> tuple[str, str]:
+def evaluate(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
+    """Render the context for this moment.
+
+    `embedder` is supplied by the entrypoint and only for the events whose
+    budget can absorb an embedding round trip. ADR-020 splits them: the 500 ms
+    `session-start` and `user-prompt-submit` events may embed the query, and the
+    100 ms edit-tier events stay on the index-only route because a round trip
+    does not fit 100 ms at any realistic ADR count.
+    """
     compact_event = re.sub(r"[^a-z]", "", envelope.event.lower())
     if compact_event in NOOP_EVENTS:
         return "", "noop"
@@ -530,7 +551,9 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
     if not records and envelope.event not in {"PreToolUse", "PostToolUse"}:
         return "", "noop"
     if envelope.event == "UserPromptSubmit":
-        selected = _query(envelope.workspace, envelope.prompt or "")
+        selected, route = _query(
+            envelope.workspace, envelope.prompt or "", embedder=embedder
+        )
         governing = [item for item in selected if item.get("status") == "Accepted"]
         advisory = [item for item in selected if item.get("status") == "Proposed"]
         parts = [
@@ -541,6 +564,14 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
             )
             if part
         ]
+        if parts and route == "lexical" and embedder is not None:
+            # The user asked for semantic retrieval and got word overlap. Say so:
+            # the whole point of naming the route is that a degraded answer must
+            # not be mistaken for the good one.
+            parts.append(
+                "(retrieval fell back to lexical ranking; run `adr-embed status` "
+                "to see why)"
+            )
         return ("\n".join(parts)[:MAX_CONTEXT_CHARS], "prompt") if parts else ("", "noop")
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")
@@ -553,7 +584,7 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
             plan = _plan_text(envelope)
             if not plan:
                 return "", "noop"
-            selected = _query(envelope.workspace, plan)
+            selected, route = _query(envelope.workspace, plan)
             governing = [item for item in selected if item.get("status") == "Accepted"]
             advisory = [item for item in selected if item.get("status") == "Proposed"]
             parts = [
@@ -582,7 +613,7 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
         if path is None:
             return "", "noop"
         relative = path.relative_to(envelope.workspace).as_posix()
-        selected = _query(envelope.workspace, relative, path=relative)
+        selected, route = _query(envelope.workspace, relative, path=relative)
         governing = [item for item in selected if item.get("status") == "Accepted"]
         advisory = [item for item in selected if item.get("status") == "Proposed"]
         heading = (
