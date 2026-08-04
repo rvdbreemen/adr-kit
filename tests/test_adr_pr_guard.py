@@ -66,7 +66,7 @@ def test_a_missing_judge_lets_the_command_through(tmp_path):
 
 def test_a_configuration_error_does_not_block(monkeypatch, tmp_path):
     """Exit 2 is a fact about the invocation, not about the code."""
-    monkeypatch.setattr(guard, "base_ref", lambda cwd: "main")
+    monkeypatch.setattr(guard, "base_ref", lambda cwd, deadline: "main")
     monkeypatch.setattr(guard.shutil, "which", lambda name: "/usr/bin/git")
 
     class _Result:
@@ -92,7 +92,7 @@ def test_a_configuration_error_does_not_block(monkeypatch, tmp_path):
 
 
 def test_a_violation_denies_and_names_the_adr(monkeypatch, tmp_path):
-    monkeypatch.setattr(guard, "base_ref", lambda cwd: "main")
+    monkeypatch.setattr(guard, "base_ref", lambda cwd, deadline: "main")
     monkeypatch.setattr(guard.shutil, "which", lambda name: "/usr/bin/git")
 
     class _Result:
@@ -162,8 +162,8 @@ def _guard_module(directory: str = "hooks"):
     return module
 
 
-def test_the_judge_timeout_stays_under_the_runner_budget():
-    """Two numbers that could disagree, and did: 120 s against a 5 s budget.
+def test_the_guard_budget_stays_under_the_runner_budget():
+    """Numbers that could disagree, and did: 120 s against a 5 s budget.
 
     The client kills the hook at its own timeout, so a judge allowed
     twenty-four times that never reaches the fail-open branch -- the process
@@ -179,7 +179,7 @@ def test_the_judge_timeout_stays_under_the_runner_budget():
         if event["id"] == "pr-create"
     )
 
-    assert _guard_module().judge_timeout_s() < runner
+    assert _guard_module().guard_budget_s() < runner
 
 
 @pytest.mark.parametrize("tree", ["hooks", "codex/hooks", "copilot/hooks"])
@@ -195,7 +195,7 @@ def test_every_client_tree_derives_the_same_budget(tree):
     assert (REPO_ROOT / tree / "manifest.json").is_file(), (
         f"{tree} cannot derive its budget"
     )
-    assert _guard_module(tree).judge_timeout_s() == _guard_module().judge_timeout_s()
+    assert _guard_module(tree).guard_budget_s() == _guard_module().guard_budget_s()
 
 
 def test_an_unreadable_manifest_yields_a_small_budget_not_an_unbounded_one(
@@ -209,8 +209,8 @@ def test_an_unreadable_manifest_yields_a_small_budget_not_an_unbounded_one(
         guard, "__file__", str(tmp_path / "adr_pr_guard.py"), raising=False
     )
 
-    assert guard.judge_timeout_s() == guard.FALLBACK_JUDGE_TIMEOUT_S
-    assert guard.FALLBACK_JUDGE_TIMEOUT_S <= 5
+    assert guard.guard_budget_s() == guard.FALLBACK_BUDGET_S
+    assert guard.FALLBACK_BUDGET_S <= 5
 
 
 def test_the_timeout_leaves_room_for_the_guards_own_work():
@@ -221,3 +221,46 @@ def test_the_timeout_leaves_room_for_the_guards_own_work():
     guard = _guard_module()
 
     assert guard.GUARD_OVERHEAD_S >= 1
+
+
+def test_no_subprocess_carries_its_own_hardcoded_timeout():
+    """Deriving one timeout was not enough, which is how this test exists.
+
+    A sweep found `git diff` at 60 s and up to five `base_ref` probes at 10 s
+    each, all inside the same 5 s budget: 114 s worst case, every second of it
+    invisible because the client kills the process before any fail-open branch
+    runs. A deadline makes the bound structural; this asserts nobody puts a
+    constant back.
+    """
+    import re
+
+    source = (REPO_ROOT / "hooks" / "adr_pr_guard.py").read_text(encoding="utf-8")
+    offenders = re.findall(r"_run\([^)]*?,\s*cwd,\s*(\d+)", source, re.DOTALL)
+
+    assert not offenders, f"hardcoded subprocess timeout(s): {offenders}"
+
+
+def test_an_exhausted_deadline_stops_rather_than_starting_a_subprocess():
+    """Below the minimum a subprocess cannot usefully start.
+
+    Launching one anyway means spending the last of the budget on a call that
+    gets killed, instead of returning the allow the caller can act on.
+    """
+    guard = _guard_module()
+
+    assert guard.Deadline(0).remaining() is None
+    assert guard.Deadline(guard.MIN_SUBPROCESS_S - 1).remaining() is None
+    assert guard.Deadline(guard.MIN_SUBPROCESS_S).remaining() == guard.MIN_SUBPROCESS_S
+
+
+def test_the_whole_guard_is_bounded_by_one_budget():
+    """Every call site draws from the same deadline, so the total is the budget.
+
+    Four subprocesses each honouring a limit is not the same as four
+    subprocesses that together honour one.
+    """
+    guard = _guard_module()
+    deadline = guard.Deadline(guard.guard_budget_s())
+
+    first = deadline.remaining()
+    assert first is not None and first <= guard.guard_budget_s()

@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -41,17 +42,45 @@ PR_CREATE_RE = re.compile(r"(?:^|[;&|]\s*)gh\s+pr\s+create\b")
 CI_DIFF_BUDGET = 33_554_432
 
 #: Seconds kept back from the runner budget for this module's own work: reading
-#: the manifest, running `git diff`, rendering the verdict. Without it the judge
-#: could use the entire budget and the client would still kill us mid-render.
+#: the manifest, parsing the verdict, rendering the reason. Every subprocess
+#: shares what is left.
 GUARD_OVERHEAD_S = 1
+
+#: Below this a subprocess cannot usefully start, so the guard stops instead of
+#: launching one it will kill immediately.
+MIN_SUBPROCESS_S = 1
 
 #: Used only when the manifest cannot be read. Deliberately small: an unknown
 #: budget is not a licence to take an unbounded one.
-FALLBACK_JUDGE_TIMEOUT_S = 4
+FALLBACK_BUDGET_S = 4
 
 
-def judge_timeout_s() -> int:
-    """How long the judge may run, derived from the budget the client enforces.
+class Deadline:
+    """One budget for the whole guard, spent down by each subprocess.
+
+    Deriving the judge timeout alone was not enough, and the sweep that found
+    the rest is the reason this class exists. Every call site carried its own
+    constant -- `git diff` at 60 s, five `base_ref` probes at 10 s each -- so the
+    worst case was 114 s of subprocess inside a 5 s budget, all of it invisible
+    because the client kills the process before any of the fail-open branches
+    run.
+
+    A deadline makes the bound structural rather than a set of numbers somebody
+    has to keep in agreement. `remaining()` is what is left of the budget; a
+    call site that would start with nothing left gets `None` and the guard stops
+    with a reason instead of launching a subprocess it is about to kill.
+    """
+
+    def __init__(self, seconds: int) -> None:
+        self._end = time.monotonic() + seconds
+
+    def remaining(self) -> Optional[int]:
+        left = int(self._end - time.monotonic())
+        return left if left >= MIN_SUBPROCESS_S else None
+
+
+def guard_budget_s() -> int:
+    """How long the whole guard may run, from the budget the client enforces.
 
     This was a standalone 120 s constant while `hooks/manifest.json` declared
     `runner_timeout_sec: 5` for `pr-create`, and the two could not both be
@@ -66,9 +95,10 @@ def judge_timeout_s() -> int:
     rather than something that happens to it.
 
     Note what this does not do. A 5 s budget cannot hold an LLM judge pass, so a
-    project with one configured will usually see this time out and allow, with
-    the reason stated. That is the honest outcome of the budget ADR-023
-    declares, and moving the budget is a decision rather than a patch.
+    project that has enabled one will see this time out and allow, with the
+    reason stated. That is the honest outcome of the budget `hooks/manifest.json`
+    declares for this event, and moving the budget is a decision rather than a
+    patch.
     """
     manifest = Path(__file__).resolve().parent / "manifest.json"
     try:
@@ -79,10 +109,10 @@ def judge_timeout_s() -> int:
             if event.get("id") == "pr-create"
         )
     except (OSError, ValueError, KeyError, TypeError, StopIteration):
-        return FALLBACK_JUDGE_TIMEOUT_S
+        return FALLBACK_BUDGET_S
     if not isinstance(runner, int) or runner <= 0:
-        return FALLBACK_JUDGE_TIMEOUT_S
-    return max(1, runner - GUARD_OVERHEAD_S)
+        return FALLBACK_BUDGET_S
+    return max(MIN_SUBPROCESS_S, runner - GUARD_OVERHEAD_S)
 
 
 def looks_like_pr_create(command: str) -> bool:
@@ -103,14 +133,17 @@ def _run(argv: List[str], cwd: Path, timeout: int, stdin_text: Optional[str] = N
     )
 
 
-def base_ref(cwd: Path) -> Optional[str]:
+def base_ref(cwd: Path, deadline: "Deadline") -> Optional[str]:
     """The branch this PR would target, from the repository's own configuration."""
     for argv in (
         ["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
         ["git", "config", "--get", "init.defaultBranch"],
     ):
+        left = deadline.remaining()
+        if left is None:
+            return None
         try:
-            result = _run(argv, cwd, 10)
+            result = _run(argv, cwd, left)
         except (OSError, subprocess.SubprocessError):
             continue
         value = (result.stdout or "").strip()
@@ -118,7 +151,10 @@ def base_ref(cwd: Path) -> Optional[str]:
             return value.split("/")[-1]
     for candidate in ("main", "master", "dev"):
         try:
-            probe = _run(["git", "rev-parse", "--verify", f"origin/{candidate}"], cwd, 10)
+            left = deadline.remaining()
+            if left is None:
+                return None
+            probe = _run(["git", "rev-parse", "--verify", f"origin/{candidate}"], cwd, left)
         except (OSError, subprocess.SubprocessError):
             return None
         if probe.returncode == 0:
@@ -132,13 +168,17 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
         return {"decision": "allow", "reason": "adr-judge not found", "checked": False}
     if shutil.which("git") is None:
         return {"decision": "allow", "reason": "git not on PATH", "checked": False}
-    base = base_ref(cwd)
+    deadline = Deadline(guard_budget_s())
+    base = base_ref(cwd, deadline)
     if not base:
         return {"decision": "allow", "reason": "no base branch to compare against", "checked": False}
 
+    left = deadline.remaining()
+    if left is None:
+        return {"decision": "allow", "reason": "ran out of budget before the diff", "checked": False}
     try:
         diff = _run(
-            ["git", "diff", "--unified=0", f"origin/{base}...HEAD"], cwd, 60
+            ["git", "diff", "--unified=0", f"origin/{base}...HEAD"], cwd, left
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return {"decision": "allow", "reason": f"git diff failed ({exc})", "checked": False}
@@ -149,6 +189,9 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
 
     import sys
 
+    left = deadline.remaining()
+    if left is None:
+        return {"decision": "allow", "reason": "ran out of budget before the judge", "checked": False}
     try:
         verdict = _run(
             [
@@ -161,7 +204,7 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
                 "--json",
             ],
             cwd,
-            judge_timeout_s(),
+            left,
             stdin_text=diff.stdout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
