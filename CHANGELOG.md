@@ -4,7 +4,16 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.45.0] - 2026-08-04
+
 ### Changed
+
+- **Embedding builds now default to `qwen3-embedding:4b`.** This is the measured
+  default for the multilingual ADR corpus. `nomic-embed-text` remains available
+  as an explicit English-only fallback through `--model` and setup. Switching
+  models changes vector identity, so a model change requires rebuilding the ADR
+  vector store.
 
 - **BREAKING: `bin/adr accept` now requires `--confirm`.** Acceptance is the one
   lifecycle transition that decides rather than records, and it writes a name and
