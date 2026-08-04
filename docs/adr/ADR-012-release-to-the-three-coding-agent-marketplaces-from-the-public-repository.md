@@ -10,6 +10,18 @@ verified_in: []
 supersedes: []
 superseded_by: null
 format: "madr"
+topics:
+  - "release"
+  - "marketplace"
+  - "runbook"
+  - "tag gate"
+aliases:
+  - "release process"
+  - "three marketplaces"
+  - "public repository source"
+components:
+  - "release workflows"
+  - "scripts"
 ---
 
 <!-- markdownlint-disable MD025 -->

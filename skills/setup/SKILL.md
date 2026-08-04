@@ -13,8 +13,8 @@ setup scope.
 
 You are running the one-time project setup for the adr-kit plugin. Your job is to:
 
-1. Drop the canonical guide at `.claude/adr-kit-guide.md` (copied from the plugin's `templates/adr-kit-guide.md`).
-2. Append a slim ADR-kit stub to the project's `CLAUDE.md` so future Claude Code sessions auto-load the guide.
+1. Write the project's instruction layout with `scripts/setup-project.py`, which owns every file in it.
+2. Leave everything outside its managed markers byte-exact.
 
 This is the lightweight counterpart to `/adr-kit:init`. Use `setup` when the user has an existing project, already understands their architecture, and just wants the kit registered. Use `init` when the user wants the kit to also audit the codebase and propose ADRs.
 
@@ -32,54 +32,45 @@ A project that ran v0.11 `/adr-kit:setup` has an inline `## ADR Kit Rules` secti
 
    If empty, abort: the plugin install is broken; tell the user to reinstall via `/plugin install adr-kit@rvdbreemen-adr-kit`.
 
-2. **Locate `CLAUDE.md`.** It lives at the project root (`pwd`). The user is expected to run `/adr-kit:setup` from there. Read it if it exists.
+2. **Check for a v0.11 footprint first.** Read `CLAUDE.md` if it exists. If it
+   carries an inline `## ADR Kit Rules` section, stop and tell the user:
+   `Detected v0.11 ADR Kit Rules section in CLAUDE.md at line <N>. Run
+   /adr-kit:upgrade to migrate. /adr-kit:setup is leaving the v0.11 footprint
+   untouched.` Exit without changes. A v0.11 footprint requires an explicit
+   migration; this command never performs one silently.
 
-3. **Detect existing footprint.** Three cases:
+3. **Run the writer.** Do not hand-write the instruction block or the guide.
+   `scripts/setup-project.py` owns the layout, and it is the only thing that
+   knows all of it: `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`
+   and `.adr-kit/ADR-guide.md`. Prose in this skill describing an older layout is
+   how the three clients drifted apart in the first place -- Codex and Copilot
+   delegated here while this file still wrote a guide under `.claude/` and a
+   stub block that `scripts/project_setup.py` classifies as legacy.
 
-   - **v0.11 inline `## ADR Kit Rules` section present.** Stop and tell the user: `Detected v0.11 ADR Kit Rules section in CLAUDE.md at line <N>. Run /adr-kit:upgrade to migrate to v0.12 (slim stub + external guide). /adr-kit:setup is leaving the v0.11 footprint untouched.` Exit without changes.
-   - **v0.12 `<!-- ADR-KIT STUB START --> ... <!-- ADR-KIT STUB END -->` block present.** Read it. If its content matches the canonical stub below, no-op. If it differs (e.g., from a partial earlier run, or a manual edit), refresh just the block contents — do not touch surrounding CLAUDE.md content. Confirm with `Refreshed v0.12 ADR-kit stub in CLAUDE.md at line <N>.`
-   - **No ADR-kit footprint.** Proceed to step 4 (write the v0.12 stub) and step 5 (write the guide).
+   Preview first, then apply:
 
-4. **Append the v0.12 stub to `CLAUDE.md`.** If CLAUDE.md exists, append the block below at the end with one blank line of separation. If it does not exist, create it containing only the block.
-
-   Stub:
-
-   ```markdown
-   <!-- ADR-KIT STUB START -->
-   <!-- DO NOT regenerate manually. Updated by `/adr-kit:init`, `/adr-kit:upgrade`, `/adr-kit:setup`. -->
-   ## ADR Kit
-
-   This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architectural decisions live as ADRs in `docs/adr/`. Full guide: @.claude/adr-kit-guide.md
-   Decision indexes: @docs/adr/ADR-INDEX.md is the compact session map; `docs/adr/ADR-INDEX.json` is the agent metadata and relationship graph. Regenerate both with `bin/adr-index docs/adr`; open source Markdown ADRs before applying constraints.
-
-   Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
-   Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time. ADRs with `llm_judge: true` are reviewed in-session via `/adr-kit:judge`.
-   Edit-tier injection: when an `[adr-inject] ADR-NNN ... governs <file>` block appears before an edit, treat the quoted Decision as a binding constraint for that file and comply with it.
-   <!-- ADR-KIT STUB END -->
+   ```bash
+   python3 "$ADR_KIT/scripts/setup-project.py" --client claude-code-cli --project-root . --dry-run
+   python3 "$ADR_KIT/scripts/setup-project.py" --client claude-code-cli --project-root .
    ```
 
-5. **Drop the canonical guide.** Copy `$ADR_KIT/templates/adr-kit-guide.md` to project `.claude/adr-kit-guide.md` (mkdir `.claude/` if needed). Three sub-cases:
+   The command is idempotent: re-running it on a current project changes
+   nothing. It writes only inside its managed markers, so user content around
+   them stays byte-exact, and it never touches `.adr-kit/ADR-guide.local.md`.
 
-   - **No project guide.** Write the plugin template verbatim.
-   - **Project guide exists, byte-identical to plugin template.** No-op.
-   - **Project guide exists and differs.** Read both. Show the user a unified diff (3 context lines) and ask: `keep project version | replace with plugin version | merge by hand`. Apply.
+   `--client` also accepts `codex-cli` and `github-copilot-cli`, and `--clients`
+   takes a comma-separated list when a project uses more than one.
 
-   The first line of the plugin template is `<!-- adr-kit-guide vX.Y.Z -->` — preserve it so future `/adr-kit:upgrade` runs can detect freshness.
-
-6. **Confirm.** One line summarising both writes:
-
-   ```
-   Setup complete.
-   - CLAUDE.md: <created | appended at line N | refreshed stub at line N>
-   - .claude/adr-kit-guide.md: <created | refreshed | unchanged>
-   ```
+4. **Report what it did.** The command prints one line per change. Relay them,
+   and say plainly when there was nothing to do -- a no-op is the expected
+   outcome of a second run, not a failure.
 
 ## Constraints
 
 - **Two coordinated writes.** v0.12 setup writes both the stub AND the guide file. Either-or is incomplete.
 - **Never silently migrate v0.11.** A v0.11 footprint requires explicit `/adr-kit:upgrade`. Leave v0.11 alone here.
 - **Idempotent.** Re-running on a v0.12 project where everything is current is a no-op.
-- **Read before write.** Always read `CLAUDE.md` and `.claude/adr-kit-guide.md` before editing.
+- **Read before write.** Preview with `--dry-run` before applying; the writer reads every file it touches.
 - **Preserve surrounding content.** Only the marker-bracketed stub and the guide file may be touched. Everything else stays byte-exact.
 - **No em dashes** in any text the skill writes (per adr-kit style).
 
@@ -121,6 +112,22 @@ on CPU either way. This is advice about speed, not a capability gate.
 
 Installing third-party software happens only on explicit consent, never with
 silent elevation, and declining must leave a working installation.
+
+**Record the model the user consented to, then build once.** A 4.7 GB download
+that nothing writes down is a wasted download: `adr-embed build` falls back to
+its own default, and under ADR-018 a model-identity mismatch marks the store
+stale, so retrieval quietly stays on lexical ranking. Immediately after a
+successful pull:
+
+```bash
+python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set embedding.model=<model>
+python3 "$ADR_KIT/bin/adr-embed" build --adr-dir docs/adr
+```
+
+The model name goes in the committed config because which model embeds a team's
+ADRs is a team decision; where the runtime serving it lives does not. The build
+is an explicit step by design — nothing embeds because a prompt was submitted —
+and it is re-run when the ADRs change, which `adr-embed status` reports.
 
 ## Step 4d — The signer: propose, never assume
 

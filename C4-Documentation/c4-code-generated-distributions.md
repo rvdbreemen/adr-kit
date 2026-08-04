@@ -85,7 +85,7 @@ Measured against the git index (not the worktree — see the CRLF subsection bel
 | **Header-stamped** | 1 | `instructions/ADR-guide.md` gets exactly one prepended HTML comment line (`client_generation.py:87-88`). This is the *only* transform applied to any `COPY_ROOTS` file. |
 | **Verbatim, flattened** `hooks/` | 8 | `hooks/X` → `<client>/hooks/X`. `.exe`/`.dll` skip LF normalization (`client_generation.py:114`). |
 | **Rendered per client** `skills/` | 15 | Generated from `clients/workflows.json`. Diverges only in one invocation sentence. |
-| **Rendered per client** hook config | 1 | `codex/hooks/hooks.json` (nested, `$PLUGIN_ROOT` + `command_windows`) vs `copilot/hooks.json` (flat `lowerCamel`, dual `bash`/`powershell`). |
+| **Rendered per client** hook config | 1 | `codex/hooks/hooks.json` (nested, `$PLUGIN_ROOT` + `commandWindows`) vs `copilot/hooks.json` (flat `lowerCamel`, dual `bash`/`powershell`). |
 | **Hand-maintained** | 3 | See below. |
 | **Untracked build artefact** | 1 | `hooks/bin/windows-x64/adr-hook.pdb`. |
 | **Total on disk** | **92** | 88 generated + 3 hand-maintained (tracked = 91) + 1 untracked `.pdb`. |

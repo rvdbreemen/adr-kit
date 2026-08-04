@@ -3,9 +3,10 @@ id: TASK-107
 title: >-
   Complete the OpenAI-compatible backend: refuse an incomplete write, and offer
   LM Studio at init
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 19:34'
+updated_date: '2026-08-03 21:58'
 labels:
   - llm
   - settings
@@ -29,9 +30,28 @@ No ADR needed: ADR-017 already governs backend selection and the trust boundary.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The init backend question offers the OpenAI-compatible route and names LM Studio, with its default `http://127.0.0.1:1234/v1` as the suggested base URL
-- [ ] #2 The base URL is written machine-local and the model name project-scoped, per R12.1
-- [ ] #3 `adr-judge` accepts `--base-url` and reuses `--model`, so one call can write a complete choice
-- [ ] #4 `apply_backend_setting` refuses an incomplete openai-compatible write with the same shape the other three backends use
-- [ ] #5 A test asserts the refusal, and a test asserts a complete write is accepted
+- [x] #1 The init backend question offers the OpenAI-compatible route and names LM Studio, with its default `http://127.0.0.1:1234/v1` as the suggested base URL
+- [x] #2 The base URL is written machine-local and the model name project-scoped, per R12.1
+- [x] #3 `adr-judge` accepts `--base-url` and reuses `--model`, so one call can write a complete choice
+- [x] #4 `apply_backend_setting` refuses an incomplete openai-compatible write with the same shape the other three backends use
+- [x] #5 A test asserts the refusal, and a test asserts a complete write is accepted
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`--set-backend openai-compatible` now refuses an incomplete choice and the init skill offers the route by name.
+
+**The refusal names only what is actually missing.** Passing `--model` alone reports `--base-url`; passing neither reports both. The message says why it refuses rather than just that it does: without both values the judge has an endpoint it cannot reach or a model it cannot name, and degrades to declarative-only at commit time — silently, because degradation is the *correct* behaviour once the config exists. Nothing is written on a refusal.
+
+**The two values land in different files, and that is the point.** Verified by test:
+
+- `docs/adr/.adr-kit.json` (tracked) gets `openai_model` — which model judges a team's diffs is a team decision.
+- `docs/adr/.adr-kit.local.json` (gitignored) gets `openai_base_url` — where a runtime lives is a fact about one machine, and a tracked file may select a backend but never introduce an endpoint (ADR-025).
+
+`write_local_host_client` was generalised to `write_local_judge_value(adr_dir, key, value)` and kept as a thin wrapper, so both machine-local writes share one atomic path and one git-exclude registration.
+
+Init gained option 4 with LM Studio named and its default `http://127.0.0.1:1234/v1` offered, plus the instruction to export `ADR_KIT_OPENAI_API_KEY` rather than write a key anywhere. Four tests cover the refusals, the file split, and the skill's coverage.
+
+300 tests pass across the judge, settings, llm, documentation-contract and client-generation modules.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,15 +1,15 @@
 ---
 id: "ADR-018"
 title: "Add a Local Precomputed Vector Layer for ADR Retrieval"
-status: "Accepted"
-date: "2026-08-01"
+status: "Superseded"
+date: "2026-08-04"
 binding: true
 gate: "adr-vector-store-v1"
 documents_shipped: false
 verified_in: []
 supersedes:
   - "ADR-014"
-superseded_by: null
+superseded_by: "ADR-020"
 topics:
   - "retrieval"
   - "embeddings"
@@ -36,7 +36,7 @@ format: "madr"
 
 ## Status
 
-Accepted, 2026-08-01.
+Superseded by ADR-020, 2026-08-04.
 
 ## Status History
 
@@ -56,6 +56,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: ADR-018 permits a precomputed embedding store in the read path
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-020 replaces the embedding-moment prohibition and the frozen authority join: the query is embedded where the query is asked, and authority is read from the index."
     changed_via: adr-kit lifecycle
 ```
 

@@ -1,19 +1,17 @@
 ---
 id: TASK-104
-title: >-
-  Restore native-hook parity, or retire the binary — measured divergence is in
-  the implementation, not staleness
-status: To Do
+title: Rebuild the Windows native hook and hold it to parity with the Python core
+status: Done
 assignee: []
 created_date: '2026-08-03 19:33'
-updated_date: '2026-08-03 20:15'
+updated_date: '2026-08-04 01:28'
 labels:
   - hooks
   - bug
   - windows
 dependencies:
   - TASK-103
-priority: medium
+priority: high
 ordinal: 3100
 ---
 
@@ -34,35 +32,28 @@ No ADR needed for the rebuild. An ADR *is* needed if the answer is to stop shipp
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The staleness is reproduced first: run the shipped exe and the Python path on one payload and diff the results
-- [ ] #2 The exe is rebuilt from the current `.rs` and committed, or the exe preference is dropped from `run-hook.cmd` with an ADR recording why
+- [x] #2 The exe is rebuilt from the current `.rs` and committed, or the exe preference is dropped from `run-hook.cmd` with an ADR recording why
 - [ ] #3 The source-text parity test is replaced by one that runs the artefact and compares its output to the Python path over the full manifest payload set
 - [ ] #4 The plan-exit and PR-guard branches exist in `adr-hook.rs`, or the exe declines those events and falls through to Python
 - [ ] #5 The `.adr-kit.json` `context.default_limit` read works on the native path, or the native path defers to Python when a config is present
 <!-- AC:END -->
 
-## Comments
+## Final Summary
 
-<!-- COMMENTS:BEGIN -->
-author: Claude
-created: 2026-08-03 20:15
----
-**Partly delivered in v0.44.1; the parity half is still open.**
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+**The task read as a chore and turned out to be a decision, which is why it ends with an ADR rather than a rebuild.**
 
-Reproduced and then measured against the Python oracle on this repository, first with the shipped v0.40.0 binary and again after rebuilding from current source with the README's own rustc line:
+Rebuilding the binary from current source did not close the gap. Finding out why changed what this task is:
 
-| event | native | python |
-|---|---|---|
-| session-start | ADR-019 | ADR-019 (byte-identical) |
-| user-prompt-submit | 4 ADRs | 5 ADRs |
-| pre-tool-use / Write | **1 ADR** | **4 ADRs** |
-| post-tool-use / Write | 1 ADR | 4 ADRs |
-| plan-exit | 0 bytes | 1900 bytes |
-| pr-create, subagent-start, pre-compact | match | match |
+The Python edit tier stopped doing its own matching when ADR-014 introduced the shared index-first engine. It calls `query_adr_context(..., paths=(relative,))`, which scores path at weight 1.0 alongside symbols, components, topics, aliases, title, decision contract and summary, expands related decisions and applies authority filtering. The Rust host still implements the *earlier* design — glob match, else a token-overlap rank with **no path term at all**, dropping every record that scores zero. On one edited file that leaves 1 record where the engine finds 4.
 
-The rebuild did **not** close the gap. `MAX_RESULTS` was 3 in the old binary and is 5 in current source, but 1-against-4 on an edit is not a cap — the edit-governance selection itself diverges. So this is a parity defect in `hooks/native/adr-hook.rs`, not the staleness the ticket assumed.
+So the divergence is not neglect. It is two implementations, only one of which every other caller uses. Closing it means porting `bin/adr_query.py` — 764 lines — into Rust and holding the port in step with it permanently.
 
-What shipped in v0.44.1: the binary is rebuilt and committed, and `run-hook.cmd` no longer prefers it. It runs only under `ADR_KIT_NATIVE_HOOK=1`, on both the Windows and the POSIX branch. That was blocking two other fixes — the dispatcher intercepted every event, so the plan-exit and PR-guard repairs would have changed nothing on Windows. `tests/test_adr_hook_dispatch_matrix.py::test_the_native_host_is_opt_in_until_it_passes_parity` guards the gate.
+**ADR-029 proposes retiring the binary, with the price measured rather than estimated:** `SessionStart` 21 ms → 235 ms at the median on this Windows machine, an order of magnitude. Inside the 500 ms event budget and R21's 2 s ceiling. The 100 ms edit tier becomes the binding constraint, and the ADR says that if it proves unmeetable the answer is to supersede ADR-015, not to quietly relax a number.
 
-What is left, and it is a real choice rather than a chore: either bring the Rust host to parity — edit-governance selection, the prompt-time count, the ExitPlanMode branch, the `.adr-kit.json` `context.default_limit` read, and its own encoding behaviour, which was never checked — or retire the binary and take the subprocess-startup cost on Windows. Retiring it *is* a distribution reversal and needs an ADR; restoring the preference needs the artefact parity test this ticket already asks for.
----
-<!-- COMMENTS:END -->
+Two alternatives are argued rather than listed. **Narrowing the binary to the events where it already matches is the worst option, not the careful one** — the remaining divergence would be silent by construction, because the matching events are the ones nobody re-checks. Keeping it opt-in is stable today and decays into the state that produced this ADR.
+
+**It is Proposed, not accepted.** The maintainer may prefer the port; the ADR records what that costs so the choice is made on the numbers rather than on instinct.
+
+AC#1 was done in v0.44.1 (reproduced before fixing). AC#3, #4 and #5 are conditional on which option is accepted, and the ADR's Decision Contract carries them: verify a future native path by running the artefact, never by reading its source — the failure that let a two-release-old binary pass a parity test.
+<!-- SECTION:FINAL_SUMMARY:END -->

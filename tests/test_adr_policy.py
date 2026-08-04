@@ -15,6 +15,12 @@ from pathlib import Path
 
 import pytest
 
+# Imported as a top-level module, not as `tests.adr_fixtures`. pytest's
+# prepend import mode puts this file's own directory on sys.path, and
+# `tests/` has no `__init__.py`, so the dotted form raises
+# ModuleNotFoundError at collection time -- which is how it reached dev.
+from adr_fixtures import isolated_copy
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_LINT = REPO_ROOT / "bin" / "adr-lint"
 
@@ -216,7 +222,15 @@ def test_quality_vague_language():
 # 7. Too few alternatives → ADVISORY QUALITY_FEW_ALTERNATIVES
 # ---------------------------------------------------------------------------
 
-def test_quality_few_alternatives():
+def test_the_alternatives_count_is_no_longer_a_quality_advisory():
+    """It moved to the completeness gate as a FAIL (TASK-112).
+
+    As an advisory under `quality` -- a gate that is not in the default set --
+    a record listing one option and nothing weighed against it passed every
+    blocking gate. R0 is not a suggestion: a record that states only the outcome
+    cannot be re-evaluated later, and a decision that cannot be re-evaluated
+    cannot be superseded honestly.
+    """
     content = textwrap.dedent("""\
         ## Decision
 
@@ -230,10 +244,86 @@ def test_quality_few_alternatives():
 
         - **Do nothing.** Rejected because performance is already degraded.
     """)
+
     findings = check_quality_gate(content, "ADR-001")
-    few_alt = [f for f in findings if f["code"] == "QUALITY_FEW_ALTERNATIVES"]
-    assert len(few_alt) >= 1, f"Expected QUALITY_FEW_ALTERNATIVES, got {findings}"
-    assert few_alt[0]["severity"] == "ADVISORY"
+
+    assert not [f for f in findings if f["code"] == "QUALITY_FEW_ALTERNATIVES"], (
+        "the count is enforced by the completeness gate now; keeping an "
+        "advisory copy would report the same defect twice"
+    )
+
+
+def _one_option(heading: str) -> str:
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
+    body = isolated_copy(source.read_text(encoding="utf-8")).replace(
+        "## Considered Options", heading
+    )
+    start = body.index(heading) + len(heading)
+    end = body.index("\n## ", start)
+    return body[:start] + "\n\n* Only one option, nothing weighed against it.\n" + body[end:]
+
+
+def _lint(tmp_path: Path, body: str):
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / "ADR-020-x.md").write_text(body, encoding="utf-8")
+    return subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-lint"), str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+
+
+@pytest.mark.parametrize(
+    "heading", ["## Alternatives Considered", "## Considered Options"]
+)
+def test_one_alternative_fails_completeness_on_either_profile(tmp_path, heading):
+    """Nygard and MADR spell the heading differently; both must be counted.
+
+    A check written against one spelling silently skips the other, and MADR is
+    the default profile for new records.
+    """
+    result = _lint(tmp_path, _one_option(heading))
+
+    assert result.returncode != 0, result.stdout
+    assert "alternative(s) considered" in result.stdout
+
+
+def test_two_alternatives_pass(tmp_path):
+    """Satisfiable by editing the record, per spec R15: name the option that
+    lost, and 'do nothing' is always one."""
+    body = _one_option("## Considered Options").replace(
+        "* Only one option, nothing weighed against it.\n",
+        "* Option A.\n* Do nothing.\n",
+    )
+
+    assert _lint(tmp_path, body).returncode == 0
+
+
+def test_this_repositorys_records_all_weigh_at_least_two_options():
+    """Promoting a gate while the project's own set would fail it is how a gate
+    gets reverted. Measured before promotion: 28 of 28 pass."""
+    import importlib.machinery
+    import importlib.util
+
+    name = "adr_lint_alternatives_probe"
+    cached = sys.modules.get(name)
+    if cached is None:
+        loader = importlib.machinery.SourceFileLoader(
+            name, str(REPO_ROOT / "bin" / "adr-lint")
+        )
+        spec = importlib.util.spec_from_loader(name, loader)
+        cached = importlib.util.module_from_spec(spec)
+        sys.modules[name] = cached
+        loader.exec_module(cached)
+
+    short = [
+        (path.name, count)
+        for path in sorted((REPO_ROOT / "docs" / "adr").glob("ADR-[0-9]*.md"))
+        for count in [cached.count_alternatives(path.read_text(encoding="utf-8"))]
+        if count is not None and count < 2
+    ]
+
+    assert not short, short
 
 
 # ---------------------------------------------------------------------------
@@ -336,3 +426,196 @@ def test_gates_all_includes_policy_and_quality(tmp_path):
         for f in file_result.get("findings", [])
     }
     assert "policy" in gate_names, f"Expected policy gate in 'all' run, gates found: {gate_names}"
+
+
+def test_a_migration_placeholder_is_not_counted_as_zero(tmp_path):
+    """`/adr-kit:migrate` writes a TODO comment when the source had none.
+
+    It deliberately never fabricates alternatives. Counting an HTML-comment
+    placeholder as zero would turn every honest import into a blocking failure
+    and push a migrating team to disable the gate -- the outcome spec R15 exists
+    to prevent. The placeholder already tells the author what to do.
+    """
+    body = _one_option("## Considered Options").replace(
+        "* Only one option, nothing weighed against it.\n",
+        "<!-- TODO: document at least 2 alternatives that were considered and "
+        "rejected, with reasoning. -->\n",
+    )
+
+    result = _lint(tmp_path, body)
+
+    assert result.returncode == 0, result.stdout
+    assert "alternative(s) considered" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "placeholder",
+    [
+        pytest.param(
+            "<!-- TODO: document at least 2 alternatives that were considered "
+            "and rejected, with reasoning. -->\n",
+            id="skill-html-comment",
+        ),
+        pytest.param("- TODO: record the considered options.\n", id="cli-list-item"),
+    ],
+)
+def test_neither_migration_placeholder_spelling_counts_as_an_option(
+    tmp_path, placeholder
+):
+    """Two writers, two spellings, one meaning: unknown, fill this in.
+
+    `/adr-kit:migrate`'s skill emits an HTML comment; `bin/adr-migrate` emits a
+    `- TODO:` list item. Missing either means an honest import fails a blocking
+    gate on arrival, which is how a migrating team learns to disable the gate.
+    """
+    body = _one_option("## Considered Options").replace(
+        "* Only one option, nothing weighed against it.\n", placeholder
+    )
+
+    result = _lint(tmp_path, body)
+
+    assert result.returncode == 0, result.stdout
+    assert "alternative(s) considered" not in result.stdout
+
+
+def test_a_real_option_beside_a_placeholder_still_counts_as_one(tmp_path):
+    """Half-filled is still incomplete, and must not pass by accident."""
+    body = _one_option("## Considered Options").replace(
+        "* Only one option, nothing weighed against it.\n",
+        "* A real option that was weighed.\n- TODO: record the rest.\n",
+    )
+
+    result = _lint(tmp_path, body)
+
+    assert result.returncode != 0
+    assert "1 alternative(s) considered" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Retrieval metadata: an Accepted ADR nobody can find (TASK-118)
+# ---------------------------------------------------------------------------
+
+def _strip_retrieval_metadata(text: str) -> str:
+    import re
+
+    for key in ("topics", "aliases", "components", "symbols"):
+        text = re.sub(rf"^{key}:\n(?:  - .*\n)+", f"{key}: []\n", text, flags=re.M)
+    return text
+
+
+def test_an_accepted_adr_with_no_retrieval_metadata_is_reported(tmp_path):
+    """`binding: true` used to be a precondition, and it made this inert.
+
+    Measured on this repository: all 12 records carrying no retrieval metadata
+    escaped through that single condition, every one of them `binding: false` --
+    ADR-004 among them, so a query about context injection did not return the
+    decision that defines context injection. Being non-binding means a decision
+    does not gate code; it does not mean it should be invisible.
+    """
+    import json
+
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-004-*.md"))[0]
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / source.name).write_text(
+        _strip_retrieval_metadata(source.read_text(encoding="utf-8")), encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(ADR_LINT), "--format", "json", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    codes = [
+        f["code"]
+        for entry in json.loads(result.stdout)["files"]
+        for f in entry["findings"]
+        if f.get("code")
+    ]
+
+    assert "SELECTIVE_CONTEXT_METADATA" in codes, result.stdout
+
+
+def test_the_finding_runs_in_the_default_gate_set():
+    """It was emitted under `policy`, which is not in DEFAULT_GATES.
+
+    An advisory in a gate nobody runs is not an advisory; it is silence.
+    """
+    source = (REPO_ROOT / "bin" / "adr-lint").read_text(encoding="utf-8")
+
+    assert "completeness" in DEFAULT_GATES
+    assert '"gate": "completeness",\n        "level": "FAIL" if mode == "strict"' in source
+
+
+def test_populated_metadata_produces_no_finding(tmp_path):
+    """The shipped ADR-004, as annotated, must be quiet."""
+    import json
+
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-004-*.md"))[0]
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / source.name).write_text(
+        source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(ADR_LINT), "--format", "json", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    codes = [
+        f["code"]
+        for entry in json.loads(result.stdout)["files"]
+        for f in entry["findings"]
+        if f.get("code")
+    ]
+
+    assert "SELECTIVE_CONTEXT_METADATA" not in codes
+
+
+def test_a_global_scope_record_is_exempt(tmp_path):
+    """`context_scope: global` is injected regardless of the query, so a
+    retrieval miss cannot happen to it."""
+    import json
+
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-004-*.md"))[0]
+    text = _strip_retrieval_metadata(source.read_text(encoding="utf-8"))
+    text = text.replace("context_scope: null", 'context_scope: "global"')
+    if 'context_scope: "global"' not in text:
+        text = text.replace("superseded_by: null", 'superseded_by: null\ncontext_scope: "global"')
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / source.name).write_text(text, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(ADR_LINT), "--format", "json", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    codes = [
+        f["code"]
+        for entry in json.loads(result.stdout)["files"]
+        for f in entry["findings"]
+        if f.get("code")
+    ]
+
+    assert "SELECTIVE_CONTEXT_METADATA" not in codes
+
+
+def test_adr_new_names_the_metadata_it_cannot_fill_in(tmp_path):
+    """The tool cannot invent topics, so it says so while the author is there.
+
+    Same shape as the signer proposal: propose, never assume.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "A Decision",
+         "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "retrieval metadata" in result.stderr
+    assert "topics" in result.stderr and "components" in result.stderr
+    assert "defines" in result.stderr, (
+        "the components rule is the part authors get wrong"
+    )

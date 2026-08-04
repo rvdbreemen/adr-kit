@@ -31,7 +31,11 @@ suggest a separate create command.
 4. Show an acceptance packet containing decision, rationale, alternatives,
    consequences, evidence, scope, conflicts, and lifecycle effect. Require an
    explicit `yes` in this active session.
-5. Only then invoke `python <plugin-root>/bin/adr accept ADR-NNN`. Missing
+5. Only then invoke `python <plugin-root>/bin/adr accept ADR-NNN --confirm`.
+   The flag is refused-by-default for a reason: without it an acceptance can
+   happen by accident, and it writes a name into a history that is immutable
+   afterwards. Pass it only after the human has said yes in this session.
+   Missing
    evidence, strict lint failures, conflicts, and unresolved Open Questions
    remain authoritative blockers and become the next grill question.
 

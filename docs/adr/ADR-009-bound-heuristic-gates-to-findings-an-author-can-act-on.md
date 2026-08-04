@@ -10,7 +10,21 @@ verified_in:
   - "tests/test_adr_lint_clarity.py"
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-026"
+  - "ADR-028"
 format: "madr"
+topics:
+  - "heuristic gate"
+  - "clarity"
+  - "lint scope"
+  - "false positive"
+aliases:
+  - "bounded heuristic"
+  - "actionable finding"
+  - "acronym expansion"
+components:
+  - "adr-lint"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -39,6 +53,16 @@ status_history:
     status: Accepted
     changed_by: Robert van den Breemen
     reason: "Human approval: records the v0.34.0 heuristic-gate scope decision after review"
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-028 applies ADR-009's bounded-heuristic principle to the reference gate
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-026 depends on ADR-009's split between authoring-time and merge-time gates
     changed_via: adr-kit lifecycle
 ```
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import os
 import subprocess
 import sys
 import textwrap
@@ -121,13 +122,36 @@ def _frontmatter(path: Path):
     return SCHEMA.parse_frontmatter(raw), body
 
 
-def _run_adr(*args: str):
+def _run_adr(*args: str, env=None, cwd=None):
     return subprocess.run(
         [sys.executable, str(ADR), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env=env,
+        cwd=cwd,
     )
+
+
+def _signerless_env(tmp_path: Path):
+    """An environment with no derivable identity, as a bare CI runner has.
+
+    Since TASK-89 a person-named `git config user.name` is adopted as the
+    signer, so any test about *ordering* -- does the command validate the record
+    before it asks who is signing? -- silently passes on a developer machine and
+    only fails on a runner. Nulling the global and system config is not enough:
+    `git config` also reads the repository-local `.git/config`, so the caller
+    must run from `tmp_path`, where git finds no repository at all.
+    """
+    void = tmp_path / "no-such-config"
+    return {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(void),
+        "GIT_CONFIG_SYSTEM": str(void),
+        "GH_CONFIG_DIR": str(tmp_path / "gh-empty"),
+        "GH_TOKEN": "",
+        "GITHUB_TOKEN": "",
+    }
 
 
 def _index_check(adr_dir: Path):
@@ -144,6 +168,9 @@ def _index_check(adr_dir: Path):
     [("propose", "Proposed"), ("accept", "Accepted"), ("reject", "Rejected")],
 )
 def test_status_commands_update_frontmatter_history_and_index(tmp_path, command, expected):
+    # Acceptance is the one transition that must be asked for rather than
+    # arrived at, so it alone carries --confirm.
+    confirm = ("--confirm",) if command == "accept" else ()
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     path = _write_adr(adr_dir, 1, "Lifecycle Command")
@@ -151,6 +178,7 @@ def test_status_commands_update_frontmatter_history_and_index(tmp_path, command,
     result = _run_adr(
         command,
         "1",
+        *confirm,
         "--adr-dir",
         str(adr_dir),
         "--date",
@@ -235,7 +263,7 @@ def test_acceptance_gates_block_incomplete_record_without_mutation(tmp_path):
     )
     before = path.read_bytes()
 
-    result = _run_adr("accept", "1", "--adr-dir", str(adr_dir))
+    result = _run_adr("accept", "1", "--confirm", "--adr-dir", str(adr_dir))
 
     assert result.returncode == 2
     assert "acceptance blocked" in result.stderr
@@ -343,13 +371,14 @@ def test_status_commands_seed_a_missing_history_with_the_prior_transition(
     tmp_path, command, expected
 ):
     """TASK-68 #6: mutate_status drives accept/reject/propose through the same pair."""
+    confirm = ("--confirm",) if command == "accept" else ()
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     path = _write_adr(adr_dir, 1, "Lifecycle Command")
     _set_status(path, "2026-06-12", "Proposed, 2026-06-12.")
 
     result = _run_adr(
-        command, "1", "--adr-dir", str(adr_dir), "--date", "2026-07-06",
+        command, "1", *confirm, "--adr-dir", str(adr_dir), "--date", "2026-07-06",
         "--changed-by", "Codex",
     )
 
@@ -419,9 +448,16 @@ def test_supersede_refuses_when_the_prior_transition_cannot_be_recovered(tmp_pat
     )
     before = old_path.read_bytes()
 
+    # Run without a derivable signer, which is what a CI runner has. The order
+    # of the two checks is the property under test: an unrecoverable prior
+    # transition is a fact about the record and must be reported before the
+    # command asks who is signing. Resolving the actor first makes an
+    # unconfigured machine report a missing signer for a record that could not
+    # be superseded by anyone.
     result = _run_adr(
         "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
         "--date", "2026-07-06",
+        env=_signerless_env(tmp_path), cwd=str(tmp_path),
     )
 
     assert result.returncode == 2
@@ -446,7 +482,7 @@ def test_accept_resolves_a_supersedes_target_from_the_adr_directory(tmp_path):
     assert new_data["supersedes"] == ["ADR-001"]
 
     result = _run_adr(
-        "accept", "2", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
+        "accept", "2", "--confirm", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
         "--changed-by", "Codex",
     )
 
@@ -473,7 +509,7 @@ def test_acceptance_is_not_blocked_by_an_unrelated_broken_adr(tmp_path):
     assert linked.returncode == 0, linked.stderr + linked.stdout
 
     result = _run_adr(
-        "accept", "2", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
+        "accept", "2", "--confirm", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
         "--changed-by", "Codex",
     )
 
@@ -741,6 +777,96 @@ def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
     assert 'changed_by: "User: Configured Human"' in created.read_text(encoding="utf-8")
 
 
+def test_every_history_append_receives_a_resolved_actor():
+    """The invariant, not the one command that broke it.
+
+    `supersede` wrote `changed_by: ""` on both records because it appends to the
+    history directly instead of going through `mutate_status`, which is where
+    every other command picks up its signer. A test for `supersede` alone would
+    not stop the next command that appends directly, so this asserts the shape:
+    the actor argument of every `append_status_history` call is either a name
+    the caller resolved, or the one literal that is deliberately unattributed.
+
+    `ensure_status_history` passes "unknown" on purpose, for a transition that
+    predates the convention and whose actor genuinely was never recorded. Naming
+    the current user there would put a signature on something they did not do.
+    """
+    import ast
+
+    source = ADR.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    resolved = {"changed_by", "signer", "actor"}
+    offenders = []
+
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "append_status_history"
+        ):
+            continue
+        if len(node.args) < 3:
+            offenders.append((node.lineno, "fewer than three positional args"))
+            continue
+        actor = node.args[2]
+        if isinstance(actor, ast.Name) and actor.id in resolved:
+            continue
+        if isinstance(actor, ast.Constant) and actor.value == "unknown":
+            continue
+        offenders.append((node.lineno, ast.unparse(actor)))
+
+    assert not offenders, (
+        "append_status_history called with an unresolved actor at "
+        + ", ".join(f"bin/adr:{line} ({what})" for line, what in offenders)
+        + " -- resolve it with resolve_signer() first, or the entry lands "
+        "unsigned and the audit gate rejects it at accept time"
+    )
+
+
+def test_supersede_signs_both_sides_without_the_flag(tmp_path):
+    """Supersede appends history directly, so it must resolve the signer itself.
+
+    Every other lifecycle command gets its actor inside `mutate_status`.
+    `supersede` calls `append_status_history` for both files and passed
+    `args.changed_by` through raw, so with no `--changed-by` both entries landed
+    with an empty `changed_by`. Nothing complained at write time. The audit gate
+    caught it later, on the successor, at the exact moment someone tried to
+    accept it -- and the record was immutable by then.
+
+    The existing supersede tests all pass `--changed-by`, which is why this
+    survived: the flag masked the path that real use takes.
+    """
+    import json as _json
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.local.json").write_text(
+        _json.dumps({"lifecycle": {"signer": "User: Configured Human"}}),
+        encoding="utf-8",
+    )
+    old_path = _write_adr(adr_dir, 160, "Old Decision", status="Accepted")
+    new_path = _write_adr(adr_dir, 164, "New Decision", status="Accepted")
+
+    result = _run_adr(
+        "supersede", "160", "--by", "164", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    for path in (old_path, new_path):
+        latest = _history_entries(_frontmatter(path)[1])[-1]
+        assert latest["changed_by"] == '"User: Configured Human"', (
+            f"{path.name} recorded an unsigned transition: {latest}"
+        )
+
+    audit = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-lint"), "--strict",
+         "--gates", "audit", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert audit.returncode == 0, audit.stdout + audit.stderr
+
+
 def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path):
     """Validate the act before the actor: the error must name the real problem."""
     import subprocess
@@ -754,7 +880,7 @@ def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path)
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
     subprocess.run(
-        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "accept", "ADR-001",
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "accept", "ADR-001", "--confirm",
          "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
@@ -769,4 +895,68 @@ def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path)
     assert "illegal lifecycle transition" in result.stderr, (
         "the signer check must not preempt the legality check; an illegal "
         "transition has to report that it is illegal"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Acceptance has to be asked for (TASK-110, spec R8)
+# ---------------------------------------------------------------------------
+
+def test_acceptance_without_confirm_refuses_and_writes_nothing(tmp_path):
+    """The one transition that decides must not be reachable by accident.
+
+    With `lifecycle.signer` configured -- the common case now that the signer is
+    derived rather than demanded -- an accept that nobody meant to run wrote the
+    user's own name, a plausible reason and today's date into a history that is
+    immutable afterwards. R8's own argument is that a false attribution is worse
+    than a missing one.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "A Decision")
+    before = path.read_bytes()
+
+    result = _run_adr(
+        "accept", "1", "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"
+    )
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "--confirm" in result.stderr
+    assert path.read_bytes() == before, "a refused acceptance may not touch the record"
+
+
+def test_acceptance_with_confirm_proceeds(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "A Decision")
+
+    result = _run_adr(
+        "accept", "1", "--confirm", "--adr-dir", str(adr_dir),
+        "--changed-by", "User: Test Signer",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'status: "Accepted"' in path.read_text(encoding="utf-8")
+
+
+def test_a_broken_record_reports_the_gate_not_the_missing_flag(tmp_path):
+    """Order matters: say why the record cannot be accepted, not what to type.
+
+    Checking the flag first would tell an author to add `--confirm`, and only
+    then tell them the record was incomplete all along -- two round trips, with
+    the real problem discovered second.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "A Decision")
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("## Consequences", "## Removed"), encoding="utf-8")
+
+    result = _run_adr(
+        "accept", "1", "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"
+    )
+
+    assert result.returncode == 2
+    assert "--confirm" not in result.stderr, (
+        "the gate failure is the real problem and must be reported first"
     )

@@ -36,7 +36,7 @@
         "Use `madr` as the default; support `nygard` and `canonical` only when returned as available, and never invent a profile or template.",
         "Qualify `<subject>` as a consequential, difficult-to-reverse decision before creating a record; do not create an ADR for an ordinary reversible implementation choice.",
         "Create a Proposed record, then follow the canonical grill protocol for context, decision, alternatives, consequences, risks, mitigations, evidence, scope, ownership, conflicts, and Open Questions.",
-        "Show the final acceptance packet and require an explicit `yes` in this active session before invoking `adr accept`; require Completeness, Evidence, Clarity, and Consistency and supersede rather than rewriting Accepted decisions."
+        "Show the final acceptance packet and require an explicit `yes` in this active session before invoking `adr accept ... --confirm`; require Completeness, Evidence, Clarity, and Consistency and supersede rather than rewriting Accepted decisions."
       ]
     },
     {
@@ -74,7 +74,7 @@
         "Ask one unresolved decision question at a time in dependency order and include a recommended answer with cited evidence when possible; never ask the user for a fact the repository can settle.",
         "Record each human answer in the Proposed ADR, keep unresolved items under Open Questions, and recompute readiness after each answer.",
         "From settled facts, propose bounded retrieval metadata and Decision Contract content for human review; never invent constraints or silently enrich an Accepted ADR.",
-        "End as Accepted, Rejected, explicitly deferred, or not-an-ADR. For acceptance show decision, rationale, alternatives, consequences, evidence, scope, conflicts, and lifecycle effect; require explicit `yes` in this active session and then invoke `adr accept`."
+        "End as Accepted, Rejected, explicitly deferred, or not-an-ADR. For acceptance show decision, rationale, alternatives, consequences, evidence, scope, conflicts, and lifecycle effect; require explicit `yes` in this active session and then invoke `adr accept ... --confirm`."
       ]
     },
     {
@@ -98,7 +98,7 @@
         "Create selected reconstruction candidates as Proposed and present them in small batches.",
         "Use a compact confirmation grill only when the chosen decision, rationale, alternatives, and consequences have direct cited evidence; otherwise use the full grill and confirm each ADR separately.",
         "Install the ADR Kit-owned pre-commit gate, then state plainly that the declarative gate is free and always on while the LLM pass is on by default and costs one model call per `llm_judge: true` ADR on every commit touching its scope, linear in their number and nothing at all until an author opts one in.",
-        "Offer the backend choice host, openrouter, ollama, or off, and apply it with `adr-judge --set-backend ...` rather than by writing JSON; pass this client's own id to `--host-client`, never prompt for or store an API key, and add docs/adr/.adr-kit.local.json to .gitignore.",
+        "Offer the backend choice host, openrouter, ollama, openai-compatible, or off, and apply it with `adr-judge --set-backend ...` rather than by writing JSON; pass this client's own id to `--host-client`, give openai-compatible both `--base-url` and `--model` because the command refuses an incomplete pair, never prompt for or store an API key, and add docs/adr/.adr-kit.local.json to .gitignore.",
         "Finish with `adr-doctor --fix-index docs/adr/`."
       ]
     },
@@ -199,8 +199,9 @@
       "title": "Set up an ADR Kit project",
       "mutates": true,
       "procedure": [
-        "Run `python <plugin-root>/scripts/setup-project.py --client <client-id> <workspace>`.",
-        "Preserve all user content outside managed markers and `.adr-kit/ADR-guide.local.md`; rerunning unchanged input must be a no-op."
+        "Run `python <plugin-root>/scripts/setup-project.py --client <client-id> --project-root <workspace>`, where `<client-id>` is this client's id and `<workspace>` is the project root.",
+        "Preserve all user content outside managed markers and `.adr-kit/ADR-guide.local.md`; rerunning unchanged input must be a no-op.",
+        "Run `adr-settings --adr-dir docs/adr --check-embedding` and act on the answer: `ready` needs no question, `runtime-without-model` offers the pull with its download size stated first, and `absent` explains how to install a local runtime, how to point at an existing one, or how to use a remote endpoint. It installs nothing on its own and a missing runtime is a normal outcome, not an error."
       ]
     },
     {

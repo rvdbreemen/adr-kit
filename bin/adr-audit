@@ -97,12 +97,26 @@ def _run(argv: List[str], cwd: Path, stdin_text: Optional[str] = None,
 # Half one: are the decisions any good?
 # ---------------------------------------------------------------------------
 
-def run_lint(adr_dir: Path, repo_root: Path, strict: bool) -> Dict:
+def run_lint(
+    adr_dir: Path, repo_root: Path, strict: bool, gates: Optional[str] = None
+) -> Dict:
+    """Lint the ADRs, at the gate set the caller asked for.
+
+    The gate selector matters more than it looks. This command's own rationale
+    is that "a clean judge over a set of vague ADRs proves nothing, because
+    vague rules cannot be violated" -- and vagueness is what the `evidence` and
+    `clarity` gates measure. Neither was reachable from here: the argv was
+    fixed, `--gates` was never passed, and `--strict` does not help because it
+    adds `schema` only. Measured on this repository, the default set reported
+    zero failures over a set that `--gates all` reports four failures on.
+    """
     script = _BIN_DIR / "adr-lint"
     if not script.is_file():
         raise AuditError(f"adr-lint not found at {script}")
     argv = [sys.executable, str(script), "--format", "json",
             "--repo-root", str(repo_root), str(adr_dir)]
+    if gates:
+        argv[4:4] = ["--gates", gates]
     if strict:
         argv.insert(3, "--strict")
     try:
@@ -307,6 +321,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--llm", action="store_true",
         help="Also run the judge's LLM pass for llm_judge ADRs.",
     )
+    parser.add_argument(
+        "--gates", default=None, metavar="LIST",
+        help=(
+            "Comma-separated lint gates, or 'all'. Passed through to adr-lint. "
+            "The default set answers whether the records are structurally "
+            "sound; 'evidence' and 'clarity' answer whether they are sharp "
+            "enough to be violated, which is the question this command's own "
+            "rationale rests on."
+        ),
+    )
     scope = parser.add_mutually_exclusive_group()
     scope.add_argument(
         "--diff", default=None, metavar="PATH",
@@ -359,7 +383,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             diff_text = read_diff(args.diff)
             budget = args.max_diff_bytes or WHOLE_CODEBASE_DIFF_BUDGET
 
-        lint = run_lint(adr_dir, repo_root, args.strict)
+        lint = run_lint(adr_dir, repo_root, args.strict, args.gates)
         judge = run_judge(
             diff_text, adr_dir, repo_root,
             args.snapshot or "worktree", budget, args.llm,

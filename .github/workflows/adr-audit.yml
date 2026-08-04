@@ -1,0 +1,59 @@
+# Whole-codebase ADR audit for this repository.
+# The shipped template is templates/github-workflows/adr-audit.yml.
+#
+# The per-diff gates answer "does this change violate a decision?". None of them
+# answers "does the code as it stands today obey the decisions as they stand
+# today", because a rule added after a file was written has never been applied to
+# that file. This workflow asks that question on a cadence.
+#
+# Mechanically it is a diff against the empty tree, so every line reads as added
+# and forbid rules reach the whole repository. That diff is large by
+# construction, which is what the separate budget is for.
+#
+# Report-only by design: it opens or updates one issue and never fails the run.
+# A weekly sweep that turns the default branch red for a pre-existing violation
+# teaches people to ignore it.
+name: adr-audit
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: whole-codebase audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Audit the decisions and the code
+        id: audit
+        run: |
+          set +e
+          python bin/adr-audit --whole-codebase --gates all --format text \
+            > "$RUNNER_TEMP/audit.txt" 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          cat "$RUNNER_TEMP/audit.txt"
+
+      - name: Explain the verdict
+        run: |
+          case "${{ steps.audit.outputs.exit_code }}" in
+            0) echo "On course." ;;
+            1) echo "The code violates an Accepted ADR. Owner: whoever wrote the code." ;;
+            3) echo "The ADR set fails its own gates. Owner: whoever wrote the records." ;;
+            4) echo "Both: the code violates an ADR and the records fail their gates." ;;
+            2) echo "The audit could not run. Owner: whoever installed it." ;;
+            *) echo "Unrecognised exit code." ;;
+          esac

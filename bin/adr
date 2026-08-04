@@ -469,6 +469,19 @@ def command_new(args) -> List[str]:
     # _yaml_scalar; creation did not.
     body = body.replace("user@example.com", _yaml_scalar(resolve_signer(adr_dir, args.changed_by)))
     _commit_lifecycle_changes(adr_dir, [(destination, body)])
+    # Say it now, while the author is here. Retrieval metadata is optional
+    # frontmatter that nothing used to ask about, and 12 of this repository's
+    # 28 records ended up with none -- including the one that defines context
+    # injection, which a query about context injection therefore did not return.
+    # The tool cannot fill these in without inventing them, so it names them
+    # instead, in the same shape the signer proposal uses.
+    print(
+        f"[adr-kit] {destination.name} has no retrieval metadata yet. Fill in "
+        f"topics, aliases and components before accepting it, or an agent's "
+        f"query will not surface this decision. Components name what the ADR "
+        f"*defines*, not everything it touches.",
+        file=sys.stderr,
+    )
     return [f"created: {destination} ({profile})"]
 
 
@@ -702,11 +715,60 @@ def command_auto_accept(args) -> List[str]:
     return [f"auto-accepted: {path.name}"]
 
 
+def _assert_acceptance_was_asked_for(path: Path, args) -> None:
+    """Acceptance is the one transition that must be typed on purpose.
+
+    Every other lifecycle command records something. This one *decides*, and it
+    writes a name and a date into a history that is immutable from that moment
+    on. With `lifecycle.signer` configured -- the common case now that the signer
+    is derived rather than demanded -- a call that nobody meant to make wrote the
+    user's own name, a plausible reason and today's date into a record they never
+    saw. A false attribution is worse than a missing one; that is spec R8's own
+    argument, turned against the command that implements it.
+
+    So acceptance requires `--confirm`, the same shape auto-accept's assist mode
+    already uses. What that buys is narrow and worth stating exactly: an
+    acceptance can no longer happen *by accident* -- from a script written for an
+    older interface, from a CI job, from an agent following a stale instruction.
+    It does not stop a caller who deliberately passes the flag, and nothing at
+    the process level could: an agent runs with the user's own terminal, working
+    directory and environment, so there is no signal that distinguishes it from
+    the user typing.
+
+    Inferring presence from `sys.stdin.isatty()` was tried first and is wrong on
+    the platform this kit marks release-required. Measured: a Windows subprocess
+    with `stdin=DEVNULL` reports `isatty() == True`, because `NUL` is a character
+    device and the C runtime answers about the device rather than about a
+    terminal. A presence test that returns "someone is there" for /dev/null is
+    worse than no test, because it reads as a guarantee.
+
+    `accept --auto` is untouched. spec R1 grants the init flow that exception
+    explicitly: there the user asked for a batch of records covering code that
+    already exists, and that request is the consent.
+    """
+    if args.confirm:
+        return
+    signer = resolve_signer(Path(args.adr_dir), args.changed_by, announce=False)
+    raise AdrLifecycleError(
+        f"acceptance blocked: {path.name} would be signed as {signer!r}.\n"
+        "  Acceptance writes that name into a history that is immutable "
+        "afterwards,\n"
+        "  so it has to be asked for rather than arrived at.\n"
+        "  Re-run with --confirm once a human has agreed to this decision."
+    )
+
+
 def command_accept(args) -> List[str]:
     adr_dir = Path(args.adr_dir)
     adr_id = normalize_adr_id(args.adr)
     path = find_adr_file(adr_dir, adr_id)
+    # Gates first, then the flag. A record that cannot be accepted should say
+    # why it cannot be accepted; telling the author to add --confirm and only
+    # then telling them the record is incomplete costs a round trip and buries
+    # the actual problem. The flag is the last thing checked before the write,
+    # which is also where it means what it says.
     _assert_acceptance_gates(path, args)
+    _assert_acceptance_was_asked_for(path, args)
     changed = mutate_status(
         path,
         "Accepted",
@@ -994,6 +1056,19 @@ def command_supersede(args) -> List[str]:
         new_path, new_data, new_body, (str(new_data["status"]), args.date)
     )
 
+    # Resolved here, after both seeds. Every other lifecycle command gets its
+    # signer inside `mutate_status`; supersede appends to the history directly
+    # and so has to resolve it itself, or both entries land with an empty
+    # `changed_by` -- which the audit gate rejects on the successor, at the
+    # exact moment someone tries to accept it.
+    #
+    # After, not before: `ensure_status_history` above refuses a record whose
+    # prior transition cannot be recovered, and that is a fact about the record,
+    # not about who is asking. Resolving the actor first makes an unconfigured
+    # machine report a missing signer for a record that could not be superseded
+    # by anyone. Validate the act, then the actor.
+    changed_by = resolve_signer(adr_dir, args.changed_by)
+
     old_data["status"] = "Superseded"
     old_data["date"] = args.date
     old_data["superseded_by"] = new_id
@@ -1001,7 +1076,7 @@ def command_supersede(args) -> List[str]:
     old_body = append_status_history(
         old_body,
         "Superseded",
-        args.changed_by,
+        changed_by,
         args.reason or f"Superseded by {new_id}",
         "adr-kit lifecycle",
         args.date,
@@ -1013,7 +1088,7 @@ def command_supersede(args) -> List[str]:
     new_body = append_status_history(
         new_body,
         new_data["status"],
-        args.changed_by,
+        changed_by,
         args.reason or f"Supersedes {old_id}",
         "adr-kit lifecycle",
         args.date,

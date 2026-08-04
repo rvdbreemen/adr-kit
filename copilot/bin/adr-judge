@@ -152,6 +152,8 @@ urllib = _adr_llm.urllib
 BACKEND_HOST = _adr_llm.BACKEND_HOST
 BACKEND_OPENROUTER = _adr_llm.BACKEND_OPENROUTER
 BACKEND_OLLAMA = _adr_llm.BACKEND_OLLAMA
+BACKEND_OPENAI_COMPATIBLE = _adr_llm.BACKEND_OPENAI_COMPATIBLE
+LM_STUDIO_BASE_URL = _adr_llm.LM_STUDIO_BASE_URL
 BACKEND_NAMES = _adr_llm.BACKEND_NAMES
 DEFAULT_BACKEND = _adr_llm.DEFAULT_BACKEND
 HOST_COMMANDS = _adr_llm.HOST_COMMANDS
@@ -2069,7 +2071,7 @@ def render_config_report(report: Dict) -> str:
 
 def apply_backend_setting(
     config_path: Path, adr_dir: Path, backend: str, host_client: Optional[str],
-    model: Optional[str],
+    model: Optional[str], base_url: Optional[str] = None,
 ) -> int:
     """Write one backend choice into config, then prove the judge accepts it.
 
@@ -2101,6 +2103,22 @@ def apply_backend_setting(
             f"[adr-judge] ERROR: --set-backend ollama requires --model "
             f"(a local tag as shown by `ollama list`, for example "
             f"'{DEFAULT_OLLAMA_MODEL}').",
+            file=sys.stderr,
+        )
+        return 2
+    if backend == BACKEND_OPENAI_COMPATIBLE and not (base_url and model):
+        missing = []
+        if not base_url:
+            missing.append("--base-url")
+        if not model:
+            missing.append("--model")
+        print(
+            f"[adr-judge] ERROR: --set-backend openai-compatible requires "
+            f"{' and '.join(missing)}. Without both, the judge has an endpoint "
+            f"it cannot reach or a model it cannot name, and degrades to "
+            f"declarative-only at commit time -- silently, because degradation "
+            f"is the correct behaviour once the config is written. "
+            f"LM Studio's default base URL is {LM_STUDIO_BASE_URL}.",
             file=sys.stderr,
         )
         return 2
@@ -2138,6 +2156,10 @@ def apply_backend_setting(
         judge_block["openrouter_model"] = model
     if backend == BACKEND_OLLAMA:
         judge_block["ollama_model"] = model
+    if backend == BACKEND_OPENAI_COMPATIBLE:
+        # Which model judges is a team decision and belongs in the tracked file;
+        # where the endpoint lives is a fact about this machine and does not.
+        judge_block["openai_model"] = model
     # The dead configuration surface goes with the change rather than sitting
     # in the file emitting a warning on every commit (ADR-017).
     for retired in ("llm_cmd", "llm_model"):
@@ -2148,6 +2170,8 @@ def apply_backend_setting(
     local_path = None
     if backend == BACKEND_HOST:
         local_path = write_local_host_client(adr_dir, host_client or "")
+    if backend == BACKEND_OPENAI_COMPATIBLE:
+        local_path = write_local_judge_value(adr_dir, "openai_base_url", base_url or "")
 
     try:
         load_config(config_path)
@@ -2180,18 +2204,28 @@ def load_local_config(adr_dir: Path) -> Dict:
     return _adr_config.load_json_config(adr_dir / LOCAL_CONFIG_NAME)
 
 
-def write_local_host_client(adr_dir: Path, client: str) -> Path:
-    """Record the host client, atomically, and keep it out of version control."""
+def write_local_judge_value(adr_dir: Path, key: str, value: str) -> Path:
+    """Record one judge value machine-locally, atomically, and keep it untracked.
+
+    The tracked config may select a backend; it may never introduce an endpoint
+    or a credential, because anyone with commit access writes it. A host client
+    and a base URL are both facts about this machine.
+    """
     path = adr_dir / LOCAL_CONFIG_NAME
     document = _adr_config.load_json_config(path)
     judge_block = document.get("judge")
     if not isinstance(judge_block, dict):
         judge_block = {}
-    judge_block["host_client"] = client
+    judge_block[key] = value
     document["judge"] = judge_block
     _atomic_write_json(path, document)
     _register_git_exclude(adr_dir, LOCAL_CONFIG_NAME)
     return path
+
+
+def write_local_host_client(adr_dir: Path, client: str) -> Path:
+    """Record the host client, atomically, and keep it out of version control."""
+    return write_local_judge_value(adr_dir, "host_client", client)
 
 
 def _atomic_write_json(path: Path, document: Dict) -> None:
@@ -2443,6 +2477,15 @@ def main() -> int:
         "per-machine fact, not a project decision.",
     )
     p.add_argument(
+        "--base-url",
+        default=None,
+        help="With --set-backend openai-compatible: the endpoint's OpenAI "
+        "compatible base URL, for example " + LM_STUDIO_BASE_URL + " for LM "
+        "Studio. Recorded in the gitignored " + LOCAL_CONFIG_NAME + ": where a "
+        "runtime lives is a fact about this machine, and a tracked file may "
+        "select a backend but never introduce an endpoint.",
+    )
+    p.add_argument(
         "--model",
         default=None,
         help="With --set-backend openrouter|ollama: the model to judge with. "
@@ -2560,7 +2603,8 @@ def main() -> int:
 
         if args.set_backend:
             return apply_backend_setting(
-                config_path, adr_dir, args.set_backend, args.host_client, args.model
+                config_path, adr_dir, args.set_backend, args.host_client,
+                args.model, args.base_url,
             )
 
         if args.show_config:

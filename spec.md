@@ -463,9 +463,10 @@ unreachable, which turns a feature into a regression.
   never elevated without asking. The user chose route 1 or they did not.
 - The GPU check is a heuristic, and it must present itself as one. Ollama runs on
   CPU; the warning is about speed, not capability.
-- Model size is part of the offer, not a surprise afterwards. `qwen3-embedding:8b`
-  is roughly 4.7 GB. State the download size before starting it, and offer a
-  smaller variant where one exists.
+- Model size is part of the offer, not a surprise afterwards. The measured
+  default `qwen3-embedding:4b` is roughly 2.5 GB. State the download size before
+  starting it, and offer `nomic-embed-text` as the explicit English-only
+  fallback where one exists.
 - Whatever is chosen lands in the settings surface (R13), so it can be changed
   later without re-running setup.
 
@@ -644,8 +645,9 @@ commit.
 
 R2, R3 and R4 are about *moments*. This appendix lists every moment adr-kit
 already attaches to, which ADR function runs there, and why that pairing was
-chosen. It is an inventory of the code as it stands on 2026-08-01, not a wish
-list; the gaps follow in Appendix B.
+chosen. It is an inventory of the code as it stands on **2026-08-04**, not a wish
+list; the gaps follow in Appendix B. The date is part of the claim: an inventory
+without one reads as timeless and is the first thing to rot.
 
 ### A.1 — Agent hooks (`hooks/manifest.json` → `hooks/hooks.json` → `hooks/adr_hook_core.py`)
 
@@ -686,31 +688,58 @@ rather than an accident.
 | `templates/githooks/pre-commit` | `bin/adr-judge` on the staged diff, declarative pass always, LLM pass for in-scope ADRs | The commit is the first point where a decision has become durable. Fail-closed on violation, fail-open on missing tooling. Carries a `flock` guard so two concurrent commits cannot both spend on the LLM pass. |
 | `.pre-commit-hooks.yaml` (`id: adr-judge`) | Same engine via `bin/adr-judge-precommit` | Teams standardised on the pre-commit framework get the same gate without the native hook. |
 
+The pre-commit hook runs **four passes, and only the first can block**:
+
+| Pass | Blocks | What it is for |
+|---|---|---|
+| `adr-judge` | **yes** | The fail-closed floor. A violation exits non-zero and the commit does not happen. |
+| `adr-index --check` | no | Warns when the generated index is stale. Advisory rather than blocking because it reads the worktree while the commit is the staged snapshot: on a partial commit a block here would refuse correct work. |
+| `adr-grill-signal` | no | Nudges when the staged change looks like it carries a decision worth grilling. |
+| `adr-suggest` | no | The commit-time half of "does this change contain a decision nobody recorded?". Opt-in as of v0.17.0; its exit status is swallowed with `\|\| true`. |
+
+That last row matters for R2. A commit-time missing-ADR pass does exist; it is
+off by default and asks about one commit rather than the whole branch, which is
+why the pull-request moment is a separate question.
+
 ### A.3 — CI workflows (this repository)
 
 | Workflow | Trigger | ADR function | Why here |
 |---|---|---|---|
 | `adr-judge-self.yml` | `pull_request` → main | Judge the whole branch diff (`origin/base...HEAD`) | R2's first half. The commit hook sees one commit; the PR is where the *cumulative* change is judged. Deliberately not on `push`, because `GITHUB_BASE_REF` is empty there. |
 | `adr-readiness.yml` | `pull_request` → dev, main | `adr-readiness` action: are Proposed ADRs linked to the implementation this PR carries? | A PR that implements a Proposed decision should not merge while the decision is still unaccepted. |
-| `adr-index-check.yml` | `push` + `pull_request` | `adr-index --check docs/adr` | R7's "index always current", enforced rather than hoped for. Cheap, deterministic, no model. |
-| `adr-lint-self.yml` | `push` + `pull_request` | `adr-lint` over `examples/` and `tests/fixtures/` | Note: this is a **self-test of the linter**, not a lint of this repository's own ADRs. |
+| `adr-index-check.yml` | `push` + `pull_request`, `branches: [main]` | `adr-index --check docs/adr` | R7's "index always current", enforced rather than hoped for. Cheap, deterministic, no model. Scoped to `main`; freshness on `dev` comes from `validate.yml`, which runs the same check on both branches. |
+| `adr-lint-self.yml` | `push` + `pull_request` | `adr-lint` over `examples/` and `tests/fixtures/`, plus a `pytest tests/ -v` job | The lint half is a **self-test of the linter**, not a lint of this repository's own ADRs -- `validate.yml` does that. |
 | `adr-guardian-audit.yml` | weekly cron (Mon 06:00) + dispatch | Cheap tier: `adr-lint docs/adr`, `adr-retire`, `adr-status` → one tracking issue | Staleness is not a per-commit property. A weekly sweep with a single self-updating issue makes ADR health a team-visible number instead of whatever the last session happened to notice. Never runs a model. |
 | `adr-retire-audit.yml` | weekly cron + dispatch | `adr-retire --threshold 0.4` → issue on findings | Decisions age out silently; this is the only mechanism that says so unprompted. |
 | `release-candidate.yml` / `release-publish.yml` | dispatch / tag push | `adr-lint --strict docs/adr` + `adr-index --check` | Release is the last gate. `--strict` adds canonical frontmatter, evidence resolution and reciprocal supersession checks that are too slow for every commit. |
-| `validate.yml` | `push` + `pull_request` | Schema validation of `ADR-INDEX.json`, required-files check, full pytest matrix | Guards the contracts the other workflows depend on. |
+| `validate.yml` | `push` + `pull_request` | Schema validation of `ADR-INDEX.json`, required-files check, `adr-index --check`, `adr-lint docs/adr`, markdownlint, full pytest matrix | Guards the contracts the other workflows depend on, and is the only job that lints this repository's own ADRs at pull-request time. |
+| `branch-sync-check.yml` | daily cron (07:00) + dispatch | Reports when `dev` and `main` have diverged | Not an ADR gate. Listed because it is the mechanism that catches a release that was never merged back, which has silently reverted a release twice. |
 
-Shipped for downstream projects: `templates/github-workflows/adr-readiness.yml`
-and `adr-guardian-audit.yml`, plus the composite actions
-`.github/actions/adr-judge` and `.github/actions/adr-readiness`.
+Shipped for downstream projects: four templates
+(`adr-readiness.yml`, `adr-guardian-audit.yml`, `adr-judge.yml`,
+`adr-index-check.yml`) and three composite actions (`.github/actions/adr-judge`,
+`adr-readiness`, `adr-index-check`).
 
 ### A.4 — What this inventory shows
 
 The **enforcement** side is well covered: every write path (edit, commit, PR,
 release) has a gate, and each gate runs the cheapest tool that can answer at that
-moment. The **authoring** side is not: of all the moments above, only the
-PreToolUse nudge ever raises the question *should a new ADR exist?*, and it does so
-as a suggestion in injected text. There is no moment where that question is asked
-with the whole change in view.
+moment.
+
+The **authoring** side is thinner, and the honest version of the claim is
+narrower than it first appears. Three moments do raise *should a new ADR exist?*
+-- the PreToolUse nudge in injected text, the opt-in `adr-suggest` pass at commit
+time, and `/adr-kit:review`, whose step 4 runs `adr-suggest` over
+`merge-base(BASE,HEAD)..HEAD` and then requires the model's own vigilance pass.
+That third one *is* the question asked with the whole change in view, and it
+ships on all three clients.
+
+What remains true is that **none of them fires unless someone asks**. The review
+workflow is invoked by hand, the commit-time pass is off by default, and the
+plan-exit hook that was built to close this gap did not fire at all until
+v0.44.1. An unrecorded decision therefore survives by default, which is the
+asymmetry R2 names: a violated decision is caught by four gates, and a missing
+one by none that runs on its own.
 
 ## Appendix B — Proposals
 

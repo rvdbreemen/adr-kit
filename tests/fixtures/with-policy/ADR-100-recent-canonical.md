@@ -15,6 +15,7 @@ Has every canonical section.
 ## Alternatives Considered
 
 - Be incomplete: rejected, this fixture exists to be the post-strict_from PASS control.
+- Do nothing: rejected, the control needs to pass every default gate.
 
 ## Consequences
 

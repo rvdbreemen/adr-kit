@@ -152,6 +152,13 @@ jobs:
           python -m pip install pytest
           python -m pytest tests/test_agent_installer.py tests/test_adr_mcp.py tests/test_bump_version.py tests/test_python_check.py tests/test_documentation_contracts.py tests/test_packaging_contract.py tests/test_client_adapter_generation.py tests/test_client_generator_performance.py tests/test_release_allowlist.py tests/test_client_certification.py
 
+      # The kit's own ADRs, at the default gate set. Until now this ran only in
+      # the Monday guardian cron and, with --strict, at release, so a missing
+      # required section or a duplicate number could merge and sit for a week.
+      # --strict stays at release: it adds checks too slow for every push.
+      - name: Lint this repository's own ADRs
+        run: python bin/adr-lint docs/adr
+
       - name: Run markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v17
         with:

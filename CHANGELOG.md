@@ -5,6 +5,332 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.45.0] - 2026-08-04
+
+### Changed
+
+- **Embedding builds now default to `qwen3-embedding:4b`.** This is the measured
+  default for the multilingual ADR corpus. `nomic-embed-text` remains available
+  as an explicit English-only fallback through `--model` and setup. Switching
+  models changes vector identity, so a model change requires rebuilding the ADR
+  vector store.
+
+- **BREAKING: `bin/adr accept` now requires `--confirm`.** Acceptance is the one
+  lifecycle transition that decides rather than records, and it writes a name and
+  a date into a Status History that is immutable afterwards. Since v0.44.1 derives
+  the signer from `git config user.name`, the common case became one where an
+  accept nobody meant to run wrote the user's own name into a record they never
+  saw -- and R8's own argument is that a false attribution is worse than a missing
+  one.
+
+  What the flag buys is narrow and worth stating exactly: an acceptance can no
+  longer happen *by accident* -- from a script written against an older interface,
+  from a CI job, from an agent following a stale instruction. It does not stop a
+  caller who deliberately passes it, and nothing at the process level could: an
+  agent runs with the user's own terminal, working directory and environment.
+
+  Inferring presence from `sys.stdin.isatty()` was tried first and is wrong on
+  Windows, which `clients/capabilities.json` marks release-required: a subprocess
+  with `stdin=DEVNULL` reports `isatty() == True`, because `NUL` is a character
+  device. A presence test that says "someone is there" for the null device is
+  worse than no test, because it reads as a guarantee.
+
+  `bin/adr accept --auto` is unchanged, because spec R1 grants the init flow that
+  exception explicitly. The gates still run first, so a record that cannot be
+  accepted reports why rather than asking for a flag.
+
+  **Upgrade:** add `--confirm` to any script or workflow that accepts an ADR.
+
+### Fixed
+
+- **`adr supersede` wrote unsigned Status History on both records.** Every other
+  lifecycle command resolves the actor inside `mutate_status`. `supersede`
+  appends to the history directly and passed the raw `--changed-by` value
+  through, so running it *without* that flag wrote `changed_by: ""` into both
+  the superseded record and its successor.
+
+  Nothing failed at write time. The audit gate rejects the entry later, on the
+  successor, at the moment someone runs `adr accept` on it -- and a Status
+  History is immutable by then, so the failure surfaces where it cannot be
+  undone by rerunning the command.
+
+  **If you superseded an ADR with an earlier version and did not pass
+  `--changed-by`**, check both records for an entry with an empty `changed_by`.
+  A recent one is best repaired by restoring both files from version control and
+  rerunning the fixed command; for an older one the entry has to be corrected by
+  hand, since the tool will not rewrite history it has already written. `adr-lint
+  --gates audit docs/adr` lists every affected record.
+
+  Two guards, because one was not enough. A regression test runs `supersede`
+  with no flag and asserts both entries are signed -- every existing supersede
+  test passed `--changed-by`, which is exactly why this survived. And an
+  invariant test now walks the AST of `bin/adr` and asserts that *every*
+  `append_status_history` call receives a resolved actor, so the next command
+  that appends directly is caught by the shape of the code rather than by
+  someone remembering.
+
+  The fix also has an ordering: the actor is resolved *after* the record is
+  validated. Resolving first made a machine with no git identity report "no
+  signer configured" for a record that could not have been superseded by anyone.
+
+- **The support matrix reports what a real client did, not only what we wired.**
+  `scripts/probe-client-events.py` runs an installed binary and reads its own
+  event stream. Certification previously rendered from
+  `tests/certification/simulated-pass.json` -- a fixture saying what we believe.
+  Every hook defect this kit has shipped was an event registered in the manifest
+  that never reached the code behind it, and a fixture cannot find one.
+
+  The observed evidence is a separate section from the derived table on purpose:
+  one says what adr-kit is wired for, the other says what a client emitted, and
+  every one of those defects lived in the gap between them.
+
+  An event that does not appear is recorded as `not-observed`, never
+  `unsupported` -- a probe run that used no tools cannot produce a tool event,
+  and writing the stronger word is how this document acquired the claims it had
+  to be rewritten to remove. A runner with no client, no credentials or no
+  network records `not-run` and exits 0, because a certification that fails when
+  it cannot measure is one people learn to skip.
+
+  Recorded on this machine: Claude Code 2.1.221 on win32 emitted `SessionStart`,
+  `UserPromptSubmit` and `Stop`. Codex and Copilot expose no machine-readable
+  hook-event stream today and are recorded as `not-run` with that reason.
+
+- **The client support matrix derives its lifecycle table instead of asserting
+  it.** Those rows were three hardcoded strings, which is exactly why the
+  document could claim capabilities that did not exist: nothing derived them, so
+  nothing could contradict them. `Plan exit | supported (ExitPlanMode)` sat in
+  the file through a release in which that event never fired.
+
+  Each cell is now the manifest's own answer for that client -- the client's
+  native event name, or an explicit "no native event" -- so a capability cannot
+  appear unless it is registered, and `--check` fails the build when the file
+  drifts from `hooks/manifest.json`. Rows for the post-edit backstop and the
+  shell-tool/pull-request moment appear for the first time.
+
+  The table now makes one claim rather than two: it says a moment is
+  *registered*, and says explicitly that it does not say the wiring works. That
+  second question belongs to the dispatch tests, and separating the two is what
+  makes the table derivable at all.
+
+- **The capability registry no longer lags the manifest it governs.**
+  `clients/capabilities.json` lists `hooks/manifest.json` under
+  `ownership.canonical` and carried neither of the two most recently added
+  moments. `plan-exit` and `pr-create` are now mapped per client, with their
+  matchers.
+
+  Writing the test that checks this found three more gaps, each a factual error
+  about a client's protocol rather than a missing row:
+
+  - `post-tool-use` had no entry on Claude Code or Codex. `edit-governance`
+    mapped only the pre-edit half, so the post-edit backstop -- a shipped tier --
+    was absent from the registry entirely.
+  - Copilot's session event was recorded as `SessionStart`; the client calls it
+    `sessionStart`. The same file already used Copilot's own spelling for
+    `userPromptSubmitted`, so it was internally inconsistent about the client it
+    describes.
+  - Copilot's edit-governance backstop was recorded as `PostToolUse` rather than
+    `postToolUse`.
+
+  A test now walks every manifest event against every client that offers it, so
+  the registry cannot silently fall behind again.
+
+- **`UserPromptSubmit` can retrieve semantically, and says when it did not.**
+  The hook entrypoint supplies a query embedder for that one event; the 100 ms
+  edit-tier events stay on the index-only route, because a round trip does not
+  fit 100 ms at any realistic ADR count. The split is a named constant in the
+  entrypoint rather than a condition inside a branch, so widening it is a change
+  a reviewer sees.
+
+  When an embedder was supplied and the answer still came from word overlap, the
+  injected block says so and points at `adr-embed status`. Where no store exists
+  nothing is claimed, because the note exists to flag a *degraded* answer and
+  printing it everywhere would train people to ignore it.
+
+  The query is embedded with the model recorded in the store. A different model
+  produces numbers of the right shape and no meaning -- similarities computed
+  across two vector spaces -- and nothing downstream could tell.
+
+  Measured on this repository, 28 ADRs at 768 dimensions with the backend
+  stubbed: p50 16 ms, p95 64 ms against a declared 400/500 ms budget. That
+  bounds adr-kit's own work; the round trip is network-bound, carries its own
+  2 s timeout, and every failure falls back to lexical.
+
+- **The query engine can rank by vector similarity, and says which route
+  answered.** `query_adr_context` takes an optional `embedder` callable; given
+  one, and a vector store, it reorders the candidates by cosine similarity and
+  reports `route: "vector"`. Without one it reports `route: "lexical"`, which is
+  today's behaviour unchanged.
+
+  The embedder arrives as a callable rather than an import so `bin/adr_query.py`
+  stays reachable from a hook: it imports nothing that can touch a model or the
+  network, and a test asserts that by walking the AST. The caller that *can*
+  reach a backend decides whether to supply one, which is also how ADR-020's
+  per-event budget split is expressed.
+
+  Every failure falls back to the lexical order and names the reason -- an
+  unreachable backend, an empty response, a missing store, a malformed store, an
+  empty store. A retrieval path that silently degrades is worse than one that is
+  slower, because an empty result reads exactly like "no ADR was relevant".
+
+- **A superseded ADR can no longer be handed over as governing.** The vector
+  store answered both "which ADRs" and "what are they worth" from its own frozen
+  copy of lifecycle status -- and that copy had no way to know it was wrong.
+  `embed_text` hashes title, topics, aliases, components and decision, and a
+  supersession edits none of them, so `staleness()` reported `stale: False` while
+  `search()` returned a retired decision as `governing` with `superseded_by`
+  unset.
+
+  Authority is now joined from `ADR-INDEX.json` on every search: the vectors
+  find, the index decides. A supersession therefore takes effect immediately,
+  with no rebuild. An entry whose id the index does not carry is dropped rather
+  than returned unlabelled, and a missing or unreadable index is distinguishable
+  from a retired record, so an unreadable index cannot silently empty every
+  result.
+
+  `adr-embed status` reports the two problems separately, because they have
+  different fixes: content drift wants `adr-embed build`, and a missing index
+  wants `bin/adr-index`.
+
+- **`setup-project.py --no-pre-commit` no longer deletes the hook.** The flag
+  reads as "do not install one" and meant "remove the one that is there", so a
+  project managing its git hooks another way -- husky, lefthook, a hand-written
+  script -- lost it to a flag whose name promises a non-act. Skipping was not
+  expressible at all: every invocation either installed this kit's hook or
+  removed whatever was at that path.
+
+  There are three states now. `--no-pre-commit` leaves the file exactly as it is,
+  `--remove-pre-commit` removes adr-kit's hook, and passing both is refused.
+  Removal stays bounded either way: a hook without this kit's marker is never
+  deleted and never overwritten.
+
+  **Upgrade:** a script relying on `--no-pre-commit` to uninstall wants
+  `--remove-pre-commit`.
+
+- **An Accepted ADR with no retrieval metadata is now reported.** The check
+  existed and was almost inert: `binding: true` was a precondition, and all 12
+  records in this repository carrying no `topics`, `aliases` or `components`
+  escaped through that one condition -- every one of them `binding: false`.
+  ADR-004 was among them, so a query saying "fail open lifecycle hook context
+  injection" did not return the decision that defines context injection.
+
+  Being non-binding means a decision does not gate code; it does not mean the
+  decision should be invisible. The precondition is gone, and the finding moved
+  from `policy` -- a gate not in the default set -- into `completeness`, because
+  an advisory in a gate nobody runs is silence rather than an advisory.
+
+  It stays ADVISORY by default and becomes a failure under
+  `context.retrieval_completeness: strict`. The exemptions that mean "findable by
+  another route" remain: `context_scope: global` is injected regardless of the
+  query, and a populated Decision Contract gives the ranker text to match on.
+
+  `bin/adr new` now names the three fields it cannot fill in without inventing
+  them, including the rule authors get wrong: components name what the ADR
+  *defines*, not everything it touches.
+
+- **BREAKING: an ADR listing fewer than two alternatives now fails the
+  completeness gate.** R0 states that a record giving only the outcome cannot be
+  re-evaluated later, and a decision that cannot be re-evaluated cannot be
+  superseded honestly. That guarantee was an ADVISORY under `quality`, a gate
+  not in the default set -- so a one-option record passed every blocking gate.
+
+  Measured before promoting it: all 28 records in this repository already weigh
+  at least three options, so the set passes. Promoting a gate while the
+  project's own records would fail it is how a gate gets reverted.
+
+  Two placeholder spellings are exempt, because migration deliberately never
+  fabricates alternatives: the `/adr-kit:migrate` skill's HTML comment and
+  `bin/adr-migrate`'s `- TODO:` list item. Counting either as a real option
+  would fail every honest import on arrival. A real option beside a placeholder
+  still counts as one, so a half-filled section does not pass by accident.
+
+  **Upgrade:** name the option that lost. "Do nothing" counts, and is usually
+  true.
+
+- **`/adr-kit:audit` can reach the gates its own rationale rests on.** The
+  command exists because "a clean judge over a set of vague ADRs proves nothing,
+  because vague rules cannot be violated" -- and vagueness is what the `evidence`
+  and `clarity` gates measure. Neither was reachable: `run_lint` built a fixed
+  argument list and never passed `--gates`, and `--strict` does not help because
+  it adds `schema` only. `--gates` now passes through, and the audit skill states
+  which set produced a green answer, because "the audit is green" means different
+  things at different sets.
+
+- **The clarity gate's acronym check no longer fires on this project's own
+  vocabulary.** Turning the gate on reported four failures across fourteen
+  findings, of which exactly one was a genuine unexplained acronym. The rest were
+  `LLM` -- the product's subject -- literal status tokens the records quote
+  (`FAIL`, `DUE`, `TODO`), and fragments of filenames matched inside identifiers
+  (`SKILL` in `SKILL.md`, `INDEX` in `ADR-INDEX.json`).
+
+  The repair was to bound the heuristic, not to edit the records. Expanding `LLM`
+  in an Accepted Decision to satisfy a check is precisely the contortion R15
+  names -- "choosing words the decision would not otherwise use" -- and two of the
+  four records are Superseded, where the text is immutable outright. The gate now
+  skips fenced blocks, inline code spans and acronyms inside identifiers, and
+  the allowlist carries this ecosystem's vocabulary. A negative control proves it
+  still fails on three unexpanded acronyms in prose.
+
+- **A whole-codebase audit runs on a cadence.** `templates/github-workflows/adr-audit.yml`
+  ships for downstream projects and runs here weekly. It asks the one question no
+  per-diff gate can answer -- does the code as it stands obey the decisions as
+  they stand -- and is report-only, because a weekly sweep that turns the default
+  branch red for a pre-existing violation teaches people to ignore it.
+
+- **The embedding model a user consents to download is now recorded.** Setup
+  asks for consent to a 4.7 GB `qwen3-embedding:8b` pull, and the chosen model
+  had nowhere to live: `adr-embed` hardcoded `nomic-embed-text` and accepted an
+  override only on the command line. Under ADR-018 a model-identity mismatch
+  marks the store stale, so the visible outcome was either a wasted download or
+  retrieval quietly falling back to lexical ranking -- the discover-it-later
+  failure R16 exists to prevent.
+
+  `embedding.model` and `embedding.enabled` are declared in the config schema
+  and shown by `/adr-kit:settings`; `adr-embed build` reads the configured model
+  as its default; and setup writes it immediately after a successful pull. The
+  model name is project-scoped because which model embeds a team's ADRs is a
+  team decision.
+
+  `adr-embed build` is also now named in the setup skill. The string `adr-embed`
+  previously appeared in no skill, template, workflow or README, so the build
+  step the vector layer depends on was not discoverable anywhere a user looks.
+
+- **`inject.enabled` and `watch.enabled` now do what the schema says they do.**
+  Both keys shipped in `schemas/adr-kit-config.schema.json` promising that
+  setting one to `false` makes its hook a no-op for the project. Neither was
+  read by anything a hook reaches: `hooks/adr_hook_core.py` opened
+  `.adr-kit.json` exactly once, for `context.default_limit`, and
+  `inject.enabled`'s only reader was `bin/adr-watch`, which no client's
+  generated `hooks.json` invokes. A user who turned injection off was told the
+  hook was now a no-op, and the injection kept firing.
+
+  The two switches are independent -- `inject` is PreToolUse, `watch` is
+  PostToolUse -- because a team may want the pre-edit constraint without the
+  post-edit backstop. Only an explicit `false` switches a tier off: a missing
+  key, a missing file, a wrong type and an unparseable document all mean on,
+  because a settings surface must not be able to silence governance by being
+  broken.
+
+### Added
+
+- **The OpenAI-compatible judge backend is offered at init and writes
+  completely.** `/adr-kit:init` now names it as option 4, with LM Studio and its
+  default base URL `http://127.0.0.1:1234/v1`. `adr-judge --set-backend
+  openai-compatible` gained `--base-url` and refuses unless both it and
+  `--model` are given -- the other three backends already refused an incomplete
+  choice, and this one exited 0 while writing a configuration the judge would
+  then silently degrade on.
+
+  The two values deliberately land in different files: the model name in the
+  committed `docs/adr/.adr-kit.json`, because which model judges a team's diffs
+  is a team decision, and the base URL in the gitignored local file, because
+  where a runtime lives is a fact about one machine and a tracked file may
+  select a backend but never introduce an endpoint.
+
+- **The guardian sweep runs `bin/adr signer --audit`.** It already knew how to
+  find history entries attributed to the toolkit or to nobody, and ran nowhere.
+  The weekly cheap-tier sweep now reports them alongside the lint, retirement and
+  status sections.
+
 ## [0.44.1] - 2026-08-03
 
 A hotfix. In v0.44.0 **every ADR hook was dead on Codex and Copilot**, ADR

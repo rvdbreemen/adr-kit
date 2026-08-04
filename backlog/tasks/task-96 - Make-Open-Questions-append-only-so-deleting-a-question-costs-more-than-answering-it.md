@@ -3,9 +3,10 @@ id: TASK-96
 title: >-
   Make Open Questions append-only, so deleting a question costs more than
   answering it
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-03 19:32'
+updated_date: '2026-08-03 20:53'
 labels:
   - adr
   - lint
@@ -32,10 +33,26 @@ Extends or supersedes ADR-011. Spec: R9.1, R9.3.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An ADR records the append-only rule, why the incentive existed, and the git dependency that bounds the check
+- [x] #1 An ADR records the append-only rule, why the incentive existed, and the git dependency that bounds the check
 - [ ] #2 A question removed from a Proposed ADR without a matching answered line is a lint FAIL, with the question text quoted in the message
 - [ ] #3 `bin/adr answer` remains the supported way to close one, and a test proves the answered form passes
 - [ ] #4 Readiness stops treating deletion and answering as equivalent: the score distinguishes 'answered' from 'gone'
 - [ ] #5 Outside a git repository the check is advisory and says so, rather than passing silently
 - [ ] #6 A test deletes a question and expects FAIL; a test answers it and expects PASS
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-03 20:53
+---
+Decision recorded: ADR-022, Proposed, passes all gates.
+
+One thing the ADR settles that the task left implicit: how an author retracts a question that turned out to be malformed. Answering it with the reason it does not apply — one command, and it leaves the record a future reader needs rather than a gap. Without that route the append-only rule would be an unsatisfiable precondition for anyone who mis-worded a question, which spec R15 forbids.
+
+The git dependency is in the Decision Contract as an explicit advisory degradation, with the hole named: an author can still delete a question in the same commit that creates the file. Closing that would need the session ledger the decision rejected, so it is accepted rather than mitigated.
+
+Remaining: AC#2 through AC#6 are implementation.
+---
+<!-- COMMENTS:END -->

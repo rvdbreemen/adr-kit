@@ -14,7 +14,7 @@
       "limit": 3,
       "expect": {
         "include": [
-          "ADR-018"
+          "ADR-007"
         ],
         "exclude": []
       }
@@ -29,6 +29,23 @@
       "expect": {
         "include": [
           "ADR-004"
+        ],
+        "exclude": []
+      }
+    },
+    {
+      "id": "vector-layer-semantic-retrieval",
+      "query": "embed the ADRs so a query with no shared words still finds the decision",
+      "components": [
+        "adr-context"
+      ],
+      "symbols": [
+        "query_adr_context"
+      ],
+      "limit": 3,
+      "expect": {
+        "include": [
+          "ADR-020"
         ],
         "exclude": []
       }

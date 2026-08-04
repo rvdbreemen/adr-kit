@@ -480,6 +480,23 @@
           "default": false
         }
       }
+    },
+    "embedding": {
+      "type": "object",
+      "description": "Configuration for the precomputed ADR vector store (bin/adr-embed, ADR-018). The store is built by an explicit `adr-embed build` step and read by the query and hook paths. A model identity recorded in the store that no longer matches this setting marks the store stale, which is why the model a user consented to download has to be written down rather than passed on one command line and forgotten.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, retrieval never reads the vector store and stays on lexical ranking, even if a store is present. Default true: a missing store already degrades to lexical, so this exists to turn the layer off deliberately rather than by deleting files.",
+          "default": true
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The embedding model `adr-embed build` uses by default. The measured default is `qwen3-embedding:4b`; `nomic-embed-text` remains an explicit English-only fallback. Written by setup after a consented download. Which model embeds a team's ADRs is a project decision, so it belongs in this tracked file; where the runtime serving it lives does not."
+        }
+      }
     }
   }
 }

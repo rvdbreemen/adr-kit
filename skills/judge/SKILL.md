@@ -121,7 +121,8 @@ The diff introduces a new architectural pattern that no current ADR covers, and 
 
 The lifecycle writes `docs/adr/ADR-NNN-<kebab-title>.md` with
 `Status: Proposed`. Continue through the authoring acceptance packet; require
-same-session explicit confirmation and delegate the transition to `adr accept`.
+same-session explicit confirmation and delegate the transition to
+`adr accept ... --confirm`.
 
 ### (b) Supersede an existing ADR
 

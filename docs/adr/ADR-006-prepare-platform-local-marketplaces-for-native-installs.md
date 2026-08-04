@@ -10,6 +10,17 @@ verified_in: []
 supersedes: []
 superseded_by: null
 format: "madr"
+topics:
+  - "installation"
+  - "marketplace"
+  - "platform-local"
+aliases:
+  - "prepared directory"
+  - "native install"
+  - "plugin registration"
+components:
+  - "install-agent-envs"
+  - "marketplace manifests"
 ---
 
 <!-- markdownlint-disable MD025 -->

@@ -36,6 +36,7 @@ HOOK_RUNTIME_FILES = (
     "hooks/run-hook.cmd",
     "hooks/adr-hook.py",
     "hooks/adr_hook_core.py",
+    "hooks/adr_embed_query.py",
     "hooks/adr_pr_guard.py",
     # The guard derives its judge timeout from the declared runner budget, so
     # every client tree needs the declaration. Without it the mirrors silently
