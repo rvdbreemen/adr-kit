@@ -142,9 +142,12 @@ def test_native_hook_shapes_are_generated_from_the_canonical_hook_manifest():
     ]
     assert all("commandWindows" in handler for handler in codex_handlers)
     assert all("command_windows" not in handler for handler in codex_handlers)
-    assert codex["hooks"]["PreToolUse"][0]["hooks"][0][
-        "commandWindows"
-    ].startswith('"%PLUGIN_ROOT%\\hooks\\run-hook.cmd"')
+    codex_pre_tool = codex["hooks"]["PreToolUse"][0]["hooks"][0]
+    assert codex_pre_tool["commandWindows"].startswith(
+        "cmd.exe /d /c if defined PLUGIN_ROOT if exist "
+    )
+    assert codex_pre_tool["commandWindows"].endswith("& exit /b 0")
+    assert codex_pre_tool["timeout"] == 5
     assert claude["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
     assert codex["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
     assert copilot["hooks"]["userPromptSubmitted"][0]["timeoutSec"] == 5

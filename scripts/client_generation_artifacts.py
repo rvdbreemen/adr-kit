@@ -141,6 +141,16 @@ def _runner_timeout(event: dict) -> int:
     return value
 
 
+def _codex_windows_command(event: dict) -> str:
+    """Run Codex hooks fail-open when its plugin-root env is unavailable."""
+    return (
+        "cmd.exe /d /c if defined PLUGIN_ROOT if exist "
+        '"%PLUGIN_ROOT%\\hooks\\run-hook.cmd" '
+        'call "%PLUGIN_ROOT%\\hooks\\run-hook.cmd" '
+        f'{event["command"]} codex-cli & exit /b 0'
+    )
+
+
 def _nested_hook_config(manifest: dict, client_id: str) -> dict:
     hooks: dict[str, list[dict]] = {}
     for event in manifest.get("events", []):
@@ -158,17 +168,15 @@ def _nested_hook_config(manifest: dict, client_id: str) -> dict:
                 "timeout": runner_timeout,
             }
         else:
+            codex_timeout = max(runner_timeout, 5)
             handler = {
                 "type": "command",
                 "command": (
                     '"$PLUGIN_ROOT/hooks/run-hook.cmd" '
                     f'{event["command"]} codex-cli'
                 ),
-                "commandWindows": (
-                    '"%PLUGIN_ROOT%\\hooks\\run-hook.cmd" '
-                    f'{event["command"]} codex-cli'
-                ),
-                "timeout": runner_timeout,
+                "commandWindows": _codex_windows_command(event),
+                "timeout": codex_timeout,
             }
         entry: dict[str, object] = {"hooks": [handler]}
         if event.get("matcher"):
