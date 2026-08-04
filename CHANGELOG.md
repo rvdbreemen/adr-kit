@@ -34,6 +34,28 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **The capability registry no longer lags the manifest it governs.**
+  `clients/capabilities.json` lists `hooks/manifest.json` under
+  `ownership.canonical` and carried neither of the two most recently added
+  moments. `plan-exit` and `pr-create` are now mapped per client, with their
+  matchers.
+
+  Writing the test that checks this found three more gaps, each a factual error
+  about a client's protocol rather than a missing row:
+
+  - `post-tool-use` had no entry on Claude Code or Codex. `edit-governance`
+    mapped only the pre-edit half, so the post-edit backstop -- a shipped tier --
+    was absent from the registry entirely.
+  - Copilot's session event was recorded as `SessionStart`; the client calls it
+    `sessionStart`. The same file already used Copilot's own spelling for
+    `userPromptSubmitted`, so it was internally inconsistent about the client it
+    describes.
+  - Copilot's edit-governance backstop was recorded as `PostToolUse` rather than
+    `postToolUse`.
+
+  A test now walks every manifest event against every client that offers it, so
+  the registry cannot silently fall behind again.
+
 - **`UserPromptSubmit` can retrieve semantically, and says when it did not.**
   The hook entrypoint supplies a query embedder for that one event; the 100 ms
   edit-tier events stay on the index-only route, because a round trip does not

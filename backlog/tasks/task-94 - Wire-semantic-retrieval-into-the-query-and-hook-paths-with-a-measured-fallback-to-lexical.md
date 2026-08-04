@@ -3,10 +3,10 @@ id: TASK-94
 title: >-
   Wire semantic retrieval into the query and hook paths, with a measured
   fallback to lexical
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-03 19:31'
-updated_date: '2026-08-04 00:33'
+updated_date: '2026-08-04 01:04'
 labels:
   - retrieval
   - hooks
@@ -34,9 +34,9 @@ Three properties keep it inside the contract, and each needs a test rather than 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 `query_adr_context` embeds the query and ranks by vector similarity when the store is present and the backend answers
-- [ ] #2 The hook path reaches the same engine on the 500 ms events; the 100 ms pre/post-tool events keep the index-only route
+- [x] #2 The hook path reaches the same engine on the 500 ms events; the 100 ms pre/post-tool events keep the index-only route
 - [x] #3 An unreachable backend, a timeout and a malformed response each fall back to lexical ranking, exit 0, and label the route in the output — one test per failure mode
-- [ ] #4 A latency test measures the query-embedding path against R21 and fails when it exceeds the budget, using the fixture contract of ADR-015 rather than wall-clock on a live model
+- [x] #4 A latency test measures the query-embedding path against R21 and fails when it exceeds the budget, using the fixture contract of ADR-015 rather than wall-clock on a live model
 - [x] #5 The retrieval route (`vector` or `lexical`) is visible to the user in the injected block, so a silent degradation is impossible
 <!-- AC:END -->
 
@@ -60,3 +60,23 @@ created: 2026-08-04 00:33
 - **AC#4** — the R21 latency test through ADR-015's fixture contract rather than wall-clock against a live model.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All five criteria met. The store ADR-018 authorised finally reaches a shipped path.
+
+**The design decision that carries the rest: the embedder is injected, never imported.** `hooks/adr_hook_core.py` and `bin/adr_query.py` must stay unable to touch a model or the network — asserted by AST walk, and that assertion is precisely what stops someone putting embedding *into* the retrieval core to make it simpler. The capability lives in `hooks/adr_embed_query.py` beside the entrypoint, which is already the one hook-path file allowed to reach out. A test re-runs the AST walk to prove threading the embedder through did not weaken it.
+
+**The budget split is a named constant, not a buried condition.** `EMBEDDING_EVENTS = {"UserPromptSubmit"}` in the entrypoint. Widening it puts a network round trip on a tighter budget, so it should be one line a reviewer sees.
+
+**One correctness point I nearly missed.** The query is embedded with the model recorded in the store. A different model produces numbers of the right shape and no meaning — similarities computed across two vector spaces — and nothing downstream could tell.
+
+**Audible degradation, both directions.** With an embedder supplied and a lexical answer returned, the injected block says so and names `adr-embed status`. With no store, nothing is claimed: the note flags a *degraded* answer, and printing it everywhere would train people to ignore it. Both driven end to end through the real process.
+
+**AC#4 measures what this kit controls.** The budget is declared in `tests/fixtures/cli/latency-corpus.json` rather than living in a test, and bounds store read + cosine + reorder: 28 ADRs at 768 dimensions, backend stubbed, **p50 16 ms, p95 64 ms** against 400/500 ms. Budgeting the round trip would make the number a property of whoever ran it; the backend carries its own 2 s timeout and every failure falls back to lexical.
+
+`hooks/adr_embed_query.py` is declared in `HOOK_RUNTIME_FILES`, so it reaches all three clients — the omission that broke every hook on Codex and Copilot in v0.44.0 does not repeat here.
+
+Full suite: 1565 passed, 13 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -264,3 +264,41 @@ def test_the_two_flags_contradict_each_other_and_are_refused(tmp_path):
 
     assert result.returncode != 0
     assert "pass one" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# The capability registry must not lag the manifest it governs (TASK-116)
+# ---------------------------------------------------------------------------
+
+def test_every_manifest_event_a_client_offers_is_in_the_registry():
+    """`clients/capabilities.json` lists `hooks/manifest.json` under
+    `ownership.canonical`, and carried neither of the two most recently added
+    moments. A registry that lags the file it claims to govern is a registry
+    that will be trusted and be wrong.
+    """
+    import json
+
+    manifest = json.loads(
+        (REPO_ROOT / "hooks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    capabilities = json.loads(
+        (REPO_ROOT / "clients" / "capabilities.json").read_text(encoding="utf-8")
+    )
+    by_client = {
+        entry["id"]: entry["event_mappings"] for entry in capabilities["clients"]
+    }
+
+    missing = []
+    for event in manifest["events"]:
+        for client_id, native in event["clients"].items():
+            if native is None:
+                continue  # the client does not offer this moment; R17 allows it
+            mappings = by_client.get(client_id, {})
+            if not any(
+                mapping.get("native_event") == native
+                and mapping.get("matcher", event["matcher"]) == event["matcher"]
+                for mapping in mappings.values()
+            ):
+                missing.append((client_id, event["id"]))
+
+    assert not missing, f"registry does not cover: {missing}"
