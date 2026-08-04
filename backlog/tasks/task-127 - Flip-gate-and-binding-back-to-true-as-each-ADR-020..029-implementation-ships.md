@@ -4,6 +4,7 @@ title: Flip gate and binding back to true as each ADR-020..029 implementation sh
 status: To Do
 assignee: []
 created_date: '2026-08-04 17:29'
+updated_date: '2026-08-04 18:09'
 labels:
   - adr
   - follow-up
@@ -46,3 +47,15 @@ Evidence: `bin/adr-lint:1053` and `:1104` (the two rules); `bin/adr_retrieval_he
 - [ ] #2 A check fails when a named gate exists while the ADR expecting it still has gate:null, so the flip is not left to memory
 - [ ] #3 No record sits at binding:false with a shipped implementation
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-04 18:09
+---
+Injection-independence is now confirmed live, not only by grep. After the flip to `binding: false`, this session's `UserPromptSubmit` hook context listed "Governing Accepted ADRs relevant to this prompt: ADR-020, ADR-026, ADR-027" — three records that all carry `binding: false`. The injection path answered with them, so the arrangement rests on an observed property rather than on the absence of a reader in `hooks/`.
+
+That matters because injection is the thing the flip must not cost. What it does cost stays as written: `adr_retrieval_health` skips these records' Decision Contract check while they are non-binding.
+---
+<!-- COMMENTS:END -->

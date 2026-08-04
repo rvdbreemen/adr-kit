@@ -777,6 +777,52 @@ def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
     assert 'changed_by: "User: Configured Human"' in created.read_text(encoding="utf-8")
 
 
+def test_every_history_append_receives_a_resolved_actor():
+    """The invariant, not the one command that broke it.
+
+    `supersede` wrote `changed_by: ""` on both records because it appends to the
+    history directly instead of going through `mutate_status`, which is where
+    every other command picks up its signer. A test for `supersede` alone would
+    not stop the next command that appends directly, so this asserts the shape:
+    the actor argument of every `append_status_history` call is either a name
+    the caller resolved, or the one literal that is deliberately unattributed.
+
+    `ensure_status_history` passes "unknown" on purpose, for a transition that
+    predates the convention and whose actor genuinely was never recorded. Naming
+    the current user there would put a signature on something they did not do.
+    """
+    import ast
+
+    source = ADR.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    resolved = {"changed_by", "signer", "actor"}
+    offenders = []
+
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "append_status_history"
+        ):
+            continue
+        if len(node.args) < 3:
+            offenders.append((node.lineno, "fewer than three positional args"))
+            continue
+        actor = node.args[2]
+        if isinstance(actor, ast.Name) and actor.id in resolved:
+            continue
+        if isinstance(actor, ast.Constant) and actor.value == "unknown":
+            continue
+        offenders.append((node.lineno, ast.unparse(actor)))
+
+    assert not offenders, (
+        "append_status_history called with an unresolved actor at "
+        + ", ".join(f"bin/adr:{line} ({what})" for line, what in offenders)
+        + " -- resolve it with resolve_signer() first, or the entry lands "
+        "unsigned and the audit gate rejects it at accept time"
+    )
+
+
 def test_supersede_signs_both_sides_without_the_flag(tmp_path):
     """Supersede appends history directly, so it must resolve the signer itself.
 

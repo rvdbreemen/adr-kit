@@ -34,6 +34,36 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **`adr supersede` wrote unsigned Status History on both records.** Every other
+  lifecycle command resolves the actor inside `mutate_status`. `supersede`
+  appends to the history directly and passed the raw `--changed-by` value
+  through, so running it *without* that flag wrote `changed_by: ""` into both
+  the superseded record and its successor.
+
+  Nothing failed at write time. The audit gate rejects the entry later, on the
+  successor, at the moment someone runs `adr accept` on it -- and a Status
+  History is immutable by then, so the failure surfaces where it cannot be
+  undone by rerunning the command.
+
+  **If you superseded an ADR with an earlier version and did not pass
+  `--changed-by`**, check both records for an entry with an empty `changed_by`.
+  A recent one is best repaired by restoring both files from version control and
+  rerunning the fixed command; for an older one the entry has to be corrected by
+  hand, since the tool will not rewrite history it has already written. `adr-lint
+  --gates audit docs/adr` lists every affected record.
+
+  Two guards, because one was not enough. A regression test runs `supersede`
+  with no flag and asserts both entries are signed -- every existing supersede
+  test passed `--changed-by`, which is exactly why this survived. And an
+  invariant test now walks the AST of `bin/adr` and asserts that *every*
+  `append_status_history` call receives a resolved actor, so the next command
+  that appends directly is caught by the shape of the code rather than by
+  someone remembering.
+
+  The fix also has an ordering: the actor is resolved *after* the record is
+  validated. Resolving first made a machine with no git identity report "no
+  signer configured" for a record that could not have been superseded by anyone.
+
 - **The support matrix reports what a real client did, not only what we wired.**
   `scripts/probe-client-events.py` runs an installed binary and reads its own
   event stream. Certification previously rendered from
