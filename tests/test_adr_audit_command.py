@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from adr_fixtures import isolated_copy
+from tests.adr_fixtures import isolated_copy
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_AUDIT = REPO_ROOT / "bin" / "adr-audit"

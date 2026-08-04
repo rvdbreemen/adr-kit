@@ -217,7 +217,7 @@ nothing is written.
   does not exist yet, so `gate` is null and `binding` is false: a frontmatter
   that declares enforcement it cannot deliver is worse than one that admits the
   gap. Both fields flip back together when the gate ships, covering the write-
-  then-prompt sequence, the concurrent-hook case, and the budget bail- out.
+  then-prompt sequence, the concurrent-hook case, and the budget bail-out.
 
 ## Consequences
 
