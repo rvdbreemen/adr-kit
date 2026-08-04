@@ -5,7 +5,7 @@ name: adr-judge self-dogfood
 # push, so the PR diff would collapse to nothing.
 on:
   pull_request:
-    branches: [main]
+    branches: [dev, main]
 
 jobs:
   adr-judge:
