@@ -4,7 +4,16 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.45.0] - 2026-08-04
+
 ### Changed
+
+- **Embedding builds now default to `qwen3-embedding:4b`.** This is the measured
+  default for the multilingual ADR corpus. `nomic-embed-text` remains available
+  as an explicit English-only fallback through `--model` and setup. Switching
+  models changes vector identity, so a model change requires rebuilding the ADR
+  vector store.
 
 - **BREAKING: `bin/adr accept` now requires `--confirm`.** Acceptance is the one
   lifecycle transition that decides rather than records, and it writes a name and
@@ -2083,7 +2092,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.44.1...v0.45.0
 [0.43.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.42.0...v0.43.0
 [0.37.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...v0.36.0
