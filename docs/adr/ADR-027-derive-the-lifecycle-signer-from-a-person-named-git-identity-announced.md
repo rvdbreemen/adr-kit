@@ -1,16 +1,15 @@
 ---
 id: "ADR-027"
 title: "Derive the Lifecycle Signer From a Person-Named Git Identity, Announced"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-signer-derivation-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: true
 verified_in:
   - "tests/test_adr_signer_discovery.py"
 supersedes: []
 superseded_by: null
-format: "madr"
 topics:
   - "lifecycle"
   - "audit trail"
@@ -25,6 +24,7 @@ symbols:
   - "resolve_signer"
   - "person_shaped"
 context_scope: "selective"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -33,7 +33,7 @@ context_scope: "selective"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -44,6 +44,11 @@ status_history:
     changed_by: "User: Robert van den Breemen"
     reason: the v0.44.0 refusal broke every fresh clone and the walk-back has no decision behind it
     changed_via: adr-kit
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
@@ -169,9 +174,12 @@ of the machine identities refuses, names why, and writes nothing.
 
 ### Verification
 
-* `adr-signer-derivation-v1`: the named gate anchoring this decision in source,
-  covering derivation, announcement, precedence, the machine-identity refusal,
-  and the write-nothing behaviour of `--suggest`.
+* `adr-signer-derivation-v1`: the gate this decision is to be anchored by. It
+  does not exist yet, so `gate` is null and `binding` is false: a frontmatter
+  that declares enforcement it cannot deliver is worse than one that admits the
+  gap. Both fields flip back together when the gate ships, covering derivation,
+  announcement, precedence, the machine-identity refusal, and the write-nothing
+  behaviour of `--suggest`.
 
 ## Consequences
 

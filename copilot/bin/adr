@@ -1056,6 +1056,19 @@ def command_supersede(args) -> List[str]:
         new_path, new_data, new_body, (str(new_data["status"]), args.date)
     )
 
+    # Resolved here, after both seeds. Every other lifecycle command gets its
+    # signer inside `mutate_status`; supersede appends to the history directly
+    # and so has to resolve it itself, or both entries land with an empty
+    # `changed_by` -- which the audit gate rejects on the successor, at the
+    # exact moment someone tries to accept it.
+    #
+    # After, not before: `ensure_status_history` above refuses a record whose
+    # prior transition cannot be recovered, and that is a fact about the record,
+    # not about who is asking. Resolving the actor first makes an unconfigured
+    # machine report a missing signer for a record that could not be superseded
+    # by anyone. Validate the act, then the actor.
+    changed_by = resolve_signer(adr_dir, args.changed_by)
+
     old_data["status"] = "Superseded"
     old_data["date"] = args.date
     old_data["superseded_by"] = new_id
@@ -1063,7 +1076,7 @@ def command_supersede(args) -> List[str]:
     old_body = append_status_history(
         old_body,
         "Superseded",
-        args.changed_by,
+        changed_by,
         args.reason or f"Superseded by {new_id}",
         "adr-kit lifecycle",
         args.date,
@@ -1075,7 +1088,7 @@ def command_supersede(args) -> List[str]:
     new_body = append_status_history(
         new_body,
         new_data["status"],
-        args.changed_by,
+        changed_by,
         args.reason or f"Supersedes {old_id}",
         "adr-kit lifecycle",
         args.date,

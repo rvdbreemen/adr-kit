@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import os
 import subprocess
 import sys
 import textwrap
@@ -121,13 +122,36 @@ def _frontmatter(path: Path):
     return SCHEMA.parse_frontmatter(raw), body
 
 
-def _run_adr(*args: str):
+def _run_adr(*args: str, env=None, cwd=None):
     return subprocess.run(
         [sys.executable, str(ADR), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env=env,
+        cwd=cwd,
     )
+
+
+def _signerless_env(tmp_path: Path):
+    """An environment with no derivable identity, as a bare CI runner has.
+
+    Since TASK-89 a person-named `git config user.name` is adopted as the
+    signer, so any test about *ordering* -- does the command validate the record
+    before it asks who is signing? -- silently passes on a developer machine and
+    only fails on a runner. Nulling the global and system config is not enough:
+    `git config` also reads the repository-local `.git/config`, so the caller
+    must run from `tmp_path`, where git finds no repository at all.
+    """
+    void = tmp_path / "no-such-config"
+    return {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(void),
+        "GIT_CONFIG_SYSTEM": str(void),
+        "GH_CONFIG_DIR": str(tmp_path / "gh-empty"),
+        "GH_TOKEN": "",
+        "GITHUB_TOKEN": "",
+    }
 
 
 def _index_check(adr_dir: Path):
@@ -424,9 +448,16 @@ def test_supersede_refuses_when_the_prior_transition_cannot_be_recovered(tmp_pat
     )
     before = old_path.read_bytes()
 
+    # Run without a derivable signer, which is what a CI runner has. The order
+    # of the two checks is the property under test: an unrecoverable prior
+    # transition is a fact about the record and must be reported before the
+    # command asks who is signing. Resolving the actor first makes an
+    # unconfigured machine report a missing signer for a record that could not
+    # be superseded by anyone.
     result = _run_adr(
         "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
         "--date", "2026-07-06",
+        env=_signerless_env(tmp_path), cwd=str(tmp_path),
     )
 
     assert result.returncode == 2
@@ -744,6 +775,96 @@ def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
     assert result.returncode == 0, result.stderr
     created = _created_adr(adr_dir)
     assert 'changed_by: "User: Configured Human"' in created.read_text(encoding="utf-8")
+
+
+def test_every_history_append_receives_a_resolved_actor():
+    """The invariant, not the one command that broke it.
+
+    `supersede` wrote `changed_by: ""` on both records because it appends to the
+    history directly instead of going through `mutate_status`, which is where
+    every other command picks up its signer. A test for `supersede` alone would
+    not stop the next command that appends directly, so this asserts the shape:
+    the actor argument of every `append_status_history` call is either a name
+    the caller resolved, or the one literal that is deliberately unattributed.
+
+    `ensure_status_history` passes "unknown" on purpose, for a transition that
+    predates the convention and whose actor genuinely was never recorded. Naming
+    the current user there would put a signature on something they did not do.
+    """
+    import ast
+
+    source = ADR.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    resolved = {"changed_by", "signer", "actor"}
+    offenders = []
+
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "append_status_history"
+        ):
+            continue
+        if len(node.args) < 3:
+            offenders.append((node.lineno, "fewer than three positional args"))
+            continue
+        actor = node.args[2]
+        if isinstance(actor, ast.Name) and actor.id in resolved:
+            continue
+        if isinstance(actor, ast.Constant) and actor.value == "unknown":
+            continue
+        offenders.append((node.lineno, ast.unparse(actor)))
+
+    assert not offenders, (
+        "append_status_history called with an unresolved actor at "
+        + ", ".join(f"bin/adr:{line} ({what})" for line, what in offenders)
+        + " -- resolve it with resolve_signer() first, or the entry lands "
+        "unsigned and the audit gate rejects it at accept time"
+    )
+
+
+def test_supersede_signs_both_sides_without_the_flag(tmp_path):
+    """Supersede appends history directly, so it must resolve the signer itself.
+
+    Every other lifecycle command gets its actor inside `mutate_status`.
+    `supersede` calls `append_status_history` for both files and passed
+    `args.changed_by` through raw, so with no `--changed-by` both entries landed
+    with an empty `changed_by`. Nothing complained at write time. The audit gate
+    caught it later, on the successor, at the exact moment someone tried to
+    accept it -- and the record was immutable by then.
+
+    The existing supersede tests all pass `--changed-by`, which is why this
+    survived: the flag masked the path that real use takes.
+    """
+    import json as _json
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.local.json").write_text(
+        _json.dumps({"lifecycle": {"signer": "User: Configured Human"}}),
+        encoding="utf-8",
+    )
+    old_path = _write_adr(adr_dir, 160, "Old Decision", status="Accepted")
+    new_path = _write_adr(adr_dir, 164, "New Decision", status="Accepted")
+
+    result = _run_adr(
+        "supersede", "160", "--by", "164", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    for path in (old_path, new_path):
+        latest = _history_entries(_frontmatter(path)[1])[-1]
+        assert latest["changed_by"] == '"User: Configured Human"', (
+            f"{path.name} recorded an unsigned transition: {latest}"
+        )
+
+    audit = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-lint"), "--strict",
+         "--gates", "audit", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert audit.returncode == 0, audit.stdout + audit.stderr
 
 
 def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path):

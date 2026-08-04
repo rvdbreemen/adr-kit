@@ -1,10 +1,10 @@
 ---
 id: "ADR-022"
 title: "Make Open Questions Append-Only for a Proposed ADR"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-open-questions-append-only-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: false
 verified_in: []
 supersedes: []
@@ -35,7 +35,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -50,6 +50,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-022 constrains the grilling readiness model ADR-011 established
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
     changed_via: adr-kit lifecycle
 ```
 
@@ -173,8 +178,11 @@ one.
 
 ### Verification
 
-* `adr-open-questions-append-only-v1`: the named gate anchoring this decision in
-  source, covering the delete case, the answer case, and the no-history case.
+* `adr-open-questions-append-only-v1`: the gate this decision is to be anchored
+  by. It does not exist yet, so `gate` is null and `binding` is false: a
+  frontmatter that declares enforcement it cannot deliver is worse than one
+  that admits the gap. Both fields flip back together when the gate ships,
+  covering the delete case, the answer case, and the no-history case.
 
 ## Consequences
 

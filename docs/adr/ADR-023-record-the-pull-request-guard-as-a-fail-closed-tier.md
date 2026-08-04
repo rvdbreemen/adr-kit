@@ -1,10 +1,10 @@
 ---
 id: "ADR-023"
 title: "Record the Pull-Request Guard as a Fail-Closed Tier"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-pr-guard-tier-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: true
 verified_in:
   - "tests/test_adr_pr_guard.py"
@@ -37,7 +37,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -62,6 +62,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-024 applies the pull-request tier ADR-023 established
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
     changed_via: adr-kit lifecycle
 ```
 
@@ -206,8 +211,11 @@ manifest entry declares.
 
 ### Verification
 
-* `adr-pr-guard-tier-v1`: the named gate anchoring this decision in source,
-  covering the deny path, the advisory path, and the fail-open path.
+* `adr-pr-guard-tier-v1`: the gate this decision is to be anchored by. It does
+  not exist yet, so `gate` is null and `binding` is false: a frontmatter that
+  declares enforcement it cannot deliver is worse than one that admits the gap.
+  Both fields flip back together when the gate ships, covering the deny path,
+  the advisory path, and the fail-open path.
 
 ## Consequences
 

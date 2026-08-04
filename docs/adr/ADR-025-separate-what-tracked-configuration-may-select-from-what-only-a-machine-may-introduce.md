@@ -1,10 +1,10 @@
 ---
 id: "ADR-025"
 title: "Separate What Tracked Configuration May Select From What Only a Machine May Introduce"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-config-trust-boundary-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: true
 verified_in:
   - "tests/test_adr_settings.py"
@@ -35,7 +35,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -50,6 +50,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-025 constrains the backend selection ADR-017 introduced
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
     changed_via: adr-kit lifecycle
 ```
 
@@ -177,9 +182,12 @@ machine-local file.
 
 ### Verification
 
-* `adr-config-trust-boundary-v1`: the named gate anchoring this decision in
-  source, covering the credential refusal, the command-string refusal, and the
-  redacted settings output.
+* `adr-config-trust-boundary-v1`: the gate this decision is to be anchored by.
+  It does not exist yet, so `gate` is null and `binding` is false: a
+  frontmatter that declares enforcement it cannot deliver is worse than one
+  that admits the gap. Both fields flip back together when the gate ships,
+  covering the credential refusal, the command-string refusal, and the redacted
+  settings output.
 
 ## Consequences
 
