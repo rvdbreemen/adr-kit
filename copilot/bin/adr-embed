@@ -50,7 +50,11 @@ llm_mod = _load_sibling("adr_llm")
 
 from adr_catalog import load_adr_records  # noqa: E402
 
-DEFAULT_EMBED_MODEL = "nomic-embed-text"
+# Qwen is the measured default for the multilingual ADR corpus. Keep
+# nomic-embed-text available through --model as the explicit English-only
+# fallback; silently switching models would make the recorded store identity
+# misleading.
+DEFAULT_EMBED_MODEL = "qwen3-embedding:4b"
 EMBED_TIMEOUT_S = 120
 
 
@@ -107,8 +111,8 @@ def _resolve_embed_backend(adr_dir: Path):
 def _configured_model(adr_dir: Path) -> str | None:
     """`embedding.model` from the project config, when it is set.
 
-    Setup asks the user to consent to a download -- `qwen3-embedding:8b` is about
-    4.7 GB -- and the model they agreed to had nowhere to be recorded, so the
+    Setup asks the user to consent to a download -- `qwen3-embedding:4b` is about
+    2.5 GB -- and the model they agreed to had nowhere to be recorded, so the
     next `adr-embed build` silently used the hardcoded default instead. Under
     ADR-018's own rule a model-identity mismatch marks the store stale, so the
     visible outcome was either a wasted download or retrieval quietly falling

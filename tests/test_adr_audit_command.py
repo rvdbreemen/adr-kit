@@ -27,7 +27,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.adr_fixtures import isolated_copy
+# Imported as a top-level module, not as `tests.adr_fixtures`. pytest's
+# prepend import mode puts this file's own directory on sys.path, and
+# `tests/` has no `__init__.py`, so the dotted form raises
+# ModuleNotFoundError at collection time -- which is how it reached dev.
+from adr_fixtures import isolated_copy
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_AUDIT = REPO_ROOT / "bin" / "adr-audit"

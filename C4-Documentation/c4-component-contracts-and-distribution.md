@@ -240,7 +240,7 @@ the registry the thread that ties them together:
 - **MCP** over stdio, server name `adr-kit`, via `bin/adr-mcp` — registered through **three
   deliberately divergent command forms**: Codex `./bin/adr-mcp` with `cwd: "."`, Copilot
   `${PLUGIN_ROOT}/bin/adr-mcp`, root Claude `${CLAUDE_PLUGIN_ROOT}/bin/adr-mcp`.
-- **Lifecycle hooks**: Codex binds 6 events (nested schema, `$PLUGIN_ROOT` + `command_windows`);
+- **Lifecycle hooks**: Codex binds 6 events (nested schema, `$PLUGIN_ROOT` + `commandWindows`);
   Copilot binds 3 (flat lowerCamel, dual `bash`/`powershell`). `hooks/manifest.json` maps
   `pre-tool-use`, `subagent-start` and `pre-compact` to `null` for `github-copilot-cli` — an
   honestly declared capability gap, not a shim. All hooks fail open (`|| true` / `exit 0`) with

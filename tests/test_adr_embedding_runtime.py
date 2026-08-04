@@ -58,7 +58,7 @@ def _fake(monkeypatch, *, reachable: bool, models: list[str], gpu: bool) -> None
 
 
 def test_a_runtime_with_an_embedding_model_needs_no_question(monkeypatch):
-    _fake(monkeypatch, reachable=True, models=["qwen3-embedding:8b", "gemma4:12b"], gpu=True)
+    _fake(monkeypatch, reachable=True, models=["qwen3-embedding:4b", "gemma4:12b"], gpu=True)
     report = runtime.assess()
 
     assert report["state"] == "ready"
@@ -104,8 +104,13 @@ def test_the_download_size_is_stated_before_the_pull(monkeypatch):
 
     assert any(runtime.RECOMMENDED_MODEL_SIZE in step for step in pull["steps"])
     assert any(runtime.SMALLER_ALTERNATIVE in step for step in pull["steps"]), (
-        "a smaller variant must be offered next to the 4.7 GB one"
+        "a smaller variant must be offered next to the 2.5 GB one"
     )
+
+
+def test_qwen4b_is_the_recommended_model_and_nomic_is_the_explicit_fallback():
+    assert runtime.RECOMMENDED_MODEL == "qwen3-embedding:4b"
+    assert runtime.SMALLER_ALTERNATIVE == "nomic-embed-text"
 
 
 def test_installing_third_party_software_requires_consent(monkeypatch):
@@ -136,7 +141,7 @@ def test_the_probe_never_raises_on_an_unreachable_endpoint():
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
-        ("qwen3-embedding:8b", True),
+        ("qwen3-embedding:4b", True),
         ("nomic-embed-text", True),
         ("bge-m3:latest", True),
         ("gemma4:12b", False),

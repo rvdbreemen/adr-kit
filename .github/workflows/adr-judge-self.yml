@@ -1,11 +1,11 @@
 name: adr-judge self-dogfood
 
-# Run adr-judge on every PR targeting main so the judge guards adr-kit's own
+# Run adr-judge on every PR targeting dev or main so the judge guards adr-kit's own
 # ADRs.  Push events are deliberately excluded: GITHUB_BASE_REF is empty on
 # push, so the PR diff would collapse to nothing.
 on:
   pull_request:
-    branches: [main]
+    branches: [dev, main]
 
 jobs:
   adr-judge:
