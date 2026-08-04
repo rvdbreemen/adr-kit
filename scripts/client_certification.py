@@ -227,6 +227,78 @@ def _lifecycle_rows(labels: dict) -> list:
         rows.append(f"| {labels[client]} | " + " | ".join(cells) + " |")
     return rows
 
+def _probe_rows(labels: dict) -> list:
+    """Report what a real client answered, separately from what we believe.
+
+    The table above is derived from our own manifest, so it says what adr-kit is
+    wired for. This section says what an installed binary actually emitted, and
+    the two are deliberately not merged: every hook defect this kit has shipped
+    was an event we had registered and the client never reached, and a document
+    that folds the two together cannot show that gap.
+
+    Absent evidence is `not-run`, never `unsupported`. A probe that did not run,
+    or a prompt that used no tools, proves nothing about a capability -- and
+    writing the stronger word is exactly how this document acquired the claims
+    it had to be rewritten to remove.
+    """
+    import json
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parents[1]
+    probes = sorted((root / "tests" / "certification").glob("probe-*.json"))
+    if not probes:
+        return []
+    records = []
+    for path in probes:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for record in payload.get("records", []):
+            if isinstance(record, dict) and record.get("client") in labels:
+                records.append((path.name, record))
+    if not records:
+        return []
+
+    rows = [
+        "",
+        "## Observed client evidence",
+        "",
+        "What an installed binary reported, from its own event stream. Separate",
+        "from the table above on purpose: that one says what adr-kit is wired",
+        "for, this one says what a client did. Every hook defect this kit has",
+        "shipped lived in the gap between the two.",
+        "",
+        "An event that does not appear here is `not-observed`, not unsupported.",
+        "A probe run that used no tools cannot produce a tool event, and reading",
+        "that silence as a missing capability is how this document acquired the",
+        "claims it had to be rewritten to remove.",
+        "",
+        "| Client | Version | Platform | Evidence | Observed events |",
+        "|---|---|---|---|---|",
+    ]
+    for source, record in records:
+        observed = record.get("observed_events") or []
+        detail = (
+            ", ".join(f"`{event}`" for event in observed)
+            if observed
+            else f"_{record.get('reason', 'not run')}_"
+        )
+        rows.append(
+            f"| {labels[record['client']]} | {record.get('version') or 'unknown'} | "
+            f"{record.get('platform') or 'unknown'} | {record.get('evidence_mode')} | "
+            f"{detail} |"
+        )
+    rows.extend([
+        "",
+        "Source: " + ", ".join(f"`tests/certification/{name}`"
+                               for name in sorted({name for name, _ in records})) + ".",
+        "Regenerate with `python scripts/probe-client-events.py`, which exits 0"
+        " when a client is absent because an unmeasured client is a normal"
+        " outcome rather than a failure.",
+    ])
+    return rows
+
 def support_matrix(bundle: dict) -> str:
     labels = {
         "claude-code-cli": "Claude Code CLI",
@@ -252,6 +324,7 @@ def support_matrix(bundle: dict) -> str:
             f"{platforms['macos']['status']} | {platforms['linux']['status']} | {status} |"
         )
     lines.extend(_lifecycle_rows(labels))
+    lines.extend(_probe_rows(labels))
     lines.extend([
         "",
         "All retrieval is local, bounded, and index-first. Unsupported native lifecycle events are not advertised; deterministic pre-commit enforcement remains the backstop.",

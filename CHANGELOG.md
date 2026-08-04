@@ -34,6 +34,28 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **The support matrix reports what a real client did, not only what we wired.**
+  `scripts/probe-client-events.py` runs an installed binary and reads its own
+  event stream. Certification previously rendered from
+  `tests/certification/simulated-pass.json` -- a fixture saying what we believe.
+  Every hook defect this kit has shipped was an event registered in the manifest
+  that never reached the code behind it, and a fixture cannot find one.
+
+  The observed evidence is a separate section from the derived table on purpose:
+  one says what adr-kit is wired for, the other says what a client emitted, and
+  every one of those defects lived in the gap between them.
+
+  An event that does not appear is recorded as `not-observed`, never
+  `unsupported` -- a probe run that used no tools cannot produce a tool event,
+  and writing the stronger word is how this document acquired the claims it had
+  to be rewritten to remove. A runner with no client, no credentials or no
+  network records `not-run` and exits 0, because a certification that fails when
+  it cannot measure is one people learn to skip.
+
+  Recorded on this machine: Claude Code 2.1.221 on win32 emitted `SessionStart`,
+  `UserPromptSubmit` and `Stop`. Codex and Copilot expose no machine-readable
+  hook-event stream today and are recorded as `not-run` with that reason.
+
 - **The client support matrix derives its lifecycle table instead of asserting
   it.** Those rows were three hardcoded strings, which is exactly why the
   document could claim capabilities that did not exist: nothing derived them, so

@@ -27,6 +27,25 @@ above says how the wiring was verified.
 | Codex CLI | `SessionStart` | `UserPromptSubmit` | `PreToolUse` / `Edit\|MultiEdit\|Write` | `PostToolUse` / `Edit\|MultiEdit\|Write` | no native event | `PreToolUse` / `Bash` | `SubagentStart` | `PreCompact` |
 | GitHub Copilot CLI | `sessionStart` | `userPromptSubmitted` | no native event | `postToolUse` / `Edit\|MultiEdit\|Write` | no native event | no native event | no native event | no native event |
 
+## Observed client evidence
+
+What an installed binary reported, from its own event stream. Separate
+from the table above on purpose: that one says what adr-kit is wired
+for, this one says what a client did. Every hook defect this kit has
+shipped lived in the gap between the two.
+
+An event that does not appear here is `not-observed`, not unsupported.
+A probe run that used no tools cannot produce a tool event, and reading
+that silence as a missing capability is how this document acquired the
+claims it had to be rewritten to remove.
+
+| Client | Version | Platform | Evidence | Observed events |
+|---|---|---|---|---|
+| Claude Code CLI | 2.1.221 (Claude Code) | win32 | native | `SessionStart`, `Stop`, `UserPromptSubmit` |
+
+Source: `tests/certification/probe-windows.json`.
+Regenerate with `python scripts/probe-client-events.py`, which exits 0 when a client is absent because an unmeasured client is a normal outcome rather than a failure.
+
 All retrieval is local, bounded, and index-first. Unsupported native lifecycle events are not advertised; deterministic pre-commit enforcement remains the backstop.
 
 ### Known degradation: no fail-closed edit floor on GitHub Copilot CLI

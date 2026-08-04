@@ -22,6 +22,7 @@ documentation contains a string.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -348,7 +349,16 @@ def _lifecycle_section() -> list[str]:
         index for index, line in enumerate(lines)
         if line.startswith("## Lifecycle retrieval support")
     )
-    return lines[start:]
+    # Bounded at the next section. The observed-evidence table below has a
+    # different column count on purpose -- it answers a different question --
+    # so letting the slice run to the end of the file makes a column-count
+    # check compare two unrelated tables.
+    end = next(
+        (index for index, line in enumerate(lines[start + 1:], start + 1)
+         if line.startswith("## ")),
+        len(lines),
+    )
+    return lines[start:end]
 
 
 def _cells(row: str) -> list[str]:
@@ -406,3 +416,74 @@ def test_a_matcher_pipe_cannot_break_the_table():
     for row in rows:
         assert "Edit|MultiEdit" not in row, f"unescaped matcher pipe: {row}"
         assert len(_cells(row)) == len(_cells(header)), f"column count drifted: {row}"
+
+
+# ---------------------------------------------------------------------------
+# Observed client evidence is separate from what we are wired for (TASK-120)
+# ---------------------------------------------------------------------------
+
+PROBE = REPO_ROOT / "scripts" / "probe-client-events.py"
+
+
+def test_the_probe_records_not_run_rather_than_failing(tmp_path):
+    """An unmeasured client is a normal outcome, not a build failure.
+
+    A certification that fails when it cannot measure is one people learn to
+    skip, and `not-run` is an evidence class this matrix already carries for
+    macOS and Linux.
+    """
+    result = subprocess.run(
+        [sys.executable, str(PROBE), "--clients", "codex-cli,github-copilot-cli"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    for record in payload["records"]:
+        assert record["evidence_mode"] in {"native", "not-run"}
+        if record["evidence_mode"] == "not-run":
+            assert record["reason"], "a not-run record must say why"
+
+
+def test_an_unknown_client_is_refused_by_the_probe():
+    result = subprocess.run(
+        [sys.executable, str(PROBE), "--clients", "emacs"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+
+    assert result.returncode == 2
+    assert "emacs" in result.stderr
+
+
+def test_the_matrix_reports_observed_evidence_separately():
+    """Two claims, two sections. Folding them together hides the gap.
+
+    The lifecycle table is derived from our own manifest, so it says what
+    adr-kit is wired for. The evidence section says what a client did. Every
+    hook defect this kit has shipped lived between the two.
+    """
+    text = MATRIX.read_text(encoding="utf-8")
+
+    assert "## Observed client evidence" in text
+    assert "not-observed" in text, "absence must not read as unsupported"
+    assert "scripts/probe-client-events.py" in text
+
+
+def test_the_recorded_probe_is_real_evidence():
+    """The committed record has to name a version and a platform.
+
+    A probe record without them is a fixture wearing a probe's name, which is
+    what this whole task exists to replace.
+    """
+    probes = sorted((REPO_ROOT / "tests" / "certification").glob("probe-*.json"))
+    assert probes, "no probe evidence is recorded"
+
+    for path in probes:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["probe_id"] == "adr-kit-client-event-probe-v1"
+        for record in payload["records"]:
+            assert record["client"] in LABELS
+            if record["evidence_mode"] == "native":
+                assert record["version"], path.name
+                assert record["platform"], path.name
+                assert record["observed_events"], path.name
