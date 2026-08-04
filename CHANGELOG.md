@@ -34,6 +34,23 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **The query engine can rank by vector similarity, and says which route
+  answered.** `query_adr_context` takes an optional `embedder` callable; given
+  one, and a vector store, it reorders the candidates by cosine similarity and
+  reports `route: "vector"`. Without one it reports `route: "lexical"`, which is
+  today's behaviour unchanged.
+
+  The embedder arrives as a callable rather than an import so `bin/adr_query.py`
+  stays reachable from a hook: it imports nothing that can touch a model or the
+  network, and a test asserts that by walking the AST. The caller that *can*
+  reach a backend decides whether to supply one, which is also how ADR-020's
+  per-event budget split is expressed.
+
+  Every failure falls back to the lexical order and names the reason -- an
+  unreachable backend, an empty response, a missing store, a malformed store, an
+  empty store. A retrieval path that silently degrades is worse than one that is
+  slower, because an empty result reads exactly like "no ADR was relevant".
+
 - **A superseded ADR can no longer be handed over as governing.** The vector
   store answered both "which ADRs" and "what are they worth" from its own frozen
   copy of lifecycle status -- and that copy had no way to know it was wrong.
