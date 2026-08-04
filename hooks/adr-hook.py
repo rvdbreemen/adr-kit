@@ -73,9 +73,15 @@ def _emit(response) -> None:
     catch and hide there. `bin/adr-mcp` reconfigures its stdout for the same
     reason (TASK-69); this is the same defect one process over.
     """
-    frame = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
-    sys.stdout.buffer.write(frame.encode("utf-8") + b"\n")
-    sys.stdout.buffer.flush()
+frame = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+out = getattr(sys.stdout, "buffer", None)
+if out is not None:
+    out.write(frame.encode("utf-8") + b"\n")
+    out.flush()
+else:
+    # Fallback for environments without a binary stdout buffer (e.g. redirected stdout)
+    sys.stdout.write(frame + "\n")
+    sys.stdout.flush()
 
 
 #: Events whose declared budget can absorb an embedding round trip. ADR-020
