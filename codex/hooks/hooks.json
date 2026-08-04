@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" session-start codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" session-start codex-cli",
+            "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" session-start codex-cli",
             "timeout": 5
           }
         ]
@@ -19,7 +19,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" user-prompt-submit codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" user-prompt-submit codex-cli",
+            "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" user-prompt-submit codex-cli",
             "timeout": 5
           }
         ]
@@ -31,7 +31,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" pre-tool-use codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli",
+            "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli",
             "timeout": 1
           }
         ],
@@ -42,7 +42,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" pre-tool-use codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli",
+            "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli",
             "timeout": 5
           }
         ],
@@ -55,7 +55,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" post-tool-use codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" post-tool-use codex-cli",
+            "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" post-tool-use codex-cli",
             "timeout": 1
           }
         ],
@@ -68,7 +68,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" subagent-start codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" subagent-start codex-cli",
+            "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" subagent-start codex-cli",
             "timeout": 1
           }
         ]
@@ -80,7 +80,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" pre-compact codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-compact codex-cli",
+            "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-compact codex-cli",
             "timeout": 1
           }
         ]

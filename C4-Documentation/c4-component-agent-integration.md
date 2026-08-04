@@ -214,7 +214,7 @@ Codex and Copilot must declare their paths as exact strings, also generator-chec
 | Client | Registration file | Manifest declaration | Schema |
 |---|---|---|---|
 | `claude-code-cli` | `hooks/hooks.json` | **none** — `hooks` key forbidden | Nested `{hooks: {Event: [{hooks: [{type, command, timeout}], matcher?}]}}`, `${CLAUDE_PLUGIN_ROOT}`, 6 events |
-| `codex-cli` | `codex/hooks/hooks.json` | `"hooks": "./hooks/hooks.json"` | Same nesting plus `command_windows` with `%PLUGIN_ROOT%`, 6 events |
+| `codex-cli` | `codex/hooks/hooks.json` | `"hooks": "./hooks/hooks.json"` | Same nesting plus `commandWindows` with `%PLUGIN_ROOT%`, 6 events |
 | `github-copilot-cli` | `copilot/hooks.json` (client **root**) | `"hooks": "hooks.json"` | Flat lowerCamel `{version: 1, hooks: {sessionStart: [{type, bash, powershell, cwd, timeoutSec}]}}`, **3 events** |
 
 Six canonical events with their committed budgets:
