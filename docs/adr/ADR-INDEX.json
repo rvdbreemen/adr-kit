@@ -662,7 +662,7 @@
       "path": "ADR-015-enforce-a-two-second-deterministic-latency-budget-as-a-test-fixture-contract.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-26",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool...",
       "topics": [
         "latency budget",
@@ -1543,6 +1543,63 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-029",
+      "title": "Retire the Native Hook Binary Rather Than Maintain a Second Retrieval Engine",
+      "path": "ADR-029-retire-the-native-hook-binary-rather-than-maintain-a-second-retrieval-engine.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-04",
+      "decision_summary": "Chosen option: retire the binary, because the alternative is a permanent second implementation of the one component e...",
+      "topics": [
+        "distribution",
+        "hooks",
+        "latency",
+        "maintenance surface"
+      ],
+      "aliases": [
+        "adr-hook.exe",
+        "native hook",
+        "Rust host"
+      ],
+      "components": [
+        "adr-query",
+        "lifecycle hooks"
+      ],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Keep exactly one retrieval implementation, shared by every caller.",
+          "Remove the native host, its committed artefact, and the dispatcher branch that prefers it.",
+          "Measure the Python edit-tier path against its declared budget and commit the measurement.",
+          "Verify any future native path by running the artefact, never by reading its source."
+        ],
+        "must_not": [
+          "Ship a second implementation of retrieval, ranking or authority.",
+          "Prefer an artefact whose output has not been compared with the Python path.",
+          "Assert parity from a source constant.",
+          "Reintroduce a native path for a subset of events, which makes divergence silent exactly where nobody is looking."
+        ],
+        "exceptions": [
+          "A future native path is permitted when it delegates to the shared engine rather than reimplementing it, and carries the artefact parity test."
+        ],
+        "verification": [
+          "adr-single-retrieval-engine-v1: the named gate anchoring this decision in source. It asserts that no second ranking implementation ships, and that the edit-tier path meets its declared budget."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-single-retrieval-engine-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -1865,6 +1922,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-015",
+      "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-016",
       "target": "ADR-001",
       "type": "related",
@@ -2137,6 +2200,18 @@
     {
       "source": "ADR-028",
       "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-029",
+      "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-029",
+      "target": "ADR-015",
       "type": "related",
       "resolved": true
     }

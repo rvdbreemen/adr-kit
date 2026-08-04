@@ -34,3 +34,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-026 | Proposed | - | Chosen option: one command running both halves, with five exit codes. |
 | ADR-027 | Proposed | - | Chosen option: derive from git config user.name when it names a person, and announce it. |
 | ADR-028 | Proposed | - | Chosen option: gate the declared link, leave the prose alone. |
+| ADR-029 | Proposed | - | Chosen option: retire the binary, because the alternative is a permanent second implementation of the one component e... |
