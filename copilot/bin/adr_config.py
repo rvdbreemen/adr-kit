@@ -12,6 +12,60 @@ class ConfigValidationError(ValueError):
     """Raised when .adr-kit.json is malformed or violates its schema."""
 
 
+# Keys the schema once declared and no code ever read. Removing them outright
+# would fail every existing config that sets one, so they are accepted and
+# ignored instead: the value never took effect, and breaking the file over a
+# setting that was already inert would be a worse trade than a warning.
+# A caller that wants to surface them uses retired_keys_present().
+RETIRED_KEYS: Dict[str, str] = {
+    "$.judge.llm_timeout_ms": (
+        "never read; judge.llm_timeout_seconds is the timeout that applies"
+    ),
+    "$.judge.pre_push_timeout_ms": (
+        "never read; adr-kit ships no pre-push hook for it to bound"
+    ),
+    "$.policy.regex_compile_checks": (
+        "never read; adr-lint always compiles Enforcement patterns"
+    ),
+    "$.policy.pattern_warnings": (
+        "never read; adr-lint always emits anti-pattern advisories"
+    ),
+    "$.context.weights": (
+        "never read; the index-first scorer replaced weighted signals in v0.40.0"
+    ),
+    "$.context.weights.exact_keyword": "part of the retired context.weights block",
+    "$.context.weights.domain_tag": "part of the retired context.weights block",
+    "$.context.weights.related_decisions": (
+        "part of the retired context.weights block"
+    ),
+    "$.context.weights.acceptance_status": (
+        "part of the retired context.weights block"
+    ),
+    "$.context.weights.recency": "part of the retired context.weights block",
+}
+
+
+def retired_keys_present(config: Any) -> List[str]:
+    """Return the dotted paths of retired keys this config still sets.
+
+    Callers print these as a warning. The values are inert either way.
+    """
+    found: List[str] = []
+
+    def walk(value: Any, path: str) -> None:
+        if not isinstance(value, dict):
+            return
+        for key, item in value.items():
+            child = _path(path, str(key))
+            if child in RETIRED_KEYS:
+                found.append(child)
+                continue
+            walk(item, child)
+
+    walk(config, "$")
+    return sorted(found)
+
+
 def _type_matches(value: Any, expected: str) -> bool:
     if expected == "object":
         return isinstance(value, dict)
@@ -104,6 +158,8 @@ def _validate(value: Any, schema: Dict[str, Any], path: str) -> List[str]:
             if matching:
                 for child_schema in matching:
                     issues.extend(_validate(item, child_schema, child_path))
+                continue
+            if child_path in RETIRED_KEYS:
                 continue
             additional = schema.get("additionalProperties", True)
             if additional is False:

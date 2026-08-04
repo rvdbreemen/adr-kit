@@ -4,7 +4,36 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- **Nine config keys that nothing ever read.** `judge.llm_timeout_ms`,
+  `judge.pre_push_timeout_ms`, `policy.regex_compile_checks`,
+  `policy.pattern_warnings` and the whole `context.weights` block (five keys) were
+  declared in `schemas/adr-kit-config.schema.json` and resolved by no code path.
+  `judge.llm_timeout_ms` duplicated `judge.llm_timeout_seconds` in different units;
+  `pre_push_timeout_ms` bounded a pre-push hook adr-kit does not ship;
+  `context.weights` was retired when the index-first scorer replaced weighted
+  signals in v0.40.0, but the schema kept advertising it.
+
+  **Your existing `.adr-kit.json` keeps working.** These keys are recorded in
+  `adr_config.RETIRED_KEYS`, so a config that still sets one loads with the value
+  ignored rather than failing validation -- the value was already inert, and
+  breaking the file over it would be the worse trade. `retired_keys_present()`
+  reports which ones a config still carries.
+
+  A new gate (`tests/test_config_schema_has_readers.py`) fails when any declared
+  key has no reader, so the next orphan is caught by CI rather than by a sweep.
+
 ### Changed
+
+- **`judge.llm_timeout_seconds` now describes the loop that actually runs.** The
+  schema called it the timeout for "one batch call". Per-ADR isolation replaced
+  batching, so it bounds each call in a loop: a project with N ADRs marked
+  `llm_judge` has a worst case of N x the value on a single commit. At the
+  shipped default of 120 s that is 20 minutes for 10 ADRs and 40 minutes for 20 --
+  not the two minutes the old description implied. The number is the one people
+  use to decide whether the pass is affordable, so the worst case is now stated
+  where they choose it.
 
 - **BREAKING: `bin/adr accept` now requires `--confirm`.** Acceptance is the one
   lifecycle transition that decides rather than records, and it writes a name and
