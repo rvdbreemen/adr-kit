@@ -252,3 +252,131 @@ def test_the_store_module_imports_nothing_that_reaches_a_model():
     offenders = sorted(_imported_roots(module) & FORBIDDEN_IN_HOT_PATH)
 
     assert not offenders, f"{module.name} imports {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# Authority comes from the index, not from the store (TASK-93)
+# ---------------------------------------------------------------------------
+
+def _write_index(adr_dir: Path, records) -> None:
+    """A minimal ADR-INDEX.json carrying only what authority needs."""
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    (adr_dir / "ADR-INDEX.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "adrs": [
+                {
+                    "id": record["adr_id"],
+                    "status": record["status"],
+                    "metadata": {"superseded_by": record.get("superseded_by")},
+                }
+                for record in records
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+
+def test_a_supersession_takes_effect_without_a_rebuild(tmp_path):
+    """The defect this closes, reproduced first.
+
+    `embed_text` hashes title, topics, aliases, components and decision, and a
+    supersession edits none of them. So the store stayed `stale: False` while
+    returning a retired decision as `governing` -- a wrong answer with nothing
+    anywhere reporting a problem.
+    """
+    records = [_record("ADR-001", "the original decision")]
+    store = _build(tmp_path, records)
+
+    # Nothing about the ADR's text changes; only its lifecycle.
+    _write_index(tmp_path, [{"adr_id": "ADR-001", "status": "Superseded",
+                             "superseded_by": "ADR-002"}])
+
+    assert store_mod.staleness(store, records)["stale"] is False, (
+        "the content hash cannot see a supersession -- that is the premise"
+    )
+
+    governing = store_mod.search(
+        store, [1.0, 1.0, 1.0, 1.0],
+        authority=store_mod.load_authority(tmp_path),
+    )
+    assert governing == [], "a superseded decision must not be returned as governing"
+
+    historical = store_mod.search(
+        store, [1.0, 1.0, 1.0, 1.0], include_historical=True,
+        authority=store_mod.load_authority(tmp_path),
+    )
+    assert historical[0]["status"] == "Superseded"
+    assert historical[0]["authority"] == "historical"
+    assert historical[0]["superseded_by"] == "ADR-002"
+
+
+def test_an_entry_with_no_record_in_the_index_is_dropped(tmp_path):
+    """A vector for an ADR that no longer exists is a leftover, not a result."""
+    records = [_record("ADR-001", "kept"), _record("ADR-002", "deleted")]
+    store = _build(tmp_path, records)
+    _write_index(tmp_path, [{"adr_id": "ADR-001", "status": "Accepted"}])
+
+    results = store_mod.search(
+        store, [1.0, 1.0, 1.0, 1.0],
+        authority=store_mod.load_authority(tmp_path),
+    )
+
+    assert [row["adr_id"] for row in results] == ["ADR-001"]
+
+
+def test_the_stored_copy_is_used_when_no_authority_is_supplied(tmp_path):
+    """The standalone diagnostic still works on a repository with no index."""
+    records = [_record("ADR-001", "a decision")]
+    store = _build(tmp_path, records)
+
+    results = store_mod.search(store, [1.0, 1.0, 1.0, 1.0])
+
+    assert [row["adr_id"] for row in results] == ["ADR-001"]
+    assert results[0]["authority"] == "governing"
+
+
+def test_a_missing_index_is_distinguishable_from_a_retired_record(tmp_path):
+    """None means "the index says nothing", which is not "the record is gone".
+
+    Collapsing the two would make an unreadable index silently drop every
+    result, which reads to a user exactly like a repository with no decisions.
+    """
+    assert store_mod.load_authority(tmp_path) is None
+
+    (tmp_path / "ADR-INDEX.json").write_text("{not json", encoding="utf-8")
+    assert store_mod.load_authority(tmp_path) is None
+
+    _write_index(tmp_path, [])
+    assert store_mod.load_authority(tmp_path) == {}
+
+
+def test_status_separates_content_drift_from_missing_authority(tmp_path):
+    """Two different problems, two different fixes, reported separately.
+
+    "The content changed" wants `adr-embed build`. "The index is stale or
+    absent" wants `bin/adr-index`, and until then a search cannot say which
+    decisions still govern. Reporting one number for both would send the user to
+    the wrong command.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    records = [_record("ADR-001", "a decision")]
+    _build(adr_dir, records)
+    (adr_dir / "ADR-001.md").write_text("placeholder\n", encoding="utf-8")
+
+    def status():
+        result = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "bin" / "adr-embed"),
+             "--adr-dir", str(adr_dir), "--format", "json", "status"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        return json.loads(result.stdout)
+
+    without_index = status()
+    assert without_index["authority"] == "unavailable"
+
+    _write_index(adr_dir, [{"adr_id": "ADR-001", "status": "Accepted"}])
+    assert status()["authority"] == "current"
+
+    _write_index(adr_dir, [])
+    assert status()["authority"] == "orphaned-entries"

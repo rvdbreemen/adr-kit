@@ -34,6 +34,25 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- **A superseded ADR can no longer be handed over as governing.** The vector
+  store answered both "which ADRs" and "what are they worth" from its own frozen
+  copy of lifecycle status -- and that copy had no way to know it was wrong.
+  `embed_text` hashes title, topics, aliases, components and decision, and a
+  supersession edits none of them, so `staleness()` reported `stale: False` while
+  `search()` returned a retired decision as `governing` with `superseded_by`
+  unset.
+
+  Authority is now joined from `ADR-INDEX.json` on every search: the vectors
+  find, the index decides. A supersession therefore takes effect immediately,
+  with no rebuild. An entry whose id the index does not carry is dropped rather
+  than returned unlabelled, and a missing or unreadable index is distinguishable
+  from a retired record, so an unreadable index cannot silently empty every
+  result.
+
+  `adr-embed status` reports the two problems separately, because they have
+  different fixes: content drift wants `adr-embed build`, and a missing index
+  wants `bin/adr-index`.
+
 - **`setup-project.py --no-pre-commit` no longer deletes the hook.** The flag
   reads as "do not install one" and meant "remove the one that is there", so a
   project managing its git hooks another way -- husky, lefthook, a hand-written

@@ -187,34 +187,92 @@ def cosine(left: List[float], right: List[float]) -> float:
     return dot / (math.sqrt(left_norm) * math.sqrt(right_norm))
 
 
+HISTORICAL_STATUSES = frozenset({"Superseded", "Rejected", "Deprecated"})
+
+
+def authority_for(status: str) -> str:
+    return "governing" if status == "Accepted" else (
+        "advisory" if status == "Proposed" else "historical"
+    )
+
+
+def load_authority(adr_dir: Path) -> Optional[Dict[str, Dict]]:
+    """Status and `superseded_by` per ADR, read from the generated index.
+
+    None when the index is missing or unreadable, so a caller can tell "the
+    index says nothing about this" apart from "the index says it is retired".
+    """
+    path = Path(adr_dir) / "ADR-INDEX.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    records = payload.get("adrs") if isinstance(payload, dict) else None
+    if not isinstance(records, list):
+        return None
+    return {
+        str(record.get("id")): {
+            "status": record.get("status", "Unknown"),
+            "superseded_by": (record.get("metadata") or {}).get("superseded_by")
+            if isinstance(record.get("metadata"), dict)
+            else record.get("superseded_by"),
+        }
+        for record in records
+        if isinstance(record, dict) and record.get("id")
+    }
+
+
 def search(
     store: Dict,
     query_vector: List[float],
     limit: int = 10,
     include_historical: bool = False,
+    authority: Optional[Dict[str, Dict]] = None,
 ) -> List[Dict]:
-    """Rank candidates by similarity, carrying lifecycle status untouched.
+    """Rank by similarity; take lifecycle authority from the index, not the store.
 
-    Historical decisions are excluded by default and never promoted by a score:
     ADR-014's rule that relevance and authority are different axes survives here
-    unchanged. Ask for them explicitly and they arrive clearly marked.
+    unchanged. What changes is *where the authority comes from*.
+
+    The store used to answer both questions from its own frozen copy, and that
+    copy had no way to know it was wrong. `embed_text` hashes title, topics,
+    aliases, components and decision -- and a supersession edits none of them.
+    Reproduced twice: present the same record as Superseded with `superseded_by`
+    set, and `staleness()` returns `stale: False` while this function returns
+    status `Accepted`, authority `governing`, `superseded_by` `None`. A retired
+    decision handed to an agent as binding, with nothing anywhere reporting a
+    problem.
+
+    So the vectors find and the index decides. Pass `authority` from
+    `load_authority`; an entry whose id the index does not carry is a record that
+    no longer exists and is dropped rather than returned unlabelled. Without the
+    argument the stored copy is used, which keeps the standalone diagnostic
+    working on a repository with no generated index.
     """
-    historical = {"Superseded", "Rejected", "Deprecated"}
     scored: List[Dict] = []
     for entry in store.get("entries", []):
-        status = entry.get("status", "Unknown")
-        if status in historical and not include_historical:
+        adr_id = entry.get("adr_id")
+        if authority is not None:
+            current = authority.get(str(adr_id))
+            if current is None:
+                # Dropped rather than returned: the index is the record of what
+                # exists, and a vector for a deleted ADR is a leftover.
+                continue
+            status = current["status"]
+            superseded_by = current["superseded_by"]
+        else:
+            status = entry.get("status", "Unknown")
+            superseded_by = entry.get("superseded_by")
+        if status in HISTORICAL_STATUSES and not include_historical:
             continue
         scored.append(
             {
-                "adr_id": entry.get("adr_id"),
+                "adr_id": adr_id,
                 "title": entry.get("title", ""),
                 "path": entry.get("path", ""),
                 "status": status,
-                "superseded_by": entry.get("superseded_by"),
-                "authority": "governing" if status == "Accepted" else (
-                    "advisory" if status == "Proposed" else "historical"
-                ),
+                "superseded_by": superseded_by,
+                "authority": authority_for(status),
                 "similarity": round(cosine(query_vector, entry.get("vector") or []), 6),
             }
         )

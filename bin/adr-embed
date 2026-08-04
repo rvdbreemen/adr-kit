@@ -196,11 +196,37 @@ def command_status(args) -> int:
                 lines.append(f"  {label}: {', '.join(drift[label])}")
     else:
         lines.append("current: every ADR matches its stored vector")
+
+    # Two different problems with two different fixes, so they are reported
+    # separately. "The content changed" wants a rebuild. "The index is stale or
+    # absent" wants `bin/adr-index`, and until then a search cannot say which
+    # decisions still govern -- the store's own copy of status is frozen at
+    # build time and a supersession never touches the hashed text.
+    authority = store_mod.load_authority(adr_dir)
+    if authority is None:
+        authority_state = "unavailable"
+        lines.append(
+            "AUTHORITY UNAVAILABLE - no readable ADR-INDEX.json; run "
+            "`bin/adr-index docs/adr`. Until then a search cannot tell a "
+            "governing decision from a superseded one."
+        )
+    else:
+        orphaned = sorted(
+            str(entry.get("adr_id"))
+            for entry in store["entries"]
+            if str(entry.get("adr_id")) not in authority
+        )
+        authority_state = "orphaned-entries" if orphaned else "current"
+        if orphaned:
+            lines.append(
+                "entries with no ADR in the index (dropped from results): "
+                + ", ".join(orphaned)
+            )
     return _emit(args, {"action": "status", "usable": True, "store": {
         "model": store["model"], "backend": store["backend"],
         "entries": len(store["entries"]), "dimension": store["dimension"],
         "built_at": store["built_at"],
-    }, "drift": drift}, lines)
+    }, "drift": drift, "authority": authority_state}, lines)
 
 
 def command_query(args) -> int:
@@ -213,7 +239,11 @@ def command_query(args) -> int:
     if not vectors:
         raise EmbedError("could not embed the query; the backend returned nothing")
     results = store_mod.search(
-        store, vectors[0], limit=args.limit, include_historical=args.include_historical
+        store, vectors[0], limit=args.limit,
+        include_historical=args.include_historical,
+        # The vectors find; the index decides. Without this the store answers
+        # from a frozen copy of status that a supersession never invalidates.
+        authority=store_mod.load_authority(adr_dir),
     )
     lines = [f"{row['similarity']:.3f}  {row['adr_id']}  [{row['authority']}]  {row['title']}" for row in results]
     return _emit(args, {"action": "query", "query": args.query, "results": results}, lines or ["no results"])
