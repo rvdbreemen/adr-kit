@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -137,3 +138,86 @@ def test_the_pr_workflow_template_ships():
     assert "pull_request" in text
     assert "fetch-depth: 0" in text
     assert "max-diff-bytes" in text
+
+
+# ---------------------------------------------------------------------------
+# The judge timeout is derived, not declared twice (Copilot review, PR #58)
+# ---------------------------------------------------------------------------
+
+def _guard_module(directory: str = "hooks"):
+    import importlib.machinery
+    import importlib.util
+
+    name = f"adr_pr_guard_{directory.replace('/', '_')}"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(
+        name, str(REPO_ROOT / directory / "adr_pr_guard.py")
+    )
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+def test_the_judge_timeout_stays_under_the_runner_budget():
+    """Two numbers that could disagree, and did: 120 s against a 5 s budget.
+
+    The client kills the hook at its own timeout, so a judge allowed
+    twenty-four times that never reaches the fail-open branch -- the process
+    dies mid-call and the user sees nothing, which is indistinguishable from a
+    clean branch.
+    """
+    manifest = json.loads(
+        (REPO_ROOT / "hooks" / "manifest.json").read_text(encoding="utf-8")
+    )
+    runner = next(
+        event["runner_timeout_sec"]
+        for event in manifest["events"]
+        if event["id"] == "pr-create"
+    )
+
+    assert _guard_module().judge_timeout_s() < runner
+
+
+@pytest.mark.parametrize("tree", ["hooks", "codex/hooks", "copilot/hooks"])
+def test_every_client_tree_derives_the_same_budget(tree):
+    """A mirror without the manifest silently falls back to a constant.
+
+    The constant matches today and stops matching the moment somebody changes
+    the budget -- the same drift, reintroduced one directory over.
+    """
+    if not (REPO_ROOT / tree / "adr_pr_guard.py").is_file():
+        pytest.skip(f"{tree} ships no guard")
+
+    assert (REPO_ROOT / tree / "manifest.json").is_file(), (
+        f"{tree} cannot derive its budget"
+    )
+    assert _guard_module(tree).judge_timeout_s() == _guard_module().judge_timeout_s()
+
+
+def test_an_unreadable_manifest_yields_a_small_budget_not_an_unbounded_one(
+    tmp_path, monkeypatch
+):
+    """An unknown budget is not a licence to take an unbounded one."""
+    guard = _guard_module()
+    broken = tmp_path / "manifest.json"
+    broken.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(
+        guard, "__file__", str(tmp_path / "adr_pr_guard.py"), raising=False
+    )
+
+    assert guard.judge_timeout_s() == guard.FALLBACK_JUDGE_TIMEOUT_S
+    assert guard.FALLBACK_JUDGE_TIMEOUT_S <= 5
+
+
+def test_the_timeout_leaves_room_for_the_guards_own_work():
+    """Reading the manifest, running git diff and rendering all cost time.
+
+    Handing the judge the entire budget means the client kills us mid-render.
+    """
+    guard = _guard_module()
+
+    assert guard.GUARD_OVERHEAD_S >= 1

@@ -235,6 +235,10 @@ def test_suggest_json_is_machine_readable(tmp_path):
 
     result = _adr(root, "signer", "--suggest", "--format", "json")
 
+    # Assert the exit before parsing. A failed command yields empty stdout, and
+    # json.loads then raises a decode error that buries the stderr explaining
+    # what actually went wrong.
+    assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["configured"] is None
     assert payload["candidates"][0]["actor"] == "User: Grace Hopper"
@@ -246,6 +250,7 @@ def test_suggest_does_not_offer_a_machine_identity(tmp_path):
 
     result = _adr(root, "signer", "--suggest", "--format", "json")
 
+    assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert all("bot" not in c["name"].casefold() for c in payload["candidates"])
 

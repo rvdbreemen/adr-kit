@@ -39,7 +39,50 @@ PR_CREATE_RE = re.compile(r"(?:^|[;&|]\s*)gh\s+pr\s+create\b")
 # The branch diff is the whole development branch, not one commit, so it needs
 # the CI-sized budget from TASK-73 rather than judge.max_diff_bytes.
 CI_DIFF_BUDGET = 33_554_432
-JUDGE_TIMEOUT_S = 120
+
+#: Seconds kept back from the runner budget for this module's own work: reading
+#: the manifest, running `git diff`, rendering the verdict. Without it the judge
+#: could use the entire budget and the client would still kill us mid-render.
+GUARD_OVERHEAD_S = 1
+
+#: Used only when the manifest cannot be read. Deliberately small: an unknown
+#: budget is not a licence to take an unbounded one.
+FALLBACK_JUDGE_TIMEOUT_S = 4
+
+
+def judge_timeout_s() -> int:
+    """How long the judge may run, derived from the budget the client enforces.
+
+    This was a standalone 120 s constant while `hooks/manifest.json` declared
+    `runner_timeout_sec: 5` for `pr-create`, and the two could not both be
+    right. The client kills the hook at its own timeout, so a judge allowed
+    twenty-four times that never reaches the `except SubprocessError` branch
+    below -- the process dies mid-call and the carefully written fail-open path
+    never runs. The user sees nothing at all, which is indistinguishable from a
+    clean branch.
+
+    Deriving it removes the possibility of disagreement: whoever changes the
+    manifest changes this, and a fail-open stays something this module does
+    rather than something that happens to it.
+
+    Note what this does not do. A 5 s budget cannot hold an LLM judge pass, so a
+    project with one configured will usually see this time out and allow, with
+    the reason stated. That is the honest outcome of the budget ADR-023
+    declares, and moving the budget is a decision rather than a patch.
+    """
+    manifest = Path(__file__).resolve().parent / "manifest.json"
+    try:
+        events = json.loads(manifest.read_text(encoding="utf-8"))["events"]
+        runner = next(
+            event["runner_timeout_sec"]
+            for event in events
+            if event.get("id") == "pr-create"
+        )
+    except (OSError, ValueError, KeyError, TypeError, StopIteration):
+        return FALLBACK_JUDGE_TIMEOUT_S
+    if not isinstance(runner, int) or runner <= 0:
+        return FALLBACK_JUDGE_TIMEOUT_S
+    return max(1, runner - GUARD_OVERHEAD_S)
 
 
 def looks_like_pr_create(command: str) -> bool:
@@ -118,7 +161,7 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
                 "--json",
             ],
             cwd,
-            JUDGE_TIMEOUT_S,
+            judge_timeout_s(),
             stdin_text=diff.stdout,
         )
     except (OSError, subprocess.SubprocessError) as exc:

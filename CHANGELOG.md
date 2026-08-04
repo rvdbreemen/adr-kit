@@ -52,6 +52,25 @@ of four governing ADRs on an edit. If you installed v0.44.0, upgrade.
   default. The binary still ships; restoring the preference is gated on it
   passing the parity certification that README describes.
 
+- **The pull-request guard's judge timeout is derived, not declared twice.**
+  Adding `runner_timeout_sec: 5` (below) exposed a second number: the guard
+  carried `JUDGE_TIMEOUT_S = 120`. The client enforces its own timeout, so a
+  judge allowed twenty-four times the budget never reaches the guard's
+  `except SubprocessError` branch -- the process is killed mid-call and the
+  carefully written fail-open path never runs. The user sees nothing at all,
+  which is indistinguishable from a clean branch.
+
+  `judge_timeout_s()` now reads `runner_timeout_sec` from the manifest and keeps
+  one second back for the guard's own work, so whoever changes the budget changes
+  both. `hooks/manifest.json` is mirrored into the generated client trees for the
+  same reason: without it the mirrors fall back to a constant that matches today
+  and stops matching the moment the budget moves.
+
+  Stated rather than hidden: a 5 s budget cannot hold an LLM judge pass, so a
+  project with one configured will see this time out and allow, with the reason
+  given. That is the honest consequence of the declared budget, and moving the
+  budget is a decision rather than a patch.
+
 - **The pull-request guard was killed after one second.** `hooks/manifest.json`
   declared a 5000 ms budget for `pr-create` while the generated `hooks.json`
   carried the 1 s default, because the entry omitted `runner_timeout_sec`. A warm
