@@ -4,7 +4,7 @@ title: Flip gate and binding back to true as each ADR-020..029 implementation sh
 status: To Do
 assignee: []
 created_date: '2026-08-04 17:29'
-updated_date: '2026-08-04 18:09'
+updated_date: '2026-08-04 23:02'
 labels:
   - adr
   - follow-up
@@ -47,6 +47,20 @@ Evidence: `bin/adr-lint:1053` and `:1104` (the two rules); `bin/adr_retrieval_he
 - [ ] #2 A check fails when a named gate exists while the ADR expecting it still has gate:null, so the flip is not left to memory
 - [ ] #3 No record sits at binding:false with a shipped implementation
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+INVESTIGATION 2026-08-05 — none of the ten gates exist yet, so only AC#2 is implementable.
+
+VERIFIED: the repo's own resolver, `_resolve_gates_locally(<the ten names>, repo_root)` from bin/adr-lint:1010, returns the empty set for all ten. The reason is structural, not accidental: TEXT_SCAN_SKIP_DIRS (bin/adr-lint:249-258) contains both `docs` and `backlog`, so an ADR's own Verification bullet and this task's table cannot make a gate 'exist'. A raw grep confirms every occurrence of all ten names lives under docs/adr/ or backlog/tasks/ — zero in bin/, tests/, scripts/, .github/.
+
+Consequence: AC#1 and AC#3 are vacuous today (nothing to flip). AC#2 — the check that fails when a gate name appears in the tree while the ADR naming it still carries gate:null — is the durable half and can be built now. Its value is prospective: landing it means the anchors arrive already covered.
+
+CORRECTION TO A SIBLING RECORD: backlog task-100 line 67 claims 'the gate anchor adr-audit-exit-contract-v1 has real coverage in source'. That conflates behaviour with the anchor. tests/test_adr_audit_command.py does test the five exit codes, but the literal string `adr-audit-exit-contract-v1` appears nowhere in tests/. Under the rule at bin/adr-lint:1138 the anchor is a literal-string requirement, so ADR-026's gate is still absent.
+
+MEASURED COST: the declared-gate probe adds roughly +220 ms to adr-lint, which makes the corpus row for adr-lint (p50_ms 1200) false on landing — post-change p50 lands near 1340 ms. Two mitigations were measured and both rejected on evidence. Coordinate with TASK-126, which owns the corpus.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

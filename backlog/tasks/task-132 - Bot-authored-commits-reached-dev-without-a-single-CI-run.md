@@ -4,7 +4,7 @@ title: Bot-authored commits reached dev without a single CI run
 status: To Do
 assignee: []
 created_date: '2026-08-04 19:34'
-updated_date: '2026-08-04 19:41'
+updated_date: '2026-08-04 23:01'
 labels:
   - ci
   - process
@@ -50,10 +50,22 @@ The fix itself is in the PR that restores the working import form. This task is 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 A commit pushed to a PR branch after checks pass cannot be merged without those checks re-running
-- [ ] #2 The repository's test-helper import convention is enforced by structure or documented where a reviewer meets it, not only by comment
-- [ ] #3 A run that fails to collect a module is distinguishable from a run where that module passed
+- [x] #2 The repository's test-helper import convention is enforced by structure or documented where a reviewer meets it, not only by comment
+- [x] #3 A run that fails to collect a module is distinguishable from a run where that module passed
 - [ ] #4 dev's required contexts are raised to the same four as main, after the widened workflows have reported on a dev PR at least once
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+INVESTIGATION 2026-08-05 — THE STATED ROOT CAUSE IS FALSE. This record claimed `tests/` has no `__init__.py`, so `from tests.adr_fixtures import` raises ModuleNotFoundError at collection. That is not what happens. Without `__init__.py`, `tests/` is a NAMESPACE package, and `pytest.ini` sets `pythonpath = .`, so the dotted form resolves perfectly well. Primary evidence both ways: CI run 30946844278 shows six green legs on a tree carrying the dotted form; on this development machine `C:/Python312/Lib/site-packages/tests/__init__.py` exists and `import tests` resolves there, because a regular package always beats a namespace portion. So the dotted form works or fails depending on what is installed on the machine running the suite. The fix that landed (reverting to the bare `from adr_fixtures import`) is correct; only the recorded reason was wrong. Three source comments repeated the false version and have been corrected.
+
+AC#1 was already satisfied before this task was written: `dev` and `main` both already require checks. What is missing is the STRICT (up-to-date-with-head) flag, which is AC#4.
+
+AC#2 and AC#3 are done: tests/test_import_convention.py parses the AST of every test module and fails on any `tests.*` import (verified it bites with a probe module), plus a second assertion that fails if `tests/__init__.py` ever appears, since that would make the ban arbitrary. CI now runs `pytest --collect-only -q --strict-markers` as its own named step before the suite, so an uncollectable module is a distinct, named failure rather than an absence hidden behind a plausible pass count.
+
+AC#4 IS DEFERRED AND NEEDS A DECISION. The maintainer authorised the branch-protection change on 2026-08-05, but did so without one consequence that the investigation then found: `adr-judge-self.yml` produces the `ADR Enforcement (declarative)` context and has NO push trigger, and cannot have one — `GITHUB_BASE_REF` is empty on push. Raising dev's required contexts to main's four therefore rejects direct pushes to `dev` permanently; every commit would have to arrive through a pull request. That is a workflow change, not a settings tweak, and the maintainer should confirm it knowing that.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
