@@ -1,7 +1,7 @@
 ---
 id: TASK-132
 title: Bot-authored commits reached dev without a single CI run
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-04 19:34'
 updated_date: '2026-08-04 19:41'
