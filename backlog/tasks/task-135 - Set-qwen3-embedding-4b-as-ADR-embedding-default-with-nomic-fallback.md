@@ -4,7 +4,7 @@ title: 'Set qwen3-embedding:4b as ADR embedding default with nomic fallback'
 status: Done
 assignee: []
 created_date: '2026-08-04 21:20'
-updated_date: '2026-08-04 21:25'
+updated_date: '2026-08-04 21:31'
 labels:
   - embedding
   - settings
@@ -13,10 +13,13 @@ dependencies: []
 modified_files:
   - bin/adr-embed
   - codex/bin/adr-embed
+  - copilot/bin/adr-embed
   - bin/adr_embedding_runtime.py
   - codex/bin/adr_embedding_runtime.py
+  - copilot/bin/adr_embedding_runtime.py
   - schemas/adr-kit-config.schema.json
   - codex/schemas/adr-kit-config.schema.json
+  - copilot/schemas/adr-kit-config.schema.json
   - spec.md
   - tests/test_adr_embedding_runtime.py
   - tests/test_adr_settings.py
@@ -49,6 +52,16 @@ Update defaults and fallback messaging; align tests and docs; run focused tests,
 <!-- SECTION:NOTES:BEGIN -->
 Implemented qwen3-embedding:4b as the measured default in both native and Codex distribution copies. nomic-embed-text remains the explicit English-only fallback; automatic switching is intentionally avoided because vector identity changes require a rebuild. Focused tests: 63 passed; client/package tests: 20 passed, 1 skipped; strict ADR lint passed; staged ADR judge reported 0 violations and 0 advisories.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Codex
+created: 2026-08-04 21:31
+---
+The generated Copilot mirror contained the same qwen4b default change; it is included so all shipped distributions stay aligned.
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 
