@@ -190,5 +190,12 @@ jobs:
       - name: Install test runner
         run: python -m pip install pytest
 
+      # A module that cannot be imported is silently absent from the run: the
+      # pass count still looks plausible, which is how three uncollectable
+      # modules reached dev (TASK-132). Collecting first makes that failure a
+      # step of its own, named and separate from a test failure.
+      - name: Check every test module still collects
+        run: python -m pytest --collect-only -q --strict-markers
+
       - name: Run the complete supported-runtime suite
-        run: python -m pytest -q
+        run: python -m pytest -q --strict-markers

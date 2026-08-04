@@ -3,10 +3,10 @@ id: TASK-92
 title: >-
   Supersede ADR-018: embed the query where it is asked, and read authority from
   the index
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-03 19:30'
-updated_date: '2026-08-03 20:52'
+updated_date: '2026-08-04 22:54'
 labels:
   - adr
   - retrieval
@@ -37,7 +37,7 @@ Spec: R6.1 (rewritten 65c8d8a), R10, R7.
 - [x] #1 A new ADR supersedes ADR-018 and states both changes: the query may be embedded in a query step and in a hook, and authority is joined from ADR-INDEX.json at search time
 - [x] #2 The Decision Contract names the three properties that keep query-time embedding honest: inside R21's ceiling, fail-soft to lexical with the route named in the output, and the local runtime of R16 as the default backend
 - [x] #3 The Consequences state plainly that the hot path now depends on a reachable embedding backend, and what happens when it is not
-- [ ] #4 Both sides of the supersession are written by `bin/adr supersede`, never by hand
+- [x] #4 Both sides of the supersession are written by `bin/adr supersede`, never by hand
 - [x] #5 The ADR is Proposed until the maintainer accepts it; the agent does not self-approve
 <!-- AC:END -->
 
@@ -54,3 +54,18 @@ AC#4 is deliberately not done yet, and this task stays open until it is. `bin/ad
 Sequence for the maintainer: `bin/adr accept ADR-020`, then `bin/adr supersede ADR-018 --by ADR-020`. Either order works — the command accepts a Proposed successor and acceptance resolves `supersedes` against the whole directory.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC#4 was already satisfied in the committed tree; the backlog record was stale, not the repository. Verified 2026-08-05 without changing any ADR.
+
+On disk: ADR-020 exists as the successor (status Accepted, supersedes ["ADR-018"]); ADR-018 carries status Superseded with superseded_by "ADR-020", a Status line "Superseded by ADR-020, 2026-08-04.", and a Superseded history entry signed "User: Robert van den Breemen" via "adr-kit lifecycle". ADR-INDEX.json carries both relationship edges, resolved in both directions.
+
+Three independent signatures prove `bin/adr supersede` wrote both sides rather than a hand edit, all in commit 04ab8c3:
+1. Frontmatter re-serialisation -- the decisive one. The ADR-020 diff moves `format: "madr"` out of its hand-authored slot and re-emits it last, which is exactly the canonical order render_frontmatter produces (bin/adr_schema.py:61-75, :254-289). A targeted hand edit changes a value; it does not reorder unrelated keys.
+2. Byte-identical `reason` string on both sides -- one args.reason fanned out to two append_status_history calls (bin/adr:1080, :1092).
+3. Exact status-line template -- bin/adr:1075 writes f"Superseded by {new_id}, {args.date}." and ADR-018 line 39 matches character for character including the trailing period.
+
+No code or ADR changed for this task.
+<!-- SECTION:FINAL_SUMMARY:END -->

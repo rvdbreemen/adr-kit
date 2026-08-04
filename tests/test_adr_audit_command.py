@@ -28,9 +28,13 @@ from pathlib import Path
 import pytest
 
 # Imported as a top-level module, not as `tests.adr_fixtures`. pytest's
-# prepend import mode puts this file's own directory on sys.path, and
-# `tests/` has no `__init__.py`, so the dotted form raises
-# ModuleNotFoundError at collection time -- which is how it reached dev.
+# prepend import mode puts this file's own directory on sys.path, so the bare
+# name always resolves. The dotted form does not: `tests/` has no
+# `__init__.py`, so it is a namespace package, and any installed distribution
+# shipping a real top-level `tests` package shadows it -- a regular package
+# always beats a namespace portion. That makes the dotted form resolve or fail
+# depending on what else is installed on the machine, which is why it is
+# banned outright. tests/test_import_convention.py enforces this.
 from adr_fixtures import isolated_copy
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
