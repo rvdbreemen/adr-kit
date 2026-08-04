@@ -1,15 +1,15 @@
 ---
 id: "ADR-020"
 title: "Embed the Query Where the Query Is Asked, and Read Authority From the Index"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-query-embedding-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: false
 verified_in: []
-supersedes: []
+supersedes:
+  - "ADR-018"
 superseded_by: null
-format: "madr"
 topics:
   - "retrieval"
   - "embeddings"
@@ -28,6 +28,7 @@ symbols:
   - "search"
   - "staleness"
 context_scope: "selective"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -36,7 +37,7 @@ context_scope: "selective"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -47,6 +48,16 @@ status_history:
     changed_by: "User: Robert van den Breemen"
     reason: spec R6.1 permits query-time embedding; ADR-018 forbids it and carries a frozen authority copy that supersession never invalidates
     changed_via: adr-kit
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "Accepted by the maintainer: query-time embedding is permitted in a query step and in a hook, and authority is read from the index rather than frozen into the store."
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-020 replaces the embedding-moment prohibition and the frozen authority join: the query is embedded where the query is asked, and authority is read from the index."
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
@@ -247,8 +258,11 @@ than wall-clock against a live model.
 
 ### Verification
 
-* `adr-query-embedding-v1`: the named gate anchoring this decision in source. It
-  covers the three acceptance cases above and the R21 latency bound.
+* `adr-query-embedding-v1`: the gate this decision is to be anchored by. It
+  does not exist yet, so `gate` is null and `binding` is false: a frontmatter
+  that declares enforcement it cannot deliver is worse than one that admits the
+  gap. Both fields flip back together when the gate ships. It covers the three
+  acceptance cases above and the R21 latency bound.
 
 ## Consequences
 

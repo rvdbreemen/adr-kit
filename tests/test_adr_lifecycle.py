@@ -746,6 +746,50 @@ def test_configured_signer_is_used_when_no_flag_is_given(tmp_path):
     assert 'changed_by: "User: Configured Human"' in created.read_text(encoding="utf-8")
 
 
+def test_supersede_signs_both_sides_without_the_flag(tmp_path):
+    """Supersede appends history directly, so it must resolve the signer itself.
+
+    Every other lifecycle command gets its actor inside `mutate_status`.
+    `supersede` calls `append_status_history` for both files and passed
+    `args.changed_by` through raw, so with no `--changed-by` both entries landed
+    with an empty `changed_by`. Nothing complained at write time. The audit gate
+    caught it later, on the successor, at the exact moment someone tried to
+    accept it -- and the record was immutable by then.
+
+    The existing supersede tests all pass `--changed-by`, which is why this
+    survived: the flag masked the path that real use takes.
+    """
+    import json as _json
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.local.json").write_text(
+        _json.dumps({"lifecycle": {"signer": "User: Configured Human"}}),
+        encoding="utf-8",
+    )
+    old_path = _write_adr(adr_dir, 160, "Old Decision", status="Accepted")
+    new_path = _write_adr(adr_dir, 164, "New Decision", status="Accepted")
+
+    result = _run_adr(
+        "supersede", "160", "--by", "164", "--adr-dir", str(adr_dir),
+        "--date", "2026-07-06",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    for path in (old_path, new_path):
+        latest = _history_entries(_frontmatter(path)[1])[-1]
+        assert latest["changed_by"] == '"User: Configured Human"', (
+            f"{path.name} recorded an unsigned transition: {latest}"
+        )
+
+    audit = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-lint"), "--strict",
+         "--gates", "audit", str(adr_dir)],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert audit.returncode == 0, audit.stdout + audit.stderr
+
+
 def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path):
     """Validate the act before the actor: the error must name the real problem."""
     import subprocess

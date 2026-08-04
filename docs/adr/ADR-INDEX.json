@@ -872,8 +872,8 @@
       "title": "Add a Local Precomputed Vector Layer for ADR Retrieval",
       "path": "ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md",
       "format": "madr",
-      "status": "Accepted",
-      "date": "2026-08-01",
+      "status": "Superseded",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: a local precomputed vector store that the query and hook paths only read, because it delivers semantic...",
       "topics": [
         "embeddings",
@@ -934,7 +934,7 @@
         "supersedes": [
           "ADR-014"
         ],
-        "superseded_by": null
+        "superseded_by": "ADR-020"
       }
     },
     {
@@ -992,8 +992,8 @@
       "title": "Embed the Query Where the Query Is Asked, and Read Authority From the Index",
       "path": "ADR-020-embed-the-query-where-the-query-is-asked-and-read-authority-from-the-index.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact...",
       "topics": [
         "embeddings",
@@ -1044,18 +1044,20 @@
           "A remote embedding endpoint is permitted when the user has selected one through the settings surface, having been told the latency and privacy consequence. It is never the default and never selected by probing."
         ],
         "verification": [
-          "adr-query-embedding-v1: the named gate anchoring this decision in source. It covers the three acceptance cases above and the R21 latency bound."
+          "adr-query-embedding-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both field..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-query-embedding-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": false,
         "verified_in": [],
-        "supersedes": [],
+        "supersedes": [
+          "ADR-018"
+        ],
         "superseded_by": null
       }
     },
@@ -1064,8 +1066,8 @@
       "title": "Let the Session-Scoped Hooks Regenerate a Stale ADR Index",
       "path": "ADR-021-let-the-session-scoped-hooks-regenerate-a-stale-adr-index.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: the session-scoped hooks regenerate a stale index in-process; the edit-tier hooks stay read-only and s...",
       "topics": [
         "hooks",
@@ -1105,15 +1107,15 @@
           "None."
         ],
         "verification": [
-          "adr-hook-index-refresh-v1: the named gate anchoring this decision in source, covering the write-then-prompt sequence, the concurrent-hook case, and the budget bail-out."
+          "adr-hook-index-refresh-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fi..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-hook-index-refresh-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1125,8 +1127,8 @@
       "title": "Make Open Questions Append-Only for a Proposed ADR",
       "path": "ADR-022-make-open-questions-append-only-for-a-proposed-adr.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: ## Open Questions is append-only while an ADR is Proposed, because it removes the incentive at its sou...",
       "topics": [
         "grilling",
@@ -1165,15 +1167,15 @@
           "Outside a git repository, or where the ADR has no recorded prior state, the finding is advisory."
         ],
         "verification": [
-          "adr-open-questions-append-only-v1: the named gate anchoring this decision in source, covering the delete case, the answer case, and the no-history case."
+          "adr-open-questions-append-only-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap...."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-open-questions-append-only-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1185,8 +1187,8 @@
       "title": "Record the Pull-Request Guard as a Fail-Closed Tier",
       "path": "ADR-023-record-the-pull-request-guard-as-a-fail-closed-tier.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b...",
       "topics": [
         "enforcement",
@@ -1226,15 +1228,15 @@
           "ADRKITHOOKDISABLE and the per-ADR override of spec R2.1 apply here as they do at commit time. A gate that cannot be overridden with a reason is overridden outside the tool."
         ],
         "verification": [
-          "adr-pr-guard-tier-v1: the named gate anchoring this decision in source, covering the deny path, the advisory path, and the fail-open path."
+          "adr-pr-guard-tier-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fields..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-pr-guard-tier-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_pr_guard.py"
@@ -1248,8 +1250,8 @@
       "title": "Ask for a Missing ADR at the Pull-Request Moment, Inside the Guard",
       "path": "ADR-024-ask-for-a-missing-adr-at-the-pull-request-moment-inside-the-guard.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: extend the guard, because the moment is already intercepted, the user is already present, and the cost...",
       "topics": [
         "hooks",
@@ -1287,15 +1289,15 @@
           "A project may add a pullrequest workflow of its own. This decision governs what adr-kit turns on by default, not what a team may choose."
         ],
         "verification": [
-          "adr-pr-suggest-v1: the named gate anchoring this decision in source, covering the both-signals case, the clean-branch case, and the advisory-never-denies case."
+          "adr-pr-suggest-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fields fli..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-pr-suggest-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1307,8 +1309,8 @@
       "title": "Separate What Tracked Configuration May Select From What Only a Machine May Introduce",
       "path": "ADR-025-separate-what-tracked-configuration-may-select-from-what-only-a-machine-may-introduce.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: repository-tracked configuration may select among backends an operator has enabled, and may never intr...",
       "topics": [
         "configuration",
@@ -1347,15 +1349,15 @@
           "The legacy judge.llmcmd allowlist is retained for existing projects. It is frozen: no new entries, no new flags."
         ],
         "verification": [
-          "adr-config-trust-boundary-v1: the named gate anchoring this decision in source, covering the credential refusal, the command-string refusal, and the redacted settings output."
+          "adr-config-trust-boundary-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-config-trust-boundary-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_settings.py"
@@ -1369,8 +1371,8 @@
       "title": "Record the Combined Audit Command and Its Five-Way Exit Contract",
       "path": "ADR-026-record-the-combined-audit-command-and-its-five-way-exit-contract.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: one command running both halves, with five exit codes.",
       "topics": [
         "audit",
@@ -1408,15 +1410,15 @@
           "None."
         ],
         "verification": [
-          "adr-audit-exit-contract-v1: the named gate anchoring this decision in source. It asserts each of the five exit codes against a fixture, so the contract is enforced rather than described."
+          "adr-audit-exit-contract-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both f..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-audit-exit-contract-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_audit_command.py"
@@ -1430,8 +1432,8 @@
       "title": "Derive the Lifecycle Signer From a Person-Named Git Identity, Announced",
       "path": "ADR-027-derive-the-lifecycle-signer-from-a-person-named-git-identity-announced.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: derive from git config user.name when it names a person, and announce it.",
       "topics": [
         "audit trail",
@@ -1470,15 +1472,15 @@
           "None."
         ],
         "verification": [
-          "adr-signer-derivation-v1: the named gate anchoring this decision in source, covering derivation, announcement, precedence, the machine-identity refusal, and the write-nothing behaviour of --suggest."
+          "adr-signer-derivation-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fie..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-signer-derivation-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_signer_discovery.py"
@@ -1492,8 +1494,8 @@
       "title": "Gate the Declared Related Link and Leave the Prose One Alone",
       "path": "ADR-028-gate-the-declared-related-link-and-leave-the-prose-one-alone.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-03",
+      "status": "Accepted",
+      "date": "2026-08-04",
       "decision_summary": "Chosen option: gate the declared link, leave the prose alone.",
       "topics": [
         "cross-references",
@@ -1527,15 +1529,15 @@
           "None."
         ],
         "verification": [
-          "adr-reference-gate-scope-v1: the named gate anchoring this decision in source, covering the dangling case, the one-sided case, and the prose-is-ignored case."
+          "adr-reference-gate-scope-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-reference-gate-scope-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_cross_references.py"
@@ -1549,7 +1551,7 @@
       "title": "Retire the Native Hook Binary Rather Than Maintain a Second Retrieval Engine",
       "path": "ADR-029-retire-the-native-hook-binary-rather-than-maintain-a-second-retrieval-engine.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-08-04",
       "decision_summary": "Chosen option: retire the binary, because the alternative is a permanent second implementation of the one component e...",
       "topics": [
@@ -1586,15 +1588,15 @@
           "A future native path is permitted when it delegates to the shared engine rather than reimplementing it, and carries the artefact parity test."
         ],
         "verification": [
-          "adr-single-retrieval-engine-v1: the named gate anchoring this decision in source. It asserts that no second ranking implementation ships, and that the edit-tier path meets its declared budget."
+          "adr-single-retrieval-engine-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Bo..."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": true,
-        "gate": "adr-single-retrieval-engine-v1",
+        "binding": false,
+        "gate": null,
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -2036,6 +2038,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-018",
+      "target": "ADR-020",
+      "type": "superseded-by",
+      "resolved": true
+    },
+    {
       "source": "ADR-019",
       "target": "ADR-004",
       "type": "related",
@@ -2081,6 +2089,12 @@
       "source": "ADR-020",
       "target": "ADR-018",
       "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-020",
+      "target": "ADR-018",
+      "type": "supersedes",
       "resolved": true
     },
     {

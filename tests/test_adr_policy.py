@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from adr_fixtures import isolated_copy
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_LINT = REPO_ROOT / "bin" / "adr-lint"
 
@@ -249,7 +251,9 @@ def test_the_alternatives_count_is_no_longer_a_quality_advisory():
 
 def _one_option(heading: str) -> str:
     source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
-    body = source.read_text(encoding="utf-8").replace("## Considered Options", heading)
+    body = isolated_copy(source.read_text(encoding="utf-8")).replace(
+        "## Considered Options", heading
+    )
     start = body.index(heading) + len(heading)
     end = body.index("\n## ", start)
     return body[:start] + "\n\n* Only one option, nothing weighed against it.\n" + body[end:]

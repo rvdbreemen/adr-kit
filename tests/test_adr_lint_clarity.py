@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from adr_fixtures import isolated_copy
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_LINT = REPO_ROOT / "bin" / "adr-lint"
 
@@ -130,7 +132,7 @@ def test_shipped_adrs_pass_the_acceptance_gate_set(tmp_path):
 
 def _clarity(tmp_path, insert: str) -> int:
     source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
-    body = source.read_text(encoding="utf-8").replace(
+    body = isolated_copy(source.read_text(encoding="utf-8")).replace(
         "## Decision Drivers", "## Decision Drivers\n\n" + insert
     )
     adr_dir = tmp_path / "adr"
