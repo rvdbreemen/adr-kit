@@ -100,6 +100,34 @@ def test_a_retired_key_loads_with_a_warning_rather_than_failing(tmp_path):
     assert retired_keys_present(loaded) == ["$.judge.llm_timeout_ms"]
 
 
+def test_adr_lint_accepts_a_config_that_still_sets_a_retired_key(tmp_path):
+    """adr-lint validates with a real schema engine, which does not know about
+    RETIRED_KEYS on its own. If it disagreed with adr_config, removing a key
+    nothing read would newly FAIL every project that still sets one -- the exact
+    breakage the retirement list exists to prevent.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.json").write_text(
+        json.dumps(
+            {
+                "judge": {"llm_timeout_ms": 30000, "pre_push_timeout_ms": 15000},
+                "context": {"weights": {"exact_keyword": 0.4, "recency": 0.6}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "bin" / "adr-lint"), "--gates", "all", str(adr_dir)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert "schema validation failed" not in result.stdout, result.stdout[-1500:]
+    assert "unknown" not in result.stdout.lower(), result.stdout[-1500:]
+
+
 def test_an_unknown_key_that_was_never_retired_still_fails(tmp_path):
     """The retirement list must not become a hole for typos."""
     sys.path.insert(0, str(ROOT / "bin"))
