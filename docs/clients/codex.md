@@ -17,6 +17,9 @@ Proposed-to-Accepted flow.
 Codex receives SessionStart, UserPromptSubmit, PreToolUse, PostToolUse,
 SubagentStart, and PreCompact through its native hook file. Changed command
 hooks remain subject to Codex trust review. ADR Kit never bypasses that review.
+The generated JSON uses Codex's `commandWindows` field for the Windows command
+override; `command_windows` is a TOML spelling and is not valid in this JSON
+artifact.
 All hook errors fail open; pre-commit is the enforcement floor.
 
 `adr-doctor --deep` resolves the installed manifest, actual interpreter and MCP

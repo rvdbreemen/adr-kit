@@ -175,7 +175,7 @@ def _nested_hook_config(manifest: dict, client_id: str) -> dict:
                     '"$PLUGIN_ROOT/hooks/run-hook.cmd" '
                     f'{event["command"]} codex-cli'
                 ),
-                "command_windows": _codex_windows_command(event),
+                "commandWindows": _codex_windows_command(event),
                 "timeout": codex_timeout,
             }
         entry: dict[str, object] = {"hooks": [handler]}
