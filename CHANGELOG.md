@@ -2092,7 +2092,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.44.1...v0.45.0
 [0.43.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.42.0...v0.43.0
 [0.37.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...v0.36.0
