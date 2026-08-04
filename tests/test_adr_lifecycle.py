@@ -346,8 +346,8 @@ def test_supersede_leaves_an_existing_status_history_block_alone(tmp_path):
 def test_status_commands_seed_a_missing_history_with_the_prior_transition(
     tmp_path, command, expected
 ):
-    confirm = ("--confirm",) if command == "accept" else ()
     """TASK-68 #6: mutate_status drives accept/reject/propose through the same pair."""
+    confirm = ("--confirm",) if command == "accept" else ()
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     path = _write_adr(adr_dir, 1, "Lifecycle Command")
