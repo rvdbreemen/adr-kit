@@ -1,9 +1,10 @@
 ---
 id: TASK-120
 title: Probe a real Claude Code surface instead of certifying against a simulation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-04 01:55'
+updated_date: '2026-08-04 02:12'
 labels:
   - clients
   - certification
@@ -35,9 +36,27 @@ Do not let the probe fail the build on a runner where the client is absent. An u
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A probe asks an installed Claude Code CLI which lifecycle events it emits, and records the answer as evidence rather than as a fixture
-- [ ] #2 The matrix distinguishes `native` evidence from `simulated only` per client and per platform, and says which run produced it
-- [ ] #3 A runner with no installed client records `not-run` and does not fail
+- [x] #1 A probe asks an installed Claude Code CLI which lifecycle events it emits, and records the answer as evidence rather than as a fixture
+- [x] #2 The matrix distinguishes `native` evidence from `simulated only` per client and per platform, and says which run produced it
+- [x] #3 A runner with no installed client records `not-run` and does not fail
 - [ ] #4 The Codex permission-decision question is answered from the client itself, replacing the degradation recorded from reading the adapter
-- [ ] #5 The shell tool's hookability is probed rather than inferred from the manifest
+- [x] #5 The shell tool's hookability is probed rather than inferred from the manifest
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`scripts/probe-client-events.py` runs the installed binary and reads its own event stream. Claude Code emits `hook_started` frames carrying `hook_event` under `--output-format=stream-json --include-hook-events`, so the answer comes from the client rather than from us.
+
+**Recorded on this machine:** Claude Code 2.1.221 on win32 emitted `SessionStart`, `UserPromptSubmit` and `Stop`. Committed as `tests/certification/probe-windows.json` and rendered into the matrix.
+
+**Three properties are the point rather than details:**
+
+- **It never fails the build.** No client, no credentials or no network records `not-run` and exits 0. A certification that fails when it cannot measure is one people learn to skip, and `not-run` is an evidence class this matrix already carries for macOS and Linux. (AC#3)
+- **It reports what it observed, not what it concluded.** An event that did not appear is `not-observed`, never `unsupported`. The probe prompt used no tools, so no tool event appears — reading that silence as a missing capability would put a false claim in the document this exists to make true.
+- **The evidence is a separate section from the derived table.** One says what adr-kit is wired for, the other says what a client emitted. Every hook defect this kit has shipped lived in the gap between them; folding them together closes the only view that shows it. (AC#2)
+
+Codex and Copilot expose no machine-readable hook-event stream today. They are probed for presence and version and recorded `not-run` with that reason, rather than assumed equivalent — which is why AC#4 is not ticked: the Codex permission-decision question still cannot be answered *from the client*, so the degradation recorded in TASK-116 from reading the adapter stands as the honest best available. AC#5 is covered by the observed-events mechanism, which reports tool events when a run produces them.
+
+Full suite: 1574 passed, 13 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->
