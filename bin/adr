@@ -1047,13 +1047,6 @@ def command_supersede(args) -> List[str]:
                 f"{candidate_data.get('id', candidate.name)}"
             )
 
-    # Resolved once, used for both entries. Every other lifecycle command gets
-    # its signer inside `mutate_status`; supersede appends to the history
-    # directly and so has to resolve it itself. Without this both entries land
-    # with an empty `changed_by` -- which the audit gate rejects, and it rejects
-    # the successor at the exact moment someone tries to accept it.
-    changed_by = resolve_signer(adr_dir, args.changed_by)
-
     # Both files are seeded before either is mutated: prior_transition reads the
     # frontmatter status and date that the lines below overwrite.
     old_body = ensure_status_history(
@@ -1062,6 +1055,19 @@ def command_supersede(args) -> List[str]:
     new_body = ensure_status_history(
         new_path, new_data, new_body, (str(new_data["status"]), args.date)
     )
+
+    # Resolved here, after both seeds. Every other lifecycle command gets its
+    # signer inside `mutate_status`; supersede appends to the history directly
+    # and so has to resolve it itself, or both entries land with an empty
+    # `changed_by` -- which the audit gate rejects on the successor, at the
+    # exact moment someone tries to accept it.
+    #
+    # After, not before: `ensure_status_history` above refuses a record whose
+    # prior transition cannot be recovered, and that is a fact about the record,
+    # not about who is asking. Resolving the actor first makes an unconfigured
+    # machine report a missing signer for a record that could not be superseded
+    # by anyone. Validate the act, then the actor.
+    changed_by = resolve_signer(adr_dir, args.changed_by)
 
     old_data["status"] = "Superseded"
     old_data["date"] = args.date

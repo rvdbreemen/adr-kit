@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import os
 import subprocess
 import sys
 import textwrap
@@ -121,13 +122,36 @@ def _frontmatter(path: Path):
     return SCHEMA.parse_frontmatter(raw), body
 
 
-def _run_adr(*args: str):
+def _run_adr(*args: str, env=None, cwd=None):
     return subprocess.run(
         [sys.executable, str(ADR), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env=env,
+        cwd=cwd,
     )
+
+
+def _signerless_env(tmp_path: Path):
+    """An environment with no derivable identity, as a bare CI runner has.
+
+    Since TASK-89 a person-named `git config user.name` is adopted as the
+    signer, so any test about *ordering* -- does the command validate the record
+    before it asks who is signing? -- silently passes on a developer machine and
+    only fails on a runner. Nulling the global and system config is not enough:
+    `git config` also reads the repository-local `.git/config`, so the caller
+    must run from `tmp_path`, where git finds no repository at all.
+    """
+    void = tmp_path / "no-such-config"
+    return {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(void),
+        "GIT_CONFIG_SYSTEM": str(void),
+        "GH_CONFIG_DIR": str(tmp_path / "gh-empty"),
+        "GH_TOKEN": "",
+        "GITHUB_TOKEN": "",
+    }
 
 
 def _index_check(adr_dir: Path):
@@ -424,9 +448,16 @@ def test_supersede_refuses_when_the_prior_transition_cannot_be_recovered(tmp_pat
     )
     before = old_path.read_bytes()
 
+    # Run without a derivable signer, which is what a CI runner has. The order
+    # of the two checks is the property under test: an unrecoverable prior
+    # transition is a fact about the record and must be reported before the
+    # command asks who is signing. Resolving the actor first makes an
+    # unconfigured machine report a missing signer for a record that could not
+    # be superseded by anyone.
     result = _run_adr(
         "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
         "--date", "2026-07-06",
+        env=_signerless_env(tmp_path), cwd=str(tmp_path),
     )
 
     assert result.returncode == 2
