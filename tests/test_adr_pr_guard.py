@@ -247,18 +247,24 @@ def test_an_exhausted_deadline_stops_rather_than_starting_a_subprocess():
     gets killed, instead of returning the allow the caller can act on.
     """
     guard = _guard_module()
-    # Explicit start: the deadline otherwise measures from module import, which
-    # is in the past by the time a test runs, so a bare Deadline(1) is already
-    # partly spent. That is the behaviour the guard wants and the wrong basis
-    # for asserting the arithmetic.
-    now = guard.time.monotonic()
+    # Started half a second ahead so the arithmetic is the same on every
+    # platform. `remaining()` truncates, and a clock read between construction
+    # and the call costs a fraction of a second: on Windows the monotonic clock
+    # ticks at ~15.6 ms and usually returns the same value twice, so nothing is
+    # lost, while a POSIX clock always loses a sliver and truncates one lower.
+    # The offset puts the boundary far from either.
+    ahead = guard.time.monotonic() + 0.5
 
-    assert guard.Deadline(0, start=now).remaining() is None
-    assert guard.Deadline(guard.MIN_SUBPROCESS_S - 1, start=now).remaining() is None
+    assert guard.Deadline(0, start=ahead).remaining() is None
+    assert guard.Deadline(guard.MIN_SUBPROCESS_S - 1, start=ahead).remaining() is None
     assert (
-        guard.Deadline(guard.MIN_SUBPROCESS_S, start=now).remaining()
+        guard.Deadline(guard.MIN_SUBPROCESS_S, start=ahead).remaining()
         == guard.MIN_SUBPROCESS_S
     )
+    # Truncation runs downward by contract. Reporting a budget larger than the
+    # one that is left would hand a subprocess a timeout the caller cannot
+    # honour, which is the failure this whole deadline exists to prevent.
+    assert guard.Deadline(2, start=guard.time.monotonic() - 0.5).remaining() == 1
 
 
 def test_the_whole_guard_is_bounded_by_one_budget():
@@ -397,6 +403,10 @@ def test_the_startup_gap_is_paid_from_the_reserve():
     guard = _guard_module()
 
     assert guard.GUARD_OVERHEAD_S >= 1
-    # A fresh deadline is fresh however many times it is taken.
-    assert guard.Deadline(10).remaining() == 10
-    assert guard.Deadline(10).remaining() == 10
+    # A fresh deadline carries close to the whole budget however many times it
+    # is taken. With an import-time origin the first call in a long-lived
+    # process is already partly spent and every later one is worse. Asserted as
+    # a lower bound rather than an equality because `remaining()` truncates and
+    # a POSIX clock always loses a sliver between construction and the call.
+    assert guard.Deadline(10).remaining() >= 9
+    assert guard.Deadline(10).remaining() >= 9
