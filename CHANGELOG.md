@@ -292,6 +292,115 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   The weekly cheap-tier sweep now reports them alongside the lint, retirement and
   status sections.
 
+## [0.44.1] - 2026-08-03
+
+A hotfix. In v0.44.0 **every ADR hook was dead on Codex and Copilot**, ADR
+injection could be deleted entirely by a single character on Windows, the plan
+exit moment never fired on any client, and the Windows native hook returned one
+of four governing ADRs on an edit. If you installed v0.44.0, upgrade.
+
+### Fixed
+
+- **Every hook exited 1 on Codex and Copilot.** `hooks/adr_pr_guard.py` was
+  never listed in the generated file set, so the mirrored `adr-hook.py` raised
+  `ModuleNotFoundError` at import and produced nothing for *any* event, not only
+  the pull-request guard. The adapter drift check reported `changed=0` the whole
+  time, because a file that is not declared cannot be found missing. It is
+  declared now, and a new test asserts the invariant rather than the file list:
+  every module the generated entrypoint imports must resolve inside that
+  client's tree.
+
+- **One character could delete the whole injection on Windows.** The entrypoint
+  wrote its frame with `print()`, which encodes through `sys.stdout` -- cp1252 on
+  a default Windows console. An ADR title carrying an em dash came out as byte
+  `0x97`, which is not valid UTF-8; a title carrying anything cp1252 cannot
+  represent raised `UnicodeEncodeError`, which the fail-open `except` swallowed
+  into zero bytes and exit 0. Silent, total loss of context, with no trace. The
+  frame is now written as UTF-8 bytes past the platform's text layer, so there is
+  no text encoder left to fail. `bin/adr-mcp` was fixed the same way in v0.42.0;
+  this was the same defect one process over.
+
+- **Leaving plan mode never asked anything.** The `plan-exit` event was
+  registered with `"command": "plan-exit"`, which reaches the hook as the literal
+  event name, compacts to `planexit`, matches no alias, and falls through to a
+  no-op. Measured: that invocation returned 0 bytes where the same payload
+  returned a full injection under `pre-tool-use`. It now uses `pre-tool-use` with
+  the `ExitPlanMode` matcher, exactly as the pull-request guard already did.
+  Twenty-four existing tests passed over the dead path because they called the
+  hook's internals; the new dispatch matrix drives the process instead.
+
+- **The Windows native hook is no longer preferred.** Rebuilt from current source
+  and measured against the Python oracle on this repository, it still returned
+  **one of four** governing ADRs before an edit, four of five at prompt time, and
+  nothing at all for plan exit. `run-hook.cmd` preferred it whenever it existed,
+  so on Windows the binary silently narrowed governance and made the two fixes
+  above invisible. It now runs only when `ADR_KIT_NATIVE_HOOK=1` is set, and the
+  Python path -- which its own README calls the protocol oracle -- answers by
+  default. The binary still ships; restoring the preference is gated on it
+  passing the parity certification that README describes.
+
+- **The pull-request guard's judge timeout is derived, not declared twice.**
+  Adding `runner_timeout_sec: 5` (below) exposed a second number: the guard
+  carried `JUDGE_TIMEOUT_S = 120`. The client enforces its own timeout, so a
+  judge allowed twenty-four times the budget never reaches the guard's
+  `except SubprocessError` branch -- the process is killed mid-call and the
+  carefully written fail-open path never runs. The user sees nothing at all,
+  which is indistinguishable from a clean branch.
+
+  `guard_budget_s()` now reads `runner_timeout_sec` from the manifest and keeps
+  one second back for the work the guard does not control -- interpreter start,
+  imports, the stdin read, and rendering the reason afterwards -- so whoever
+  changes the budget changes both. Measured end to end on the Windows
+  certification machine, a hook process that does no subprocess work costs
+  218 ms p50 and 257 ms p95, which that second covers with room.
+  `hooks/manifest.json` is mirrored into the generated client trees for the
+  same reason: without it the mirrors fall back to a constant that matches today
+  and stops matching the moment the budget moves.
+
+  What is left is spent down by one `Deadline` rather than handed to each
+  subprocess in full. `git diff` is capped at 40 % of the remainder, because
+  giving it everything lets a large branch starve the judge -- and the branches
+  with the largest diffs are the ones most worth checking, so that failure would
+  scale with how much it matters. The judge is passed `--llm-timeout` from the
+  same clock: a subprocess timeout does not reach a grandchild, so killing the
+  judge would leave the model CLI running and billing a verdict nobody reads.
+
+  Two smaller corrections in the same reader. The no-manifest fallback is 1 s,
+  not 4 -- 1 s is what the generator writes into `hooks.json` when
+  `runner_timeout_sec` is absent, which five of the eight events are today, so
+  it is the live path rather than a corner. And a value outside the generator's
+  own `1..30` bound is refused instead of trusted: a hand-edited
+  `runner_timeout_sec: 600` would otherwise hand the guard a 599 s deadline
+  against whatever the client really enforces, which is this defect restored at
+  a larger multiple.
+
+  Stated rather than hidden: a 5 s budget cannot hold an LLM judge pass, so a
+  project with one configured will see this time out and allow, with the reason
+  given. That is the honest consequence of the declared budget, and moving the
+  budget is a decision rather than a patch.
+
+- **An unchecked branch no longer looks like a clean one.** Every fail-open path
+  in the guard returns `checked: false` with a reason -- no base branch, budget
+  exhausted, `git diff` failed, judge unreadable -- and the entrypoint discarded
+  all of them, returning `None` for anything that was not a denial. Verified by
+  running the hook against a branch whose judge could not run: **0 bytes out**,
+  byte-identical to a branch with no violations. The reason is now shown, and
+  the command still proceeds, because an unchecked branch is not a violation and
+  blocking on our own failure punishes the wrong thing.
+
+- **The pull-request guard was killed after one second.** `hooks/manifest.json`
+  declared a 5000 ms budget for `pr-create` while the generated `hooks.json`
+  carried the 1 s default, because the entry omitted `runner_timeout_sec`. A warm
+  declarative-only run measures ~0.8 s, so the guard was inside the noise of its
+  own cap before an LLM pass was involved at all.
+
+- **Codex no longer claims to gate what it cannot stop.** With the guard now
+  reaching Codex, the adapter had no permission decision to return, so a
+  violation would have rendered as an ordinary context injection -- the cost of
+  the judge with none of its effect. The verdict is now labelled as advisory and
+  names the gates that do hold, and the degradation is recorded in
+  `clients/exceptions.json` and `clients/capabilities.json`.
+
 ### Changed
 
 - **The signer is derived from `git config user.name` when it names a person**,

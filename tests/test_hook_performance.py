@@ -57,7 +57,25 @@ def test_windows_process_floor_supports_revised_percentiles_without_hiding_outli
     }
 
 
-def test_native_hook_host_meets_every_hard_timeout():
+def test_the_default_host_is_python_since_the_native_one_became_opt_in(monkeypatch):
+    """v0.44.1 stopped preferring the native host, so the benchmark must too.
+
+    Measured against the Python oracle it returned one of four governing ADRs
+    before an edit, so `run-hook.cmd` now runs it only under
+    `ADR_KIT_NATIVE_HOOK=1`. A benchmark that still picked it up whenever the
+    file exists would publish latency for a path that no longer ships -- the
+    most misleading number this file could produce.
+    """
+    monkeypatch.delenv("ADR_KIT_NATIVE_HOOK", raising=False)
+    result = measure(ROOT, ROOT, samples=3)
+
+    assert all(
+        item["host"] == "python-fallback" for item in result["results"].values()
+    ), result
+
+
+def test_native_hook_host_meets_every_hard_timeout(monkeypatch):
+    monkeypatch.setenv("ADR_KIT_NATIVE_HOOK", "1")
     result = measure(ROOT, ROOT, samples=5)
     assert result["method_id"] == METHOD_ID
     assert result["process_startup_included"]
@@ -71,7 +89,11 @@ def test_native_hook_host_meets_every_hard_timeout():
     assert all(item["timeout_count"] == 0 for item in result["results"].values())
 
 
-def test_windows_native_host_reports_p95_targets_without_masking():
+def test_windows_native_host_reports_p95_targets_without_masking(monkeypatch):
+    # This test is about the native host, so it asks for it. Since v0.44.1 the
+    # dispatcher does not, and the assertion below would otherwise pin
+    # behaviour that was deliberately removed.
+    monkeypatch.setenv("ADR_KIT_NATIVE_HOOK", "1")
     result = measure(ROOT, ROOT, samples=30)
     if os.name == "nt":
         assert all(
