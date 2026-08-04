@@ -247,10 +247,18 @@ def test_an_exhausted_deadline_stops_rather_than_starting_a_subprocess():
     gets killed, instead of returning the allow the caller can act on.
     """
     guard = _guard_module()
+    # Explicit start: the deadline otherwise measures from module import, which
+    # is in the past by the time a test runs, so a bare Deadline(1) is already
+    # partly spent. That is the behaviour the guard wants and the wrong basis
+    # for asserting the arithmetic.
+    now = guard.time.monotonic()
 
-    assert guard.Deadline(0).remaining() is None
-    assert guard.Deadline(guard.MIN_SUBPROCESS_S - 1).remaining() is None
-    assert guard.Deadline(guard.MIN_SUBPROCESS_S).remaining() == guard.MIN_SUBPROCESS_S
+    assert guard.Deadline(0, start=now).remaining() is None
+    assert guard.Deadline(guard.MIN_SUBPROCESS_S - 1, start=now).remaining() is None
+    assert (
+        guard.Deadline(guard.MIN_SUBPROCESS_S, start=now).remaining()
+        == guard.MIN_SUBPROCESS_S
+    )
 
 
 def test_the_whole_guard_is_bounded_by_one_budget():
@@ -264,3 +272,131 @@ def test_the_whole_guard_is_bounded_by_one_budget():
 
     first = deadline.remaining()
     assert first is not None and first <= guard.guard_budget_s()
+
+
+def test_an_unchecked_branch_says_so_instead_of_looking_clean():
+    """The defect the budget fix was written for, one layer up.
+
+    `judge_branch` returned an allow with a reason and `_pr_guard` discarded it,
+    so a branch nobody managed to check produced byte-identical silence to a
+    clean one. Timing out tidily instead of being killed changed nothing the
+    user could observe.
+    """
+    import subprocess
+    import tempfile
+
+    root = Path(tempfile.mkdtemp())
+    subprocess.run(["git", "init", "-q", str(root)], capture_output=True, check=True)
+    (root / "docs" / "adr").mkdir(parents=True)
+
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr create -t x -b y"},
+        "cwd": str(root),
+    }
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "hooks" / "adr-hook.py"),
+         "--client", "claude-code-cli", "--event", "pre-tool-use"],
+        input=json.dumps(payload).encode("utf-8"), capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    assert result.stdout, "an unchecked branch must not be silent"
+    assert b"ADR check skipped" in result.stdout
+    assert b"permissionDecision" not in result.stdout, (
+        "our own failure must not block the command"
+    )
+
+
+def test_the_fallback_matches_what_the_generator_writes():
+    """Two readers of one absent key must not give two answers.
+
+    `scripts/client_generation_artifacts.py` writes `timeout: 1` into hooks.json
+    when `runner_timeout_sec` is missing, and that 1 s is what the client
+    enforces. Five of the eight manifest events omit the key today, so a
+    generous fallback is the original defect on the live path.
+    """
+    generator = (
+        REPO_ROOT / "scripts" / "client_generation_artifacts.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'event.get("runner_timeout_sec", 1)' in generator
+    assert _guard_module().FALLBACK_BUDGET_S == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_fallback"),
+    [
+        pytest.param(True, True, id="bool-is-an-int-in-python"),
+        pytest.param(0, True, id="zero"),
+        pytest.param(-5, True, id="negative"),
+        pytest.param(600, True, id="above-the-generators-ceiling"),
+        pytest.param("5", True, id="string"),
+        pytest.param(5, False, id="valid"),
+    ],
+)
+def test_the_runtime_read_applies_the_generators_own_bounds(
+    tmp_path, monkeypatch, value, expected_fallback
+):
+    """The manifest is read at run time from a file that may be out of step.
+
+    The generator validates 1..30 and refuses anything else, but it only runs at
+    build time. An installed tree whose manifest was edited, or shipped from a
+    different version than its hooks.json, would otherwise hand the guard a
+    budget the client never agreed to.
+    """
+    guard = _guard_module()
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    (hooks_dir / "manifest.json").write_text(
+        json.dumps({"events": [{"id": "pr-create", "runner_timeout_sec": value}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(guard, "__file__", str(hooks_dir / "adr_pr_guard.py"))
+
+    budget = guard.guard_budget_s()
+    if expected_fallback:
+        assert budget == guard.FALLBACK_BUDGET_S, value
+    else:
+        assert budget == 5 - guard.GUARD_OVERHEAD_S
+
+
+def test_the_diff_cannot_consume_the_whole_budget():
+    """The branches with the largest diffs are the ones most worth checking.
+
+    Handing `git diff` the remainder would make the failure scale with how much
+    the check matters.
+    """
+    guard = _guard_module()
+
+    assert 0 < guard.DIFF_BUDGET_SHARE < 1
+
+
+def test_the_judge_child_is_bounded_by_our_budget():
+    """A subprocess timeout does not reach grandchildren.
+
+    Killing adr-judge leaves its model CLI running, billing a verdict nobody
+    will read, so the child is told the limit rather than left with its own
+    120 s default.
+    """
+    source = (REPO_ROOT / "hooks" / "adr_pr_guard.py").read_text(encoding="utf-8")
+
+    assert '"--llm-timeout", str(left)' in source
+
+
+def test_the_startup_gap_is_paid_from_the_reserve():
+    """The client's clock starts at process spawn; the guard's cannot.
+
+    Measured end to end on this machine, a hook process that does no subprocess
+    work costs 218 ms p50 and 257 ms p95 before `judge_branch` is reached. An
+    import-time clock origin measures that exactly and makes the module usable
+    only once per process -- correct for a hook, and silently zero-budget for
+    any second call. The reserve pays for it instead.
+    """
+    guard = _guard_module()
+
+    assert guard.GUARD_OVERHEAD_S >= 1
+    # A fresh deadline is fresh however many times it is taken.
+    assert guard.Deadline(10).remaining() == 10
+    assert guard.Deadline(10).remaining() == 10

@@ -60,16 +60,46 @@ of four governing ADRs on an edit. If you installed v0.44.0, upgrade.
   carefully written fail-open path never runs. The user sees nothing at all,
   which is indistinguishable from a clean branch.
 
-  `judge_timeout_s()` now reads `runner_timeout_sec` from the manifest and keeps
-  one second back for the guard's own work, so whoever changes the budget changes
-  both. `hooks/manifest.json` is mirrored into the generated client trees for the
+  `guard_budget_s()` now reads `runner_timeout_sec` from the manifest and keeps
+  one second back for the work the guard does not control -- interpreter start,
+  imports, the stdin read, and rendering the reason afterwards -- so whoever
+  changes the budget changes both. Measured end to end on the Windows
+  certification machine, a hook process that does no subprocess work costs
+  218 ms p50 and 257 ms p95, which that second covers with room.
+  `hooks/manifest.json` is mirrored into the generated client trees for the
   same reason: without it the mirrors fall back to a constant that matches today
   and stops matching the moment the budget moves.
+
+  What is left is spent down by one `Deadline` rather than handed to each
+  subprocess in full. `git diff` is capped at 40 % of the remainder, because
+  giving it everything lets a large branch starve the judge -- and the branches
+  with the largest diffs are the ones most worth checking, so that failure would
+  scale with how much it matters. The judge is passed `--llm-timeout` from the
+  same clock: a subprocess timeout does not reach a grandchild, so killing the
+  judge would leave the model CLI running and billing a verdict nobody reads.
+
+  Two smaller corrections in the same reader. The no-manifest fallback is 1 s,
+  not 4 -- 1 s is what the generator writes into `hooks.json` when
+  `runner_timeout_sec` is absent, which five of the eight events are today, so
+  it is the live path rather than a corner. And a value outside the generator's
+  own `1..30` bound is refused instead of trusted: a hand-edited
+  `runner_timeout_sec: 600` would otherwise hand the guard a 599 s deadline
+  against whatever the client really enforces, which is this defect restored at
+  a larger multiple.
 
   Stated rather than hidden: a 5 s budget cannot hold an LLM judge pass, so a
   project with one configured will see this time out and allow, with the reason
   given. That is the honest consequence of the declared budget, and moving the
   budget is a decision rather than a patch.
+
+- **An unchecked branch no longer looks like a clean one.** Every fail-open path
+  in the guard returns `checked: false` with a reason -- no base branch, budget
+  exhausted, `git diff` failed, judge unreadable -- and the entrypoint discarded
+  all of them, returning `None` for anything that was not a denial. Verified by
+  running the hook against a branch whose judge could not run: **0 bytes out**,
+  byte-identical to a branch with no violations. The reason is now shown, and
+  the command still proceeds, because an unchecked branch is not a violation and
+  blocking on our own failure punishes the wrong thing.
 
 - **The pull-request guard was killed after one second.** `hooks/manifest.json`
   declared a 5000 ms budget for `pr-create` while the generated `hooks.json`

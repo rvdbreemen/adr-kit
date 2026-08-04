@@ -41,18 +41,42 @@ PR_CREATE_RE = re.compile(r"(?:^|[;&|]\s*)gh\s+pr\s+create\b")
 # the CI-sized budget from TASK-73 rather than judge.max_diff_bytes.
 CI_DIFF_BUDGET = 33_554_432
 
-#: Seconds kept back from the runner budget for this module's own work: reading
-#: the manifest, parsing the verdict, rendering the reason. Every subprocess
-#: shares what is left.
+#: Seconds kept back from the runner budget for the time the guard does not
+#: control or measure: interpreter start, imports and the stdin read before
+#: `judge_branch` is reached, plus parsing the verdict and rendering the reason
+#: afterwards. Measured end to end on the Windows certification machine, a hook
+#: process that does no subprocess work costs 218 ms p50 and 257 ms p95, so one
+#: second is the reserve with room rather than a guess.
+#:
+#: The deadline deliberately starts at `judge_branch` rather than at import. An
+#: import-time origin measures the startup exactly and makes the module usable
+#: only once per process -- correct for a hook, wrong for anything that calls it
+#: twice, and the second call silently gets no budget at all. Paying for the
+#: startup out of a constant keeps the bound without that trap.
 GUARD_OVERHEAD_S = 1
 
 #: Below this a subprocess cannot usefully start, so the guard stops instead of
 #: launching one it will kill immediately.
 MIN_SUBPROCESS_S = 1
 
-#: Used only when the manifest cannot be read. Deliberately small: an unknown
-#: budget is not a licence to take an unbounded one.
-FALLBACK_BUDGET_S = 4
+#: Share of the remaining budget `git diff` may take. The judge is the part that
+#: produces a verdict, so it keeps the majority; reading the diff is setup.
+DIFF_BUDGET_SHARE = 0.4
+
+#: Used when the manifest cannot be read or declares no budget for this event.
+#: One second, because that is what the generator writes into hooks.json when
+#: `runner_timeout_sec` is absent (scripts/client_generation_artifacts.py), and
+#: that is the number the client actually enforces. Five of the eight manifest
+#: events omit the key today, so this is the live path rather than a corner.
+FALLBACK_BUDGET_S = 1
+
+#: The generator validates `runner_timeout_sec` as an int in 1..30 and refuses
+#: anything else. The guard reads the same field at run time from a file that
+#: may have been edited or shipped out of step with hooks.json, so it applies
+#: the same bounds -- otherwise `runner_timeout_sec: 600` hands the guard a
+#: 599 s deadline against whatever the client actually enforces, which is the
+#: original defect restored at a larger multiple.
+MAX_RUNNER_S = 30
 
 
 class Deadline:
@@ -71,8 +95,8 @@ class Deadline:
     with a reason instead of launching a subprocess it is about to kill.
     """
 
-    def __init__(self, seconds: int) -> None:
-        self._end = time.monotonic() + seconds
+    def __init__(self, seconds: int, start: Optional[float] = None) -> None:
+        self._end = (time.monotonic() if start is None else start) + seconds
 
     def remaining(self) -> Optional[int]:
         left = int(self._end - time.monotonic())
@@ -110,7 +134,9 @@ def guard_budget_s() -> int:
         )
     except (OSError, ValueError, KeyError, TypeError, StopIteration):
         return FALLBACK_BUDGET_S
-    if not isinstance(runner, int) or runner <= 0:
+    if isinstance(runner, bool) or not isinstance(runner, int):
+        return FALLBACK_BUDGET_S
+    if not 1 <= runner <= MAX_RUNNER_S:
         return FALLBACK_BUDGET_S
     return max(MIN_SUBPROCESS_S, runner - GUARD_OVERHEAD_S)
 
@@ -176,9 +202,15 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
     left = deadline.remaining()
     if left is None:
         return {"decision": "allow", "reason": "ran out of budget before the diff", "checked": False}
+    # Capped rather than given the remainder. Handing `git diff` everything left
+    # lets a large branch consume the whole budget and starve the judge -- and
+    # the branches with the largest diffs are the ones most worth checking, so
+    # the failure would scale with how much it matters.
     try:
         diff = _run(
-            ["git", "diff", "--unified=0", f"origin/{base}...HEAD"], cwd, left
+            ["git", "diff", "--unified=0", f"origin/{base}...HEAD"],
+            cwd,
+            max(MIN_SUBPROCESS_S, int(left * DIFF_BUDGET_SHARE)),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return {"decision": "allow", "reason": f"git diff failed ({exc})", "checked": False}
@@ -201,6 +233,12 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
                 "--repo-root", str(cwd),
                 "--snapshot", "worktree",
                 "--max-diff-bytes", str(CI_DIFF_BUDGET),
+                # Bound the child's own model call by what is left of our
+                # budget. Without it adr-judge starts an LLM call with a 120 s
+                # default, and subprocess timeouts do not reach grandchildren:
+                # killing the judge leaves the model CLI running, billing a
+                # verdict nobody will read.
+                "--llm-timeout", str(left),
                 "--json",
             ],
             cwd,

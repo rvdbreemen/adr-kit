@@ -38,9 +38,23 @@ def _pr_guard(envelope) -> tuple[str, str] | None:
         envelope.workspace / "docs" / "adr",
         Path(__file__).resolve().parent.parent / "bin" / "adr-judge",
     )
-    if verdict.get("decision") != "deny":
-        return None
-    return verdict["reason"], "pr-guard-deny"
+    if verdict.get("decision") == "deny":
+        return verdict["reason"], "pr-guard-deny"
+    if verdict.get("checked") is False:
+        # The guard could not do its job, and silence here is the whole defect:
+        # a branch nobody managed to check looks exactly like a clean one. Say
+        # so and let the command through -- an unchecked branch is not a
+        # violation, and blocking on our own failure would punish the wrong
+        # thing.
+        return (
+            "ADR check skipped before this pull request: "
+            f"{verdict.get('reason', 'unknown reason')}. "
+            "The commit hook and CI remain the enforcing gates.",
+            "pr-guard-unchecked",
+        )
+    # A clean branch says nothing. An "all clear" on every pull request is noise
+    # that teaches people to skim past the one that matters.
+    return None
 
 
 def _emit(response) -> None:
