@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" session-start codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" session-start codex-cli",
+            "command_windows": "cmd.exe /d /c if defined PLUGIN_ROOT if exist \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" call \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" session-start codex-cli & exit /b 0",
             "timeout": 5
           }
         ]
@@ -19,7 +19,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" user-prompt-submit codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" user-prompt-submit codex-cli",
+            "command_windows": "cmd.exe /d /c if defined PLUGIN_ROOT if exist \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" call \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" user-prompt-submit codex-cli & exit /b 0",
             "timeout": 5
           }
         ]
@@ -31,8 +31,8 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" pre-tool-use codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli",
-            "timeout": 1
+            "command_windows": "cmd.exe /d /c if defined PLUGIN_ROOT if exist \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" call \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli & exit /b 0",
+            "timeout": 5
           }
         ],
         "matcher": "Edit|MultiEdit|Write"
@@ -42,7 +42,7 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" pre-tool-use codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli",
+            "command_windows": "cmd.exe /d /c if defined PLUGIN_ROOT if exist \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" call \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli & exit /b 0",
             "timeout": 5
           }
         ],
@@ -55,8 +55,8 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" post-tool-use codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" post-tool-use codex-cli",
-            "timeout": 1
+            "command_windows": "cmd.exe /d /c if defined PLUGIN_ROOT if exist \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" call \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" post-tool-use codex-cli & exit /b 0",
+            "timeout": 5
           }
         ],
         "matcher": "Edit|MultiEdit|Write"
@@ -68,8 +68,8 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" subagent-start codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" subagent-start codex-cli",
-            "timeout": 1
+            "command_windows": "cmd.exe /d /c if defined PLUGIN_ROOT if exist \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" call \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" subagent-start codex-cli & exit /b 0",
+            "timeout": 5
           }
         ]
       }
@@ -80,8 +80,8 @@
           {
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" pre-compact codex-cli",
-            "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-compact codex-cli",
-            "timeout": 1
+            "command_windows": "cmd.exe /d /c if defined PLUGIN_ROOT if exist \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" call \"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-compact codex-cli & exit /b 0",
+            "timeout": 5
           }
         ]
       }

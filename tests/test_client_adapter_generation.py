@@ -134,9 +134,12 @@ def test_native_hook_shapes_are_generated_from_the_canonical_hook_manifest():
     assert claude["hooks"]["SessionStart"][0]["hooks"][0]["timeout"] == 5
     assert codex["hooks"]["SessionStart"][0]["hooks"][0]["timeout"] == 5
     assert copilot["hooks"]["sessionStart"][0]["timeoutSec"] == 5
-    assert codex["hooks"]["PreToolUse"][0]["hooks"][0][
-        "command_windows"
-    ].startswith('"%PLUGIN_ROOT%\\hooks\\run-hook.cmd"')
+    codex_pre_tool = codex["hooks"]["PreToolUse"][0]["hooks"][0]
+    assert codex_pre_tool["command_windows"].startswith(
+        "cmd.exe /d /c if defined PLUGIN_ROOT if exist "
+    )
+    assert codex_pre_tool["command_windows"].endswith("& exit /b 0")
+    assert codex_pre_tool["timeout"] == 5
     assert claude["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
     assert codex["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
     assert copilot["hooks"]["userPromptSubmitted"][0]["timeoutSec"] == 5
