@@ -121,3 +121,34 @@ on CPU either way. This is advice about speed, not a capability gate.
 
 Installing third-party software happens only on explicit consent, never with
 silent elevation, and declining must leave a working installation.
+
+## Step 4d — The signer: propose, never assume
+
+Every lifecycle command writes a Status History entry naming who decided, and it
+refuses to sign on the user's behalf. That refusal is right, and it should not be
+the user's first experience of the tool.
+
+```bash
+python3 "$ADR_KIT/bin/adr" signer --suggest --adr-dir docs/adr
+```
+
+Read-only: it finds candidates and writes nothing. It looks at the signed-in
+GitHub account (`gh api user`, when the CLI is available) and at
+`git config user.name`, ranks them, and shows each with its source — a proposal
+the user cannot trace is one they cannot judge, and this value lands in an
+immutable history.
+
+- **Candidates found** — show them and ask which to adopt, or let the user type a
+  different name. Then write it:
+  `python3 "$ADR_KIT/bin/adr" signer --set "User: <chosen>"`.
+- **Already configured** — say so and move on. Do not overwrite it.
+- **Nothing found** — the GitHub CLI is absent or signed out and git names nobody
+  usable. Ask for the name outright rather than guessing.
+
+**Bot and CI identities are deliberately not offered.** `github-actions[bot]`,
+`runner`, a bare `user`: those are configured values that name a machine, and
+R8 asks for evidence of which *human* accepted a decision.
+
+The value is machine-local by design (`docs/adr/.adr-kit.local.json`, gitignored)
+because writing one person's name into the tracked config would sign every
+teammate's acceptances. Each machine, container and CI runner needs its own.

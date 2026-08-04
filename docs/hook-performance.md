@@ -15,8 +15,24 @@ The harness fixes:
 - the reference payload for each lifecycle event;
 - p50, p95, hard timeout, and 20% CI-variance metadata.
 
-The native host is the certified Windows path. Python is a fail-open portable
-fallback and is not eligible for the edit-hook latency certification.
+The native host is the certified Windows path for *latency*. Python is a
+fail-open portable fallback and is not eligible for the edit-hook latency
+certification.
+
+**As of v0.44.1 the native host is opt-in and Python answers by default.**
+Latency was never the whole certification: `hooks/native/README.md` also asks
+for protocol parity with the Python core, and that half had never run. Measured
+on this repository after a rebuild from current source, the native host returned
+one of four governing ADRs before an edit, four of five at prompt time, and
+nothing at all for `ExitPlanMode`. A hook that answers in 20 ms with a quarter
+of the governing decisions is not faster than one that answers in 200 ms with
+all of them; it is wrong sooner.
+
+Set `ADR_KIT_NATIVE_HOOK=1` to use it. Restoring the default preference is gated
+on an artefact-level parity test — one that runs the binary rather than reading
+its source, since the test that existed read `adr-hook.rs` and therefore could
+not see a divergent build at all. TASK-104 carries that work and the alternative
+of retiring the binary.
 
 ## Client runner timeout
 

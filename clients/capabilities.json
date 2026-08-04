@@ -205,7 +205,16 @@
           "native_event": "PreCompact"
         }
       },
-      "degradations": [],
+      "degradations": [
+        {
+          "id": "codex-pr-guard-advisory-only",
+          "outcome": "enforcement",
+          "reason": "The Codex hook adapter has no permission decision to return, so a PreToolUse hook cannot stop the tool call.",
+          "user_effect": "The branch is judged and the violation is shown, labelled as not enforced at this moment, rather than the pull request being stopped.",
+          "backstop": "The pre-commit hook blocks the commit, and adr-judge-self.yml judges the branch diff on the pull request.",
+          "blocks_certification": false
+        }
+      ],
       "probes": {
         "detect": "codex --version",
         "install": "scripts/install-agent-envs.py",

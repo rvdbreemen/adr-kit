@@ -30,7 +30,13 @@ def host_command(plugin_root: Path, client: str, event: str) -> tuple[list[str],
         native = plugin_root / "hooks" / "bin" / f"darwin-{arch}" / "adr-hook"
     else:
         native = plugin_root / "hooks" / "bin" / f"linux-{arch}" / "adr-hook"
-    if native.is_file():
+    # Follow the dispatcher, not the filesystem. run-hook.cmd stopped preferring
+    # the native host in v0.44.1 -- it runs only under ADR_KIT_NATIVE_HOOK=1,
+    # because measured against the Python oracle it returned one of four
+    # governing ADRs before an edit. A benchmark that still picks it up whenever
+    # the file exists reports latency for a path that no longer ships, which is
+    # the most misleading number this file could produce.
+    if native.is_file() and os.environ.get("ADR_KIT_NATIVE_HOOK") == "1":
         return [str(native), "--client", client, "--event", event], "native"
     return [
         sys.executable,

@@ -677,16 +677,41 @@ def test_adr_new_quotes_an_actor_containing_a_colon(tmp_path):
 
 
 def test_lifecycle_refuses_to_sign_on_the_users_behalf(tmp_path):
-    """No configured signer and no flag means refuse, not sign as 'adr-kit'."""
+    """Nothing configured and nothing derivable means refuse, not sign as 'adr-kit'.
+
+    Since TASK-89 a person-named `git config user.name` is adopted, so this test
+    has to hide the ambient identity to reach the refusal at all. Without that
+    it passed or failed depending on whether the machine running it had a git
+    name -- which is the environment-dependence that made the v0.44.0 release PR
+    red on all six runners.
+
+    Nulling the global and system config is not enough on its own: `git config`
+    also reads the **repository-local** `.git/config`, and the subprocess would
+    otherwise inherit this repository as its working directory. That passed here
+    only because adr-kit's own checkout happens to set no local `user.name`; one
+    `git config --local user.name X` in a contributor's clone would break it.
+    Running from `tmp_path` leaves git no repository to discover at all.
+    """
+    import os
     import subprocess
     import sys
 
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
+    void = tmp_path / "no-such-config"
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(void),
+        "GIT_CONFIG_SYSTEM": str(void),
+        "GH_CONFIG_DIR": str(tmp_path / "gh-empty"),
+        "GH_TOKEN": "",
+        "GITHUB_TOKEN": "",
+    }
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "bin" / "adr"), "new", "An Unsigned Decision",
          "--adr-dir", str(adr_dir)],
-        capture_output=True, text=True, encoding="utf-8", check=False,
+        capture_output=True, text=True, encoding="utf-8", check=False, env=env,
+        cwd=str(tmp_path),
     )
 
     assert result.returncode != 0

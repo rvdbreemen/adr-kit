@@ -192,6 +192,36 @@ Edit-tier injection: when an `[adr-inject] ADR-NNN ... governs <file>` block app
 
 Confirm to the user with one line naming the action (`created` / `appended` / `replaced v0.11 inline rules` / `refreshed stub`) and the line number.
 
+## Step 1b — The signer: propose, never assume
+
+Do this before Step 3, because that is where `bin/adr new` first runs and it
+refuses to write an unsigned Status History entry. Discovering that refusal
+halfway through a batch of reconstructed ADRs is the worst moment to meet it.
+
+```bash
+python3 "$ADR_KIT/bin/adr" signer --suggest --adr-dir docs/adr
+```
+
+Read-only: it finds candidates and writes nothing. It looks at the signed-in
+GitHub account (`gh api user`, when the CLI is available) and at
+`git config user.name`, ranks them, and shows each with its source — a proposal
+the user cannot trace is one they cannot judge, and this value lands in an
+immutable history.
+
+- **Candidates found** — show them and ask which to adopt, or let the user type a
+  different name. Then write it:
+  `python3 "$ADR_KIT/bin/adr" signer --set "User: <chosen>"`.
+- **Already configured** — say so and move on. Do not overwrite it.
+- **Nothing found** — ask for the name outright rather than guessing.
+
+**Bot and CI identities are deliberately not offered.** `github-actions[bot]`,
+`runner`, a bare `user`: those are configured values that name a machine, and R8
+asks for evidence of which *human* accepted a decision.
+
+The value is machine-local by design (`docs/adr/.adr-kit.local.json`, gitignored)
+because writing one person's name into the tracked config would sign every
+teammate's acceptances.
+
 ## Step 2 — Candidate discovery
 
 Run `bin/adr-discover` to scan the project. Use `--output` to drop the result next to the existing ADRs:

@@ -1,4 +1,4 @@
-<!-- adr-kit-guide v0.44.0 -->
+<!-- adr-kit-guide v0.44.1 -->
 <!-- Canonical project-side ADR guide. Copied from the plugin's templates/adr-kit-guide.md to .claude/adr-kit-guide.md by /adr-kit:init, /adr-kit:upgrade, and /adr-kit:setup. -->
 <!-- This file is plain markdown — readable by Claude Code, headless `claude -p`, shell scripts in pre-commit hooks, evaluator scripts, and any agent that doesn't process @-imports. Do not embed Claude-Code-specific syntax inside this file. -->
 
@@ -168,6 +168,32 @@ After `/adr-kit:init` (or `/adr-kit:install-hooks`), every `git commit` runs `bi
 - Disable hook entirely per commit: `ADR_KIT_HOOK_DISABLE=1 git commit -m "…"`
 - Switch backend or model: `python bin/adr-judge --set-backend openrouter --model <provider/model>` (or `ollama --model <tag>`). `judge.llm_model` and `judge.llm_cmd` are deprecated and ignored: repository-tracked config may select among backends but may never supply a command, endpoint or credential (ADR-017).
 - Remove permanently: `/adr-kit:install-hooks --uninstall`
+
+## The signer
+
+Every lifecycle command writes a `## Status History` entry naming who decided.
+The actor is resolved in this order:
+
+1. `--changed-by "User: <name>"` — one command.
+2. `lifecycle.signer` in `docs/adr/.adr-kit.local.json` — this machine. Set it
+   with `bin/adr signer --set "User: <name>"`.
+3. `git config user.name`, adopted as `User: <name>` **and announced on use**.
+4. Otherwise the command refuses. An unsigned acceptance is a bug; a self-signed
+   one is a lie in the audit trail.
+
+Step 3 skips an identity that names a machine — `github-actions[bot]`, `runner`,
+`jenkins`, a bare `user` — because the record is meant to show which *human*
+accepted. Those fall through to the refusal.
+
+`bin/adr signer --suggest` proposes candidates found on the machine, from the
+signed-in GitHub account (`gh api user`) and from git, each with its source. It
+writes nothing; `/adr-kit:setup`, `/adr-kit:init` and `/adr-kit:upgrade` run it
+and let you choose. `bin/adr signer` on its own reports the current value and
+where it came from.
+
+The value is machine-local by design. A signer committed to the repository would
+put one person's name on every teammate's acceptance, which is worse than no name
+at all: a false attribution rather than a missing one.
 
 ## Supersession (changing a decision)
 

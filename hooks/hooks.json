@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" plan-exit claude-code-cli",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" pre-tool-use claude-code-cli",
             "timeout": 1
           }
         ],
@@ -49,7 +49,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" pre-tool-use claude-code-cli",
-            "timeout": 1
+            "timeout": 5
           }
         ],
         "matcher": "Bash"
