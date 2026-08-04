@@ -42,10 +42,12 @@ PROBE_TIMEOUT_S = 1.0
 EMBEDDING_MARKERS = ("embed", "embedding", "bge", "gte", "e5-", "minilm")
 
 # The model the install route offers. Size is stated before any download starts:
-# 4.7 GB is a decision, not a detail, and a user on a metered link deserves to
+# 2.5 GB is a decision, not a detail, and a user on a metered link deserves to
 # make it knowingly.
-RECOMMENDED_MODEL = "qwen3-embedding:8b"
-RECOMMENDED_MODEL_SIZE = "about 4.7 GB"
+# The smaller alternative is deliberately explicit rather than an automatic
+# retry: switching models changes vector identity and requires a rebuild.
+RECOMMENDED_MODEL = "qwen3-embedding:4b"
+RECOMMENDED_MODEL_SIZE = "about 2.5 GB"
 SMALLER_ALTERNATIVE = "nomic-embed-text"
 SMALLER_ALTERNATIVE_SIZE = "about 275 MB, English-only"
 

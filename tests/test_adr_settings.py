@@ -346,6 +346,12 @@ def test_an_unusable_setting_falls_through_to_the_default(tmp_path, config):
     assert embed._configured_model(adr_dir) is None
 
 
+def test_the_unset_model_default_is_qwen4b():
+    embed = _embed_module()
+
+    assert embed.DEFAULT_EMBED_MODEL == "qwen3-embedding:4b"
+
+
 def test_the_setting_is_declared_and_featured():
     """A key the settings surface cannot show is a key nobody will find."""
     import json

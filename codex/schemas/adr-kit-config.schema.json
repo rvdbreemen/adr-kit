@@ -494,7 +494,7 @@
         "model": {
           "type": "string",
           "minLength": 1,
-          "description": "The embedding model `adr-embed build` uses by default, for example `qwen3-embedding:8b` or `nomic-embed-text`. Written by setup after a consented download. Which model embeds a team's ADRs is a project decision, so it belongs in this tracked file; where the runtime serving it lives does not."
+          "description": "The embedding model `adr-embed build` uses by default. The measured default is `qwen3-embedding:4b`; `nomic-embed-text` remains an explicit English-only fallback. Written by setup after a consented download. Which model embeds a team's ADRs is a project decision, so it belongs in this tracked file; where the runtime serving it lives does not."
         }
       }
     }
