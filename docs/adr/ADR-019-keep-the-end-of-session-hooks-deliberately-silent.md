@@ -9,6 +9,8 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-023"
 topics:
   - "end-of-session silence"
   - "hook cost"
@@ -46,6 +48,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-023 corrects ADR-019's every-hook-is-model-free premise
     changed_via: adr-kit lifecycle
 ```
 

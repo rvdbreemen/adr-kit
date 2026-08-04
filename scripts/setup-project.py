@@ -8,6 +8,33 @@ import json
 import sys
 from pathlib import Path
 
+def _use_utf8_output() -> None:
+    """Print the diff as UTF-8, whatever the console claims to be.
+
+    A dry run against this repository crashed with `UnicodeEncodeError` on
+    U+2192 in the rendered diff, after four change lines had already been
+    printed -- so the user saw a traceback where the summary belonged and could
+    reasonably conclude the run had half-applied. On Windows the default console
+    encoding is cp1252, and instruction text legitimately contains arrows, dashes
+    and quotation marks it cannot represent.
+
+    `errors="replace"` on stderr rather than a hard failure: a diagnostic line
+    losing one glyph is better than a diagnostic line raising.
+    """
+    for stream, kwargs in (
+        (sys.stdout, {"encoding": "utf-8"}),
+        (sys.stderr, {"encoding": "utf-8", "errors": "replace"}),
+    ):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(**kwargs)
+            except (ValueError, OSError):
+                # A detached or non-seekable stream; the default encoding stays.
+                pass
+
+
+_use_utf8_output()
+
 from adr_settings import SettingsError, resolve_settings
 from project_setup import (
     SetupError,
@@ -17,9 +44,24 @@ from project_setup import (
 )
 
 
+CLIENT_ALIASES = {
+    "claude-code-cli": "claude",
+    "codex-cli": "codex",
+    "github-copilot-cli": "copilot",
+}
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="adr-kit:setup")
-    parser.add_argument("--project-root", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "workspace",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="Project to set up. Equivalent to --project-root; accepted "
+        "positionally because that is the form the setup skills documented.",
+    )
+    parser.add_argument("--project-root", type=Path, default=None)
     parser.add_argument(
         "--plugin-root",
         type=Path,
@@ -27,20 +69,76 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--clients",
-        default="claude,codex,copilot",
-        help="Comma-separated selected native clients.",
+        default=None,
+        help="Comma-separated selected native clients: claude, codex, copilot. "
+        "Full client ids such as codex-cli are accepted and normalised.",
+    )
+    parser.add_argument(
+        "--client",
+        default=None,
+        help="Alias for --clients, singular. Accepts a short name or a full "
+        "client id.",
     )
     parser.add_argument("--global-settings", type=Path)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--no-pre-commit", action="store_true")
+    parser.add_argument(
+        "--no-pre-commit", action="store_true",
+        help="Leave .githooks/pre-commit exactly as it is: do not install one, "
+        "and do not remove one. Use this on a project that manages its git "
+        "hooks another way.",
+    )
+    parser.add_argument(
+        "--remove-pre-commit", action="store_true",
+        help="Remove adr-kit's pre-commit hook. Only ever removes a hook this "
+        "kit wrote; a foreign hook is left alone.",
+    )
     parser.add_argument("--format", choices=("human", "json"), default="human")
     return parser
 
 
+def _selected_clients(raw: str | None) -> list[str]:
+    """Normalise whatever the caller wrote into the short names settings use.
+
+    Both spellings reach this command from real callers: the settings surface
+    and this script's own default use `claude`/`codex`/`copilot`, while every
+    skill and workflow that names a client elsewhere uses the full ids from
+    `clients/capabilities.json`. Accepting one and failing on the other with a
+    `KeyError` -- which is what shipped -- means the documented invocation dies
+    on a dictionary lookup after argparse has already accepted it.
+    """
+    if raw is None:
+        raw = "claude,codex,copilot"
+    selected = []
+    for item in raw.split(","):
+        name = item.strip()
+        if not name:
+            continue
+        name = CLIENT_ALIASES.get(name, name)
+        if name not in ("claude", "codex", "copilot"):
+            raise SystemExit(
+                f"adr-kit:setup: unknown client {item.strip()!r}; expected one "
+                f"of claude, codex, copilot (or the full ids "
+                f"{', '.join(sorted(CLIENT_ALIASES))})"
+            )
+        if name not in selected:
+            selected.append(name)
+    return selected
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    root = args.project_root.resolve()
-    clients = [item.strip() for item in args.clients.split(",") if item.strip()]
+    if args.client and args.clients:
+        raise SystemExit(
+            "adr-kit:setup: pass --client or --clients, not both; they mean "
+            "the same thing"
+        )
+    if args.workspace and args.project_root and args.workspace != args.project_root:
+        raise SystemExit(
+            "adr-kit:setup: the positional workspace and --project-root "
+            "disagree; pass one"
+        )
+    root = (args.project_root or args.workspace or Path.cwd()).resolve()
+    clients = _selected_clients(args.client or args.clients)
     try:
         effective = resolve_settings(root, global_path=args.global_settings)
         clients = [
@@ -48,15 +146,26 @@ def main(argv: list[str] | None = None) -> int:
             for client in clients
             if effective["values"]["clients"][client]["enabled"] is not False
         ]
+        # Three states, not two. `--no-pre-commit` used to mean "remove the
+        # hook", which is a destructive act behind a name that promises a
+        # non-act: a project using husky or a hand-written hook lost it to a
+        # flag that reads as "leave things alone". Skipping is now expressible
+        # and is what that name does; removal has its own name.
+        if args.no_pre_commit and args.remove_pre_commit:
+            raise SystemExit(
+                "adr-kit:setup: --no-pre-commit leaves the hook alone and "
+                "--remove-pre-commit deletes it; pass one"
+            )
         pre_commit = (
             effective["values"]["pre_commit"]["enabled"]
-            and not args.no_pre_commit
+            and not args.remove_pre_commit
         )
         changes, configure_hooks_path = collect_changes(
             root,
             args.plugin_root.resolve(),
             clients,
             pre_commit_enabled=pre_commit,
+            touch_pre_commit=not args.no_pre_commit,
         )
         diff = render_diff(changes, root)
         if not args.dry_run:

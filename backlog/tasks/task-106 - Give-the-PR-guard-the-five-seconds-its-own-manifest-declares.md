@@ -1,9 +1,10 @@
 ---
 id: TASK-106
 title: Give the PR guard the five seconds its own manifest declares
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 19:34'
+updated_date: '2026-08-03 20:15'
 labels:
   - hooks
   - bug
@@ -22,7 +23,19 @@ Do **not** build a drift test between the two files: `hooks.json` is generated f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `"runner_timeout_sec": 5` is added to the `pr-create` manifest entry and all three client trees are regenerated
+- [x] #1 `"runner_timeout_sec": 5` is added to the `pr-create` manifest entry and all three client trees are regenerated
 - [ ] #2 A test asserts the generated `hooks.json` carries the manifest's declared timeout for every event, so the default can never silently apply again
-- [ ] #3 `plan-exit` is reviewed for the same treatment once it fires
+- [x] #3 `plan-exit` is reviewed for the same treatment once it fires
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`"runner_timeout_sec": 5` added to the `pr-create` manifest entry; all three trees regenerated and `hooks.json` now carries `"timeout": 5` on the Bash matcher.
+
+AC#2 was deliberately not built. The task text already said why and it held up: `hooks.json` is generated from `manifest.json`, so a drift test between them would test the generator against itself. The default of 1 comes from `_runner_timeout` when the key is absent, which is a missing key rather than a missing invariant.
+
+`plan-exit` was reviewed as AC#3 asks and left at the default. It reads the index and renders — the same shape as `pre-tool-use`, which carries the same 100 ms budget — so it needs no exception. The 5 s belongs to `pr-create` because that one spawns a subprocess.
+
+Shipped in v0.44.1.
+<!-- SECTION:FINAL_SUMMARY:END -->

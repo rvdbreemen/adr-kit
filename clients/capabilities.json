@@ -131,6 +131,24 @@
           "outcome": "task-context",
           "mode": "native",
           "native_event": "PreCompact"
+        },
+        "plan-exit": {
+          "outcome": "task-context",
+          "mode": "native",
+          "native_event": "PreToolUse",
+          "matcher": "ExitPlanMode"
+        },
+        "pr-create": {
+          "outcome": "enforcement",
+          "mode": "native",
+          "native_event": "PreToolUse",
+          "matcher": "Bash"
+        },
+        "post-edit-governance": {
+          "outcome": "edit-governance",
+          "mode": "native",
+          "native_event": "PostToolUse",
+          "matcher": "Edit|MultiEdit|Write"
         }
       },
       "degradations": [
@@ -203,6 +221,18 @@
           "outcome": "task-context",
           "mode": "native",
           "native_event": "PreCompact"
+        },
+        "pr-create": {
+          "outcome": "enforcement",
+          "mode": "native",
+          "native_event": "PreToolUse",
+          "matcher": "Bash"
+        },
+        "post-edit-governance": {
+          "outcome": "edit-governance",
+          "mode": "native",
+          "native_event": "PostToolUse",
+          "matcher": "Edit|MultiEdit|Write"
         }
       },
       "degradations": [],
@@ -245,13 +275,13 @@
         "edit-governance": {
           "outcome": "edit-governance",
           "mode": "backstop",
-          "native_event": "PostToolUse",
+          "native_event": "postToolUse",
           "degradation_id": "copilot-pretool-context-limit"
         },
         "task-context": {
           "outcome": "task-context",
           "mode": "native",
-          "native_event": "SessionStart"
+          "native_event": "sessionStart"
         },
         "prompt-context": {
           "outcome": "task-context",
@@ -269,6 +299,12 @@
           "mode": "unsupported",
           "native_event": null,
           "degradation_id": "copilot-lifecycle-event-limit"
+        },
+        "post-edit-governance": {
+          "outcome": "edit-governance",
+          "mode": "native",
+          "native_event": "postToolUse",
+          "matcher": "Edit|MultiEdit|Write"
         }
       },
       "degradations": [

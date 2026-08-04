@@ -9,6 +9,22 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-023"
+topics:
+  - "context injection"
+  - "fail open"
+  - "fail closed"
+  - "hooks"
+  - "edit tier"
+aliases:
+  - "layered injection"
+  - "injection tiers"
+  - "enforcement floor"
+  - "PreToolUse context"
+components:
+  - "lifecycle hooks"
+  - "adr-judge"
 ---
 # ADR-004 Layered ADR Context Injection for Agent Work
 
@@ -32,6 +48,11 @@ status_history:
     changed_by: robert@vandenbreemen.net
     reason: Approved; implementing all phases of the companion design spec
     changed_via: adr-kit v0.30.5
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-023 narrows ADR-004's only-mechanism-that-blocks claim
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context

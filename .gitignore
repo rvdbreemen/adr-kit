@@ -74,4 +74,10 @@ graphify-out/
 # Derived embedding store (ADR-018). Machine-local by default: it is rebuilt
 # from the ADRs and is specific to one embedding model.
 docs/adr/.adr-kit-vectors.json
+
+# Setup writes a timestamped copy of every user-owned file it touches, so a
+# migration can be undone. Machine-local by nature: it records what THIS
+# checkout looked like before the write, which is meaningless to a teammate.
+.adr-kit/backups/
+.adr-kit/ADR-guide.local.md
 .adr-kit-vectors.json

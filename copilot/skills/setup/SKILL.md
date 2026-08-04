@@ -11,7 +11,8 @@ Select `adr-kit:setup` from `/skills`, or ask Copilot to use the `setup` ADR Kit
 Resolve `<plugin-root>` from this installed skill. Use only bundled,
 local ADR Kit tools and follow this canonical workflow:
 
-1. Run `python <plugin-root>/scripts/setup-project.py --client <client-id> <workspace>`.
+1. Run `python <plugin-root>/scripts/setup-project.py --client <client-id> --project-root <workspace>`, where `<client-id>` is this client's id and `<workspace>` is the project root.
 2. Preserve all user content outside managed markers and `.adr-kit/ADR-guide.local.md`; rerunning unchanged input must be a no-op.
+3. Run `adr-settings --adr-dir docs/adr --check-embedding` and act on the answer: `ready` needs no question, `runtime-without-model` offers the pull with its download size stated first, and `absent` explains how to install a local runtime, how to point at an existing one, or how to use a remote endpoint. It installs nothing on its own and a missing runtime is a normal outcome, not an error.
 
 Do not contact another model or mutate user-owned instructions.

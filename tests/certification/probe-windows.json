@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "probe_id": "adr-kit-client-event-probe-v1",
+  "records": [
+    {
+      "client": "claude-code-cli",
+      "binary": "C:\\Users\\rvdbr\\.local\\bin\\claude.EXE",
+      "version": "2.1.221 (Claude Code)",
+      "platform": "win32",
+      "evidence_mode": "native",
+      "observed_events": [
+        "SessionStart",
+        "Stop",
+        "UserPromptSubmit"
+      ]
+    }
+  ]
+}

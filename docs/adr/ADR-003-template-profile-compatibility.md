@@ -9,6 +9,17 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: "ADR-005"
+topics:
+  - "template"
+  - "storage format"
+  - "import"
+aliases:
+  - "canonical template"
+  - "MADR import"
+  - "Nygard import"
+components:
+  - "adr-migrate"
+  - "adr-lint"
 ---
 # ADR-003 Canonical Template Stays the Storage Format; MADR and Nygard Are Import Formats
 

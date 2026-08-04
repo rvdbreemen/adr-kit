@@ -16,6 +16,6 @@ local ADR Kit tools and follow this canonical workflow:
 3. Use `madr` as the default; support `nygard` and `canonical` only when returned as available, and never invent a profile or template.
 4. Qualify `<subject>` as a consequential, difficult-to-reverse decision before creating a record; do not create an ADR for an ordinary reversible implementation choice.
 5. Create a Proposed record, then follow the canonical grill protocol for context, decision, alternatives, consequences, risks, mitigations, evidence, scope, ownership, conflicts, and Open Questions.
-6. Show the final acceptance packet and require an explicit `yes` in this active session before invoking `adr accept`; require Completeness, Evidence, Clarity, and Consistency and supersede rather than rewriting Accepted decisions.
+6. Show the final acceptance packet and require an explicit `yes` in this active session before invoking `adr accept ... --confirm`; require Completeness, Evidence, Clarity, and Consistency and supersede rather than rewriting Accepted decisions.
 
 Do not contact another model or mutate user-owned instructions.

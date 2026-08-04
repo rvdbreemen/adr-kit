@@ -3,9 +3,10 @@ id: TASK-100
 title: >-
   Record what /adr-kit:audit is, its exit-code contract, and the name it took
   over
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 19:32'
+updated_date: '2026-08-03 22:39'
 labels:
   - adr
   - cli
@@ -29,9 +30,43 @@ Spec: R15.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An ADR states what `/adr-kit:audit` runs, why lint and judge belong in one pass, and why the exit codes are five rather than two
-- [ ] #2 The whole-codebase mode is recorded as a diff against the empty tree, with the diff budget that bounds it
-- [ ] #3 The rename of the old `adr-audit` to `adr-discover` is recorded, with the ambiguity it removes
-- [ ] #4 The refusal of a bare invocation is recorded, including the failure it replaced
-- [ ] #5 A test asserts each of the five exit codes on a fixture, so the contract is enforced and not merely described
+- [x] #1 An ADR states what `/adr-kit:audit` runs, why lint and judge belong in one pass, and why the exit codes are five rather than two
+- [x] #2 The whole-codebase mode is recorded as a diff against the empty tree, with the diff budget that bounds it
+- [x] #3 The rename of the old `adr-audit` to `adr-discover` is recorded, with the ambiguity it removes
+- [x] #4 The refusal of a bare invocation is recorded, including the failure it replaced
+- [x] #5 A test asserts each of the five exit codes on a fixture, so the contract is enforced and not merely described
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-03 20:53
+---
+ADR-026 written and Proposed, passing all gates. It carries the five-way exit table with an owner column, the whole-codebase-as-empty-tree interpretation with its diff budget, the `adr-audit` → `adr-discover` rename, and the bare-invocation refusal including the failure it replaced.
+
+AC#5 stays open: the ADR names the gate `adr-audit-exit-contract-v1` and points `verified_in` at `tests/test_adr_audit_command.py`, but the test asserting each of the five exit codes against a fixture is not written yet. Under the kit's own rule the gate anchor has to exist in source before the record can be accepted, so this task blocks acceptance of ADR-026 rather than the other way round.
+---
+<!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+ADR-026 written and Proposed, passing all gates. It carries the five-way exit table with an owner column, the whole-codebase-as-empty-tree interpretation with its diff budget, the `adr-audit` → `adr-discover` rename, and the bare-invocation refusal including the failure it replaced.
+
+**AC#5 turned out to be already satisfied**, which I only established by looking rather than assuming. `tests/test_adr_audit_command.py` asserts every one of the five codes against a fixture that provokes exactly that condition:
+
+| code | test |
+|---|---|
+| 0 | `test_a_healthy_project_is_on_course` |
+| 1 | `test_whole_codebase_mode_reaches_a_file_no_recent_diff_touched` |
+| 2 | `test_a_tooling_failure_exits_two_rather_than_reporting_clean`, `test_a_bare_invocation_refuses_instead_of_reporting_on_course` |
+| 3 | `test_a_failing_adr_set_exits_three_not_one` |
+| 4 | `test_both_failures_exit_four_and_are_reported_separately` |
+
+All six pass. So the gate anchor `adr-audit-exit-contract-v1` has real coverage in source and ADR-026 is acceptable — the earlier note on this task, that the missing test blocked acceptance, was wrong.
+
+TASK-111 added three more tests to the same module covering the gate selector this ADR's rationale depends on.
+
+Acceptance remains the maintainer's action.
+<!-- SECTION:FINAL_SUMMARY:END -->

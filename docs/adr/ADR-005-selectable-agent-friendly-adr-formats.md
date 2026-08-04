@@ -11,6 +11,18 @@ supersedes:
   - "ADR-003"
 superseded_by: null
 format: "madr"
+topics:
+  - "body profile"
+  - "template"
+  - "format registry"
+aliases:
+  - "MADR default"
+  - "selectable profile"
+  - "semantic roles"
+components:
+  - "adr"
+  - "adr-lint"
+  - "adr-migrate"
 ---
 # ADR-005 Use Selectable ADR Body Profiles with MADR as the Default
 

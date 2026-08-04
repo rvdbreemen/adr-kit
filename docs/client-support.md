@@ -9,11 +9,42 @@
 
 ## Lifecycle retrieval support
 
-| Client | Session global | Prompt/task query | Edit query | Plan exit | Subagent/compaction |
-|---|---|---|---|---|---|
-| Claude Code CLI | Accepted global only | Accepted governing + Proposed advisory | supported | supported (ExitPlanMode) | preserves parent context |
-| Codex CLI | Accepted global only | Accepted governing + Proposed advisory | supported | no plan-mode event | preserves parent context |
-| GitHub Copilot CLI | supported task context | Accepted governing + Proposed advisory | unsupported native event | no plan-mode event | unsupported native events |
+Derived from `hooks/manifest.json`, which is the registry of what each
+client is *wired for*. A cell names that client's own event, or states
+that the client offers none.
+
+This table makes one claim and not two. It says a moment is registered;
+it does not say the wiring behind it works. That second question belongs
+to the dispatch tests, which drive every registered event through the
+real entrypoint on every client -- and it is a question worth keeping
+separate, because `Plan exit | supported (ExitPlanMode)` sat in this file
+through a release in which that event never fired. The Evidence column
+above says how the wiring was verified.
+
+| Client | Session global | Prompt/task query | Edit query | Post-edit backstop | Plan exit | Shell tool / PR moment | Subagent | Compaction |
+|---|---|---|---|---|---|---|---|---|
+| Claude Code CLI | `SessionStart` | `UserPromptSubmit` | `PreToolUse` / `Edit\|MultiEdit\|Write` | `PostToolUse` / `Edit\|MultiEdit\|Write` | `PreToolUse` / `ExitPlanMode` | `PreToolUse` / `Bash` | `SubagentStart` | `PreCompact` |
+| Codex CLI | `SessionStart` | `UserPromptSubmit` | `PreToolUse` / `Edit\|MultiEdit\|Write` | `PostToolUse` / `Edit\|MultiEdit\|Write` | no native event | `PreToolUse` / `Bash` | `SubagentStart` | `PreCompact` |
+| GitHub Copilot CLI | `sessionStart` | `userPromptSubmitted` | no native event | `postToolUse` / `Edit\|MultiEdit\|Write` | no native event | no native event | no native event | no native event |
+
+## Observed client evidence
+
+What an installed binary reported, from its own event stream. Separate
+from the table above on purpose: that one says what adr-kit is wired
+for, this one says what a client did. Every hook defect this kit has
+shipped lived in the gap between the two.
+
+An event that does not appear here is `not-observed`, not unsupported.
+A probe run that used no tools cannot produce a tool event, and reading
+that silence as a missing capability is how this document acquired the
+claims it had to be rewritten to remove.
+
+| Client | Version | Platform | Evidence | Observed events |
+|---|---|---|---|---|
+| Claude Code CLI | 2.1.221 (Claude Code) | win32 | native | `SessionStart`, `Stop`, `UserPromptSubmit` |
+
+Source: `tests/certification/probe-windows.json`.
+Regenerate with `python scripts/probe-client-events.py`, which exits 0 when a client is absent because an unmeasured client is a normal outcome rather than a failure.
 
 All retrieval is local, bounded, and index-first. Unsupported native lifecycle events are not advertised; deterministic pre-commit enforcement remains the backstop.
 

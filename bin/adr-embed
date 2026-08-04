@@ -104,6 +104,35 @@ def _resolve_embed_backend(adr_dir: Path):
     return backend
 
 
+def _configured_model(adr_dir: Path) -> str | None:
+    """`embedding.model` from the project config, when it is set.
+
+    Setup asks the user to consent to a download -- `qwen3-embedding:8b` is about
+    4.7 GB -- and the model they agreed to had nowhere to be recorded, so the
+    next `adr-embed build` silently used the hardcoded default instead. Under
+    ADR-018's own rule a model-identity mismatch marks the store stale, so the
+    visible outcome was either a wasted download or retrieval quietly falling
+    back to lexical: exactly the discover-it-later failure spec R16 exists to
+    prevent.
+
+    Fail-soft on purpose. An unreadable or malformed config yields None and the
+    caller falls through to the default, because refusing to build a store over
+    a typo in an unrelated key would be a worse trade than building it with the
+    default model and recording that identity honestly.
+    """
+    try:
+        raw = json.loads((adr_dir / ".adr-kit.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    block = raw.get("embedding")
+    if not isinstance(block, dict):
+        return None
+    value = block.get("model")
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def command_build(args) -> int:
     adr_dir = Path(args.adr_dir)
     records = _records(adr_dir)
@@ -111,7 +140,7 @@ def command_build(args) -> int:
         raise EmbedError(f"no ADRs found in {adr_dir}")
 
     backend = _resolve_embed_backend(adr_dir)
-    model = args.model or DEFAULT_EMBED_MODEL
+    model = args.model or _configured_model(adr_dir) or DEFAULT_EMBED_MODEL
     texts = [store_mod.embed_text(record) for record in records]
 
     print(f"[adr-embed] embedding {len(texts)} ADR(s) with {model} via {backend.kind}...", file=sys.stderr)
@@ -167,11 +196,37 @@ def command_status(args) -> int:
                 lines.append(f"  {label}: {', '.join(drift[label])}")
     else:
         lines.append("current: every ADR matches its stored vector")
+
+    # Two different problems with two different fixes, so they are reported
+    # separately. "The content changed" wants a rebuild. "The index is stale or
+    # absent" wants `bin/adr-index`, and until then a search cannot say which
+    # decisions still govern -- the store's own copy of status is frozen at
+    # build time and a supersession never touches the hashed text.
+    authority = store_mod.load_authority(adr_dir)
+    if authority is None:
+        authority_state = "unavailable"
+        lines.append(
+            "AUTHORITY UNAVAILABLE - no readable ADR-INDEX.json; run "
+            "`bin/adr-index docs/adr`. Until then a search cannot tell a "
+            "governing decision from a superseded one."
+        )
+    else:
+        orphaned = sorted(
+            str(entry.get("adr_id"))
+            for entry in store["entries"]
+            if str(entry.get("adr_id")) not in authority
+        )
+        authority_state = "orphaned-entries" if orphaned else "current"
+        if orphaned:
+            lines.append(
+                "entries with no ADR in the index (dropped from results): "
+                + ", ".join(orphaned)
+            )
     return _emit(args, {"action": "status", "usable": True, "store": {
         "model": store["model"], "backend": store["backend"],
         "entries": len(store["entries"]), "dimension": store["dimension"],
         "built_at": store["built_at"],
-    }, "drift": drift}, lines)
+    }, "drift": drift, "authority": authority_state}, lines)
 
 
 def command_query(args) -> int:
@@ -184,7 +239,11 @@ def command_query(args) -> int:
     if not vectors:
         raise EmbedError("could not embed the query; the backend returned nothing")
     results = store_mod.search(
-        store, vectors[0], limit=args.limit, include_historical=args.include_historical
+        store, vectors[0], limit=args.limit,
+        include_historical=args.include_historical,
+        # The vectors find; the index decides. Without this the store answers
+        # from a frozen copy of status that a supersession never invalidates.
+        authority=store_mod.load_authority(adr_dir),
     )
     lines = [f"{row['similarity']:.3f}  {row['adr_id']}  [{row['authority']}]  {row['title']}" for row in results]
     return _emit(args, {"action": "query", "query": args.query, "results": results}, lines or ["no results"])

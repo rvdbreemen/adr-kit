@@ -11,7 +11,7 @@ import fnmatch
 import json
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 INDEX_FIRST_RETRIEVAL_GATE = "index-first-retrieval"
 SUPPORTED_SCHEMA_VERSIONS = {1, 2}
@@ -604,6 +604,7 @@ def query_adr_context(
     symbols: Sequence[str] = (),
     components: Sequence[str] = (),
     topics: Sequence[str] = (),
+    embedder: Optional[Callable[[str], Optional[List[float]]]] = None,
 ) -> Dict:
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be a non-empty string")
@@ -665,12 +666,99 @@ def query_adr_context(
         source=source,
         schema_version=version,
     )
+    results, route, route_warning = _apply_semantic_order(
+        results, query, adr_dir, embedder, limit
+    )
+    if route_warning:
+        warnings.append(route_warning)
     return {
         "results": results,
         "warnings": warnings,
         "source": source,
+        "route": route,
         "engine": (
             "index-first" if source.startswith("index-") else "markdown-fallback"
         ),
         "schema_version": version,
     }
+
+
+def _apply_semantic_order(
+    results: List[Dict],
+    query: str,
+    adr_dir: Path,
+    embedder: Optional[Callable[[str], Optional[List[float]]]],
+    limit: int,
+) -> Tuple[List[Dict], str, Optional[str]]:
+    """Reorder lexical candidates by vector similarity, or say why it did not.
+
+    The embedder arrives as a callable rather than an import, and that is the
+    whole design. This module ranks and must stay reachable from a hook, so it
+    imports nothing that can touch a model or the network -- a property a test
+    asserts by walking the AST. The caller that *can* reach a backend decides
+    whether to supply one, which is also how the per-event budget is honoured:
+    ADR-020 gives the 500 ms events an embedder and leaves the 100 ms events on
+    the index-only route.
+
+    Every failure returns the lexical order with a named reason. A retrieval
+    path that silently degrades is worse than one that is slower, because the
+    user cannot tell the difference between "no ADR was relevant" and "the
+    backend was down".
+    """
+    if embedder is None:
+        return results, "lexical", None
+    try:
+        store, reason = _load_vector_store(adr_dir)
+    except Exception as exc:  # a derived artefact must never break retrieval
+        return results, "lexical", f"[adr-context] vector store unreadable ({exc})"
+    if store is None:
+        return results, "lexical", f"[adr-context] {reason}"
+    try:
+        vector = embedder(query)
+    except Exception as exc:
+        return results, "lexical", f"[adr-context] embedding failed ({exc})"
+    if not vector:
+        return results, "lexical", "[adr-context] the backend returned no vector"
+
+    similarity = {
+        str(entry.get("adr_id")): _cosine(vector, entry.get("vector") or [])
+        for entry in store.get("entries", [])
+    }
+    if not similarity:
+        return results, "lexical", "[adr-context] the vector store is empty"
+    # `adr_id`, not `id`: query_records returns the retrieval record, whose
+    # identifier field is adr_id. Reading `id` here silently scored every row at
+    # zero and left the order untouched, which looks exactly like a working
+    # vector route on a small fixture.
+    ordered = sorted(
+        results,
+        key=lambda row: (
+            -similarity.get(str(row.get("adr_id")), 0.0),
+            str(row.get("adr_id")),
+        ),
+    )
+    for row in ordered:
+        row["similarity"] = round(similarity.get(str(row.get("adr_id")), 0.0), 6)
+    return ordered[:limit], "vector", None
+
+
+def _load_vector_store(adr_dir: Path) -> Tuple[Optional[Dict], str]:
+    """Read the store without importing the builder, which is not hot-path safe."""
+    path = Path(adr_dir) / ".adr-kit-vectors.json"
+    if not path.is_file():
+        return None, "no vector store; retrieval stays on lexical ranking"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
+        return None, "the vector store is malformed; retrieval stays lexical"
+    return payload, ""
+
+
+def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    norm_left = sum(a * a for a in left) ** 0.5
+    norm_right = sum(b * b for b in right) ** 0.5
+    if not norm_left or not norm_right:
+        return 0.0
+    return dot / (norm_left * norm_right)

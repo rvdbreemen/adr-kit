@@ -76,7 +76,8 @@ may iterate; the new ADR is only flipped to `Accepted` (by the user or on
 their explicit instruction) before the old one is touched.
 
 Show the complete acceptance packet and require an explicit `yes` in this
-active session before invoking `adr accept`. A failure or interruption stops
+active session before invoking `adr accept ... --confirm`. A failure or
+interruption stops
 before `adr supersede`, leaving the old ADR and reciprocal links unchanged.
 
 ## Step 3 - Supersede transactionally (only after approval)

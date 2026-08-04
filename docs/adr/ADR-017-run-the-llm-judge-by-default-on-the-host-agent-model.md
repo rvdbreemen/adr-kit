@@ -10,6 +10,8 @@ verified_in: []
 supersedes:
   - "ADR-001"
 superseded_by: null
+related:
+  - "ADR-025"
 topics:
   - "llm judging"
   - "backend selection"
@@ -55,6 +57,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Supersession link to ADR-001 established; status stays Accepted, this entry records the link rather than a status change
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-025 constrains the backend selection ADR-017 introduced
     changed_via: adr-kit lifecycle
 ```
 

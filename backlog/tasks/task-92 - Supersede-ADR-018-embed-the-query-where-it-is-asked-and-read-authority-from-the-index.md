@@ -3,9 +3,10 @@ id: TASK-92
 title: >-
   Supersede ADR-018: embed the query where it is asked, and read authority from
   the index
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-03 19:30'
+updated_date: '2026-08-03 20:52'
 labels:
   - adr
   - retrieval
@@ -33,9 +34,23 @@ Spec: R6.1 (rewritten 65c8d8a), R10, R7.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new ADR supersedes ADR-018 and states both changes: the query may be embedded in a query step and in a hook, and authority is joined from ADR-INDEX.json at search time
-- [ ] #2 The Decision Contract names the three properties that keep query-time embedding honest: inside R21's ceiling, fail-soft to lexical with the route named in the output, and the local runtime of R16 as the default backend
-- [ ] #3 The Consequences state plainly that the hot path now depends on a reachable embedding backend, and what happens when it is not
+- [x] #1 A new ADR supersedes ADR-018 and states both changes: the query may be embedded in a query step and in a hook, and authority is joined from ADR-INDEX.json at search time
+- [x] #2 The Decision Contract names the three properties that keep query-time embedding honest: inside R21's ceiling, fail-soft to lexical with the route named in the output, and the local runtime of R16 as the default backend
+- [x] #3 The Consequences state plainly that the hot path now depends on a reachable embedding backend, and what happens when it is not
 - [ ] #4 Both sides of the supersession are written by `bin/adr supersede`, never by hand
-- [ ] #5 The ADR is Proposed until the maintainer accepts it; the agent does not self-approve
+- [x] #5 The ADR is Proposed until the maintainer accepts it; the agent does not self-approve
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-03 20:52
+---
+ADR-020 written and Proposed: `docs/adr/ADR-020-embed-the-query-where-the-query-is-asked-and-read-authority-from-the-index.md`. Passes all four gates plus `quality` and `schema` under `--gates all`, 0 advisories.
+
+AC#4 is deliberately not done yet, and this task stays open until it is. `bin/adr supersede ADR-018 --by ADR-020` writes both sides of the link and retires ADR-018 — running it now would retire an Accepted decision on the strength of a Proposed successor the maintainer has not approved. The guide says the same thing from the other direction: leave the `supersedes` frontmatter to the command, never fill it in by hand. So `supersedes` is empty and the relationship is stated in prose under Related Decisions.
+
+Sequence for the maintainer: `bin/adr accept ADR-020`, then `bin/adr supersede ADR-018 --by ADR-020`. Either order works — the command accepts a Proposed successor and acceptance resolves `supersedes` against the whole directory.
+---
+<!-- COMMENTS:END -->

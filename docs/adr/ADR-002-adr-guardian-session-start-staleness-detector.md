@@ -9,6 +9,18 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+topics:
+  - "staleness"
+  - "guardian"
+  - "cadence"
+  - "session start"
+aliases:
+  - "ADR rot"
+  - "drift detector"
+  - "two-tier sweep"
+components:
+  - "adr-guardian"
+  - "lifecycle hooks"
 ---
 # ADR-002 ADR Guardian: SessionStart Staleness Detector with Two-Tier Cadence
 

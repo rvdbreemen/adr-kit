@@ -144,6 +144,9 @@ def _index_check(adr_dir: Path):
     [("propose", "Proposed"), ("accept", "Accepted"), ("reject", "Rejected")],
 )
 def test_status_commands_update_frontmatter_history_and_index(tmp_path, command, expected):
+    # Acceptance is the one transition that must be asked for rather than
+    # arrived at, so it alone carries --confirm.
+    confirm = ("--confirm",) if command == "accept" else ()
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     path = _write_adr(adr_dir, 1, "Lifecycle Command")
@@ -151,6 +154,7 @@ def test_status_commands_update_frontmatter_history_and_index(tmp_path, command,
     result = _run_adr(
         command,
         "1",
+        *confirm,
         "--adr-dir",
         str(adr_dir),
         "--date",
@@ -235,7 +239,7 @@ def test_acceptance_gates_block_incomplete_record_without_mutation(tmp_path):
     )
     before = path.read_bytes()
 
-    result = _run_adr("accept", "1", "--adr-dir", str(adr_dir))
+    result = _run_adr("accept", "1", "--confirm", "--adr-dir", str(adr_dir))
 
     assert result.returncode == 2
     assert "acceptance blocked" in result.stderr
@@ -343,13 +347,14 @@ def test_status_commands_seed_a_missing_history_with_the_prior_transition(
     tmp_path, command, expected
 ):
     """TASK-68 #6: mutate_status drives accept/reject/propose through the same pair."""
+    confirm = ("--confirm",) if command == "accept" else ()
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
     path = _write_adr(adr_dir, 1, "Lifecycle Command")
     _set_status(path, "2026-06-12", "Proposed, 2026-06-12.")
 
     result = _run_adr(
-        command, "1", "--adr-dir", str(adr_dir), "--date", "2026-07-06",
+        command, "1", *confirm, "--adr-dir", str(adr_dir), "--date", "2026-07-06",
         "--changed-by", "Codex",
     )
 
@@ -446,7 +451,7 @@ def test_accept_resolves_a_supersedes_target_from_the_adr_directory(tmp_path):
     assert new_data["supersedes"] == ["ADR-001"]
 
     result = _run_adr(
-        "accept", "2", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
+        "accept", "2", "--confirm", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
         "--changed-by", "Codex",
     )
 
@@ -473,7 +478,7 @@ def test_acceptance_is_not_blocked_by_an_unrelated_broken_adr(tmp_path):
     assert linked.returncode == 0, linked.stderr + linked.stdout
 
     result = _run_adr(
-        "accept", "2", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
+        "accept", "2", "--confirm", "--adr-dir", str(adr_dir), "--date", "2026-07-07",
         "--changed-by", "Codex",
     )
 
@@ -754,7 +759,7 @@ def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path)
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
     subprocess.run(
-        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "accept", "ADR-001",
+        [sys.executable, str(REPO_ROOT / "bin" / "adr"), "accept", "ADR-001", "--confirm",
          "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"],
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
@@ -769,4 +774,68 @@ def test_an_illegal_transition_reports_illegality_not_a_missing_signer(tmp_path)
     assert "illegal lifecycle transition" in result.stderr, (
         "the signer check must not preempt the legality check; an illegal "
         "transition has to report that it is illegal"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Acceptance has to be asked for (TASK-110, spec R8)
+# ---------------------------------------------------------------------------
+
+def test_acceptance_without_confirm_refuses_and_writes_nothing(tmp_path):
+    """The one transition that decides must not be reachable by accident.
+
+    With `lifecycle.signer` configured -- the common case now that the signer is
+    derived rather than demanded -- an accept that nobody meant to run wrote the
+    user's own name, a plausible reason and today's date into a history that is
+    immutable afterwards. R8's own argument is that a false attribution is worse
+    than a missing one.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "A Decision")
+    before = path.read_bytes()
+
+    result = _run_adr(
+        "accept", "1", "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"
+    )
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "--confirm" in result.stderr
+    assert path.read_bytes() == before, "a refused acceptance may not touch the record"
+
+
+def test_acceptance_with_confirm_proceeds(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "A Decision")
+
+    result = _run_adr(
+        "accept", "1", "--confirm", "--adr-dir", str(adr_dir),
+        "--changed-by", "User: Test Signer",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'status: "Accepted"' in path.read_text(encoding="utf-8")
+
+
+def test_a_broken_record_reports_the_gate_not_the_missing_flag(tmp_path):
+    """Order matters: say why the record cannot be accepted, not what to type.
+
+    Checking the flag first would tell an author to add `--confirm`, and only
+    then tell them the record was incomplete all along -- two round trips, with
+    the real problem discovered second.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, "A Decision")
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("## Consequences", "## Removed"), encoding="utf-8")
+
+    result = _run_adr(
+        "accept", "1", "--adr-dir", str(adr_dir), "--changed-by", "User: Test Signer"
+    )
+
+    assert result.returncode == 2
+    assert "--confirm" not in result.stderr, (
+        "the gate failure is the real problem and must be reported first"
     )

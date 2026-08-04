@@ -376,3 +376,79 @@ def test_an_explicit_empty_diff_is_still_clean(tmp_path):
 
     assert code == EXIT_OK
     assert payload["code"]["empty"] is True
+
+
+# ---------------------------------------------------------------------------
+# The audit runs the gate set it claims to run (TASK-111)
+# ---------------------------------------------------------------------------
+
+def test_the_gate_selector_reaches_adr_lint(tmp_path):
+    """`--gates` was unreachable, and that hid four failures.
+
+    `run_lint` built a fixed argv and never passed `--gates`; `parse_gates` had
+    exactly one call site, the command line. `--strict` does not close the gap,
+    because it adds `schema` only. Measured on this repository before the fix:
+    the default set reported 0 failures over a set that `--gates all` reported
+    4 failures on, so the command that exists to ask "are these records sharp
+    enough to be violated?" could not ask it.
+    """
+    import re
+
+    source = (REPO_ROOT / "bin" / "adr-audit").read_text(encoding="utf-8")
+
+    assert '"--gates"' in source, "the audit exposes no gate selector"
+    assert re.search(r"run_lint\([^)]*args\.gates", source), (
+        "the selector is parsed but never reaches run_lint"
+    )
+
+
+def test_a_vague_record_fails_only_when_the_gates_are_asked_for(tmp_path):
+    """The two answers must differ, or the selector is decoration.
+
+    Three unexpanded acronyms in prose are a clarity failure. The default gate
+    set must not report it -- that is the authoring/merge split ADR-009 draws --
+    and `--gates all` must.
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
+    body = source.read_text(encoding="utf-8").replace(
+        "## Decision Drivers",
+        "## Decision Drivers\n\n"
+        "* The OTGW firmware talks to the HVAC unit over the MQTT bridge.\n",
+    )
+    (adr_dir / "ADR-020-vague.md").write_text(body, encoding="utf-8")
+
+    def lint(*extra):
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "bin" / "adr-lint"), *extra, str(adr_dir)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        ).returncode
+
+    assert lint() == 0, "the default set must stay structural"
+    assert lint("--gates", "clarity") != 0, "the clarity gate must see it"
+
+
+def test_this_repositorys_own_records_pass_every_gate():
+    """The kit's ADR set has to survive the gates the kit ships.
+
+    Before this task it did not: four records failed `clarity`. The repair was
+    not to edit them -- three of the four flagged terms were `LLM`, the product's
+    own core vocabulary, and fragments of filenames such as `SKILL.md`. Editing
+    an Accepted Decision to satisfy a heuristic is exactly what spec R15 forbids,
+    so the heuristic was bounded instead.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-lint"),
+         "--gates", "all", str(REPO_ROOT / "docs" / "adr")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+
+    assert result.returncode == 0, result.stdout[-2000:]

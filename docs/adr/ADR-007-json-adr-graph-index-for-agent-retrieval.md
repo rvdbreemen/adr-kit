@@ -9,7 +9,22 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-021"
 format: "madr"
+topics:
+  - "graph"
+  - "index"
+  - "retrieval"
+  - "generated artefact"
+aliases:
+  - "ADR-INDEX.json"
+  - "node and edge graph"
+  - "agent retrieval"
+components:
+  - "adr-index"
+  - "adr-context"
+  - "adr_query"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -38,6 +53,11 @@ status_history:
     status: Accepted
     changed_by: Codex for Robert
     reason: "Amended by ADR-014: advance the generated graph enforcement gate from schema version 1 to schema version 2 while retaining ADR-007's graph foundation and Markdown-authority rules"
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-021 says what a consumer does when the generated index is stale
     changed_via: adr-kit lifecycle
 ```
 

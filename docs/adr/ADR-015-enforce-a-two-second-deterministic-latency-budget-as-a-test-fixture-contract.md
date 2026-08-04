@@ -11,6 +11,8 @@ verified_in:
   - "tests/test_hook_performance.py"
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-029"
 topics:
   - "performance"
   - "latency budget"
@@ -59,6 +61,11 @@ status_history:
     status: Accepted
     changed_by: Robert van den Breemen
     reason: Accepted after TASK-55 evidence review; explicit yes in session
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-029 must be measured against ADR-015's latency contract
     changed_via: adr-kit lifecycle
 ```
 

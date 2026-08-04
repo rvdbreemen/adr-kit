@@ -9,7 +9,22 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-022"
 format: "madr"
+topics:
+  - "grilling"
+  - "readiness"
+  - "human gate"
+  - "open questions"
+aliases:
+  - "deterministic readiness"
+  - "one question at a time"
+  - "acceptance packet"
+components:
+  - "adr-readiness"
+  - "adr-mcp"
+  - "adr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -33,6 +48,11 @@ status_history:
     status: Accepted
     changed_by: Robert van den Breemen
     reason: Maintainer approved the ADR Grilling plan and explicitly authorized complete TASK-45 implementation in this session
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-03
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: ADR-022 constrains the grilling readiness model ADR-011 established
     changed_via: adr-kit lifecycle
 ```
 

@@ -1,9 +1,10 @@
 ---
 id: TASK-108
 title: 'Make inject.enabled and watch.enabled true, or stop claiming them'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-03 19:34'
+updated_date: '2026-08-03 22:21'
 labels:
   - settings
   - hooks
@@ -28,8 +29,26 @@ Two honest routes, pick one and say why in the commit: have `adr_hook_core` read
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Either the toggles work or they are gone; the schema description matches the behaviour either way
-- [ ] #2 If they work: a test sets each toggle false and asserts the corresponding hook emits nothing
+- [x] #1 Either the toggles work or they are gone; the schema description matches the behaviour either way
+- [x] #2 If they work: a test sets each toggle false and asserts the corresponding hook emits nothing
 - [ ] #3 If they go: `/adr-kit:settings` still shows the user how to turn injection off, through the install-hooks path
-- [ ] #4 The chosen route is stated in the commit message with the reason, since both are defensible
+- [x] #4 The chosen route is stated in the commit message with the reason, since both are defensible
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Made them work rather than deleting them, and the reason is in the commit as AC#4 asks.
+
+Of the two routes, this one matches what the kit already does: `guardian.enabled` has been honoured since v0.18, so the pattern is the project's own rather than a new invention, and the settings surface stays one file instead of half a file plus an install command.
+
+**The switches are independent.** `inject` is PreToolUse, `watch` is PostToolUse. A team may reasonably want the pre-edit constraint without the post-edit backstop, or the reverse; one key silencing both would be a different feature from the one the schema documents. Two tests assert the crossed pairs still inject.
+
+**Only an explicit `false` switches a tier off.** A missing key, a missing file, a wrong type, the string `"false"` and an unparseable document all keep injecting — five parametrised cases. The reasoning is worth keeping: a settings surface must not be able to silence governance by being broken, and the failure mode of guessing the other way is silent loss of a constraint the user believes is in force.
+
+Refactored `_configured_limit` onto a shared `_project_config` reader so the config file is parsed the same way for all three keys, instead of one function owning both the read and its own error handling.
+
+AC#3 does not apply: the toggles were kept, so `/adr-kit:settings` needs no install/uninstall rows.
+
+148 hook, watch and settings tests pass; all three client trees regenerated.
+<!-- SECTION:FINAL_SUMMARY:END -->

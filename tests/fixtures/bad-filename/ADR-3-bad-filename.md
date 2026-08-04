@@ -15,6 +15,7 @@ Triggers the Consistency gate.
 ## Alternatives Considered
 
 - Use canonical filename: rejected for fixture purposes.
+- Do nothing: rejected, this fixture must trip the filename check.
 
 ## Consequences
 

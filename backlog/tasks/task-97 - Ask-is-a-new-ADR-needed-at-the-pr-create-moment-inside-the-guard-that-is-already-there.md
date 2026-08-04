@@ -3,9 +3,10 @@ id: TASK-97
 title: >-
   Ask 'is a new ADR needed?' at the pr-create moment, inside the guard that is
   already there
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-03 19:32'
+updated_date: '2026-08-03 20:53'
 labels:
   - hooks
   - adr
@@ -32,10 +33,26 @@ Spec: R2, R14 track 2.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An ADR records the decision and states plainly that a hand-opened PR is not covered
+- [x] #1 An ADR records the decision and states plainly that a hand-opened PR is not covered
 - [ ] #2 The `gh pr create` interception emits the missing-ADR nudge alongside the judge verdict
 - [ ] #3 A violation still denies; a suggestion never denies — the nudge is advisory and cannot block the tool call on its own
 - [ ] #4 The combined path stays inside the 5 s budget the manifest already declares for `pr-create`
 - [ ] #5 The nudge is skipped when the branch carries no candidate decisions, so a clean branch sees nothing
 - [ ] #6 A test drives the guard with a branch that adds a dependency and asserts both the verdict and the nudge appear
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-03 20:53
+---
+Decision recorded: ADR-024, Proposed, passes all gates.
+
+The hand-opened pull request is in the Consequences as an accepted gap, not a footnote: a PR from the web interface, from a teammate not using an agent, or from a script gets nothing, and a CI workflow is the only thing that closes it. The ADR refuses to ship that workflow **on by default** rather than refusing the workflow — a project may add one, and the Exceptions section says so.
+
+ADR-024 rests on ADR-023's principle rather than restating ADR-019's: the dividing line is whether the user can see a hook fire and refuse it, which is what makes the in-session moment acceptable and the CI moment not.
+
+Remaining: AC#2 through AC#6 are implementation, blocked on TASK-90 landing on this branch (the guard reaches only Claude Code until the mirrors ship, and that fix is on release/v0.44.1).
+---
+<!-- COMMENTS:END -->

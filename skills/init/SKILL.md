@@ -13,7 +13,7 @@ Reject unknown arguments instead of guessing.
 
 You are running the one-shot project bootstrap for adr-kit. Your job is to take a project that has either no ADRs or only legacy-shaped ADRs and:
 
-1. Hook the kit into the project's `CLAUDE.md` and drop the canonical guide at `.claude/adr-kit-guide.md`.
+1. Write the project's instruction layout with `scripts/setup-project.py`, which owns every file in it.
    New ADRs use MADR unless `docs/adr/.adr-kit.json` selects
    `template.profile: "nygard"` or `"canonical"`.
 2. Discover decision-shaped artefacts in the source and documentation, create a starter work queue of Proposed ADRs, and confirm each decision independently.
@@ -136,61 +136,36 @@ Install Python 3.10+ from https://www.python.org/downloads/ and re-run /adr-kit:
 
 ## Step 1 — Project hookup
 
-### 1a. Drop the canonical guide
+### 1a. Write the instruction layout
 
-Locate the plugin's `templates/adr-kit-guide.md`. The plugin is loaded under `~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/<version>/`; resolve the latest version with:
+Do not hand-write the instruction block or the guide. `scripts/setup-project.py`
+owns the layout and is the only thing that knows all of it: `CLAUDE.md`,
+`AGENTS.md`, `.github/copilot-instructions.md` and `.adr-kit/ADR-guide.md`.
+Describing an older layout in prose here is how the three clients drifted apart
+-- the Codex and Copilot init skills delegate to this command while this file
+still wrote a guide under `.claude/` and a stub block the same repository
+classifies as legacy.
+
+Preview, then apply:
 
 ```bash
-ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1
+python3 "$ADR_KIT/scripts/setup-project.py" --client claude-code-cli --project-root . --dry-run
+python3 "$ADR_KIT/scripts/setup-project.py" --client claude-code-cli --project-root .
 ```
 
-If `docs/adr/` already exists, inspect its formats before creating or changing
-records:
+Two properties the command guarantees, and this skill must not undermine:
 
-```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
-python3 "$ADR_KIT/bin/adr-migrate" --plan docs/adr/
-```
+- **Idempotent.** Re-running on a current project changes nothing.
+- **Bounded.** It writes only inside its managed markers, so user content around
+  them stays byte-exact, and it never touches `.adr-kit/ADR-guide.local.md`.
 
-Show the notices, but do not migrate automatically. Continue initialization;
-the user can approve deterministic preview commands or invoke
-`/adr-kit:migrate` for guided mappings afterward.
+**A v0.11 footprint stops this step.** If `CLAUDE.md` carries an inline
+`## ADR Kit Rules` section, do not run the writer. Tell the user to run
+`/adr-kit:upgrade`, which performs that migration explicitly. Silently rewriting
+a v0.11 footprint is the one thing setup may never do.
 
-Copy `templates/adr-kit-guide.md` from that path to the project's `.claude/adr-kit-guide.md` (relative to `pwd`, which the user is expected to set to the project root before invoking).
-
-- If `.claude/adr-kit-guide.md` does not exist: write the file.
-- If it exists and is byte-identical to the template: skip (no-op).
-- If it exists and differs: read both, show the user a unified diff (3 lines of context), ask `keep project version | replace with plugin version | merge by hand`. Apply the chosen action. Default on re-run with no edits is `replace`.
-
-The first line of the plugin template is `<!-- adr-kit-guide vX.Y.Z -->` — preserve that line so future `/adr-kit:upgrade` runs can detect freshness.
-
-### 1b. Append the slim stub to CLAUDE.md
-
-Locate `CLAUDE.md` at the project root. Three cases:
-
-- **CLAUDE.md does not exist.** Create it containing only the stub below.
-- **CLAUDE.md exists, no ADR-kit footprint.** Append the stub at the end of the file with one blank line of separation.
-- **CLAUDE.md exists, v0.11-style `## ADR Kit Rules` section present.** Replace the entire `## ADR Kit Rules` section (from its heading down to the next `## ` heading or EOF) with the v0.12 stub. Leave everything else in CLAUDE.md untouched.
-- **CLAUDE.md exists with an `<!-- ADR-KIT STUB START --> … <!-- ADR-KIT STUB END -->` block.** Replace just the block, preserving its position in the file. Idempotent.
-
-The stub:
-
-```markdown
-<!-- ADR-KIT STUB START -->
-<!-- DO NOT regenerate manually. Updated by `/adr-kit:init`, `/adr-kit:upgrade`, `/adr-kit:setup`. -->
-## ADR Kit
-
-This project uses [adr-kit](https://github.com/rvdbreemen/adr-kit). All architectural decisions live as ADRs in `docs/adr/`. Full guide: @.claude/adr-kit-guide.md
-Decision indexes: @docs/adr/ADR-INDEX.md is the compact session map; `docs/adr/ADR-INDEX.json` is the agent metadata and relationship graph. Regenerate both with `bin/adr-index docs/adr`; open source Markdown ADRs before applying constraints.
-
-Authoring: `/adr-kit:adr` (or the `adr-generator` subagent).
-Pre-commit verification: `bin/adr-judge` runs declarative `Enforcement` rules at commit time (free). The Claude LLM pass for `llm_judge: true` ADRs is opt-in (enable in `docs/adr/.adr-kit.json`, or review in-session via `/adr-kit:judge`).
-Guardian: when an `[adr-guardian] ... DUE` block appears at session start, proactively offer to run the due tier via `/adr-kit:guardian`. Confirm cost before the LLM tier. Apply mix-by-finding-type responses: drift violations surfaced prominently; missing-ADR suggestions passive; stale ADRs drafted for review; health issues reported with fix offer.
-Edit-tier injection: when an `[adr-inject] ADR-NNN ... governs <file>` block appears before an edit, treat the quoted Decision as a binding constraint for that file and comply with it.
-<!-- ADR-KIT STUB END -->
-```
-
-Confirm to the user with one line naming the action (`created` / `appended` / `replaced v0.11 inline rules` / `refreshed stub`) and the line number.
+Relay the command's per-change output, and say plainly when there was nothing to
+do -- a no-op is the expected result of a second run.
 
 ## Step 1b — The signer: propose, never assume
 
@@ -397,12 +372,16 @@ Where that call goes is your choice:
                  environment. adr-kit will never store a key in the repository.
   3. ollama      a local model. Nothing leaves the machine. Measured at ~3.4s
                  per call on a 12B model, so commits get noticeably slower.
+  4. openai-compatible
+                 any endpoint that speaks the OpenAI chat API -- LM Studio,
+                 vLLM, a self-hosted gateway. Nothing leaves the machine when
+                 the endpoint is local.
 
 Any backend that is unavailable degrades to declarative-only and never blocks a
 commit.
 ```
 
-Then ask: `Judge backend? [1] host  [2] openrouter  [3] ollama  [4] turn the LLM pass off (1)`
+Then ask: `Judge backend? [1] host  [2] openrouter  [3] ollama  [4] openai-compatible  [5] turn the LLM pass off (1)`
 
 Apply the answer with the kit's own command — do **not** hand-write the JSON, because the command validates what it wrote and refuses an incomplete choice. Resolve the plugin path first if it is not already in scope from step 1a:
 
@@ -424,6 +403,11 @@ ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V 
   ```bash
   "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend ollama --model <tag>
   ```
+- **openai-compatible** — ask for the base URL and the model the endpoint serves. LM Studio's default is `http://127.0.0.1:1234/v1`; its model list is on its Developer tab. Then:
+  ```bash
+  "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend openai-compatible     --base-url http://127.0.0.1:1234/v1 --model <model the endpoint serves>
+  ```
+  The two values land in different files on purpose: which model judges is a team decision and goes into the committed `docs/adr/.adr-kit.json`, while the base URL is a fact about this machine and goes into the gitignored local file. The command refuses an incomplete choice rather than writing a config the judge would then silently degrade on. If the endpoint needs a key, tell the user to export `ADR_KIT_OPENAI_API_KEY` in their own shell profile — never write one anywhere.
 - **off** — merge `{"judge": {"llm_enabled": false}}` into `docs/adr/.adr-kit.json`. Say plainly that the declarative gate still runs and that `/adr-kit:judge` still gives LLM review on demand.
 
 Ignore the local file in version control (idempotent):
@@ -503,8 +487,7 @@ Print a final summary in this exact shape:
 
 ```
 adr-kit init complete:
-- guide:    .claude/adr-kit-guide.md (created | refreshed | unchanged)
-- stub:     CLAUDE.md (created | appended | replaced | refreshed)
+- layout:   <files setup-project.py wrote> (created | refreshed | unchanged)
 - audit:    <N> candidates → <X> kept, <Y> merged, <Z> dropped
 - ADRs:     <N> created, <M> already present
 - hook:     installed (or already present + reason)
@@ -514,7 +497,7 @@ adr-kit init complete:
 - scripts:  generated | skipped (user declined)
 ```
 
-Suggest a first commit: `git add docs/adr/ .claude/adr-kit-guide.md CLAUDE.md .githooks/pre-commit && git commit -m "chore(adr-kit): bootstrap v0.12"`. Do not run the commit yourself; let the user inspect first.
+Suggest a first commit staging exactly what was written: `git add docs/adr/ .adr-kit/ CLAUDE.md AGENTS.md .githooks/pre-commit && git commit -m "chore(adr-kit): bootstrap"`. Do not run the commit yourself; let the user inspect first.
 
 ## Constraints
 

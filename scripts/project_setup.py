@@ -169,7 +169,18 @@ def _pre_commit_changes(
     root: Path,
     template: Path,
     enabled: bool,
+    touch: bool = True,
 ) -> tuple[list[PlannedChange], bool]:
+    """Plan the pre-commit hook: install it, remove ours, or leave it alone.
+
+    `touch=False` is the third state, and it was missing. Every invocation used
+    to either install this kit's hook or remove whatever was at that path, so a
+    project managing hooks another way could not be set up without its hook
+    being decided for it. Removal is bounded either way: a hook without this
+    kit's marker is never deleted, and never overwritten.
+    """
+    if not touch:
+        return [], False
     git_dir = _git(root, "rev-parse", "--git-dir")
     if git_dir.returncode != 0:
         return [], False
@@ -208,6 +219,7 @@ def collect_changes(
     clients: Iterable[str],
     *,
     pre_commit_enabled: bool,
+    touch_pre_commit: bool = True,
 ) -> tuple[list[PlannedChange], bool]:
     selected = list(dict.fromkeys(clients))
     unknown = sorted(set(selected) - set(CLIENT_FILES))
@@ -269,7 +281,7 @@ def collect_changes(
         )
 
     hook_changes, configure_hooks_path = _pre_commit_changes(
-        root, hook_source, pre_commit_enabled
+        root, hook_source, pre_commit_enabled, touch_pre_commit
     )
     changes.extend(hook_changes)
     return changes, configure_hooks_path

@@ -107,6 +107,8 @@ FEATURED = [
     "context.default_limit",
     "context.min_score",
     "context.strict_index",
+    "embedding.enabled",
+    "embedding.model",
     "guardian.enabled",
     "guardian.drift_stale_days",
     "guardian.llm_stale_days",
