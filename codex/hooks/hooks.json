@@ -43,7 +43,7 @@
             "type": "command",
             "command": "\"$PLUGIN_ROOT/hooks/run-hook.cmd\" pre-tool-use codex-cli",
             "command_windows": "\"%PLUGIN_ROOT%\\hooks\\run-hook.cmd\" pre-tool-use codex-cli",
-            "timeout": 1
+            "timeout": 5
           }
         ],
         "matcher": "Bash"

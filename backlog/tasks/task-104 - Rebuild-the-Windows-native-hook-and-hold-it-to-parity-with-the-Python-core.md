@@ -31,7 +31,7 @@ No ADR needed for the rebuild. An ADR *is* needed if the answer is to stop shipp
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The staleness is reproduced first: run the shipped exe and the Python path on one payload and diff the results
+- [x] #1 The staleness is reproduced first: run the shipped exe and the Python path on one payload and diff the results
 - [x] #2 The exe is rebuilt from the current `.rs` and committed, or the exe preference is dropped from `run-hook.cmd` with an ADR recording why
 - [ ] #3 The source-text parity test is replaced by one that runs the artefact and compares its output to the Python path over the full manifest payload set
 - [ ] #4 The plan-exit and PR-guard branches exist in `adr-hook.rs`, or the exe declines those events and falls through to Python
