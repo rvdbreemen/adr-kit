@@ -463,9 +463,10 @@ unreachable, which turns a feature into a regression.
   never elevated without asking. The user chose route 1 or they did not.
 - The GPU check is a heuristic, and it must present itself as one. Ollama runs on
   CPU; the warning is about speed, not capability.
-- Model size is part of the offer, not a surprise afterwards. `qwen3-embedding:8b`
-  is roughly 4.7 GB. State the download size before starting it, and offer a
-  smaller variant where one exists.
+- Model size is part of the offer, not a surprise afterwards. The measured
+  default `qwen3-embedding:4b` is roughly 2.5 GB. State the download size before
+  starting it, and offer `nomic-embed-text` as the explicit English-only
+  fallback where one exists.
 - Whatever is chosen lands in the settings surface (R13), so it can be changed
   later without re-running setup.
 
