@@ -1,10 +1,10 @@
 ---
 id: "ADR-028"
 title: "Gate the Declared Related Link and Leave the Prose One Alone"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-reference-gate-scope-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: true
 verified_in:
   - "tests/test_adr_cross_references.py"
@@ -32,7 +32,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -47,6 +47,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-028 applies ADR-009's bounded-heuristic principle to the reference gate
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
     changed_via: adr-kit lifecycle
 ```
 
@@ -155,9 +160,12 @@ produces no finding.
 
 ### Verification
 
-* `adr-reference-gate-scope-v1`: the named gate anchoring this decision in
-  source, covering the dangling case, the one-sided case, and the
-  prose-is-ignored case.
+* `adr-reference-gate-scope-v1`: the gate this decision is to be anchored by.
+  It does not exist yet, so `gate` is null and `binding` is false: a
+  frontmatter that declares enforcement it cannot deliver is worse than one
+  that admits the gap. Both fields flip back together when the gate ships,
+  covering the dangling case, the one-sided case, and the prose-is-ignored
+  case.
 
 ## Consequences
 

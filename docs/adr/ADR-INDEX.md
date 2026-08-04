@@ -23,15 +23,15 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-015 | Accepted | `tests/fixtures/cli/latency-corpus.json` | Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool... |
 | ADR-016 | Accepted | `{bin,codex/bin,copilot/bin}/adr-mcp`, `tests/test_adr_mcp.py` | Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc... |
 | ADR-017 | Accepted | `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}` | Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a... |
-| ADR-018 | Accepted | `hooks/adr_hook_core.py`, `bin/adr_query.py` | Chosen option: a local precomputed vector store that the query and hook paths only read, because it delivers semantic... |
+| ADR-018 | Superseded | `hooks/adr_hook_core.py`, `bin/adr_query.py` | Chosen option: a local precomputed vector store that the query and hook paths only read, because it delivers semantic... |
 | ADR-019 | Accepted | - | Chosen option: keep the silence, and record why — this ADR is the record. |
-| ADR-020 | Proposed | - | Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact... |
-| ADR-021 | Proposed | - | Chosen option: the session-scoped hooks regenerate a stale index in-process; the edit-tier hooks stay read-only and s... |
-| ADR-022 | Proposed | - | Chosen option: ## Open Questions is append-only while an ADR is Proposed, because it removes the incentive at its sou... |
-| ADR-023 | Proposed | - | Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b... |
-| ADR-024 | Proposed | - | Chosen option: extend the guard, because the moment is already intercepted, the user is already present, and the cost... |
-| ADR-025 | Proposed | - | Chosen option: repository-tracked configuration may select among backends an operator has enabled, and may never intr... |
-| ADR-026 | Proposed | - | Chosen option: one command running both halves, with five exit codes. |
-| ADR-027 | Proposed | - | Chosen option: derive from git config user.name when it names a person, and announce it. |
-| ADR-028 | Proposed | - | Chosen option: gate the declared link, leave the prose alone. |
-| ADR-029 | Proposed | - | Chosen option: retire the binary, because the alternative is a permanent second implementation of the one component e... |
+| ADR-020 | Accepted | - | Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact... |
+| ADR-021 | Accepted | - | Chosen option: the session-scoped hooks regenerate a stale index in-process; the edit-tier hooks stay read-only and s... |
+| ADR-022 | Accepted | - | Chosen option: ## Open Questions is append-only while an ADR is Proposed, because it removes the incentive at its sou... |
+| ADR-023 | Accepted | - | Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b... |
+| ADR-024 | Accepted | - | Chosen option: extend the guard, because the moment is already intercepted, the user is already present, and the cost... |
+| ADR-025 | Accepted | - | Chosen option: repository-tracked configuration may select among backends an operator has enabled, and may never intr... |
+| ADR-026 | Accepted | - | Chosen option: one command running both halves, with five exit codes. |
+| ADR-027 | Accepted | - | Chosen option: derive from git config user.name when it names a person, and announce it. |
+| ADR-028 | Accepted | - | Chosen option: gate the declared link, leave the prose alone. |
+| ADR-029 | Accepted | - | Chosen option: retire the binary, because the alternative is a permanent second implementation of the one component e... |

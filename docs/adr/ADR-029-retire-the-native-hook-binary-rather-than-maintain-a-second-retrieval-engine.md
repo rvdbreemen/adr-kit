@@ -1,10 +1,10 @@
 ---
 id: "ADR-029"
 title: "Retire the Native Hook Binary Rather Than Maintain a Second Retrieval Engine"
-status: "Proposed"
+status: "Accepted"
 date: "2026-08-04"
-binding: true
-gate: "adr-single-retrieval-engine-v1"
+binding: false
+gate: null
 documents_shipped: false
 verified_in: []
 supersedes: []
@@ -33,7 +33,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-04.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -48,6 +48,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-029 must be measured against ADR-015's latency contract
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
     changed_via: adr-kit lifecycle
 ```
 
@@ -193,9 +198,12 @@ and the measurement is committed alongside the budget.
 
 ### Verification
 
-* `adr-single-retrieval-engine-v1`: the named gate anchoring this decision in
-  source. It asserts that no second ranking implementation ships, and that the
-  edit-tier path meets its declared budget.
+* `adr-single-retrieval-engine-v1`: the gate this decision is to be anchored
+  by. It does not exist yet, so `gate` is null and `binding` is false: a
+  frontmatter that declares enforcement it cannot deliver is worse than one
+  that admits the gap. Both fields flip back together when the gate ships. It
+  asserts that no second ranking implementation ships, and that the edit-tier
+  path meets its declared budget.
 
 ## Consequences
 

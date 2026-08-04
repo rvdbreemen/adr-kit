@@ -1,10 +1,10 @@
 ---
 id: "ADR-021"
 title: "Let the Session-Scoped Hooks Regenerate a Stale ADR Index"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-hook-index-refresh-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: false
 verified_in: []
 supersedes: []
@@ -34,7 +34,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -49,6 +49,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-021 says what a consumer does when the generated index is stale
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
     changed_via: adr-kit lifecycle
 ```
 
@@ -208,9 +213,11 @@ nothing is written.
 
 ### Verification
 
-* `adr-hook-index-refresh-v1`: the named gate anchoring this decision in source,
-  covering the write-then-prompt sequence, the concurrent-hook case, and the
-  budget bail-out.
+* `adr-hook-index-refresh-v1`: the gate this decision is to be anchored by. It
+  does not exist yet, so `gate` is null and `binding` is false: a frontmatter
+  that declares enforcement it cannot deliver is worse than one that admits the
+  gap. Both fields flip back together when the gate ships, covering the write-
+  then-prompt sequence, the concurrent-hook case, and the budget bail-out.
 
 ## Consequences
 

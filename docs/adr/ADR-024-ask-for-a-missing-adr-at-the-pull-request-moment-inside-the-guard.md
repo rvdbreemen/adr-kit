@@ -1,10 +1,10 @@
 ---
 id: "ADR-024"
 title: "Ask for a Missing ADR at the Pull-Request Moment, Inside the Guard"
-status: "Proposed"
-date: "2026-08-03"
-binding: true
-gate: "adr-pr-suggest-v1"
+status: "Accepted"
+date: "2026-08-04"
+binding: false
+gate: null
 documents_shipped: false
 verified_in: []
 supersedes: []
@@ -34,7 +34,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-03.
+Accepted, 2026-08-04.
 
 ## Status History
 
@@ -49,6 +49,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: ADR-024 applies the pull-request tier ADR-023 established
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-04
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
     changed_via: adr-kit lifecycle
 ```
 
@@ -154,9 +159,11 @@ the manifest declares for the event.
 
 ### Verification
 
-* `adr-pr-suggest-v1`: the named gate anchoring this decision in source,
-  covering the both-signals case, the clean-branch case, and the
-  advisory-never-denies case.
+* `adr-pr-suggest-v1`: the gate this decision is to be anchored by. It does not
+  exist yet, so `gate` is null and `binding` is false: a frontmatter that
+  declares enforcement it cannot deliver is worse than one that admits the gap.
+  Both fields flip back together when the gate ships, covering the both-signals
+  case, the clean-branch case, and the advisory-never-denies case.
 
 ## Consequences
 
