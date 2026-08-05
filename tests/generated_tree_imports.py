@@ -51,21 +51,44 @@ def _imports_with_scope(tree: ast.AST) -> list[tuple[ast.stmt, bool]]:
     return found
 
 
-def _module_names(node: ast.stmt, source: Path) -> list[str]:
-    """Dotted module names one import node refers to, relative ones resolved."""
+def _module_names(node: ast.stmt, source: Path) -> list[list[str]]:
+    """Per import, the dotted names it could refer to, relative ones resolved.
+
+    One entry per module the statement imports; each entry is the list of
+    spellings that could name it, tried in order. An absolute import has one.
+    A relative one has two when it sits inside a nested package, because how it
+    resolves depends on which directory ends up on sys.path -- and one when it
+    does not, since both spellings collapse to the same string there.
+
+    `from .contracts import ...` in clients/installer/detection.py is
+    `clients.installer.contracts` when the plugin root is the path root, and
+    `installer.contracts` when clients/ is. Only the second was produced
+    before, so the first silently failed to resolve and the walk classified a
+    first-party module as third-party -- skipping it, and every module it
+    reaches, from the closure this helper exists to enforce.
+    """
     if isinstance(node, ast.Import):
-        return [alias.name for alias in node.names]
+        return [[alias.name] for alias in node.names]
     if not isinstance(node, ast.ImportFrom):
         return []
     if node.level == 0:
-        return [node.module] if node.module else []
-    # `from .contracts import ...` in clients/installer/detection.py: walk up
-    # level-1 directories from the importing file to find the package root.
+        return [[node.module]] if node.module else []
+
     package = source.parent
     for _ in range(node.level - 1):
         package = package.parent
-    prefix = package.name
-    return [f"{prefix}.{node.module}" if node.module else prefix]
+
+    # Walk up while the parent is still a regular package, longest first.
+    parts = [package.name]
+    cursor = package
+    while (cursor.parent / "__init__.py").is_file():
+        cursor = cursor.parent
+        parts.insert(0, cursor.name)
+
+    prefixes = [".".join(parts)]
+    if parts[-1] != prefixes[0]:
+        prefixes.append(parts[-1])
+    return [[f"{p}.{node.module}" if node.module else p for p in prefixes]]
 
 
 def _resolve(module: str, roots: list[Path]) -> Path | None:
@@ -134,18 +157,23 @@ def unresolved_first_party(
         # A file's own directory is always importable by it.
         local_roots = [current.parent, *search_roots]
         for node, lazy in _imports_with_scope(parsed):
-            for module in _module_names(node, current):
-                resolved = _resolve(module, local_roots)
+            for spellings in _module_names(node, current):
+                # A relative import has more than one valid spelling; the module
+                # is present if any of them lands. Only when none do is it worth
+                # asking whether the source tree has it.
+                resolved = next(
+                    (found for s in spellings if (found := _resolve(s, local_roots))), None
+                )
                 if resolved is not None:
                     if resolved.is_file():
                         queue.append(resolved)
                     continue
-                if _resolve(module, source_roots) is None:
+                if not any(_resolve(s, source_roots) for s in spellings):
                     continue  # third-party or stdlib, not our problem
                 try:
                     where = current.relative_to(tree).as_posix()
                 except ValueError:
                     where = current.name
-                missing.append((where, module, lazy))
+                missing.append((where, spellings[0], lazy))
 
     return sorted(set(missing))
