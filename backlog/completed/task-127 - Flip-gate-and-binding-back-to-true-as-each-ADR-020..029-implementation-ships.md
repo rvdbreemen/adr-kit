@@ -1,10 +1,10 @@
 ---
 id: TASK-127
 title: Flip gate and binding back to true as each ADR-020..029 implementation ships
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-04 17:29'
-updated_date: '2026-08-04 23:02'
+updated_date: '2026-08-05 08:32'
 labels:
   - adr
   - follow-up
@@ -43,9 +43,9 @@ Evidence: `bin/adr-lint:1053` and `:1104` (the two rules); `bin/adr_retrieval_he
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each of ADR-020..029 carries gate plus binding:true once its gate exists in the tree
-- [ ] #2 A check fails when a named gate exists while the ADR expecting it still has gate:null, so the flip is not left to memory
-- [ ] #3 No record sits at binding:false with a shipped implementation
+- [x] #1 Each of ADR-020..029 carries gate plus binding:true once its gate exists in the tree
+- [x] #2 A check fails when a named gate exists while the ADR expecting it still has gate:null, so the flip is not left to memory
+- [x] #3 No record sits at binding:false with a shipped implementation
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -73,3 +73,21 @@ Injection-independence is now confirmed live, not only by grep. After the flip t
 That matters because injection is the thing the flip must not cost. What it does cost stays as written: `adr_retrieval_health` skips these records' Decision Contract check while they are non-binding.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Every Accepted ADR from 020 onward now carries binding:true with a resolvable gate, and a check makes the flip mechanical rather than remembered.
+
+AC#2 -- tests/test_declared_gate_flip.py reads each Accepted ADR's Verification section for its declared gate name, resolves it against bin/, hooks/, scripts/, tests/, clients/ and .github/, and fails when the name exists while frontmatter still says gate: null. docs/ and backlog/ are excluded from that scan and the exclusion is asserted, because an ADR that could satisfy its own gate with its own Verification bullet would make the whole check decorative.
+
+It lives in tests/ rather than bin/adr-lint deliberately: the investigation measured the equivalent probe at roughly +220 ms on every lint run, and lint runs on every commit through the pre-commit hook. A governance check that slows the commit path is one people switch off.
+
+AC#1 and AC#3 -- ADR-021, 022 and 024 flipped as their implementations landed in this sweep. The remaining seven had shipped implementations and were missing only the anchor string, so each anchor now lives in the test that actually verifies that decision, with a line stating what the test proves. An anchor pointing at nothing would be a string that satisfies a grep.
+
+THE FINDING WORTH KEEPING: the check I wrote for this task did not flag any of the seven. Its regex required the backtick-quoted gate name to be the whole bullet, and ADR-020..029 all write `` * `name`: prose ``. Anchoring on `$` matched neither form, the extraction silently found nothing, and the check reported clean -- the exact silent-decay failure it exists to prevent, inside the check about silent decay. Fixed, and it immediately flagged all seven.
+
+The Verification sections still read "does not exist yet"; corrected rather than left, because a record describing its own frontmatter has to keep describing it truthfully.
+
+Verified: 13 Accepted records at binding:true with a gate, 0 at binding:false; adr-lint --gates all exits 0; 68 tests across policy, audit, index and retrieval health.
+<!-- SECTION:FINAL_SUMMARY:END -->
