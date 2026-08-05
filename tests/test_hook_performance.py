@@ -227,3 +227,88 @@ def test_an_exempt_events_budget_agrees_with_the_kill_timeout_the_client_enforce
                 f"runner_timeout_sec {runner_s} s"
             )
     assert not mismatched, "\n  ".join(mismatched)
+
+
+# ---------------------------------------------------------------------------
+# Benchmark coverage (TASK-123) and the interpreter floor (TASK-124), per ADR-030
+#
+# Gate anchor for ADR-030: adr-hook-python-budgets-v1
+# ---------------------------------------------------------------------------
+
+from hooks.hook_benchmark import (  # noqa: E402
+    MEASURED_INTERPRETER_FLOOR_MS,
+    reference_payloads,
+)
+
+
+def test_the_benchmark_measures_every_event_the_manifest_declares():
+    """The measured set must equal the declared set.
+
+    plan-exit and pr-create are registered as pre-tool-use WITH A MATCHER, so a
+    lookup keyed by client-facing event name collapsed all three onto one entry
+    and skipped two of the eight. The report still read as a pass, which is the
+    failure mode the harness exists to prevent.
+    """
+    declared = {event["id"] for event in _events()}
+    measured = set(reference_payloads(ROOT).keys())
+    assert measured == declared, (
+        f"declared but never measured: {sorted(declared - measured)}; "
+        f"measured but not declared: {sorted(measured - declared)}"
+    )
+
+
+def test_an_event_without_a_budget_fails_the_benchmark_rather_than_being_skipped(
+    tmp_path,
+):
+    """A missing budget must be loud. Silence here reads as a pass."""
+    import shutil
+
+    from hooks.hook_benchmark import measure
+
+    plugin_root = tmp_path / "plugin"
+    shutil.copytree(ROOT / "hooks", plugin_root / "hooks")
+    shutil.copytree(
+        ROOT / "tests" / "fixtures" / "hooks",
+        plugin_root / "tests" / "fixtures" / "hooks",
+    )
+    manifest_path = plugin_root / "hooks" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for event in manifest["events"]:
+        if event["id"] == "plan-exit":
+            event.pop("latency")
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="plan-exit"):
+        measure(plugin_root, tmp_path, samples=1)
+
+
+def test_every_hard_timeout_clears_the_measured_interpreter_floor():
+    """A budget below the floor is unmeetable by construction.
+
+    `python -c pass` costs MEASURED_INTERPRETER_FLOOR_MS before the hook's first
+    line runs, so a hard timeout under it fails whatever the hook does. Three
+    events declared 100 ms against a measured 183 ms floor until ADR-030.
+    """
+    too_tight = [
+        f"{event['id']}: {event['latency']['hard_timeout_ms']} ms is below the "
+        f"measured {MEASURED_INTERPRETER_FLOOR_MS} ms interpreter floor"
+        for event in _events()
+        if event["latency"]["hard_timeout_ms"] <= MEASURED_INTERPRETER_FLOOR_MS
+    ]
+    assert not too_tight, "\n  ".join(too_tight)
+
+
+def test_the_corpus_no_longer_carries_a_second_copy_of_the_budgets():
+    """One source. The duplication is what hid two unmeasured events."""
+    corpus = json.loads(
+        (ROOT / "tests" / "fixtures" / "hooks" / "reference-corpus.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "budgets" not in corpus, (
+        "reference-corpus.json carries its own budget table again. The manifest "
+        "is the single source; a second copy keyed by event name is how "
+        "plan-exit and pr-create went unmeasured."
+    )
+    assert corpus["budget_source"] == "hooks/manifest.json"
+    assert corpus["python_floor_evidence"]

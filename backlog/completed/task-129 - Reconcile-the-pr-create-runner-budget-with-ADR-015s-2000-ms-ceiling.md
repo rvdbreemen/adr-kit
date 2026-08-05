@@ -1,10 +1,10 @@
 ---
 id: TASK-129
 title: pr-create carries a 5000 ms latency budget against ADR-015's 2000 ms Must Not
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-04 05:24'
-updated_date: '2026-08-04 23:02'
+updated_date: '2026-08-05 05:47'
 labels:
   - adr
   - hooks
@@ -33,9 +33,9 @@ Evidence: `docs/adr/ADR-015-*.md` (Decision Contract, References, Enforcement); 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A test asserts ADR-015's 2000 ms ceiling against every latency_budget_ms in hooks/manifest.json, and fails on the current pr-create entry
-- [ ] #2 pr-create is either under the ceiling or covered by an accepted amending ADR that names it
-- [ ] #3 The changelog states which of the two happened, because the 5000 ms budget shipped to users in v0.44.0
+- [x] #1 A test asserts ADR-015's 2000 ms ceiling against every latency_budget_ms in hooks/manifest.json, and fails on the current pr-create entry
+- [x] #2 pr-create is either under the ceiling or covered by an accepted amending ADR that names it
+- [x] #3 The changelog states which of the two happened, because the 5000 ms budget shipped to users in v0.44.0
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,3 +53,19 @@ OPEN DECISION ON AC#1, which says the test must 'fail on the current pr-create e
 
 RELATED MEASUREMENT (2026-08-05, this machine): pr-create measured p50 283.9 ms with NO LLM backend configured, so the guard degraded to the declarative pass. That number does not exercise the LLM path the 5000 ms budget exists for; with a backend the bound is runner_timeout_sec: 5.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The hook side of ADR-015's ceiling is enforced for the first time, and pr-create is covered by ADR-031 (Accepted 2026-08-05).
+
+AC#1 -- tests/test_hook_performance.py now asserts the 2000 ms ceiling against every latency_budget_ms in hooks/manifest.json. Its wording asked for a test that fails on the current pr-create entry; landing the gate and the exemption together means it does not, and committing a knowingly-red assertion would break the suite for everyone until the ADR was accepted. The biting is proved two ways instead: a synthetic over-ceiling entry in the test itself, and a manual probe setting session-start to 9000 ms, which fails the gate by name. Recorded as satisfied in substance, with the deviation stated.
+
+AC#2 -- pr-create keeps 5000 ms, covered by ADR-031, which names the pull-request moment as user-initiated: it fires because someone typed `gh pr create` and is waiting, unlike the seven events that fire as a side effect of other work. Lowering it would not make the check faster, it would remove the LLM pass from the moment it is most useful.
+
+ADR-031's Must requires the exemption to be resolved from the ADR record and never from a literal list of event names in test code. Implemented by putting latency_ceiling_exception: "ADR-031" on the manifest entry, where the budget already lives, and having the gate verify that record exists and is Accepted. No event name appears in the test file. A fourth check asserts an exempt budget does not exceed the runner_timeout_sec the client enforces, because a budget larger than the kill timeout is a promise the runner cannot keep.
+
+AC#3 -- CHANGELOG records that the 5000 ms shipped in v0.44.0 and that it was resolved by naming the moment rather than lowering the budget.
+
+Verified: 37 tests pass across hook performance, documentation contracts and client generation; build-client-adapters.py --check reports changed=0.
+<!-- SECTION:FINAL_SUMMARY:END -->

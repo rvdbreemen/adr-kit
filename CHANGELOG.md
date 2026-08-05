@@ -4,7 +4,41 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Hook latency budgets are recalibrated to the Python host that ships**
+  (ADR-030). Seven of the eight declared events could not meet their own budget,
+  and the reason is not sloppiness: they were exactly right for the native
+  binary. Measured on one machine with identical payloads, `PreToolUse` costs
+  **20.2 ms** on the native host and **273.6 ms** in Python. ADR-029 retired that
+  host in v0.44.1, and the numbers were left describing a path that no longer
+  runs.
+
+  Three events declared a 100 ms hard timeout against a measured **183 ms**
+  interpreter floor -- `python -c pass` alone exceeds it, so no optimisation
+  inside the hook could ever have met them. That floor is now a named constant
+  carrying its measurement, because it is a property of the machine and not of
+  this kit.
+
+  The visible symptom was that `bin/adr-doctor` reported `degraded` on every
+  platform, every run. A health check that is always red is one nobody reads.
+  It now reports honestly.
+
+  New budgets are measured p95 x 1.5, rounded up to 50 ms, with the hard timeout
+  at twice that and capped by ADR-015's ceiling. All seven stay well under it.
+
 ### Fixed
+
+- **The hook benchmark measured six of eight events and reported a pass.**
+  `plan-exit` and `pr-create` are registered as `pre-tool-use` with a matcher, so
+  a budget lookup keyed by client-facing event name collapsed all three onto one
+  entry and silently skipped two. Budgets are now keyed by manifest event id, an
+  event that declares no budget fails the harness loudly instead of being
+  skipped, and a test asserts the measured set equals the declared set.
+
+  `tests/fixtures/hooks/reference-corpus.json` no longer carries a second copy of
+  the budgets -- that duplication is what hid the gap. It keeps the method
+  metadata; `hooks/manifest.json` is the single source.
 
 - **The hook side of ADR-015's latency ceiling is now enforced.** ADR-015 forbids
   a hard budget above 2000 ms on any deterministic user-facing path, and its

@@ -13,11 +13,11 @@
       "matcher": null,
       "outcome": "task-context",
       "runner_timeout_sec": 5,
-      "latency_budget_ms": 500,
+      "latency_budget_ms": 1000,
       "latency": {
-        "p50_ms": 50,
-        "p95_ms": 150,
-        "hard_timeout_ms": 500
+        "p50_ms": 400,
+        "p95_ms": 500,
+        "hard_timeout_ms": 1000
       },
       "clients": {
         "claude-code-cli": "SessionStart",
@@ -31,11 +31,11 @@
       "matcher": null,
       "outcome": "task-context",
       "runner_timeout_sec": 5,
-      "latency_budget_ms": 500,
+      "latency_budget_ms": 900,
       "latency": {
-        "p50_ms": 75,
-        "p95_ms": 250,
-        "hard_timeout_ms": 500
+        "p50_ms": 450,
+        "p95_ms": 450,
+        "hard_timeout_ms": 900
       },
       "clients": {
         "claude-code-cli": "UserPromptSubmit",
@@ -48,11 +48,11 @@
       "command": "pre-tool-use",
       "matcher": "Edit|MultiEdit|Write",
       "outcome": "edit-governance",
-      "latency_budget_ms": 100,
+      "latency_budget_ms": 1100,
       "latency": {
-        "p50_ms": 25,
-        "p95_ms": 50,
-        "hard_timeout_ms": 100
+        "p50_ms": 450,
+        "p95_ms": 550,
+        "hard_timeout_ms": 1100
       },
       "clients": {
         "claude-code-cli": "PreToolUse",
@@ -65,11 +65,11 @@
       "command": "post-tool-use",
       "matcher": "Edit|MultiEdit|Write",
       "outcome": "edit-governance",
-      "latency_budget_ms": 100,
+      "latency_budget_ms": 1500,
       "latency": {
-        "p50_ms": 25,
-        "p95_ms": 50,
-        "hard_timeout_ms": 100
+        "p50_ms": 650,
+        "p95_ms": 750,
+        "hard_timeout_ms": 1500
       },
       "clients": {
         "claude-code-cli": "PostToolUse",
@@ -82,11 +82,11 @@
       "command": "pre-tool-use",
       "matcher": "ExitPlanMode",
       "outcome": "task-context",
-      "latency_budget_ms": 100,
+      "latency_budget_ms": 1800,
       "latency": {
-        "p50_ms": 25,
-        "p95_ms": 50,
-        "hard_timeout_ms": 100
+        "p50_ms": 700,
+        "p95_ms": 900,
+        "hard_timeout_ms": 1800
       },
       "clients": {
         "claude-code-cli": "PreToolUse",
@@ -102,8 +102,8 @@
       "latency_budget_ms": 5000,
       "latency_ceiling_exception": "ADR-031",
       "latency": {
-        "p50_ms": 400,
-        "p95_ms": 2000,
+        "p50_ms": 1500,
+        "p95_ms": 3000,
         "hard_timeout_ms": 5000
       },
       "clients": {
@@ -118,11 +118,11 @@
       "command": "subagent-start",
       "matcher": null,
       "outcome": "task-context",
-      "latency_budget_ms": 250,
+      "latency_budget_ms": 1600,
       "latency": {
-        "p50_ms": 30,
-        "p95_ms": 100,
-        "hard_timeout_ms": 250
+        "p50_ms": 600,
+        "p95_ms": 800,
+        "hard_timeout_ms": 1600
       },
       "clients": {
         "claude-code-cli": "SubagentStart",
@@ -135,11 +135,11 @@
       "command": "pre-compact",
       "matcher": null,
       "outcome": "lifecycle",
-      "latency_budget_ms": 500,
+      "latency_budget_ms": 2000,
       "latency": {
-        "p50_ms": 30,
-        "p95_ms": 100,
-        "hard_timeout_ms": 500
+        "p50_ms": 650,
+        "p95_ms": 1000,
+        "hard_timeout_ms": 2000
       },
       "clients": {
         "claude-code-cli": "PreCompact",
