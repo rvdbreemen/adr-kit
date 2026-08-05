@@ -24,8 +24,27 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "templates" / "githooks" / "pre-commit"
 
+def _usable_shell() -> bool:
+    """A bash that actually runs, not merely one that is on PATH.
+
+    Windows CI resolves `bash` to the WSL stub in System32. With no distribution
+    installed it prints its complaint on STDOUT and exits 1, which is
+    indistinguishable from a script failure: the probe fails with an empty
+    stderr and blames the template for the runner's shell.
+    """
+    if shutil.which("bash") is None:
+        return False
+    try:
+        probe = subprocess.run(
+            ["bash", "-c", "printf ok"], capture_output=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return probe.returncode == 0 and probe.stdout.strip() == b"ok"
+
+
 pytestmark = pytest.mark.skipif(
-    shutil.which("bash") is None, reason="POSIX shell not available"
+    not _usable_shell(), reason="no usable POSIX shell on this runner"
 )
 
 # The budget-resolution block, lifted out of the template and driven directly.
