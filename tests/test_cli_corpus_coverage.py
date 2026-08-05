@@ -42,9 +42,22 @@ def test_every_entrypoint_is_budgeted_or_excluded_with_a_reason():
 
 
 def test_no_exclusion_is_silent():
-    """An exclusion without a reason is a hole, not a decision."""
-    empty = sorted(name for name, why in CORPUS["excluded"].items() if not str(why).strip())
-    assert not empty, f"excluded with no reason given: {empty}"
+    """An exclusion without a reason is a hole, not a decision.
+
+    The type check is load-bearing: `str(None)` is `"None"`, which is non-empty,
+    so a `null` reason would sail through a truthiness test and read in the JSON
+    as a deliberate exclusion nobody had to justify.
+    """
+    unjustified = sorted(
+        f"{name}: {why!r}"
+        for name, why in CORPUS["excluded"].items()
+        if not isinstance(why, str) or len(why.strip()) < 10
+    )
+    assert not unjustified, (
+        "exclusions without a usable reason:\n  "
+        + "\n  ".join(unjustified)
+        + "\n\nState why the entrypoint cannot be budgeted, in words."
+    )
 
 
 def test_no_exclusion_names_something_that_is_not_an_entrypoint():
