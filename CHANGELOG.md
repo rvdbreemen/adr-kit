@@ -4,6 +4,19 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`adr-discover` was 3.9x slower than it needed to be, and the cost grew with
+  the repository.** `scan_first_appearance` ran one `git log --follow` per
+  candidate path, so each invocation paid a fresh git process and re-ran rename
+  detection over the whole history. Batched into a single `git log`, the default
+  command drops from **3622 ms to 938 ms** — back under ADR-015's 2000 ms
+  ceiling, and no longer growing with the number of candidates.
+
+  The trade is `--follow`: a file that arrived under a different name now
+  reports the rename rather than the original creation. Small, and the signal is
+  about the *order* subsystems appeared — a rename does not reorder anything.
+
 ### Added
 
 - **The session hooks regenerate a stale ADR index instead of going dark**

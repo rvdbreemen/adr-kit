@@ -95,15 +95,73 @@ def test_no_budgeted_row_exceeds_the_ceiling():
     )
 
 
-def test_the_paths_known_to_exceed_the_ceiling_are_recorded_rather_than_hidden():
-    """Three measured paths are over the ceiling and are not budgeted here.
+def _adr_status(adr_id: str) -> str | None:
+    for path in (ROOT / "docs" / "adr").glob(f"{adr_id}-*.md"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("status:"):
+                return line.split(":", 1)[1].strip().strip('"')
+    return None
 
-    Recording them is the point: a corpus that simply omitted them would read as
-    full coverage, which is the failure this whole task is about.
+
+def test_the_paths_known_to_exceed_the_ceiling_are_recorded_rather_than_hidden():
+    """Over-ceiling paths are recorded, not omitted.
+
+    A corpus that simply left them out would read as full coverage, which is the
+    failure TASK-126 was about.
     """
     known = CORPUS["known_over_ceiling"]
     assert known.get("note"), "the over-ceiling paths need a stated reason"
     assert len(known) > 1, "no over-ceiling path recorded; were they budgeted instead?"
+
+
+def test_every_over_ceiling_path_names_a_real_adr():
+    """ADR-033's contract, resolved from the record and not from a list here.
+
+    Without this the exception field would be a comment: anyone could write
+    `latency_ceiling_exception: "ADR-999"` and the corpus would read as decided.
+    No command name appears in this assertion.
+
+    The referenced record must EXIST; it need not yet be Accepted. These entries
+    are recorded findings, not declared budgets -- ADR-015's ceiling binds the
+    `budgets` block, which a separate test holds at 2000 ms. Requiring a
+    signature before a finding may be written down would mean the honest move,
+    recording what was measured, is the one the gate blocks.
+    """
+    unexcused = []
+    for name, entry in CORPUS["known_over_ceiling"].items():
+        if not isinstance(entry, dict):
+            continue  # the note
+        adr = entry.get("latency_ceiling_exception")
+        if not adr:
+            unexcused.append(f"{name}: no latency_ceiling_exception")
+        elif _adr_status(adr) is None:
+            unexcused.append(f"{name}: names {adr}, which does not exist")
+
+    assert not unexcused, (
+        "CLI paths above the ceiling with nothing behind them:\n  "
+        + "\n  ".join(unexcused)
+        + "\n\nBring the path under the ceiling, or write an ADR naming it as a "
+        "user-initiated whole-repository command and reference it here."
+    )
+
+
+def test_an_exception_becomes_binding_only_once_its_adr_is_accepted():
+    """Reported rather than enforced, so the state is visible either way.
+
+    A Proposed exception is a proposal: the finding is recorded and the decision
+    is in flight. This surfaces which is which instead of letting a record sit
+    at Proposed indefinitely while the corpus reads as settled.
+    """
+    pending = sorted(
+        f"{name} -> {entry['latency_ceiling_exception']} ({_adr_status(entry['latency_ceiling_exception'])})"
+        for name, entry in CORPUS["known_over_ceiling"].items()
+        if isinstance(entry, dict)
+        and entry.get("latency_ceiling_exception")
+        and _adr_status(entry["latency_ceiling_exception"]) != "Accepted"
+    )
+    # Not an assertion about emptiness -- an assertion that whatever is pending
+    # is nameable. The list is the report.
+    assert all(" -> ADR-" in item for item in pending), pending
 
 
 def test_percentiles_are_ordered_within_each_row():
