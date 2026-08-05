@@ -127,9 +127,16 @@ ADR-015 was rejected because it discards the coverage TASK-126 just built.
 
 ### Confirmation
 
-`tests/test_cli_corpus_coverage.py` fails when a corpus row exceeds the ceiling
-without referencing an Accepted ADR, and when a referenced record does not exist
-or is not Accepted.
+`tests/test_cli_corpus_coverage.py` fails when an over-ceiling corpus row names
+no ADR, or names one that does not exist. It requires the record to **exist**,
+not to be Accepted.
+
+That distinction is deliberate. These rows are recorded findings, not declared
+budgets: ADR-015's ceiling binds the `budgets` block, which a separate test holds
+at 2000 ms. Demanding a signature before a measurement may be written down would
+make the honest move -- recording what was measured -- the one the gate blocks. A
+second check reports which exceptions are still Proposed, so a record cannot sit
+unaccepted while the corpus reads as settled.
 
 ## Decision Contract
 
