@@ -1,4 +1,16 @@
-"""Deterministic, bounded, read-only ADR hook core."""
+"""Deterministic, bounded ADR hook core. Read-only except for one narrow write.
+
+This file was read-only, and said so here, until ADR-021. It now regenerates a
+stale generated index on `session-start` and `user-prompt-submit` -- and only
+those two, under a lock, only when the projected cost fits the event's declared
+budget, and only ever writing the generated index artefacts. Everything else
+still reads.
+
+The exception is stated at the top rather than left to be discovered because the
+read-only property is what makes this file safe to reason about: an edit-tier
+hook fires before every single write a user makes, and a surprise write there is
+not a thing anyone should have to find by grepping. See `refresh_index`.
+"""
 
 from __future__ import annotations
 
