@@ -24,7 +24,7 @@ PR #60 was merged into `dev` at 2026-08-04 18:48 UTC carrying two commits that n
 
 `gh api repos/rvdbreemen/adr-kit/commits/e1f0fcd/check-runs` returns **zero check runs**. The green checks that were visible on the PR belonged to `d2932a7`, the head before those commits landed.
 
-One of the two was wrong and broke the branch. `e1f0fcd` rewrote `from adr_fixtures import isolated_copy` to `from tests.adr_fixtures import isolated_copy` in three modules. `tests/` has no `__init__.py`, and pytest's prepend import mode puts the test file's own directory on `sys.path`, so the dotted form raises `ModuleNotFoundError` at collection. Reproduced on a clean worktree of `origin/dev`:
+One of the two was wrong and broke the branch. `e1f0fcd` rewrote `from adr_fixtures import isolated_copy` to `from tests.adr_fixtures import isolated_copy` in three modules. Without a regular `tests/__init__.py`, `tests/` is a namespace package, and with `pythonpath = .` the dotted form normally resolves. However, on the development machine `C:/Python312/Lib/site-packages/tests/__init__.py` existed, so `import tests` resolved to that installed package rather than the local namespace portion, and the dotted form raised `ModuleNotFoundError` at collection. Whether the import succeeds depends on what is installed on the machine running the suite — an unstable property. Reproduced on a machine with an installed `tests` package on a clean worktree of `origin/dev`:
 
 ```
 ERROR collecting tests/test_adr_audit_command.py

@@ -30,7 +30,12 @@ DYNAMIC_READERS: dict[str, str] = {}
 
 
 def _declared_keys() -> dict[str, str]:
-    """Map every declared property to its dotted path."""
+    """Map every declared dotted path to its leaf property name.
+
+    Keyed by dotted path so that identical property names in different schema
+    sections (e.g. ``enabled`` under ``suggest`` and under ``watch``) are each
+    represented rather than one silently overwriting the other.
+    """
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     found: dict[str, str] = {}
 
@@ -38,8 +43,9 @@ def _declared_keys() -> dict[str, str]:
         if not isinstance(node, dict):
             return
         for key, child in (node.get("properties") or {}).items():
-            found[key] = f"{path}.{key}"
-            walk(child, f"{path}.{key}")
+            dotted = f"{path}.{key}"
+            found[dotted] = key
+            walk(child, dotted)
         for keyword in ("items", "additionalProperties"):
             if isinstance(node.get(keyword), dict):
                 walk(node[keyword], f"{path}[]")
@@ -64,7 +70,7 @@ def _has_reader(key: str) -> bool:
 def test_every_declared_config_key_is_read_somewhere():
     orphans = sorted(
         f"{path} (declared in {SCHEMA.name}, read by nothing under {'/, '.join(SEARCH_ROOTS)}/)"
-        for key, path in _declared_keys().items()
+        for path, key in _declared_keys().items()
         if key not in DYNAMIC_READERS and not _has_reader(key)
     )
     assert not orphans, (
@@ -81,7 +87,7 @@ def test_retired_keys_are_absent_from_the_schema():
     sys.path.insert(0, str(ROOT / "bin"))
     from adr_config import RETIRED_KEYS
 
-    declared = set(_declared_keys().values())
+    declared = set(_declared_keys().keys())
     both = sorted(set(RETIRED_KEYS) & declared)
     assert not both, f"declared and retired at the same time: {both}"
 
