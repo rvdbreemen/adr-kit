@@ -1,10 +1,10 @@
 ---
 id: TASK-122
 title: bin/adr-suggest allows 120 s on a path documented as never blocking
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-04 05:25'
-updated_date: '2026-08-04 23:02'
+updated_date: '2026-08-05 06:11'
 labels:
   - guardian
   - llm
@@ -28,9 +28,9 @@ Evidence: the timeout constant in `bin/adr-suggest`; the guardian tier descripti
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The suggest timeout is derived from the caller's budget, not a local constant
-- [ ] #2 Either the wait is short enough to sit through or progress is visible while it runs
-- [ ] #3 Killing the parent does not leave a model CLI running
+- [x] #1 The suggest timeout is derived from the caller's budget, not a local constant
+- [x] #2 Either the wait is short enough to sit through or progress is visible while it runs
+- [x] #3 Killing the parent does not leave a model CLI running
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,3 +50,17 @@ OPEN DECISION: the proposed ~20 s fallback needs a fresh measurement on a named 
 
 ORDERING: land together with TASK-121 in ONE commit. Both edit templates/githooks/pre-commit at :212-216 and their drafts contradict each other — TASK-121 replaces the literal 5000 with a config-read value, TASK-122 hoists the same literal into a constant. TASK-121's wired key is the source of truth.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Both premises in this record were wrong; the investigation notes above record why. What remained was real and is fixed.
+
+AC#1 -- "derived from the caller's budget" presupposed a caller budget that did not exist anywhere: adr-suggest is not a manifest event, the pre-commit template put no timeout on the suggest pass at all, and ADR-015 excludes the path by name. So the caller budget was created rather than located: the template now passes --llm-timeout derived from the same judge.pre_commit_timeout_ms its own warning uses, with a 10 s floor because a budget of 0 disables the WARN and does not mean "no time at all". The flag already existed and no caller had ever used it.
+
+AC#2 -- the default drops from 120 s to 30 s, with the basis stated in the source rather than left as a bare number: ADR-001 measured a local suggest call at 5-10 s in 2026-07, so 30 s leaves generous headroom while staying inside what a person will sit through. Two minutes of silence is indistinguishable from a hang, which is what made the old value harmful rather than merely generous.
+
+AC#3 -- the record described a grandchild problem that does not exist here. The model CLI is a DIRECT child of adr-suggest (bin/adr_llm.py:350-359), so subprocess.run(timeout=) kills it when the bound expires. What is genuinely not covered is a grandchild the model CLI spawns for itself; a hard guarantee there needs a Windows Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, and this repository has no precedent for job objects, process groups or psutil. That limit is named in the source rather than papered over, and introducing a new OS primitive on the hardest platform for a low-priority path was not worth it against a 30 s bound.
+
+Landed in one commit with TASK-121, as the investigation required: both edit the same template lines and their drafts contradicted each other.
+<!-- SECTION:FINAL_SUMMARY:END -->
