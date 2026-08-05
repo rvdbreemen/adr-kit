@@ -4,6 +4,27 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`judge.pre_commit_timeout_ms` finally does something.** The installed
+  pre-commit hook compared its elapsed time against a literal `5000`, so setting
+  the key changed nothing -- the same shape as the `JUDGE_TIMEOUT_S = 120` defect
+  fixed in v0.44.1, except this one ships to every project that installs the
+  hook. The hook now reads the key, falls back to 5000 ms when it is absent, and
+  **validates** a value rather than trusting it: this is a repo-tracked file a
+  hand can edit, so anything outside 0..3600000 is refused by name on stderr.
+  `0` means off, matching how `bin/adr-judge` already reads it, and
+  `warn_on_exceed: false` now silences the hook's warning too -- shipping the
+  budget read without that would have reproduced the identical defect one key
+  over.
+
+- **`bin/adr-suggest` no longer waits two minutes on a path documented as never
+  blocking.** The default was 120 s and no caller ever passed `--llm-timeout`, so
+  120 s is what every commit got. Two minutes of no output is indistinguishable
+  from a hang. The default is now 30 s -- ADR-001 measured a local suggest call
+  at 5-10 s -- and the pre-commit hook derives the bound from the same budget its
+  own warning uses, with a 10 s floor.
+
 ### Changed
 
 - **Hook latency budgets are recalibrated to the Python host that ships**
