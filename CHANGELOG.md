@@ -4,18 +4,8 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
-### Fixed
 
-- **`adr-discover` was 3.9x slower than it needed to be, and the cost grew with
-  the repository.** `scan_first_appearance` ran one `git log --follow` per
-  candidate path, so each invocation paid a fresh git process and re-ran rename
-  detection over the whole history. Batched into a single `git log`, the default
-  command drops from **3622 ms to 938 ms** — back under ADR-015's 2000 ms
-  ceiling, and no longer growing with the number of candidates.
-
-  The trade is `--follow`: a file that arrived under a different name now
-  reports the rename rather than the original creation. Small, and the signal is
-  about the *order* subsystems appeared — a rename does not reorder anything.
+## [0.46.0] - 2026-08-05
 
 ### Added
 
@@ -78,27 +68,6 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   The gap this leaves is real and stated in ADR-024: a pull request opened by
   hand, from the web UI or by a teammate not using an agent, gets nothing.
 
-### Fixed
-
-- **`judge.pre_commit_timeout_ms` finally does something.** The installed
-  pre-commit hook compared its elapsed time against a literal `5000`, so setting
-  the key changed nothing -- the same shape as the `JUDGE_TIMEOUT_S = 120` defect
-  fixed in v0.44.1, except this one ships to every project that installs the
-  hook. The hook now reads the key, falls back to 5000 ms when it is absent, and
-  **validates** a value rather than trusting it: this is a repo-tracked file a
-  hand can edit, so anything outside 0..3600000 is refused by name on stderr.
-  `0` means off, matching how `bin/adr-judge` already reads it, and
-  `warn_on_exceed: false` now silences the hook's warning too -- shipping the
-  budget read without that would have reproduced the identical defect one key
-  over.
-
-- **`bin/adr-suggest` no longer waits two minutes on a path documented as never
-  blocking.** The default was 120 s and no caller ever passed `--llm-timeout`, so
-  120 s is what every commit got. Two minutes of no output is indistinguishable
-  from a hang. The default is now 30 s -- ADR-001 measured a local suggest call
-  at 5-10 s -- and the pre-commit hook derives the bound from the same budget its
-  own warning uses, with a 10 s floor.
-
 ### Changed
 
 - **Hook latency budgets are recalibrated to the Python host that ships**
@@ -122,7 +91,49 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   New budgets are measured p95 x 1.5, rounded up to 50 ms, with the hard timeout
   at twice that and capped by ADR-015's ceiling. All seven stay well under it.
 
+
+- **`judge.llm_timeout_seconds` now describes the loop that actually runs.** The
+  schema called it the timeout for "one batch call". Per-ADR isolation replaced
+  batching, so it bounds each call in a loop: a project with N ADRs marked
+  `llm_judge` has a worst case of N x the value on a single commit. At the
+  shipped default of 120 s that is 20 minutes for 10 ADRs and 40 minutes for 20 --
+  not the two minutes the old description implied. The number is the one people
+  use to decide whether the pass is affordable, so the worst case is now stated
+  where they choose it.
+
 ### Fixed
+
+- **`adr-discover` was 3.9x slower than it needed to be, and the cost grew with
+  the repository.** `scan_first_appearance` ran one `git log --follow` per
+  candidate path, so each invocation paid a fresh git process and re-ran rename
+  detection over the whole history. Batched into a single `git log`, the default
+  command drops from **3622 ms to 938 ms** — back under ADR-015's 2000 ms
+  ceiling, and no longer growing with the number of candidates.
+
+  The trade is `--follow`: a file that arrived under a different name now
+  reports the rename rather than the original creation. Small, and the signal is
+  about the *order* subsystems appeared — a rename does not reorder anything.
+
+
+- **`judge.pre_commit_timeout_ms` finally does something.** The installed
+  pre-commit hook compared its elapsed time against a literal `5000`, so setting
+  the key changed nothing -- the same shape as the `JUDGE_TIMEOUT_S = 120` defect
+  fixed in v0.44.1, except this one ships to every project that installs the
+  hook. The hook now reads the key, falls back to 5000 ms when it is absent, and
+  **validates** a value rather than trusting it: this is a repo-tracked file a
+  hand can edit, so anything outside 0..3600000 is refused by name on stderr.
+  `0` means off, matching how `bin/adr-judge` already reads it, and
+  `warn_on_exceed: false` now silences the hook's warning too -- shipping the
+  budget read without that would have reproduced the identical defect one key
+  over.
+
+- **`bin/adr-suggest` no longer waits two minutes on a path documented as never
+  blocking.** The default was 120 s and no caller ever passed `--llm-timeout`, so
+  120 s is what every commit got. Two minutes of no output is indistinguishable
+  from a hang. The default is now 30 s -- ADR-001 measured a local suggest call
+  at 5-10 s -- and the pre-commit hook derives the bound from the same budget its
+  own warning uses, with a 10 s floor.
+
 
 - **The hook benchmark measured six of eight events and reported a pass.**
   `plan-exit` and `pr-create` are registered as `pre-tool-use` with a matcher, so
@@ -175,17 +186,6 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
   A new gate (`tests/test_config_schema_has_readers.py`) fails when any declared
   key has no reader, so the next orphan is caught by CI rather than by a sweep.
-
-### Changed
-
-- **`judge.llm_timeout_seconds` now describes the loop that actually runs.** The
-  schema called it the timeout for "one batch call". Per-ADR isolation replaced
-  batching, so it bounds each call in a loop: a project with N ADRs marked
-  `llm_judge` has a worst case of N x the value on a single commit. At the
-  shipped default of 120 s that is 20 minutes for 10 ADRs and 40 minutes for 20 --
-  not the two minutes the old description implied. The number is the one people
-  use to decide whether the pass is affordable, so the worst case is now stated
-  where they choose it.
 
 ## [0.45.0] - 2026-08-04
 
