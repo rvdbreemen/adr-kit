@@ -235,12 +235,23 @@ def test_the_parser_tells_an_answered_question_from_an_open_one():
 
 def test_readiness_stops_treating_deletion_and_answering_as_equivalent(tmp_path):
     """AC#4. Both leave the unresolved list empty; only one kept the reasoning."""
-    sys.path.insert(0, str(ROOT / "bin"))
-    spec = importlib.util.spec_from_file_location(
-        "adr_readiness_under_test", ROOT / "bin" / "adr_readiness.py"
-    )
-    readiness = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(readiness)
+    # bin/ has to be importable for adr_readiness's own siblings, but the entry
+    # is removed again: leaking it makes later failures order-dependent, and a
+    # test module that mutates global interpreter state is exactly the shared
+    # mutable state TASK-128 removed from this suite.
+    bin_dir = str(ROOT / "bin")
+    added = bin_dir not in sys.path
+    if added:
+        sys.path.insert(0, bin_dir)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "adr_readiness_under_test", ROOT / "bin" / "adr_readiness.py"
+        )
+        readiness = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(readiness)
+    finally:
+        if added and bin_dir in sys.path:
+            sys.path.remove(bin_dir)
 
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)

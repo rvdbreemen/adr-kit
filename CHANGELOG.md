@@ -24,8 +24,6 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   repository, or on a file with no history, it degrades to an ADVISORY that
   states the rule was not verified — a named hole rather than a silent pass.
 
-### Added
-
 - **The pull-request moment now asks both halves of R2.** It asked whether a
   branch violates an accepted decision; it did not ask whether the branch
   *contains* a decision nobody recorded. That second question happened only if
