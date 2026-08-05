@@ -4,6 +4,28 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The pull-request moment now asks both halves of R2.** It asked whether a
+  branch violates an accepted decision; it did not ask whether the branch
+  *contains* a decision nobody recorded. That second question happened only if
+  someone typed `/adr-kit:review` or had individually opted into
+  `ADR_KIT_SUGGEST`, which in practice means it did not happen (ADR-024).
+
+  The nudge joins the existing guard rather than getting a moment of its own,
+  because that moment is already intercepted and the user is already waiting. It
+  reuses the diff the judge already read and what is left of the same 5 s
+  deadline, so it costs one extra subprocess and no extra `git diff`.
+
+  **It is advisory and cannot block.** A violation still denies and the nudge
+  rides along; on a clean branch the nudge speaks alone, and on a branch with no
+  candidate decision nothing is printed at all. A suggestion that could block
+  would teach people to write an empty ADR to get past it, which is the failure
+  mode that produced six rule-less Enforcement blocks in this repository.
+
+  The gap this leaves is real and stated in ADR-024: a pull request opened by
+  hand, from the web UI or by a teammate not using an agent, gets nothing.
+
 ### Fixed
 
 - **`judge.pre_commit_timeout_ms` finally does something.** The installed
