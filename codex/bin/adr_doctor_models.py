@@ -150,3 +150,37 @@ def render_human(report: dict[str, Any]) -> str:
     for repair in report["repairs"]:
         lines.append(f"  repaired: {repair['path']} ({repair['kind']})")
     return "\n".join(lines)
+
+
+def generated_tree_owner(plugin_root: Path) -> str | None:
+    """Which client this tree IS, when it is a generated client tree.
+
+    Positive identity, not "my import failed". A canonical payload root always
+    carries clients/workflows.json: it is the generator's own input, and the
+    public payload ships `clients` as a whole include_root, so an installed
+    payload has it at its root too. RUNTIME_SUPPORT_FILES deliberately never
+    mirrors it -- that absence is the marker read here, which is why mirroring
+    it later would silently stop the doctor degrading and start it hard-failing.
+    """
+    if (plugin_root / "clients" / "workflows.json").is_file():
+        return None
+    if (plugin_root / ".codex-plugin" / "plugin.json").is_file():
+        return "codex"
+    if (plugin_root / "plugin.json").is_file() and (plugin_root / "hooks.json").is_file():
+        return "copilot"
+    return None
+
+
+def client_root(plugin_root: Path, client: str) -> Path | None:
+    """Where this client's owned config lives, or None if not installed here.
+
+    In a canonical payload root each client owns a subdirectory. In a generated
+    client tree there is only one client and it owns the root itself -- codex/
+    IS the plugin root for Codex, so codex/.mcp.json sits there and not at
+    codex/codex/.mcp.json. Assuming the canonical shape made the doctor report
+    six failures against paths that were never meant to exist.
+    """
+    owner = generated_tree_owner(plugin_root)
+    if owner is None:
+        return plugin_root if client == "claude" else plugin_root / client
+    return plugin_root if client == owner else None

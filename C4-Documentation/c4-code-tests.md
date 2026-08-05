@@ -37,7 +37,7 @@
 | **Tests actually collected** | **903** (`python -m pytest --collect-only -q`, 3.15 s) — 28 `@pytest.mark.parametrize` decorators expand the 806 definitions; `test_selectable_formats.py:446-447` alone is a 3×3 cross-product |
 | Test classes | 35, in 8 modules |
 | Lines of test code | 19,906 |
-| `conftest.py` / `tests/__init__.py` | **neither exists** |
+| `conftest.py` / `tests/__init__.py` | `tests/conftest.py` exists and carries exactly one fixture (the session-start working-tree snapshot, TASK-128); `tests/__init__.py` still does not exist |
 | Modules importing `pytest` | 34 of 71 (the other 37 use bare `assert`) |
 | `@pytest.mark.slow` uses | 4 (3 in `test_adr_performance.py`, 1 in `test_client_generator_performance.py`) — and **CI does not skip them** |
 | Fixture / corpus files | 29 JSON+Markdown fixtures, 5 certification records, 169 corpus ADRs |
@@ -71,7 +71,11 @@ The ten families below partition all 71 modules exactly once (6+9+8+5+6+8+14+5+4
 
 ### The module-loading layer (the suite's real architecture)
 
-There is **no `conftest.py` and no `tests/__init__.py`**. `pytest.ini`
+There is **no `tests/__init__.py`**, which is why the helper modules are
+imported top-level (`from adr_fixtures import ...`) and never as `tests.adr_fixtures`.
+`tests/conftest.py` exists but is deliberately narrow: one session-scoped
+`tree_snapshot` fixture, added by TASK-128 so the client-generator drift check
+stops asserting on a tree other tests write to. `pytest.ini`
 ([`pytest.ini`](../pytest.ini)) sets `pythonpath = .` and declares exactly one
 marker (`slow`). Everything else — importing the extensionless `bin/adr-*`
 scripts, putting `bin/`, `hooks/`, `scripts/` on `sys.path`, sharing helper
@@ -442,8 +446,9 @@ committed non-source file is `tests/testsets/otgw-firmware/LICENSE` (GPLv3 text)
 
 Things a component-level reader should know about this cluster:
 
-1. **No shared test infrastructure.** No `conftest.py`, no `tests/__init__.py`,
-   no fixture package. The loader boilerplate is duplicated across 45 modules and
+1. **Almost no shared test infrastructure.** `tests/conftest.py` exists and
+   holds one fixture (`tree_snapshot`); there is no `tests/__init__.py` and no
+   fixture package. The loader boilerplate is duplicated across 45 modules and
    the ADR-writing helper is reimplemented per module — there are at least ten
    distinct `_write_adr` / `_make_adr` / `_adr` / `_make_project` variants with
    different signatures. Only `test_adr_readiness._write_adr` is shared, and it

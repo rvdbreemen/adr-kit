@@ -3,22 +3,46 @@
   "method_id": "adr-kit-hook-latency-v1",
   "machine_class": {
     "required": "Windows native certification runner",
-    "best_effort": ["macOS", "Linux"]
+    "best_effort": [
+      "macOS",
+      "Linux"
+    ]
   },
   "sample_count": {
     "certification": 30,
     "deep_doctor": 5
   },
-  "cache_states": ["cold-process", "warm-filesystem", "warm-persistent-host"],
+  "cache_states": [
+    "cold-process",
+    "warm-filesystem",
+    "warm-persistent-host"
+  ],
   "process_startup_included": true,
   "ci_variance_percent": 20,
-  "budgets": {
-    "SessionStart": {"p50_ms": 50, "p95_ms": 150, "hard_timeout_ms": 500},
-    "UserPromptSubmit": {"p50_ms": 75, "p95_ms": 250, "hard_timeout_ms": 500},
-    "SubagentStart": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 250},
-    "PreToolUse": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
-    "PostToolUse": {"p50_ms": 25, "p95_ms": 50, "hard_timeout_ms": 100},
-    "PreCompact": {"p50_ms": 30, "p95_ms": 100, "hard_timeout_ms": 500},
-    "Stop": {"p50_ms": 50, "p95_ms": 200, "hard_timeout_ms": 750}
+  "budget_source": "hooks/manifest.json",
+  "budget_source_note": "Budgets live in the manifest, keyed by event id. This file used to carry its own copy keyed by client-facing event name, and that duplication is what let plan-exit and pr-create go unmeasured: keyed by name both collapse onto pre-tool-use (TASK-123, ADR-030).",
+  "python_floor_ms_p50": 183,
+  "python_floor_evidence": "python -c pass, p50 over 7 samples, Windows 11 / CPython 3.12.9, 2026-08-05. Machine-dependent: 124 ms was recorded on 2026-07-26 on a different machine. Named in hooks/hook_benchmark.py as MEASURED_INTERPRETER_FLOOR_MS.",
+  "recalibrated": {
+    "date": "2026-08-05",
+    "adr": "ADR-030",
+    "method": "budget = measured p95 x 1.5, rounded up to 50 ms; hard timeout = 2x that, capped at ADR-015's 2000 ms ceiling",
+    "machine": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.12.9"
+    },
+    "host": "python-fallback; the native binary is opt-in since ADR-029",
+    "measured_p50_ms": {
+      "session-start": 262.9,
+      "user-prompt-submit": 275.4,
+      "pre-tool-use": 297.3,
+      "post-tool-use": 411.8,
+      "plan-exit": 454.3,
+      "pr-create": 283.9,
+      "subagent-start": 370.1,
+      "pre-compact": 417.2
+    },
+    "native_comparison": "PreToolUse 20.2 ms native vs 273.6 ms python; SessionStart 24.6 vs 269.6"
   }
 }

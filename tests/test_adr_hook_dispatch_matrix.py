@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from generated_tree_imports import unresolved_first_party
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = json.loads((REPO_ROOT / "hooks" / "manifest.json").read_text(encoding="utf-8"))
 
@@ -286,22 +288,23 @@ def test_every_module_the_entrypoint_imports_exists_in_that_clients_tree(client)
     Adding `adr_pr_guard.py` to `HOOK_RUNTIME_FILES` fixes one omission. This
     fails on the next one: the generated entrypoint may not import a sibling
     that the generated tree does not contain.
+
+    The walk is now TRANSITIVE (TASK-125, ADR-032). The original version scanned
+    this one file with a `line.startswith("from ")` prefix match and resolved one
+    hop. That passed on a live outage in bin/, where the missing module was
+    reached through an intermediate that did exist -- so the shape of the check,
+    not just its subject, had to change. It is also parsed rather than grepped,
+    because deliberate function-level imports are invisible to a prefix scan.
     """
     tree = TREES[client]
-    source = (tree / "adr-hook.py").read_text(encoding="utf-8")
-
-    missing = []
-    for line in source.splitlines():
-        if not line.startswith("from ") or " import " not in line:
-            continue
-        module = line.split()[1]
-        if module.startswith(("_", ".")) or module == "__future__":
-            continue
-        candidate = tree / module.replace(".", "/")
-        if candidate.with_suffix(".py").exists() or (candidate / "__init__.py").exists():
-            continue
-        if module in sys.stdlib_module_names:
-            continue
-        missing.append(module)
-
-    assert not missing, f"{client} entrypoint imports {missing}, absent from {tree}"
+    missing = unresolved_first_party(
+        tree / "adr-hook.py", tree, [tree, tree.parent], REPO_ROOT / "hooks"
+    )
+    assert not missing, (
+        f"{client} entrypoint reaches first-party modules absent from {tree}:\n  "
+        + "\n  ".join(
+            f"{module} (imported by {where}, lazy={lazy})"
+            for where, module, lazy in missing
+        )
+        + "\n\nDeclare each in client_generation_model.HOOK_RUNTIME_FILES."
+    )

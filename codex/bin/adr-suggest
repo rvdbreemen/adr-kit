@@ -96,7 +96,20 @@ from adr_config import ConfigValidationError, load_validated_config
 # on the code side of that line. The vector itself is quoted in TASK-72 and in
 # ADR-017's Context rather than here, because the Enforcement block now forbids
 # that literal in this file and prose is not a licence to reintroduce it.
-DEFAULT_LLM_TIMEOUT_S = 120
+# Reached from the guardian sweep, which is documented as advisory and free to
+# interrupt. Two minutes of no output is indistinguishable from a hang, and a
+# user who reads "this never blocks" and then waits that long kills the process.
+#
+# 30 s, not 120: ADR-001 measured a local suggest call at 5-10 s in 2026-07, so
+# this leaves generous headroom while staying inside what a person will sit
+# through. Callers that know their own budget pass --llm-timeout; the pre-commit
+# template derives it from judge.pre_commit_timeout_ms (TASK-122).
+#
+# The model CLI is a DIRECT child of this process, so subprocess.run(timeout=)
+# kills it when the bound expires. What that does not cover is a grandchild the
+# model CLI spawns for itself; a hard guarantee there needs a Windows Job Object
+# and this repository has no precedent for one. Named rather than papered over.
+DEFAULT_LLM_TIMEOUT_S = 30
 
 # Cap for --intent-file content embedded in the prompt (v0.21+). Commit logs and
 # PR bodies can be arbitrarily long; the decision signal is almost always in the

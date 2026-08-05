@@ -77,6 +77,7 @@ def _load_sibling(name: str):
 _load_sibling("adr_format")
 _load_sibling("adr_schema")
 _load_sibling("adr_catalog")
+_load_sibling("adr_config")
 
 
 def _import_jsonschema():
@@ -318,11 +319,37 @@ def load_config(path: Optional[Path]) -> Dict:
             )
             if schema_path.exists():
                 schema = json.loads(schema_path.read_text(encoding="utf-8"))
-                jsonschema.validate(cfg, schema)
+                # Retired keys are no longer declared, and this validator is a
+                # real schema engine that would reject them as unknown. Lint has
+                # to agree with adr_config, which accepts and ignores them --
+                # otherwise removing a key nothing read would newly FAIL every
+                # project that still sets one. See adr_config.RETIRED_KEYS.
+                jsonschema.validate(_without_retired_keys(cfg), schema)
         except Exception as e:
             raise PolicyError(f"{path}: schema validation failed: {e}")
 
     return cfg
+
+
+def _without_retired_keys(cfg: Dict) -> Dict:
+    """Return a copy of cfg with the retired keys pruned, for schema validation.
+
+    A shallow prune of a deep copy: the retirement list is keyed by dotted path,
+    so a key is only dropped where it was actually retired, not wherever the
+    name happens to appear.
+    """
+    from adr_config import RETIRED_KEYS
+
+    def prune(value, path: str):
+        if not isinstance(value, dict):
+            return value
+        return {
+            key: prune(item, f"{path}.{key}")
+            for key, item in value.items()
+            if f"{path}.{key}" not in RETIRED_KEYS
+        }
+
+    return prune(cfg, "$")
 
 
 def severity_of(

@@ -296,3 +296,69 @@ def test_binary_outputs_are_never_eol_normalised():
     assert not GEN._same_content(b"a\r\nX", b"a\nb")
     # A missing file is never a match.
     assert not GEN._same_content(None, b"a\n")
+
+
+def test_runtime_support_files_are_mirrored_and_the_generator_is_not():
+    """The mirrors carry what bin/ imports, and nothing that breaks the marker.
+
+    RUNTIME_SUPPORT_FILES exists because bin/adr-doctor resolves modules by
+    appending ROOT and ROOT/"scripts" to sys.path, so the mirror has to
+    reproduce the layout. What must stay OUT matters just as much:
+    adr_doctor_models.generated_tree_owner() identifies a generated tree by the
+    ABSENCE of clients/workflows.json. Mirror that file and the doctor silently
+    stops degrading and starts hard-failing again (ADR-032).
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "client_generation_model", ROOT / "scripts" / "client_generation_model.py"
+    )
+    model = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(model)
+
+    missing = [
+        f"{client}/{relative}"
+        for client in ("codex", "copilot")
+        for relative in model.RUNTIME_SUPPORT_FILES
+        if not (ROOT / client / relative).is_file()
+    ]
+    assert not missing, f"declared runtime support files absent from a mirror: {missing}"
+
+    must_stay_absent = (
+        "clients/workflows.json",
+        "clients/capabilities.json",
+        "scripts/client_generation.py",
+        "scripts/client_generation_model.py",
+        "scripts/build-client-adapters.py",
+    )
+    leaked = [
+        f"{client}/{relative}"
+        for client in ("codex", "copilot")
+        for relative in must_stay_absent
+        if (ROOT / client / relative).exists()
+    ]
+    assert not leaked, (
+        f"generator inputs leaked into a mirror: {leaked}. clients/workflows.json in "
+        "particular is the marker generated_tree_owner() reads -- mirroring it turns "
+        "the doctor's honest degradation back into six false failures."
+    )
+
+
+def test_generated_client_tree_is_distinguishable_from_the_payload_root():
+    """The identity test is positive, not 'my import failed'."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "adr_doctor_models", ROOT / "bin" / "adr_doctor_models.py"
+    )
+    models = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(models)
+
+    assert models.generated_tree_owner(ROOT) is None
+    assert models.generated_tree_owner(ROOT / "codex") == "codex"
+    assert models.generated_tree_owner(ROOT / "copilot") == "copilot"
+
+    # And the re-rooting that follows from it.
+    assert models.client_root(ROOT, "codex") == ROOT / "codex"
+    assert models.client_root(ROOT / "codex", "codex") == ROOT / "codex"
+    assert models.client_root(ROOT / "codex", "copilot") is None

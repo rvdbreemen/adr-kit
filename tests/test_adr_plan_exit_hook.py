@@ -100,4 +100,11 @@ def test_the_budget_matches_the_other_pre_tool_hooks():
     plan = next(item for item in manifest["events"] if item["id"] == "plan-exit")
     pre_edit = next(item for item in manifest["events"] if item["id"] == "pre-tool-use")
 
-    assert plan["latency_budget_ms"] == pre_edit["latency_budget_ms"]
+    # Not equality. Both dispatch from PreToolUse, so plan-exit may never be
+    # given LESS room than the edit tier it shares that dispatch with. It is
+    # allowed more, and measurement says it needs it: plan-exit renders the
+    # decision prompt on top of the retrieval both do, and costs 454 ms p50
+    # against 297 ms (ADR-030). Asserting equality was fair while both carried a
+    # copied 100 ms; once the numbers were measured it forced one of them to be
+    # wrong.
+    assert plan["latency_budget_ms"] >= pre_edit["latency_budget_ms"]
