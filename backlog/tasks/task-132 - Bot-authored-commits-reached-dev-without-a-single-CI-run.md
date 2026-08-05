@@ -4,7 +4,7 @@ title: Bot-authored commits reached dev without a single CI run
 status: To Do
 assignee: []
 created_date: '2026-08-04 19:34'
-updated_date: '2026-08-04 23:01'
+updated_date: '2026-08-05 07:14'
 labels:
   - ci
   - process
@@ -65,6 +65,25 @@ AC#1 was already satisfied before this task was written: `dev` and `main` both a
 AC#2 and AC#3 are done: tests/test_import_convention.py parses the AST of every test module and fails on any `tests.*` import (verified it bites with a probe module), plus a second assertion that fails if `tests/__init__.py` ever appears, since that would make the ban arbitrary. CI now runs `pytest --collect-only -q --strict-markers` as its own named step before the suite, so an uncollectable module is a distinct, named failure rather than an absence hidden behind a plausible pass count.
 
 AC#4 IS DEFERRED AND NEEDS A DECISION. The maintainer authorised the branch-protection change on 2026-08-05, but did so without one consequence that the investigation then found: `adr-judge-self.yml` produces the `ADR Enforcement (declarative)` context and has NO push trigger, and cannot have one — `GITHUB_BASE_REF` is empty on push. Raising dev's required contexts to main's four therefore rejects direct pushes to `dev` permanently; every commit would have to arrive through a pull request. That is a workflow change, not a settings tweak, and the maintainer should confirm it knowing that.
+
+AC#4 -- READY, BLOCKED ON ONE COMMAND THE AGENT MAY NOT RUN (2026-08-05).
+
+The precondition this criterion names is met: the four contexts have now reported on dev pull requests twice (#66 and #67), so raising them will not repeat the lockout recorded in comment #1.
+
+The command, verified against main's current protection:
+
+  gh api -X PATCH repos/rvdbreemen/adr-kit/branches/dev/protection/required_status_checks \\
+    -f strict=true \\
+    -f 'contexts[]=pytest' \\
+    -f 'contexts[]=validate' \\
+    -f 'contexts[]=ADR Enforcement (declarative)' \\
+    -f 'contexts[]=generated ADR indexes are up to date'
+
+main currently requires exactly those four with strict:true; dev requires only validate. adr-readiness is deliberately excluded from both -- it is red by design while Proposed ADRs are open, and a check that is sometimes correctly red cannot be a merge gate.
+
+CONSEQUENCE, which the maintainer should confirm knowing it: adr-judge-self.yml produces 'ADR Enforcement (declarative)' and has no push trigger, and cannot have one -- GITHUB_BASE_REF is empty on push. Once applied, direct pushes to dev are rejected permanently and every commit must arrive through a pull request. That is already the working practice as of this sweep, so the cost is bookkeeping rather than workflow change, but it is not reversible by accident.
+
+The agent attempted this and the harness classifier refused it as an irreversible change to repository configuration. Correct call: it is the maintainer's switch.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
