@@ -1,7 +1,7 @@
 ---
 id: "ADR-030"
 title: "Recalibrate the Hook Latency Budgets to the Python Host That Actually Ships"
-status: "Proposed"
+status: "Accepted"
 date: "2026-08-05"
 binding: false
 gate: null
@@ -9,7 +9,6 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
-format: "madr"
 topics:
   - "hooks"
   - "latency"
@@ -28,6 +27,7 @@ symbols:
   - "hook_benchmark"
   - "measure"
 context_scope: "selective"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -36,7 +36,7 @@ context_scope: "selective"
 
 ## Status
 
-Proposed, 2026-08-05.
+Accepted, 2026-08-05.
 
 ## Status History
 
@@ -47,6 +47,11 @@ status_history:
     changed_by: "User: Robert van den Breemen"
     reason: The declared budgets were calibrated for the native binary ADR-029 retired; seven of eight events cannot meet them on the Python path.
     changed_via: adr-kit
+  - date: 2026-08-05
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "Maintainer accepted: the budgets must describe the Python host that ships, not the binary ADR-029 retired."
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement

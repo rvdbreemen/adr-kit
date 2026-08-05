@@ -1,7 +1,7 @@
 ---
 id: "ADR-032"
 title: "Treat a Generated Client Tree as a First-Class Doctor Context"
-status: "Proposed"
+status: "Accepted"
 date: "2026-08-05"
 binding: false
 gate: null
@@ -9,7 +9,6 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
-format: "madr"
 topics:
   - "doctor"
   - "client generation"
@@ -27,6 +26,7 @@ symbols:
   - "client_root"
   - "RUNTIME_SUPPORT_FILES"
 context_scope: "selective"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -35,7 +35,7 @@ context_scope: "selective"
 
 ## Status
 
-Proposed, 2026-08-05.
+Accepted, 2026-08-05.
 
 ## Status History
 
@@ -46,6 +46,11 @@ status_history:
     changed_by: "User: Robert van den Breemen"
     reason: The doctor now runs from codex and copilot; what it may report there, and what it must never write, needs to be stated rather than inferred from code.
     changed_via: adr-kit
+  - date: 2026-08-05
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "Maintainer accepted: a generated client tree is a real doctor context, and a repair-by-default tool must never write into a distribution artefact."
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement

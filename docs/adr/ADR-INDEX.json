@@ -1608,7 +1608,7 @@
       "title": "Recalibrate the Hook Latency Budgets to the Python Host That Actually Ships",
       "path": "ADR-030-recalibrate-the-hook-latency-budgets-to-the-python-host-that-actually-ships.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-08-05",
       "decision_summary": "Chosen option: recalibrate the budgets to the Python host, because it is the only option under which the declared num...",
       "topics": [
@@ -1668,7 +1668,7 @@
       "title": "Name the Pull-Request Moment as a Deliberately Slower User-Initiated Event",
       "path": "ADR-031-name-the-pull-request-moment-as-a-deliberately-slower-user-initiated-event.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-08-05",
       "decision_summary": "Chosen option: name the pull-request moment as a deliberately slower, user-initiated event, because the property ADR-...",
       "topics": [
@@ -1726,7 +1726,7 @@
       "title": "Treat a Generated Client Tree as a First-Class Doctor Context",
       "path": "ADR-032-treat-a-generated-client-tree-as-a-first-class-doctor-context.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-08-05",
       "decision_summary": "Chosen option: declare a generated tree a first-class doctor context, because a user who installed the Codex payload...",
       "topics": [

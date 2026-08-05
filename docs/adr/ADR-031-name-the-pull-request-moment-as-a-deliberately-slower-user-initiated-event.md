@@ -1,7 +1,7 @@
 ---
 id: "ADR-031"
 title: "Name the Pull-Request Moment as a Deliberately Slower User-Initiated Event"
-status: "Proposed"
+status: "Accepted"
 date: "2026-08-05"
 binding: false
 gate: null
@@ -9,7 +9,6 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
-format: "madr"
 topics:
   - "latency"
   - "pull request"
@@ -27,6 +26,7 @@ symbols:
   - "latency_budget_ms"
   - "adr_pr_guard"
 context_scope: "selective"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -35,7 +35,7 @@ context_scope: "selective"
 
 ## Status
 
-Proposed, 2026-08-05.
+Accepted, 2026-08-05.
 
 ## Status History
 
@@ -46,6 +46,11 @@ status_history:
     changed_by: "User: Robert van den Breemen"
     reason: ADR-015's 2000 ms ceiling assumes an event the user does not initiate; the pull-request guard is one the user asks for and waits on.
     changed_via: adr-kit
+  - date: 2026-08-05
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "Maintainer accepted: the pull-request moment is user-initiated, so the ceiling may be exceeded there when an ADR names it."
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
