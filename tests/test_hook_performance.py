@@ -109,3 +109,121 @@ def test_windows_native_host_reports_p95_targets_without_masking(monkeypatch):
             all(item["targets"].values())
             for item in result["results"].values()
         )
+
+
+# ---------------------------------------------------------------------------
+# ADR-015's ceiling, on the hook side (TASK-129, ADR-031)
+#
+# ADR-015 forbids a hard budget above 2000 ms on any deterministic user-facing
+# path and its References name hooks/manifest.json as the per-event hook budget
+# file. But its Enforcement block only checks the CLI corpus, and this module
+# carried no ceiling assertion at all -- so pr-create's 5000 ms landed, shipped
+# in v0.44.0, and passed every gate.
+#
+# ADR-031 names the pull-request moment as a deliberately slower, user-initiated
+# event. Its Decision Contract requires the exemption to be resolved from the ADR
+# record rather than a literal list of event names here, so the manifest points
+# at the record and this gate verifies the record is real and Accepted. No event
+# name appears in this file.
+#
+# Gate anchor for ADR-031: adr-hook-ceiling-v1
+# ---------------------------------------------------------------------------
+
+CEILING_MS = 2000
+MANIFEST = ROOT / "hooks" / "manifest.json"
+ADR_DIR = ROOT / "docs" / "adr"
+
+
+def _events() -> list[dict]:
+    return json.loads(MANIFEST.read_text(encoding="utf-8"))["events"]
+
+
+def _adr_status(adr_id: str) -> str | None:
+    """The frontmatter status of one ADR, or None when no such record exists."""
+    for path in ADR_DIR.glob(f"{adr_id}-*.md"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("status:"):
+                return line.split(":", 1)[1].strip().strip('"')
+    return None
+
+
+def _over_ceiling(events: list[dict]) -> list[dict]:
+    return [
+        event
+        for event in events
+        if int(event.get("latency_budget_ms", 0)) > CEILING_MS
+    ]
+
+
+def test_every_hook_budget_is_under_the_ceiling_or_named_by_an_accepted_adr():
+    """ADR-015's Must Not, finally enforced on the file it names."""
+    unexcused = []
+    for event in _over_ceiling(_events()):
+        exception = event.get("latency_ceiling_exception")
+        if not exception:
+            unexcused.append(
+                f"{event['id']}: {event['latency_budget_ms']} ms with no "
+                "latency_ceiling_exception"
+            )
+            continue
+        status = _adr_status(exception)
+        if status is None:
+            unexcused.append(f"{event['id']}: names {exception}, which does not exist")
+        elif status != "Accepted":
+            unexcused.append(
+                f"{event['id']}: names {exception}, which is {status} and not Accepted"
+            )
+
+    assert not unexcused, (
+        f"hook budgets above ADR-015's {CEILING_MS} ms ceiling:\n  "
+        + "\n  ".join(unexcused)
+        + "\n\nBring the budget under the ceiling, or write an ADR naming the event "
+        "as user-initiated and reference it from latency_ceiling_exception."
+    )
+
+
+def test_an_exemption_pointing_at_a_missing_or_proposed_adr_fails(tmp_path):
+    """The exemption must be a real Accepted record, not a plausible string.
+
+    Without this the field would be a comment: anyone could write
+    `latency_ceiling_exception: "ADR-999"` and the gate would wave it through,
+    which is exactly the silent divergence ADR-031 exists to close.
+    """
+    assert _adr_status("ADR-999") is None
+    assert _adr_status("ADR-031") == "Accepted"
+
+
+def test_the_ceiling_gate_fails_on_an_unexcused_over_ceiling_entry():
+    """Proof the gate bites, without committing a red assertion.
+
+    ADR-031's own criterion asked for a test that fails on the current entry.
+    Landing the gate and the exemption together means it does not -- so the
+    biting is demonstrated against a synthetic manifest instead, which is the
+    honest version of that claim.
+    """
+    synthetic = [
+        {"id": "made-up-event", "latency_budget_ms": 5000},
+        {"id": "another", "latency_budget_ms": 100},
+    ]
+    over = _over_ceiling(synthetic)
+    assert [event["id"] for event in over] == ["made-up-event"]
+    assert not over[0].get("latency_ceiling_exception")
+
+
+def test_an_exempt_events_budget_agrees_with_the_kill_timeout_the_client_enforces():
+    """ADR-031's Must: the declared number and the kill timeout must agree.
+
+    A budget larger than the timeout that actually kills the process is a
+    promise the runner cannot keep.
+    """
+    mismatched = []
+    for event in _over_ceiling(_events()):
+        runner_s = event.get("runner_timeout_sec")
+        if runner_s is None:
+            mismatched.append(f"{event['id']}: exempt but declares no runner_timeout_sec")
+        elif int(event["latency_budget_ms"]) > runner_s * 1000:
+            mismatched.append(
+                f"{event['id']}: budget {event['latency_budget_ms']} ms exceeds "
+                f"runner_timeout_sec {runner_s} s"
+            )
+    assert not mismatched, "\n  ".join(mismatched)

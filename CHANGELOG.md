@@ -4,6 +4,29 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The hook side of ADR-015's latency ceiling is now enforced.** ADR-015 forbids
+  a hard budget above 2000 ms on any deterministic user-facing path, and its
+  References name `hooks/manifest.json` as the per-event hook budget file — but
+  its Enforcement block only ever checked the CLI corpus, and
+  `tests/test_hook_performance.py` carried no ceiling assertion at all. A hook
+  budget above the ceiling could land, ship, and pass every gate.
+
+  **It did.** `pr-create` has carried a `latency_budget_ms` of 5000 since
+  v0.44.0. It is the only one of the eight events above the ceiling; the other
+  seven read 500, 500, 100, 100, 100, 250 and 500.
+
+  Rather than lower it, ADR-031 names the pull-request moment as a deliberately
+  slower, **user-initiated** event: `pr-create` fires because someone typed
+  `gh pr create` and is waiting for the result, unlike the seven that fire as a
+  side effect of other work. Bringing it under 2000 ms would not make the check
+  faster — it would remove the LLM pass from the moment it is most useful.
+
+  The exemption is not a name in a test. The manifest entry references the ADR,
+  and the gate verifies that record exists and is Accepted, so an over-ceiling
+  budget with nothing behind it fails.
+
 ### Removed
 
 - **Nine config keys that nothing ever read.** `judge.llm_timeout_ms`,

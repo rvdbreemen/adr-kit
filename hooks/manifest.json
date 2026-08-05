@@ -100,6 +100,7 @@
       "matcher": "Bash",
       "outcome": "enforcement",
       "latency_budget_ms": 5000,
+      "latency_ceiling_exception": "ADR-031",
       "latency": {
         "p50_ms": 400,
         "p95_ms": 2000,
