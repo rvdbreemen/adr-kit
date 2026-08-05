@@ -3,10 +3,10 @@ id: TASK-125
 title: >-
   bin/adr-doctor assumes scripts/ and clients/, which the generated client trees
   do not have
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-04 05:25'
-updated_date: '2026-08-04 23:01'
+updated_date: '2026-08-05 05:43'
 labels:
   - doctor
   - client-generation
@@ -30,9 +30,9 @@ Evidence: `sys.path` setup in `bin/adr-doctor`; `COPY_ROOTS` in `scripts/client_
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 bin/adr-doctor runs from codex/ and copilot/ without an import error
-- [ ] #2 The generated-tree import invariant covers bin/ entrypoints, not only the hook entrypoint
-- [ ] #3 A test drives the doctor from a generated tree as a subprocess rather than importing its internals
+- [x] #1 bin/adr-doctor runs from codex/ and copilot/ without an import error
+- [x] #2 The generated-tree import invariant covers bin/ entrypoints, not only the hook entrypoint
+- [x] #3 A test drives the doctor from a generated tree as a subprocess rather than importing its internals
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,3 +50,19 @@ LARGER THAN STATED: the import error is only the first of two premise breaks —
 
 OPEN DECISION: whether a short Proposed amending ADR is needed. The file-list addition sits inside ADR-010:243 ('generation uses declared bounded input roots'), but the NEW semantic — a generated client tree is a first-class doctor context that reports only its own client and marks the other two 'unsupported' — is not written down anywhere and would otherwise have to be inferred from code.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bin/adr-doctor now runs from codex/ and copilot/, reports only its own client, and never writes into the tree it inspects. ADR-032 records the reporting contract.
+
+RUNTIME_SUPPORT_FILES declares the eight modules bin/ imports from outside bin/ and mirrors them at their own relative paths, because the doctor resolves them by appending ROOT and ROOT/"scripts" to sys.path -- the layout has to match, not just the files. They cannot go in COPY_ROOTS: declared_source_files() rglobs a whole root, which would drag build-client-adapters.py into the mirrors and copy clients/workflows.json there, destroying the marker generated_tree_owner() reads.
+
+Fixing the imports alone would have satisfied AC#1 while leaving the doctor lying in six places: check_mcp_launcher and check_hook_package both computed plugin_root / client, but codex/ IS the plugin root for Codex. client_root() re-roots per client and returns None for the two that are not installed, which report unsupported rather than failed. _generated_check returns before importing the generator, because a mirror has no canonical inputs to diff and repair mode -- the DEFAULT mode -- would otherwise write into the tree under inspection.
+
+Measured after, both mirrors: required_failures 0, generated-adapters unsupported, own client's mcp-launcher and hook-package healthy, other two unsupported. SHA-256 snapshot before and after a repair run plus --fix: zero files changed.
+
+AC#2 is the part that needed the most care. The v0.44.1 invariant scanned one file one hop deep and would have PASSED on this defect. tests/generated_tree_imports.py walks the closure transitively over parsed ASTs, and is verified against BOTH historical outages. Its companion test is what keeps the exclusion honest: a deliberately-absent module is allowed only when every import of it is lazy, otherwise the allowlist would let an eager import reproduce the v0.44.1 outage with a green suite.
+
+Verified: 357 tests pass across the doctor, generation, dispatch-matrix and package suites; build-client-adapters.py --check reports changed=0.
+<!-- SECTION:FINAL_SUMMARY:END -->
