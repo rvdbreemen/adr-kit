@@ -96,7 +96,11 @@ def test_a_declared_gate_that_does_not_exist_yet_is_not_a_finding():
     resolves to nothing, which adr-lint then refuses -- trading a silent decay
     for a loud false alarm.
     """
-    assert not _anchor_exists("this-gate-does-not-exist-anywhere-v1")
+    # Assembled at run time rather than written as a literal: tests/ is in the
+    # scan set, so a probe name spelled out here would find itself and the
+    # assertion would be inverted by its own source.
+    probe = "-".join(["adr", "no", "such", "anchor", "v9"])
+    assert not _anchor_exists(probe)
 
 
 def test_an_adrs_own_verification_bullet_cannot_make_its_gate_exist():
