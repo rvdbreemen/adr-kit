@@ -139,11 +139,17 @@ def _events() -> list[dict]:
 
 
 def _adr_status(adr_id: str) -> str | None:
-    """The frontmatter status of one ADR, or None when no such record exists."""
+    """The frontmatter status of one ADR, or None when no such file exists.
+
+    Distinguished from a file that exists but declares no status: that is a
+    formatting problem, and reporting it as "does not exist" would send the
+    reader looking for a missing record instead of a broken one.
+    """
     for path in ADR_DIR.glob(f"{adr_id}-*.md"):
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.startswith("status:"):
                 return line.split(":", 1)[1].strip().strip('"')
+        return ""  # the record is there; its frontmatter is not
     return None
 
 
@@ -169,6 +175,10 @@ def test_every_hook_budget_is_under_the_ceiling_or_named_by_an_accepted_adr():
         status = _adr_status(exception)
         if status is None:
             unexcused.append(f"{event['id']}: names {exception}, which does not exist")
+        elif status == "":
+            unexcused.append(
+                f"{event['id']}: names {exception}, whose frontmatter declares no status"
+            )
         elif status != "Accepted":
             unexcused.append(
                 f"{event['id']}: names {exception}, which is {status} and not Accepted"

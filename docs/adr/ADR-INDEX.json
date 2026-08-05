@@ -1780,6 +1780,63 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-033",
+      "title": "Name the User-Initiated Whole-Repository Commands as Deliberately Slower",
+      "path": "ADR-033-name-the-user-initiated-whole-repository-commands-as-deliberately-slower.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks.",
+      "topics": [
+        "cli",
+        "latency",
+        "performance budget"
+      ],
+      "aliases": [
+        "cli ceiling exception",
+        "user-initiated cli",
+        "whole-repository commands"
+      ],
+      "components": [
+        "CLI latency ceiling",
+        "latency corpus exceptions"
+      ],
+      "symbols": [
+        "adr-audit",
+        "adr-doctor",
+        "latency_ceiling_exception"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "A CLI budget above 2000 ms must carry a reference to an Accepted ADR naming that path.",
+          "The exception must be resolved from the ADR record, never from a literal list of command names in test code.",
+          "An exempt path must be invoked directly by the user, not reached as a side effect of another command."
+        ],
+        "must_not": [
+          "No path reached automatically — from a hook, a pre-commit gate, or another command — may carry a budget above 2000 ms under this record.",
+          "No exception may be added without an Accepted ADR that names the path and states why."
+        ],
+        "exceptions": [
+          "adr-audit --whole-codebase and adr-doctor --check."
+        ],
+        "verification": [
+          "adr-cli-ceiling-exception-v1"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2452,6 +2509,18 @@
     {
       "source": "ADR-032",
       "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-033",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-033",
+      "target": "ADR-031",
       "type": "related",
       "resolved": true
     }
