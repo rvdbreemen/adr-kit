@@ -18,6 +18,9 @@ path that silently degrades is worse than one that is slower: the user cannot
 tell "no ADR was relevant" from "the backend was down".
 """
 
+# Gate anchor for ADR-020: adr-query-embedding-v1
+# Verified here: the query is embedded where it is asked, and authority is joined from the index at search time.
+
 from __future__ import annotations
 
 import importlib.machinery

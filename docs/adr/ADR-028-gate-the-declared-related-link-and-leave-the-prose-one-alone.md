@@ -3,8 +3,8 @@ id: "ADR-028"
 title: "Gate the Declared Related Link and Leave the Prose One Alone"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-reference-gate-scope-v1"
 documents_shipped: true
 verified_in:
   - "tests/test_adr_cross_references.py"
@@ -160,10 +160,7 @@ produces no finding.
 
 ### Verification
 
-* `adr-reference-gate-scope-v1`: the gate this decision is to be anchored by.
-  It does not exist yet, so `gate` is null and `binding` is false: a
-  frontmatter that declares enforcement it cannot deliver is worse than one
-  that admits the gap. Both fields flip back together when the gate ships,
+* `adr-reference-gate-scope-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships,
   covering the dangling case, the one-sided case, and the prose-is-ignored
   case.
 

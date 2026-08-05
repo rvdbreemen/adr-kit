@@ -3,8 +3,8 @@ id: "ADR-027"
 title: "Derive the Lifecycle Signer From a Person-Named Git Identity, Announced"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-signer-derivation-v1"
 documents_shipped: true
 verified_in:
   - "tests/test_adr_signer_discovery.py"
@@ -174,10 +174,7 @@ of the machine identities refuses, names why, and writes nothing.
 
 ### Verification
 
-* `adr-signer-derivation-v1`: the gate this decision is to be anchored by. It
-  does not exist yet, so `gate` is null and `binding` is false: a frontmatter
-  that declares enforcement it cannot deliver is worse than one that admits the
-  gap. Both fields flip back together when the gate ships, covering derivation,
+* `adr-signer-derivation-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships, covering derivation,
   announcement, precedence, the machine-identity refusal, and the write-nothing
   behaviour of `--suggest`.
 

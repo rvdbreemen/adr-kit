@@ -1044,15 +1044,15 @@
           "A remote embedding endpoint is permitted when the user has selected one through the settings surface, having been told the latency and privacy consequence. It is never the default and never selected by probing."
         ],
         "verification": [
-          "adr-query-embedding-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both field..."
+          "adr-query-embedding-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It covers the three acceptance cases above and the R21 latency bound."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-query-embedding-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [
@@ -1228,15 +1228,15 @@
           "ADRKITHOOKDISABLE and the per-ADR override of spec R2.1 apply here as they do at commit time. A gate that cannot be overridden with a reason is overridden outside the tool."
         ],
         "verification": [
-          "adr-pr-guard-tier-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fields..."
+          "adr-pr-guard-tier-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the deny path, the advisory path, and the fail-open path."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-pr-guard-tier-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_pr_guard.py"
@@ -1349,15 +1349,15 @@
           "The legacy judge.llmcmd allowlist is retained for existing projects. It is frozen: no new entries, no new flags."
         ],
         "verification": [
-          "adr-config-trust-boundary-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both..."
+          "adr-config-trust-boundary-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the credential refusal, the command-string refusal, and the redacted settings output."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-config-trust-boundary-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_settings.py"
@@ -1410,15 +1410,15 @@
           "None."
         ],
         "verification": [
-          "adr-audit-exit-contract-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both f..."
+          "adr-audit-exit-contract-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts each of the five exit codes against a fixture, so the contract is enforced rather than described."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-audit-exit-contract-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_audit_command.py"
@@ -1472,15 +1472,15 @@
           "None."
         ],
         "verification": [
-          "adr-signer-derivation-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fie..."
+          "adr-signer-derivation-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering derivation, announcement, precedence, the machine-identity refusal, and the write-nothing behaviour of --suggest."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-signer-derivation-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_signer_discovery.py"
@@ -1529,15 +1529,15 @@
           "None."
         ],
         "verification": [
-          "adr-reference-gate-scope-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both..."
+          "adr-reference-gate-scope-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the dangling case, the one-sided case, and the prose-is-ignored case."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-reference-gate-scope-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_cross_references.py"
@@ -1588,15 +1588,15 @@
           "A future native path is permitted when it delegates to the shared engine rather than reimplementing it, and carries the artefact parity test."
         ],
         "verification": [
-          "adr-single-retrieval-engine-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Bo..."
+          "adr-single-retrieval-engine-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts that no second ranking implementation ships, and that the edit-tier path meets its declared budget."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-single-retrieval-engine-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],

@@ -17,6 +17,9 @@ Two mechanisms are asserted here, and one deliberate non-mechanism:
   advisories on this repository's own healthy set, which is exactly the
   unactionable noise the gate exists to avoid.
 """
+
+# Gate anchor for ADR-028: adr-reference-gate-scope-v1
+# Verified here: the declared related link is gated; the prose one is left alone.
 import json
 import subprocess
 import sys
