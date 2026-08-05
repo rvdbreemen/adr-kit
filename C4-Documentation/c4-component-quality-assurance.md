@@ -17,8 +17,8 @@
   component. Nothing in the shipped product imports it, with exactly one
   verified exception (see [Interfaces](#8-hook-latency-method-fixture--the-one-inbound-runtime-dependency)).
 - **Technology**: Python 3.10+ with `pytest` as the sole third-party dependency;
-  JSON fixtures; Markdown ADR control fixtures; one GPLv3 licence text. No
-  `conftest.py`, no `tests/__init__.py`, no fixture package.
+  JSON fixtures; Markdown ADR control fixtures; one GPLv3 licence text. One
+  single-fixture `tests/conftest.py`; no `tests/__init__.py`, no fixture package.
 - **Location**: [`tests/`](../tests) — [`tests/fixtures/`](../tests/fixtures),
   [`tests/certification/`](../tests/certification),
   [`tests/testsets/otgw-firmware/`](../tests/testsets/otgw-firmware),
@@ -392,8 +392,8 @@ directly against source during this synthesis; the rest are carried from
    suite is smoke-run one minor version ahead of what it claims to support, not
    a CI leg.
 
-6. **No shared test infrastructure at all.** No `conftest.py`, no
-   `tests/__init__.py`, no fixture package. Loader boilerplate is duplicated
+6. **Almost no shared test infrastructure.** `tests/conftest.py` holds one
+   fixture (`tree_snapshot`, TASK-128); no `tests/__init__.py`, no fixture package. Loader boilerplate is duplicated
    across 45 modules in four idioms, and at least ten distinct ADR-writing
    helpers with different signatures are reimplemented per module. The single
    shared helper is exported by importing another test module. This is the

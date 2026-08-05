@@ -1,5 +1,8 @@
 """Judge the branch before the pull request exists (spec R2, TASK-76)."""
 
+# Gate anchor for ADR-023: adr-pr-guard-tier-v1
+# Verified here: the pull-request guard is a fail-closed tier: a violation denies.
+
 from __future__ import annotations
 
 import importlib.machinery

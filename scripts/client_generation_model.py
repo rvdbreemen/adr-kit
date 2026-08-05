@@ -50,6 +50,36 @@ HOOK_RUNTIME_FILES = (
     "hooks/adapters/copilot.py",
     "hooks/bin/windows-x64/adr-hook.exe",
 )
+# The modules bin/ entrypoints import from OUTSIDE bin/. Mirrored at their own
+# relative paths, because bin/adr-doctor resolves them by appending ROOT and
+# ROOT/"scripts" to sys.path -- so the layout has to match, not just the files.
+#
+# COPY_ROOTS cannot carry these: declared_source_files() rglobs a whole root, so
+# adding "scripts" would drag build-client-adapters.py into the mirrors and copy
+# clients/workflows.json there too.
+#
+# That last file is why the exclusions below are load-bearing rather than
+# tidiness. adr_doctor_models.generated_tree_owner() identifies a generated tree
+# by the ABSENCE of clients/workflows.json -- it is the generator's input, and a
+# canonical payload root always has it. Mirror it and the doctor stops degrading
+# and starts hard-failing again, silently.
+#
+# Import closure verified: all eight are stdlib-only except
+# clients/installer/__init__.py -> .contracts and detection.py -> .contracts,
+# both of which are in the list. The two __init__.py files are one-line
+# docstrings and are included so the static invariant test and the runtime
+# importer agree; without them these would resolve only as implicit namespace
+# packages.
+RUNTIME_SUPPORT_FILES = (
+    "clients/__init__.py",
+    "clients/installer/__init__.py",
+    "clients/installer/contracts.py",
+    "clients/installer/detection.py",
+    "hooks/__init__.py",
+    "hooks/hook_benchmark.py",
+    "scripts/adr_settings.py",
+    "scripts/project_setup.py",
+)
 SOURCE_FILES = (
     "clients/capabilities.json",
     "clients/exceptions.json",

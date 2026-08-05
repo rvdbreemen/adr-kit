@@ -51,7 +51,7 @@ set -e
 # freezes at install time. adr-guardian compares this stamp against the
 # installed plugin version and nudges /adr-kit:upgrade when the wrapper lags.
 # Maintained by scripts/bump-version.py; do not edit by hand.
-ADR_KIT_WRAPPER_VERSION="0.45.0"
+ADR_KIT_WRAPPER_VERSION="0.46.0"
 
 if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   echo "[adr-kit] hook disabled for this commit (ADR_KIT_HOOK_DISABLE=1)" >&2
@@ -183,6 +183,53 @@ _ms_now() {
   printf '%s' "$t"
 }
 
+# Performance budget: judge.pre_commit_timeout_ms.
+#
+# The budget is a project decision and lives in the same docs/adr/.adr-kit.json
+# the judge is pointed at below. This wrapper is a repo-tracked file a hand can
+# edit, so the value is validated rather than trusted -- the shape
+# hooks/adr_pr_guard.py applies to runner_timeout_sec.
+#
+#   absent        -> 5000 ms, the schema default
+#   0             -> warning off, matching bin/adr-judge's own reading of 0
+#   1..3600000    -> used as given
+#   anything else -> refused, named on stderr, 5000 ms
+#
+# The ceiling is an hour rather than something tighter because
+# judge.llm_timeout_seconds defaults to 120 s and bounds ONE call, with one call
+# per llm_judge:true ADR. A ten-ADR project has a legitimate twenty-minute
+# commit; a lower ceiling would refuse a correct configuration.
+_ADR_KIT_MAX_BUDGET_MS=3600000
+_BUDGET_READ=$(
+  "$_PYTHON3" -c     'import json,sys
+state, budget, warn = "absent", "5000", "1"
+try:
+    judge = json.load(open(sys.argv[1], encoding="utf-8"))["judge"]
+except Exception:
+    judge = {}
+if isinstance(judge, dict):
+    if judge.get("warn_on_exceed", True) is False:
+        warn = "0"
+    if "pre_commit_timeout_ms" in judge:
+        value = judge["pre_commit_timeout_ms"]
+        if (isinstance(value, bool) or not isinstance(value, int)
+                or not 0 <= value <= int(sys.argv[2])):
+            state = "invalid"
+        else:
+            state, budget = "ok", str(value)
+print(state, budget, warn)'     "$ROOT/docs/adr/.adr-kit.json" "$_ADR_KIT_MAX_BUDGET_MS" 2>/dev/null
+) || _BUDGET_READ=""
+_BUDGET_STATE=$(printf '%s' "$_BUDGET_READ" | cut -d' ' -f1)
+_BUDGET_MS=$(printf '%s' "$_BUDGET_READ" | cut -d' ' -f2)
+_WARN_ON_EXCEED=$(printf '%s' "$_BUDGET_READ" | cut -d' ' -f3)
+case "$_BUDGET_STATE" in
+  ok|absent) ;;
+  invalid)
+    echo "[adr-kit] WARN: judge.pre_commit_timeout_ms is not an integer from 0 to ${_ADR_KIT_MAX_BUDGET_MS}; using ${_BUDGET_MS}ms." >&2
+    ;;
+  *) _BUDGET_MS=5000; _WARN_ON_EXCEED=1 ;;
+esac
+
 # Run the judge.
 #   - declarative pass:  always-on; fast, regex-only, exits non-zero on violation
 #   - LLM pass (default on): one isolated call per llm_judge:true ADR, on the
@@ -209,10 +256,11 @@ _T1=$(_ms_now)
 # and become very noisy on projects with many ADRs. Violations and the summary line
 # (e.g. "[adr-judge] OK 0 violations, 57 advisory") are preserved.
 printf '%s\n' "$ADR_OUT" | grep -avE "^  ADVISORY |^[[:space:]]+ADR has llm_judge:true" >&2 || true
-# Performance warning (non-blocking): alert when adr-judge takes longer than 5 seconds.
+# Performance warning (non-blocking): alert when adr-judge exceeds the budget
+# judge.pre_commit_timeout_ms declares. 0 turns it off; so does warn_on_exceed:false.
 _ELAPSED=$(( _T1 - _T0 ))
-if [ "$_ELAPSED" -gt 5000 ] 2>/dev/null; then
-  echo "[adr-kit] WARN: pre-commit hook took ${_ELAPSED}ms (threshold: 5000ms). Consider ADR_KIT_NO_LLM=1 for faster commits." >&2
+if [ "$_WARN_ON_EXCEED" = "1" ] && [ "${_BUDGET_MS:-0}" -gt 0 ] 2>/dev/null && [ "$_ELAPSED" -gt "$_BUDGET_MS" ] 2>/dev/null; then
+  echo "[adr-kit] WARN: pre-commit hook took ${_ELAPSED}ms (threshold: ${_BUDGET_MS}ms from judge.pre_commit_timeout_ms). Consider ADR_KIT_NO_LLM=1 for faster commits." >&2
 fi
 # Exit 2 means the judge could not run at all (bad config, engine mismatch).
 # Name that explicitly: a blocked commit with only tool output is hard to read.
@@ -266,7 +314,12 @@ fi
 # suggest.enabled:true in .adr-kit.json (per-project). adr-suggest itself
 # self-skips when not opted in. Suppressed under lock contention.
 if [ "${ADR_KIT_SUGGEST_DISABLE:-0}" != "1" ] && [ "${_NO_LLM_OVERRIDE:-0}" != "1" ] && [ -n "$ADR_SUGGEST" ] && [ -x "$ADR_SUGGEST" ]; then
-  SUGGEST_OUT=$(git diff --cached --unified=0 | "$ADR_SUGGEST" --diff - --adr-dir "$ROOT/docs/adr/" 2>&1 || true)
+  # Derive the suggest bound from the same budget the judge warning uses, so the
+  # advisory pass cannot outlast what this hook declares it may cost. Floor of
+  # 10 s: a budget of 0 disables the WARN, it does not mean "no time at all".
+  _SUGGEST_TIMEOUT_S=$(( ${_BUDGET_MS:-5000} / 1000 ))
+  [ "$_SUGGEST_TIMEOUT_S" -lt 10 ] && _SUGGEST_TIMEOUT_S=10
+  SUGGEST_OUT=$(git diff --cached --unified=0 | "$ADR_SUGGEST" --diff - --adr-dir "$ROOT/docs/adr/" --llm-timeout "$_SUGGEST_TIMEOUT_S" 2>&1 || true)
   # Only surface the actual suggestion lines; the "(skipped: ...)" / "LLM
   # unavailable" notes are noise on commits that don't introduce a decision.
   printf '%s\n' "$SUGGEST_OUT" | grep -aE "^\[adr-suggest\] (This change|  )" >&2 || true

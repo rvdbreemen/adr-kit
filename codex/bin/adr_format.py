@@ -316,6 +316,61 @@ def unresolved_open_questions(text: str) -> List[str]:
     return sorted(dict.fromkeys(questions), key=str.casefold)
 
 
+def _normalise_question(raw: str) -> str:
+    """One question's identity, independent of how it is marked up.
+
+    The same text has to match across two revisions of a file, and between an
+    unanswered `- [ ] Why X?` and its answered `- [x] Why X? — **Answered ...**`
+    form. Markup and whitespace are noise for that comparison; the words are not.
+    """
+    text = re.sub(r"^\s*[-*+]\s+", "", raw.strip())
+    text = re.sub(r"^\[[ xX]\]\s*", "", text)
+    # Everything from the answer marker on belongs to the answer, not the question.
+    text = re.split(r"\s+[—-]{1,2}\s+\*\*Answered\b", text)[0]
+    text = re.sub(r"[`*_]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def all_open_questions(text: str) -> "Dict[str, bool]":
+    """Every question in the Open Questions role, mapped to whether it is answered.
+
+    `unresolved_open_questions` deliberately drops answered items, which is right
+    for "what still blocks acceptance" and useless for "what was here before".
+    Telling an answered question from a deleted one is the whole point of the
+    append-only rule (ADR-022): both leave the unresolved list empty, and only
+    one of them preserved the reasoning.
+    """
+    section = section_text(text, "open_questions")
+    if not section:
+        return {}
+    found: Dict[str, bool] = {}
+    for raw_line in section.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("```", "<!--", "-->")):
+            continue
+        stripped = re.sub(r"^\s*[-*+]\s+", "", line).strip()
+        if stripped.casefold().rstrip(".") in {
+            "none",
+            "no open questions",
+            "no unresolved questions",
+        }:
+            continue
+        answered = bool(re.match(r"^\[[xX]\]\s+", stripped))
+        if not answered and not (
+            re.match(r"^\[\s\]\s+", stripped)
+            or re.match(r"^[-*+]\s+", line)
+            or stripped.endswith("?")
+        ):
+            continue
+        question = _normalise_question(line)
+        if not question:
+            continue
+        # An answered form wins: a question listed twice, once each way, is
+        # answered.
+        found[question] = found.get(question, False) or answered
+    return found
+
+
 @lru_cache(maxsize=256)
 def detect_profile(text: str) -> str:
     declared = declared_profile(text)

@@ -3,8 +3,8 @@ id: "ADR-024"
 title: "Ask for a Missing ADR at the Pull-Request Moment, Inside the Guard"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-pr-suggest-v1"
 documents_shipped: false
 verified_in: []
 supersedes: []

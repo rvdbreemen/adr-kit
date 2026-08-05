@@ -71,7 +71,18 @@ def test_it_is_a_question_and_never_a_block():
 
 
 def test_an_empty_plan_stays_silent():
-    assert core.evaluate(_envelope({})) == ("", "noop")
+    """No plan, no question.
+
+    Asserted on the subject rather than on the whole tuple. Since ADR-021 the
+    evaluator may prepend a staleness notice on any event that finds the index
+    stale, and this fixture runs against the live repository -- so an unrelated
+    ADR edit made without reindexing would fail this test for a reason that has
+    nothing to do with empty plans.
+    """
+    text, _ = core.evaluate(_envelope({}))
+
+    assert "does this plan make an architectural decision" not in text
+    assert "/adr-kit:grill" not in text
 
 
 def test_a_write_tool_still_takes_the_edit_path():
@@ -100,4 +111,11 @@ def test_the_budget_matches_the_other_pre_tool_hooks():
     plan = next(item for item in manifest["events"] if item["id"] == "plan-exit")
     pre_edit = next(item for item in manifest["events"] if item["id"] == "pre-tool-use")
 
-    assert plan["latency_budget_ms"] == pre_edit["latency_budget_ms"]
+    # Not equality. Both dispatch from PreToolUse, so plan-exit may never be
+    # given LESS room than the edit tier it shares that dispatch with. It is
+    # allowed more, and measurement says it needs it: plan-exit renders the
+    # decision prompt on top of the retrieval both do, and costs 454 ms p50
+    # against 297 ms (ADR-030). Asserting equality was fair while both carried a
+    # copied 100 ms; once the numbers were measured it forced one of them to be
+    # wrong.
+    assert plan["latency_budget_ms"] >= pre_edit["latency_budget_ms"]

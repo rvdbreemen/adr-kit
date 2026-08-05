@@ -33,13 +33,26 @@ def _pr_guard(envelope) -> tuple[str, str] | None:
     command = envelope.tool_input.get("command")
     if not isinstance(command, str) or not looks_like_pr_create(command):
         return None
+    bin_dir = Path(__file__).resolve().parent.parent / "bin"
     verdict = judge_branch(
         envelope.workspace,
         envelope.workspace / "docs" / "adr",
-        Path(__file__).resolve().parent.parent / "bin" / "adr-judge",
+        bin_dir / "adr-judge",
+        # R2 asks two questions at this moment: does this violate an accepted
+        # decision, and does it contain one nobody recorded. Only the first was
+        # ever answered here (ADR-024). The second joins it rather than getting
+        # its own moment, because this one is already intercepted and the user
+        # is already waiting.
+        suggest=bin_dir / "adr-suggest",
     )
+    nudge = verdict.get("nudge") or ""
     if verdict.get("decision") == "deny":
-        return verdict["reason"], "pr-guard-deny"
+        # A violation denies. The nudge rides along because the branch that
+        # broke a rule is also the one most likely to be making a decision, but
+        # it never contributes to the denial.
+        reason = verdict["reason"]
+        joined = "\n\n".join(part for part in (reason, nudge) if part)
+        return joined, "pr-guard-deny"
     if verdict.get("checked") is False:
         # The guard could not do its job, and silence here is the whole defect:
         # a branch nobody managed to check looks exactly like a clean one. Say
@@ -53,7 +66,11 @@ def _pr_guard(envelope) -> tuple[str, str] | None:
             "pr-guard-unchecked",
         )
     # A clean branch says nothing. An "all clear" on every pull request is noise
-    # that teaches people to skim past the one that matters.
+    # that teaches people to skim past the one that matters. A branch carrying an
+    # unrecorded decision is not clean in the sense that matters, so the nudge
+    # speaks -- advisory, and on its own it can never block the tool call.
+    if nudge:
+        return nudge, "pr-guard-suggest"
     return None
 
 

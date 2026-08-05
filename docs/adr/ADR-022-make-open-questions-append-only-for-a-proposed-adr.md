@@ -3,8 +3,8 @@ id: "ADR-022"
 title: "Make Open Questions Append-Only for a Proposed ADR"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-open-questions-append-only-v1"
 documents_shipped: false
 verified_in: []
 supersedes: []

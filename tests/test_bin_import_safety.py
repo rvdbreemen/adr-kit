@@ -32,12 +32,16 @@ hostile-module tests below are what cover the assignment form behaviourally.
 """
 
 import ast
+import hashlib
+import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from generated_tree_imports import unresolved_first_party
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BIN = REPO_ROOT / "bin"
@@ -277,3 +281,192 @@ def test_module_committed_next_to_an_executable_is_never_imported(
         assert result.returncode in (0, 1), (
             f"{executable} ({label}) rc={result.returncode}:\n{result.stderr[-800:]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Generated client trees (TASK-125, ADR-032)
+#
+# bin/adr-doctor died at import in both mirrors: adr_doctor_checks reaches
+# scripts/adr_settings.py, which COPY_ROOTS never carried. The hook-side
+# invariant added in v0.44.1 would have PASSED on it, because it scanned one
+# file one hop deep and the missing module was two hops down. These checks are
+# transitive and cover every bin/ entrypoint in both trees.
+#
+# Gate anchor for ADR-032: adr-doctor-generated-tree-v1
+# ---------------------------------------------------------------------------
+
+TREES = {"codex": REPO_ROOT / "codex", "copilot": REPO_ROOT / "copilot"}
+
+# A first-party module a mirror is allowed to lack, with the reason. The
+# exclusion is valid ONLY for a lazy import -- see the test below.
+DELIBERATELY_ABSENT = {
+    "client_generation": (
+        "the generator's own source is not mirrored; a mirror has no canonical "
+        "inputs to diff. adr_doctor_checks._generated_check returns unsupported "
+        "before importing it -- see adr_doctor_models.generated_tree_owner()."
+    ),
+}
+
+
+def _tree_cases() -> list[tuple[str, Path]]:
+    return [
+        (client, entry)
+        for client, tree in TREES.items()
+        for entry in sorted((tree / "bin").iterdir())
+        if entry.is_file() and entry.suffix == ""
+    ]
+
+
+def _tree_ids() -> list[str]:
+    return [f"{client}-{entry.name}" for client, entry in _tree_cases()]
+
+
+@pytest.mark.parametrize("client,executable", _tree_cases(), ids=_tree_ids())
+def test_every_bin_entrypoint_resolves_its_import_closure_in_each_client_tree(
+    client: str, executable: Path
+):
+    """Every first-party module an entrypoint reaches must exist in its tree."""
+    tree = TREES[client]
+    missing = [
+        (where, module, lazy)
+        for where, module, lazy in unresolved_first_party(
+            executable, tree, [tree, tree / "bin", tree / "scripts"], REPO_ROOT
+        )
+        if module not in DELIBERATELY_ABSENT
+    ]
+    assert not missing, (
+        f"{client}/bin/{executable.name} reaches modules absent from {tree}:\n  "
+        + "\n  ".join(
+            f"{module} (imported by {where}, lazy={lazy})"
+            for where, module, lazy in missing
+        )
+        + "\n\nDeclare each in client_generation_model.RUNTIME_SUPPORT_FILES."
+    )
+
+
+@pytest.mark.parametrize("client,executable", _tree_cases(), ids=_tree_ids())
+def test_only_lazy_imports_may_be_deliberately_absent(client: str, executable: Path):
+    """An eager import of an excluded module is never allowed.
+
+    Without this the exclusion list becomes a hole big enough to reproduce the
+    v0.44.1 outage with a green suite: someone writes
+    `from client_generation import generate` at module scope, the name is on the
+    allowlist, and every mirrored hook dies at import while the tests pass.
+    """
+    tree = TREES[client]
+    eager = [
+        (where, module)
+        for where, module, lazy in unresolved_first_party(
+            executable, tree, [tree, tree / "bin", tree / "scripts"], REPO_ROOT
+        )
+        if module in DELIBERATELY_ABSENT and not lazy
+    ]
+    assert not eager, (
+        f"{client}/bin/{executable.name} imports a deliberately-absent module at "
+        "module scope, which kills the entrypoint at import:\n  "
+        + "\n  ".join(f"{module} in {where}" for where, module in eager)
+        + "\n\nMove it inside the function that has already established the tree "
+        "is not a generated mirror."
+    )
+
+
+@pytest.mark.parametrize("client,executable", _tree_cases(), ids=_tree_ids())
+def test_every_generated_bin_entrypoint_starts_under_python_safe_path(
+    client: str, executable: Path
+):
+    """The dynamic half: the defect this reproduces is an import-time crash.
+
+    The exit code is deliberately not asserted -- --help is not universal in
+    bin/ -- but a ModuleNotFoundError never is.
+    """
+    result = subprocess.run(
+        [sys.executable, "-P", str(executable), "--help"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+    )
+    for failure in ("ModuleNotFoundError", "ImportError"):
+        assert failure not in result.stderr, (
+            f"{client}/bin/{executable.name} could not import from its own tree:\n"
+            f"{result.stderr[-800:]}"
+        )
+
+
+def _throwaway_project(tmp_path: Path) -> Path:
+    project = tmp_path / "project"
+    (project / "docs").mkdir(parents=True)
+    shutil.copytree(REPO_ROOT / "docs" / "adr", project / "docs" / "adr")
+    return project
+
+
+@pytest.mark.parametrize("client", sorted(TREES))
+def test_mirrored_doctor_reports_only_its_own_client(client: str, tmp_path: Path):
+    """ADR-032's reporting contract, asserted end to end.
+
+    Fixing the imports alone would satisfy "it runs" while leaving the doctor
+    reporting six failures against paths that were never meant to exist,
+    because codex/ IS the plugin root for Codex.
+    """
+    tree = TREES[client]
+    project = _throwaway_project(tmp_path)
+    result = subprocess.run(
+        [
+            sys.executable, str(tree / "bin" / "adr-doctor"), "docs/adr",
+            "--check", "--format", "json", "--repo-root", str(project),
+        ],
+        cwd=str(project),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+    )
+    assert result.stdout.strip(), f"no JSON report:\n{result.stderr[-800:]}"
+    report = json.loads(result.stdout)
+
+    assert report["summary"]["required_failures"] == 0, result.stdout[-1200:]
+
+    by_key = {(item.get("client"), item["id"]): item for item in report["checks"]}
+    generated = by_key[("common", "generated-adapters")]
+    assert generated["status"] == "unsupported", generated
+    assert generated["required"] is False, generated
+
+    for probe in ("mcp-launcher", "hook-package"):
+        assert by_key[(client, probe)]["status"] == "healthy", by_key[(client, probe)]
+        for other in ("claude", *sorted(TREES)):
+            if other == client:
+                continue
+            assert by_key[(other, probe)]["status"] == "unsupported", by_key[(other, probe)]
+
+
+@pytest.mark.parametrize("client", sorted(TREES))
+def test_mirrored_doctor_never_writes_inside_its_own_tree(client: str, tmp_path: Path):
+    """Repair is the DEFAULT mode, and the tree is a distribution artefact.
+
+    bin/adr-doctor:126 makes repair the default and the init skill runs
+    `adr-doctor --fix-index docs/adr/`, so the no-write property has to hold for
+    the invocation people actually use, not only under --check.
+    """
+    tree = TREES[client]
+    project = _throwaway_project(tmp_path)
+
+    def snapshot() -> dict[str, str]:
+        return {
+            str(path.relative_to(tree)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(tree.rglob("*"))
+            if path.is_file() and "__pycache__" not in path.parts
+        }
+
+    before = snapshot()
+    for extra in ([], ["--fix"]):
+        subprocess.run(
+            [
+                sys.executable, str(tree / "bin" / "adr-doctor"), "docs/adr",
+                "--format", "json", "--repo-root", str(project), *extra,
+            ],
+            cwd=str(project),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+        )
+    after = snapshot()
+
+    changed = sorted(
+        path for path in set(before) | set(after) if before.get(path) != after.get(path)
+    )
+    assert not changed, (
+        f"adr-doctor modified its own {client} tree: {changed}. A repair-mode run "
+        "must leave a distribution artefact byte-identical (ADR-032)."
+    )

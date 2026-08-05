@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -455,15 +456,79 @@ def test_installed_clients_use_update_or_noop_paths(tmp_path: Path, capsys):
     assert "plugin update adr-kit" in output
 
 
-def test_codex_payload_is_synced():
-    proc = subprocess.run(
-        [sys.executable, str(SYNC), "--check"],
+def _sync_check(root: Path):
+    """Run the drift check against one tree and return the completed process."""
+    return subprocess.run(
+        [sys.executable, str(SYNC), "--check", "--root", str(root), "--format", "json"],
+        # cwd stays at the repo root on purpose: the entrypoint must resolve its
+        # target from --root, not from where it happens to be invoked.
         cwd=ROOT,
         capture_output=True,
         text=True,
         encoding="utf-8",
     )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+@pytest.mark.tree_snapshot
+def test_codex_payload_is_synced(tree_snapshot):
+    """The generated trees are a pure function of the source trees.
+
+    Checked against the session-start snapshot rather than the live checkout.
+    Pointed at the live tree this assertion is sensitive to every other test in
+    the run -- any neighbouring write under a COPY_ROOT or inside a generated
+    root fails it, and the failure names the drifting file rather than the test
+    that caused it (TASK-128).
+    """
+    proc = _sync_check(tree_snapshot)
+    assert proc.returncode == 0, (
+        f"snapshot at {tree_snapshot}\n{proc.stdout}{proc.stderr}"
+    )
+
+
+@pytest.mark.tree_snapshot
+def test_a_neighbouring_write_cannot_fail_the_sync_check(tmp_path, tree_snapshot):
+    """The hazard is real, and the snapshot is immune to it."""
+    live = tmp_path / "live"
+    shutil.copytree(tree_snapshot, live)
+    stray = live / "codex" / "skills" / "zzz-stray" / "SKILL.md"
+    stray.parent.mkdir(parents=True, exist_ok=True)
+    stray.write_text("a file a neighbouring test wrote\n", encoding="utf-8")
+
+    drifted = _sync_check(live)
+    assert drifted.returncode == 1, drifted.stdout + drifted.stderr
+    assert json.loads(drifted.stdout)["drift"] == ["codex/skills/zzz-stray/SKILL.md"]
+
+    # The snapshot never sees the write, which is the whole point.
+    assert _sync_check(tree_snapshot).returncode == 0
+
+
+@pytest.mark.tree_snapshot
+def test_sync_check_still_fails_on_a_deliberate_desync(tmp_path, tree_snapshot):
+    """Isolation must not cost the assertion its teeth."""
+    desynced = tmp_path / "desynced"
+    shutil.copytree(tree_snapshot, desynced)
+    target = desynced / "codex" / "hooks" / "hooks.json"
+    target.write_bytes(target.read_bytes() + b"\n")
+
+    proc = _sync_check(desynced)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "codex/hooks/hooks.json" in json.loads(proc.stdout)["drift"]
+
+
+def test_ci_still_checks_the_live_tree_for_adapter_drift():
+    """The snapshot protects the test; CI still has to check the real tree.
+
+    Without this, moving the test onto a snapshot would quietly remove the only
+    assertion that the committed mirrors match the committed source.
+    """
+    workflows = ("validate.yml", "release-candidate.yml", "release-publish.yml")
+    missing = [
+        name
+        for name in workflows
+        if "build-client-adapters.py --check"
+        not in (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+    ]
+    assert not missing, f"live-tree drift gate missing from: {missing}"
 
 
 def test_payload_comparison_is_newline_stable(tmp_path):

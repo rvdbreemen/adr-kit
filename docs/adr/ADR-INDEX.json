@@ -1044,15 +1044,15 @@
           "A remote embedding endpoint is permitted when the user has selected one through the settings surface, having been told the latency and privacy consequence. It is never the default and never selected by probing."
         ],
         "verification": [
-          "adr-query-embedding-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both field..."
+          "adr-query-embedding-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It covers the three acceptance cases above and the R21 latency bound."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-query-embedding-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [
@@ -1114,8 +1114,8 @@
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-hook-index-refresh-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1174,8 +1174,8 @@
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-open-questions-append-only-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1228,15 +1228,15 @@
           "ADRKITHOOKDISABLE and the per-ADR override of spec R2.1 apply here as they do at commit time. A gate that cannot be overridden with a reason is overridden outside the tool."
         ],
         "verification": [
-          "adr-pr-guard-tier-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fields..."
+          "adr-pr-guard-tier-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the deny path, the advisory path, and the fail-open path."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-pr-guard-tier-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_pr_guard.py"
@@ -1296,8 +1296,8 @@
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-pr-suggest-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1349,15 +1349,15 @@
           "The legacy judge.llmcmd allowlist is retained for existing projects. It is frozen: no new entries, no new flags."
         ],
         "verification": [
-          "adr-config-trust-boundary-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both..."
+          "adr-config-trust-boundary-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the credential refusal, the command-string refusal, and the redacted settings output."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-config-trust-boundary-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_settings.py"
@@ -1410,15 +1410,15 @@
           "None."
         ],
         "verification": [
-          "adr-audit-exit-contract-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both f..."
+          "adr-audit-exit-contract-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts each of the five exit codes against a fixture, so the contract is enforced rather than described."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-audit-exit-contract-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_audit_command.py"
@@ -1472,15 +1472,15 @@
           "None."
         ],
         "verification": [
-          "adr-signer-derivation-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fie..."
+          "adr-signer-derivation-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering derivation, announcement, precedence, the machine-identity refusal, and the write-nothing behaviour of --suggest."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-signer-derivation-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_signer_discovery.py"
@@ -1529,15 +1529,15 @@
           "None."
         ],
         "verification": [
-          "adr-reference-gate-scope-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both..."
+          "adr-reference-gate-scope-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the dangling case, the one-sided case, and the prose-is-ignored case."
         ]
       },
       "scope": {
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-reference-gate-scope-v1",
         "documents_shipped": true,
         "verified_in": [
           "tests/test_adr_cross_references.py"
@@ -1588,7 +1588,242 @@
           "A future native path is permitted when it delegates to the shared engine rather than reimplementing it, and carries the artefact parity test."
         ],
         "verification": [
-          "adr-single-retrieval-engine-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Bo..."
+          "adr-single-retrieval-engine-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts that no second ranking implementation ships, and that the edit-tier path meets its declared budget."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-single-retrieval-engine-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-030",
+      "title": "Recalibrate the Hook Latency Budgets to the Python Host That Actually Ships",
+      "path": "ADR-030-recalibrate-the-hook-latency-budgets-to-the-python-host-that-actually-ships.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: recalibrate the budgets to the Python host, because it is the only option under which the declared num...",
+      "topics": [
+        "hooks",
+        "latency",
+        "measurement",
+        "performance budget"
+      ],
+      "aliases": [
+        "hook budget recalibration",
+        "hook latency",
+        "python host budgets"
+      ],
+      "components": [
+        "hook benchmark",
+        "hook latency budgets",
+        "hooks/manifest.json"
+      ],
+      "symbols": [
+        "hook_benchmark",
+        "latency_budget_ms",
+        "measure"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every event in hooks/manifest.json must carry a latency block whose numbers were produced by measurement against the host that ships by default.",
+          "The fixture must record the machine, the interpreter version and the date the measurement was taken, next to the numbers it produced.",
+          "The measured interpreter start floor must be a named constant carrying the measurement that produced it.",
+          "Every recalibrated budget must remain at or below ADR-015's 2000 ms ceiling."
+        ],
+        "must_not": [
+          "No budget may be set to a number that the default host cannot meet on a supported platform.",
+          "No budget may be justified by the native binary's performance while run-hook.cmd runs that binary only under ADRKITNATIVEHOOK=1."
+        ],
+        "exceptions": [
+          "pr-create is out of scope here; its budget is settled by ADR-031."
+        ],
+        "verification": [
+          "adr-hook-python-budgets-v1"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-hook-python-budgets-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-031",
+      "title": "Name the Pull-Request Moment as a Deliberately Slower User-Initiated Event",
+      "path": "ADR-031-name-the-pull-request-moment-as-a-deliberately-slower-user-initiated-event.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: name the pull-request moment as a deliberately slower, user-initiated event, because the property ADR-...",
+      "topics": [
+        "hooks",
+        "latency",
+        "performance budget",
+        "pull request"
+      ],
+      "aliases": [
+        "pr-create budget",
+        "pull-request ceiling exception",
+        "user-initiated event"
+      ],
+      "components": [
+        "hook latency ceiling",
+        "pull-request guard budget"
+      ],
+      "symbols": [
+        "adr_pr_guard",
+        "latency_budget_ms",
+        "pr-create"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every latencybudgetms in hooks/manifest.json must be at or below 2000 ms unless an Accepted ADR names that event as user-initiated.",
+          "An exempt event's budget must be bounded by the runnertimeoutsec the client actually enforces, so the declared number and the kill timeout agree.",
+          "The exemption must be resolved from the ADR record, never from a literal list of event names in test code."
+        ],
+        "must_not": [
+          "No event that fires as a side effect of other work may carry a budget above 2000 ms, regardless of what it does.",
+          "No exemption may be added without an Accepted ADR that states which event and why."
+        ],
+        "exceptions": [
+          "pr-create is the one exempt event, on the grounds stated above."
+        ],
+        "verification": [
+          "adr-hook-ceiling-v1"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-hook-ceiling-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-032",
+      "title": "Treat a Generated Client Tree as a First-Class Doctor Context",
+      "path": "ADR-032-treat-a-generated-client-tree-as-a-first-class-doctor-context.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: declare a generated tree a first-class doctor context, because a user who installed the Codex payload...",
+      "topics": [
+        "client generation",
+        "diagnostics",
+        "doctor",
+        "mirrors"
+      ],
+      "aliases": [
+        "doctor degradation",
+        "generated tree doctor",
+        "mirror doctor context"
+      ],
+      "components": [
+        "adr-doctor reporting contract",
+        "generated client tree identity"
+      ],
+      "symbols": [
+        "client_root",
+        "generated_tree_owner",
+        "RUNTIME_SUPPORT_FILES"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every module a bin/ entrypoint imports must resolve inside the client tree it was mirrored into, verified transitively rather than one hop deep.",
+          "A generated client tree must be identified by the absence of clients/workflows.json plus a client-specific plugin manifest, never by a failed import.",
+          "A check that cannot apply in a generated tree must report unsupported with required false, and must say why.",
+          "Running the doctor from a generated tree, in any mode including repair, must leave every file in that tree byte-identical."
+        ],
+        "must_not": [
+          "clients/workflows.json must not be mirrored into a generated client tree.",
+          "The generator's own source must not be imported at module scope by anything a bin/ entrypoint reaches, because it is deliberately not mirrored.",
+          "A mirror must not report failed for a client that is simply not installed there."
+        ],
+        "exceptions": [
+          "clientgeneration may be imported lazily, inside the function that has already established the tree is not a mirror."
+        ],
+        "verification": [
+          "adr-doctor-generated-tree-v1"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-doctor-generated-tree-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-033",
+      "title": "Name the User-Initiated Whole-Repository Commands as Deliberately Slower",
+      "path": "ADR-033-name-the-user-initiated-whole-repository-commands-as-deliberately-slower.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks.",
+      "topics": [
+        "cli",
+        "latency",
+        "performance budget"
+      ],
+      "aliases": [
+        "cli ceiling exception",
+        "user-initiated cli",
+        "whole-repository commands"
+      ],
+      "components": [
+        "CLI latency ceiling",
+        "latency corpus exceptions"
+      ],
+      "symbols": [
+        "adr-audit",
+        "adr-doctor",
+        "latency_ceiling_exception"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "A CLI budget above 2000 ms must carry a reference to an Accepted ADR naming that path.",
+          "The exception must be resolved from the ADR record, never from a literal list of command names in test code.",
+          "An exempt path must be invoked directly by the user, not reached as a side effect of another command."
+        ],
+        "must_not": [
+          "No path reached automatically — from a hook, a pre-commit gate, or another command — may carry a budget above 2000 ms under this record.",
+          "No exception may be added without an Accepted ADR that names the path and states why."
+        ],
+        "exceptions": [
+          "adr-audit --whole-codebase and adr-doctor --check."
+        ],
+        "verification": [
+          "adr-cli-ceiling-exception-v1"
         ]
       },
       "scope": {
@@ -2226,6 +2461,66 @@
     {
       "source": "ADR-029",
       "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-030",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-030",
+      "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-030",
+      "target": "ADR-031",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-031",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-031",
+      "target": "ADR-023",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-031",
+      "target": "ADR-030",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-032",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-032",
+      "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-033",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-033",
+      "target": "ADR-031",
       "type": "related",
       "resolved": true
     }

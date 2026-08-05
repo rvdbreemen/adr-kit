@@ -34,9 +34,16 @@ def _is_bin_dir(entry: str) -> bool:
 #
 # ROOT and ROOT/"scripts" must stay importable: adr_doctor_checks and
 # adr_doctor_probes reach into scripts/adr_settings.py, scripts/project_setup.py,
-# scripts/client_generation.py, clients.installer.* and hooks.hook_benchmark,
-# which are packages and flat modules in OTHER directories, not siblings. They
-# are APPENDED so the standard library and site-packages still resolve first.
+# clients.installer.* and hooks.hook_benchmark, which are packages and flat
+# modules in OTHER directories, not siblings. They are APPENDED so the standard
+# library and site-packages still resolve first.
+#
+# In a generated client tree those same relative paths exist because
+# client_generation_model.RUNTIME_SUPPORT_FILES declares them, which is what
+# lets this file run from codex/ and copilot/ at all (TASK-125).
+# scripts/client_generation.py is deliberately NOT among them -- a mirror has no
+# canonical inputs to diff -- so adr_doctor_checks imports it lazily, behind
+# adr_doctor_models.generated_tree_owner().
 #
 # That alone is not enough here. CPython puts this script's own directory at
 # sys.path[0] regardless, ahead of these appends, so a committed

@@ -5,6 +5,188 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.46.0] - 2026-08-05
+
+### Added
+
+- **The session hooks regenerate a stale ADR index instead of going dark**
+  (ADR-021). An agent that writes `docs/adr/ADR-NNN.md` directly — the common
+  case in a harness — left the generated index stale. The query then raised,
+  the hook swallowed it into an empty list, and ADR injection went dark for the
+  rest of the session **with no message at all**. An empty answer reads exactly
+  like "no ADR was relevant", which is the whole defect.
+
+  `session-start` and `user-prompt-submit` now regenerate in place, in-process:
+  measured ~84 ms for 29 ADRs against ~302 ms through a subprocess, inside the
+  500 ms those events declare. `pre-tool-use`, `post-tool-use` and the plan-exit
+  branch stay read-only and render an actionable message instead of silence —
+  100 ms cannot hold a render at any realistic ADR set size.
+
+  This reverses the read-only property `hooks/adr_hook_core.py` documents in its
+  own first line, so the limits are pinned by tests: a lock guards regeneration
+  and the loser **reads rather than waits**; a set whose projected cost exceeds
+  the event's declared budget degrades to the message rather than being killed
+  mid-write; and every failure path returns the message rather than raising,
+  because a governance tool that breaks a session is worse than one that asks
+  for a command to be run.
+
+- **`## Open Questions` is append-only while an ADR is Proposed** (ADR-022). Every
+  consumer of this data checked only *unresolved* items, so deleting a question
+  raised the quality score and cleared the acceptance gate exactly as answering
+  it did — while `bin/adr answer` was the strictly more expensive path. The
+  cheapest route through the gates destroyed the record of the grilling, and
+  nobody had to act in bad faith for that to happen.
+
+  A question that disappears from a Proposed ADR without a matching answered
+  line is now a lint FAIL, and the message quotes the question that was lost.
+  Adding questions is still free; answering one still passes.
+
+  Readiness stops treating the two as equivalent: a record that still carries an
+  unanswered question is not resolved, however the section is spelled.
+
+  **The check needs git, and says so when it cannot have it.** Outside a
+  repository, or on a file with no history, it degrades to an ADVISORY that
+  states the rule was not verified — a named hole rather than a silent pass.
+
+- **The pull-request moment now asks both halves of R2.** It asked whether a
+  branch violates an accepted decision; it did not ask whether the branch
+  *contains* a decision nobody recorded. That second question happened only if
+  someone typed `/adr-kit:review` or had individually opted into
+  `ADR_KIT_SUGGEST`, which in practice means it did not happen (ADR-024).
+
+  The nudge joins the existing guard rather than getting a moment of its own,
+  because that moment is already intercepted and the user is already waiting. It
+  reuses the diff the judge already read and what is left of the same 5 s
+  deadline, so it costs one extra subprocess and no extra `git diff`.
+
+  **It is advisory and cannot block.** A violation still denies and the nudge
+  rides along; on a clean branch the nudge speaks alone, and on a branch with no
+  candidate decision nothing is printed at all. A suggestion that could block
+  would teach people to write an empty ADR to get past it, which is the failure
+  mode that produced six rule-less Enforcement blocks in this repository.
+
+  The gap this leaves is real and stated in ADR-024: a pull request opened by
+  hand, from the web UI or by a teammate not using an agent, gets nothing.
+
+### Changed
+
+- **Hook latency budgets are recalibrated to the Python host that ships**
+  (ADR-030). Seven of the eight declared events could not meet their own budget,
+  and the reason is not sloppiness: they were exactly right for the native
+  binary. Measured on one machine with identical payloads, `PreToolUse` costs
+  **20.2 ms** on the native host and **273.6 ms** in Python. ADR-029 retired that
+  host in v0.44.1, and the numbers were left describing a path that no longer
+  runs.
+
+  Three events declared a 100 ms hard timeout against a measured **183 ms**
+  interpreter floor -- `python -c pass` alone exceeds it, so no optimisation
+  inside the hook could ever have met them. That floor is now a named constant
+  carrying its measurement, because it is a property of the machine and not of
+  this kit.
+
+  The visible symptom was that `bin/adr-doctor` reported `degraded` on every
+  platform, every run. A health check that is always red is one nobody reads.
+  It now reports honestly.
+
+  New budgets are measured p95 x 1.5, rounded up to 50 ms, with the hard timeout
+  at twice that and capped by ADR-015's ceiling. All seven stay well under it.
+
+
+- **`judge.llm_timeout_seconds` now describes the loop that actually runs.** The
+  schema called it the timeout for "one batch call". Per-ADR isolation replaced
+  batching, so it bounds each call in a loop: a project with N ADRs marked
+  `llm_judge` has a worst case of N x the value on a single commit. At the
+  shipped default of 120 s that is 20 minutes for 10 ADRs and 40 minutes for 20 --
+  not the two minutes the old description implied. The number is the one people
+  use to decide whether the pass is affordable, so the worst case is now stated
+  where they choose it.
+
+### Fixed
+
+- **`adr-discover` was 3.9x slower than it needed to be, and the cost grew with
+  the repository.** `scan_first_appearance` ran one `git log --follow` per
+  candidate path, so each invocation paid a fresh git process and re-ran rename
+  detection over the whole history. Batched into a single `git log`, the default
+  command drops from **3622 ms to 938 ms** — back under ADR-015's 2000 ms
+  ceiling, and no longer growing with the number of candidates.
+
+  The trade is `--follow`: a file that arrived under a different name now
+  reports the rename rather than the original creation. Small, and the signal is
+  about the *order* subsystems appeared — a rename does not reorder anything.
+
+
+- **`judge.pre_commit_timeout_ms` finally does something.** The installed
+  pre-commit hook compared its elapsed time against a literal `5000`, so setting
+  the key changed nothing -- the same shape as the `JUDGE_TIMEOUT_S = 120` defect
+  fixed in v0.44.1, except this one ships to every project that installs the
+  hook. The hook now reads the key, falls back to 5000 ms when it is absent, and
+  **validates** a value rather than trusting it: this is a repo-tracked file a
+  hand can edit, so anything outside 0..3600000 is refused by name on stderr.
+  `0` means off, matching how `bin/adr-judge` already reads it, and
+  `warn_on_exceed: false` now silences the hook's warning too -- shipping the
+  budget read without that would have reproduced the identical defect one key
+  over.
+
+- **`bin/adr-suggest` no longer waits two minutes on a path documented as never
+  blocking.** The default was 120 s and no caller ever passed `--llm-timeout`, so
+  120 s is what every commit got. Two minutes of no output is indistinguishable
+  from a hang. The default is now 30 s -- ADR-001 measured a local suggest call
+  at 5-10 s -- and the pre-commit hook derives the bound from the same budget its
+  own warning uses, with a 10 s floor.
+
+
+- **The hook benchmark measured six of eight events and reported a pass.**
+  `plan-exit` and `pr-create` are registered as `pre-tool-use` with a matcher, so
+  a budget lookup keyed by client-facing event name collapsed all three onto one
+  entry and silently skipped two. Budgets are now keyed by manifest event id, an
+  event that declares no budget fails the harness loudly instead of being
+  skipped, and a test asserts the measured set equals the declared set.
+
+  `tests/fixtures/hooks/reference-corpus.json` no longer carries a second copy of
+  the budgets -- that duplication is what hid the gap. It keeps the method
+  metadata; `hooks/manifest.json` is the single source.
+
+- **The hook side of ADR-015's latency ceiling is now enforced.** ADR-015 forbids
+  a hard budget above 2000 ms on any deterministic user-facing path, and its
+  References name `hooks/manifest.json` as the per-event hook budget file — but
+  its Enforcement block only ever checked the CLI corpus, and
+  `tests/test_hook_performance.py` carried no ceiling assertion at all. A hook
+  budget above the ceiling could land, ship, and pass every gate.
+
+  **It did.** `pr-create` has carried a `latency_budget_ms` of 5000 since
+  v0.44.0. It is the only one of the eight events above the ceiling; the other
+  seven read 500, 500, 100, 100, 100, 250 and 500.
+
+  Rather than lower it, ADR-031 names the pull-request moment as a deliberately
+  slower, **user-initiated** event: `pr-create` fires because someone typed
+  `gh pr create` and is waiting for the result, unlike the seven that fire as a
+  side effect of other work. Bringing it under 2000 ms would not make the check
+  faster — it would remove the LLM pass from the moment it is most useful.
+
+  The exemption is not a name in a test. The manifest entry references the ADR,
+  and the gate verifies that record exists and is Accepted, so an over-ceiling
+  budget with nothing behind it fails.
+
+### Removed
+
+- **Nine config keys that nothing ever read.** `judge.llm_timeout_ms`,
+  `judge.pre_push_timeout_ms`, `policy.regex_compile_checks`,
+  `policy.pattern_warnings` and the whole `context.weights` block (five keys) were
+  declared in `schemas/adr-kit-config.schema.json` and resolved by no code path.
+  `judge.llm_timeout_ms` duplicated `judge.llm_timeout_seconds` in different units;
+  `pre_push_timeout_ms` bounded a pre-push hook adr-kit does not ship;
+  `context.weights` was retired when the index-first scorer replaced weighted
+  signals in v0.40.0, but the schema kept advertising it.
+
+  **Your existing `.adr-kit.json` keeps working.** These keys are recorded in
+  `adr_config.RETIRED_KEYS`, so a config that still sets one loads with the value
+  ignored rather than failing validation -- the value was already inert, and
+  breaking the file over it would be the worse trade. `retired_keys_present()`
+  reports which ones a config still carries.
+
+  A new gate (`tests/test_config_schema_has_readers.py`) fails when any declared
+  key has no reader, so the next orphan is caught by CI rather than by a sweep.
+
 ## [0.45.0] - 2026-08-04
 
 ### Changed
@@ -2092,7 +2274,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.44.1...v0.45.0
 [0.43.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.42.0...v0.43.0
 [0.37.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.35.0...v0.36.0

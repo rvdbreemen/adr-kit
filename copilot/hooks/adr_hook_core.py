@@ -1,4 +1,16 @@
-"""Deterministic, bounded, read-only ADR hook core."""
+"""Deterministic, bounded ADR hook core. Read-only except for one narrow write.
+
+This file was read-only, and said so here, until ADR-021. It now regenerates a
+stale generated index on `session-start` and `user-prompt-submit` -- and only
+those two, under a lock, only when the projected cost fits the event's declared
+budget, and only ever writing the generated index artefacts. Everything else
+still reads.
+
+The exception is stated at the top rather than left to be discovered because the
+read-only property is what makes this file safe to reason about: an edit-tier
+hook fires before every single write a user makes, and a surprise write there is
+not a thing anyone should have to find by grepping. See `refresh_index`.
+"""
 
 from __future__ import annotations
 
@@ -340,6 +352,119 @@ def _configured_limit(workspace: Path) -> int:
         return value
     return DEFAULT_MAX_RESULTS
 
+# Only these two may write. They carry a 500 ms budget; the edit-tier events
+# carry far less and cannot hold a render at any realistic ADR count (ADR-021).
+REFRESHING_EVENTS = {"SessionStart", "UserPromptSubmit"}
+
+STALE_INDEX_MESSAGE = (
+    "The generated ADR index is stale, so ADR context is unavailable for this "
+    "step. Run `bin/adr-index docs/adr` to regenerate it."
+)
+
+
+def index_is_stale(workspace: Path) -> bool:
+    """Cheap precondition, ~2.8 ms measured, not a certification.
+
+    `index_probably_fresh` is an mtime comparison and says so in its own
+    docstring. Used here to avoid work, never to certify a result -- the caller
+    treats a false negative as "read what is there", which is what it would have
+    done anyway.
+    """
+    index = _index_path(workspace)
+    if index is None:
+        return False
+    try:
+        from adr_index_core import index_probably_fresh
+
+        return not index_probably_fresh(index.parent)
+    except (ImportError, OSError, ValueError):
+        return False
+
+
+def refresh_index(workspace: Path, event: str) -> str:
+    """Regenerate a stale index in place, when this event may and can afford it.
+
+    Returns "" when nothing needed doing or the regeneration succeeded, and the
+    staleness message otherwise. The message matters more than the write: an
+    agent that gets silence from a stale index cannot tell it from "no ADR was
+    relevant", and that silence is the defect ADR-021 exists to remove.
+
+    Every failure path here returns the message rather than raising. This runs
+    inside a fail-open hook, and a governance tool that breaks a session is
+    worse than one that asks for a command to be run.
+    """
+    if not index_is_stale(workspace):
+        return ""
+    if event not in REFRESHING_EVENTS:
+        # The edit tier reads only. Rendering there would put a write on the
+        # path taken before every single edit.
+        return STALE_INDEX_MESSAGE
+
+    index = _index_path(workspace)
+    if index is None:
+        return STALE_INDEX_MESSAGE
+    adr_dir = index.parent
+
+    try:
+        from adr_index_core import projected_render_ms, regenerate_index
+    except ImportError:
+        return STALE_INDEX_MESSAGE
+
+    budget_ms = _event_budget_ms(event)
+    projected = projected_render_ms(adr_dir)
+    if projected > budget_ms:
+        # A large ADR set degrades to a nudge rather than to a timeout. The
+        # client kills the hook at its own bound, and a process killed mid-write
+        # is worse than one that never started.
+        return STALE_INDEX_MESSAGE
+
+    lock = adr_dir / ".adr-index.lock"
+    try:
+        # O_EXCL is the whole lock: whoever creates the file owns the render.
+        handle = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        # Another session is rendering. Read what is there and continue -- ADR-021
+        # forbids waiting, because the loser would spend a budget it cannot
+        # recover on work someone else is already doing.
+        return STALE_INDEX_MESSAGE
+    except OSError:
+        return STALE_INDEX_MESSAGE
+
+    try:
+        os.close(handle)
+        regenerate_index(adr_dir)
+        return ""
+    except (OSError, ValueError, KeyError, TypeError):
+        return STALE_INDEX_MESSAGE
+    finally:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def _event_budget_ms(event: str) -> float:
+    """This event's declared budget, from the manifest the client enforces.
+
+    Read rather than hardcoded for the same reason the pull-request guard reads
+    its own: whoever changes the manifest changes this, and the two cannot drift
+    into disagreeing.
+    """
+    manifest = Path(__file__).resolve().parent / "manifest.json"
+    wanted = {"SessionStart": "session-start", "UserPromptSubmit": "user-prompt-submit"}
+    try:
+        events = json.loads(manifest.read_text(encoding="utf-8"))["events"]
+        return float(
+            next(
+                entry["latency"]["p50_ms"]
+                for entry in events
+                if entry.get("id") == wanted.get(event)
+            )
+        )
+    except (OSError, ValueError, KeyError, TypeError, StopIteration):
+        return 400.0
+
+
 def _query(
     workspace: Path,
     query: str,
@@ -507,6 +632,33 @@ def _plan_decision_prompt(client: str) -> str:
     )
 
 def evaluate(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
+    """Refresh a stale index where the budget allows, then render the context.
+
+    An agent that writes docs/adr/ADR-NNN.md directly -- the common case in a
+    harness -- leaves the generated index stale. `query_adr_context` then raises
+    IndexQueryError, `_query` swallows it into an empty list, and ADR injection
+    goes dark for the rest of the session with no message at all. Silence is the
+    defect ADR-021 exists to remove: an empty answer reads exactly like "no ADR
+    was relevant".
+
+    Wrapped rather than inlined so every return path in the renderer carries the
+    notice. Missing one of them would reproduce the silence on exactly the
+    branch nobody thought about.
+    """
+    try:
+        notice = refresh_index(envelope.workspace, envelope.event)
+    except Exception:  # noqa: BLE001 -- fail-open is this file's contract
+        notice = STALE_INDEX_MESSAGE
+
+    context, kind = _evaluate_context(envelope, embedder)
+    if not notice:
+        return context, kind
+    if not context:
+        return notice, "stale-index"
+    return "\n\n".join((notice, context))[:MAX_CONTEXT_CHARS], kind
+
+
+def _evaluate_context(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
     """Render the context for this moment.
 
     `embedder` is supplied by the entrypoint and only for the events whose
@@ -524,6 +676,7 @@ def evaluate(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
     if envelope.event == "PreCompact":
         context = (envelope.parent_context or "")[:MAX_CONTEXT_CHARS]
         return (context, "compact") if context else ("", "noop")
+
     all_records = load_index_records(envelope.workspace)
     records = [item for item in all_records if item.get("status") == "Accepted"]
     proposed = [item for item in all_records if item.get("status") == "Proposed"]

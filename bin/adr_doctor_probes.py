@@ -295,6 +295,22 @@ def run_deep_extensions(
             os.replace(temporary, state_path)
     except SettingsError:
         pass
+    # The harness reads plugin_root/tests/fixtures/hooks/reference-corpus.json,
+    # and `tests` is a forbidden segment in the public payload -- so the fixture
+    # is absent from EVERY installed payload, not only from a generated client
+    # tree. Without this branch that lands in the except below as "failed",
+    # which reads like a broken harness rather than a fixture that was never
+    # shipped. Pre-existing behaviour; only the wording changes.
+    corpus = plugin_root / "tests" / "fixtures" / "hooks" / "reference-corpus.json"
+    if not corpus.is_file():
+        extensions.append(check(
+            "hook-latency-extension", status="unsupported", required=False,
+            summary=(
+                "hook latency corpus is not part of an installed payload; "
+                "run the harness from a checkout"
+            ),
+        ))
+        return extensions
     try:
         hook_result = measure_hooks(plugin_root, root, samples=5)
         aggregate = {

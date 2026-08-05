@@ -3,8 +3,8 @@ id: "ADR-026"
 title: "Record the Combined Audit Command and Its Five-Way Exit Contract"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-audit-exit-contract-v1"
 documents_shipped: true
 verified_in:
   - "tests/test_adr_audit_command.py"
@@ -167,10 +167,7 @@ a file was written reports that file.
 
 ### Verification
 
-* `adr-audit-exit-contract-v1`: the gate this decision is to be anchored by. It
-  does not exist yet, so `gate` is null and `binding` is false: a frontmatter
-  that declares enforcement it cannot deliver is worse than one that admits the
-  gap. Both fields flip back together when the gate ships. It asserts each of
+* `adr-audit-exit-contract-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts each of
   the five exit codes against a fixture, so the contract is enforced rather
   than described.
 

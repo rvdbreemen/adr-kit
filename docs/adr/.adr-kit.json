@@ -2,19 +2,10 @@
   "judge": {
     "llm_enabled": true,
     "pre_commit_timeout_ms": 5000,
-    "pre_push_timeout_ms": 15000,
-    "llm_timeout_ms": 30000,
     "max_diff_bytes": 2097152,
     "warn_on_exceed": true
   },
   "context": {
-    "weights": {
-      "exact_keyword": 0.4,
-      "domain_tag": 0.25,
-      "related_decisions": 0.15,
-      "acceptance_status": 0.1,
-      "recency": 0.1
-    },
     "default_limit": 5,
     "min_score": 0.1,
     "probes_file": "adr-context-probes.json",

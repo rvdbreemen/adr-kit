@@ -35,3 +35,7 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-027 | Accepted | - | Chosen option: derive from git config user.name when it names a person, and announce it. |
 | ADR-028 | Accepted | - | Chosen option: gate the declared link, leave the prose alone. |
 | ADR-029 | Accepted | - | Chosen option: retire the binary, because the alternative is a permanent second implementation of the one component e... |
+| ADR-030 | Accepted | - | Chosen option: recalibrate the budgets to the Python host, because it is the only option under which the declared num... |
+| ADR-031 | Accepted | - | Chosen option: name the pull-request moment as a deliberately slower, user-initiated event, because the property ADR-... |
+| ADR-032 | Accepted | - | Chosen option: declare a generated tree a first-class doctor context, because a user who installed the Codex payload... |
+| ADR-033 | Proposed | - | Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks. |
