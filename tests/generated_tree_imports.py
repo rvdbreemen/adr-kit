@@ -60,11 +60,11 @@ def _module_names(node: ast.stmt, source: Path) -> list[str]:
     if node.level == 0:
         return [node.module] if node.module else []
     # `from .contracts import ...` in clients/installer/detection.py: walk up
-    # level-1 directories from the importing file to find the package root.
+    # level-1 directories from the importing file and keep the full package path.
     package = source.parent
     for _ in range(node.level - 1):
         package = package.parent
-    prefix = package.name
+    prefix = ".".join(package.parts)
     return [f"{prefix}.{node.module}" if node.module else prefix]
 
 
