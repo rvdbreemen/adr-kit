@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from adr_doctor_models import check
+from adr_doctor_models import check, client_root, generated_tree_owner
 from adr_settings import (
     SettingsError,
     local_judgment_state,
@@ -16,7 +16,11 @@ from adr_settings import (
 )
 from clients.installer.contracts import CLIENT_IDS
 from clients.installer.detection import detect_clients
-from client_generation import GenerationError, generate
+# client_generation is deliberately NOT imported here. It is the generator's own
+# source and is not mirrored into a client tree, so a module-scope import would
+# kill bin/adr-doctor at import time in codex/ and copilot/ -- the same shape as
+# the v0.44.1 outage. _generated_check imports it lazily, behind a check that a
+# mirror never passes.
 from project_setup import (
     SetupError,
     apply_changes,
@@ -74,8 +78,13 @@ def resolve_launcher_target(
 def check_mcp_launcher(
     plugin_root: Path, client: str, *, required: bool
 ) -> dict[str, Any]:
-    client_root = plugin_root if client == "claude" else plugin_root / client
-    config_path = client_root / ".mcp.json"
+    root = client_root(plugin_root, client)
+    if root is None:
+        return check(
+            "mcp-launcher", client=client, status="unsupported", required=False,
+            summary=f"{client} is not installed in this generated client tree",
+        )
+    config_path = root / ".mcp.json"
     if not config_path.is_file():
         return check(
             "mcp-launcher", client=client, status="failed", required=required,
@@ -95,7 +104,7 @@ def check_mcp_launcher(
             summary=f"invalid owned MCP manifest {config_path}: {exc}",
             actions=[{"detail": f"Reinstall ADR Kit for {client}."}],
         )
-    resolved, targets = resolve_launcher_target(client_root, command, args)
+    resolved, targets = resolve_launcher_target(root, command, args)
     missing = [target for target in targets if not Path(target).is_file()]
     if resolved is None or missing:
         return check(
@@ -132,11 +141,16 @@ def check_mcp_launcher(
 
 
 def check_hook_package(plugin_root: Path, client: str) -> dict[str, Any]:
-    client_root = plugin_root if client == "claude" else plugin_root / client
+    root = client_root(plugin_root, client)
+    if root is None:
+        return check(
+            "hook-package", client=client, status="unsupported", required=False,
+            summary=f"{client} is not installed in this generated client tree",
+        )
     config_path = (
-        client_root / "hooks" / "hooks.json"
+        root / "hooks" / "hooks.json"
         if client != "copilot"
-        else client_root / "hooks.json"
+        else root / "hooks.json"
     )
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
@@ -178,9 +192,9 @@ def check_hook_package(plugin_root: Path, client: str) -> dict[str, Any]:
             summary=f"broken native hook package: {config_path}: {exc}",
             actions=[{"detail": f"Reinstall ADR Kit for {client}."}],
         )
-    runtime = client_root / "hooks" / "adr-hook.py"
-    native = client_root / "hooks" / "bin" / "windows-x64" / "adr-hook.exe"
-    wrapper = client_root / "hooks" / "run-hook.cmd"
+    runtime = root / "hooks" / "adr-hook.py"
+    native = root / "hooks" / "bin" / "windows-x64" / "adr-hook.exe"
+    wrapper = root / "hooks" / "run-hook.cmd"
     required_files = [runtime, native]
     if client != "copilot":
         required_files.append(wrapper)
@@ -206,6 +220,22 @@ def check_hook_package(plugin_root: Path, client: str) -> dict[str, Any]:
 
 
 def _generated_check(plugin_root: Path, check_only: bool) -> tuple[dict, list[dict]]:
+    # A generated tree holds no canonical inputs to diff against, so there is
+    # nothing here to be stale. Returning before the import matters twice: the
+    # generator's source is not mirrored, and in repair mode generate() would
+    # otherwise write into the very tree it is inspecting.
+    if generated_tree_owner(plugin_root) is not None:
+        return check(
+            "generated-adapters", status="unsupported", required=False,
+            summary="generated client tree carries no canonical inputs to diff",
+            actions=[{
+                "detail": (
+                    "Run adr-doctor from the ADR Kit payload root to check "
+                    "adapter drift."
+                )
+            }],
+        ), []
+    from client_generation import GenerationError, generate  # not mirrored
     try:
         _stats, drift = generate(plugin_root, check=True)
     except (GenerationError, OSError) as exc:

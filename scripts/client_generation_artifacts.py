@@ -11,6 +11,7 @@ from client_generation_model import (
     COPY_ROOTS,
     HOOK_RUNTIME_FILES,
     PROVENANCE,
+    RUNTIME_SUPPORT_FILES,
     WORKFLOW_IDS,
     GenerationError,
     encoded_json,
@@ -276,11 +277,14 @@ def declared_source_files(root: Path) -> list[Path]:
         if not source.is_dir():
             raise GenerationError(f"missing declared input root: {name}")
         paths.extend(path for path in source.rglob("*") if path.is_file() and "__pycache__" not in path.parts)
-    paths.extend(root / relative for relative in HOOK_RUNTIME_FILES)
+    paths.extend(
+        root / relative
+        for relative in (*HOOK_RUNTIME_FILES, *RUNTIME_SUPPORT_FILES)
+    )
     missing = [path for path in paths if not path.is_file()]
     if missing:
         raise GenerationError(
-            "missing declared hook runtime input: "
+            "missing declared runtime input: "
             + ", ".join(str(path.relative_to(root)) for path in missing)
         )
     return sorted(paths, key=lambda path: path.relative_to(root).as_posix())

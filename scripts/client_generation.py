@@ -29,6 +29,7 @@ from client_generation_model import (
     GENERATED_CLIENTS,
     HOOK_RUNTIME_FILES,
     PROVENANCE,
+    RUNTIME_SUPPORT_FILES,
     SOURCE_FILES,
     GenerationError,
     Stats,
@@ -147,6 +148,19 @@ def generate(
         for client_dir in GENERATED_CLIENTS.values():
             expected[f"{client_dir}/hooks/{suffix}"] = (content, mode)
 
+    # Path-preserving, unlike the hook loop above which strips the "hooks/"
+    # prefix and re-roots. bin/adr-doctor resolves these by appending ROOT and
+    # ROOT/"scripts" to sys.path, so the mirror has to reproduce the layout and
+    # not merely the files.
+    for relative in RUNTIME_SUPPORT_FILES:
+        source = source_root / relative
+        # Load-bearing: without the newline normalisation these arrive with CRLF
+        # on a Windows checkout and --check reports phantom drift (TASK-57).
+        content = read(source, stats).replace(b"\r\n", b"\n")
+        mode = stat.S_IMODE(source.stat().st_mode)
+        for client_dir in GENERATED_CLIENTS.values():
+            expected[f"{client_dir}/{relative}"] = (content, mode)
+
     native_hook_targets = {
         "claude-code-cli": "hooks/hooks.json",
         "codex-cli": "codex/hooks/hooks.json",
@@ -177,6 +191,12 @@ def generate(
         *(client["prompt_root"] for client in workflows["clients"].values()),
         "codex/hooks",
         "copilot/hooks",
+        # So the orphan sweep owns the directories RUNTIME_SUPPORT_FILES creates.
+        *(
+            f"{directory}/{root}"
+            for directory in GENERATED_CLIENTS.values()
+            for root in ("scripts", "clients")
+        ),
     ]
     if not check and load_fast_state(output_root, expected, generated_roots):
         stats.unchanged = len(expected)

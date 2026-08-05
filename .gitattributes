@@ -11,3 +11,7 @@ scripts/*.py text eol=lf
 templates/githooks/* text eol=lf
 codex/bin/* text eol=lf
 copilot/bin/* text eol=lf
+codex/scripts/*.py text eol=lf
+copilot/scripts/*.py text eol=lf
+codex/clients/**/*.py text eol=lf
+copilot/clients/**/*.py text eol=lf
