@@ -33,7 +33,8 @@ pytestmark = pytest.mark.skipif(
 # resolved, and whether the warning is enabled.
 _HARNESS = """
 set -e
-_PYTHON3=$(command -v python3 || command -v python)
+_PYTHON3=$(command -v python3 || command -v python || true)
+if [ -z "$_PYTHON3" ]; then printf '%s\n' "NO_INTERPRETER"; exit 0; fi
 ROOT="."
 {block}
 printf '%s %s %s\n' "$_BUDGET_STATE" "$_BUDGET_MS" "$_WARN_ON_EXCEED"
@@ -70,7 +71,13 @@ def _run_block(tmp_path: Path) -> tuple[str, str, str]:
     )
     stderr = result.stderr.decode("utf-8", "replace")
     assert result.returncode == 0, stderr
-    state, budget, warn = result.stdout.decode("utf-8").strip().split()
+    stdout = result.stdout.decode("utf-8").strip()
+    if stdout == "NO_INTERPRETER":
+        # The Windows CI runner's bash resolves no python on PATH. The block
+        # under test is shell, so without an interpreter there is nothing to
+        # assert -- skipping is honest; failing would blame the wrong thing.
+        pytest.skip("no python interpreter reachable from the POSIX shell")
+    state, budget, warn = stdout.split()
     return state, budget, warn
 
 
