@@ -188,7 +188,49 @@ def base_ref(cwd: Path, deadline: "Deadline") -> Optional[str]:
     return None
 
 
-def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
+def _nudge(cwd: Path, adr_dir: Path, suggest: Path, diff_text: str, left: int) -> str:
+    """The missing-decision half of R2, asked at the same moment as the verdict.
+
+    Advisory by construction: this returns text or nothing, and no caller may
+    turn it into a denial (ADR-024). A suggestion is a question about a decision
+    nobody recorded, and blocking on one teaches people to write an empty ADR to
+    get past it -- the failure mode that produced six rule-less Enforcement
+    blocks in this very repository.
+
+    It reuses the diff the judge already read and what is left of the same
+    Deadline. A second `git diff` here would spend the budget twice on the same
+    bytes, and the branches with the largest diffs are the ones most worth
+    asking about.
+    """
+    import sys
+
+    try:
+        result = _run(
+            [
+                sys.executable, str(suggest),
+                "--diff", "-",
+                "--adr-dir", str(adr_dir),
+                # Same reason as the judge's: killing the child does not reach
+                # the model CLI it spawned.
+                "--llm-timeout", str(left),
+            ],
+            cwd,
+            left,
+            stdin_text=diff_text,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    lines = [
+        line
+        for line in (result.stdout or "").splitlines()
+        if line.startswith("[adr-suggest] This change") or line.startswith("[adr-suggest]   ")
+    ]
+    return "\n".join(lines)
+
+
+def judge_branch(
+    cwd: Path, adr_dir: Path, judge: Path, suggest: Optional[Path] = None
+) -> Dict:
     """Return a verdict dict. Every non-violation outcome is 'allow'."""
     if not judge.is_file():
         return {"decision": "allow", "reason": "adr-judge not found", "checked": False}
@@ -248,8 +290,22 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
     except (OSError, subprocess.SubprocessError) as exc:
         return {"decision": "allow", "reason": f"judge did not run ({exc})", "checked": False}
 
+    def _with_nudge(result: Dict) -> Dict:
+        """Attach the advisory nudge, never touching the decision."""
+        if suggest is None or not suggest.is_file():
+            return result
+        left_now = deadline.remaining()
+        if left_now is None:
+            return result
+        text = _nudge(cwd, adr_dir, suggest, diff.stdout, left_now)
+        if text:
+            result["nudge"] = text
+        return result
+
     if verdict.returncode == 0:
-        return {"decision": "allow", "reason": "no violations on the branch", "checked": True}
+        return _with_nudge(
+            {"decision": "allow", "reason": "no violations on the branch", "checked": True}
+        )
     if verdict.returncode != 1:
         # Exit 2 is a configuration or input problem, including a diff over the
         # cap. That is a fact about the invocation, not about the code, and
@@ -262,12 +318,12 @@ def judge_branch(cwd: Path, adr_dir: Path, judge: Path) -> Dict:
         }
 
     findings = _violations(verdict.stdout)
-    return {
+    return _with_nudge({
         "decision": "deny",
         "reason": _explain(findings, base),
         "checked": True,
         "violations": findings,
-    }
+    })
 
 
 def _violations(stdout: str) -> List[Dict]:
