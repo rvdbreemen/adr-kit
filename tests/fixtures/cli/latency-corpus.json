@@ -20,18 +20,141 @@
     "adr-lint": {
       "p50_ms": 1200,
       "p95_ms": 1600,
-      "hard_timeout_ms": 2000
+      "hard_timeout_ms": 2000,
+      "kind": "workload"
     },
     "adr-retire": {
       "p50_ms": 800,
       "p95_ms": 1200,
-      "hard_timeout_ms": 2000
+      "hard_timeout_ms": 2000,
+      "kind": "workload"
     },
     "adr-context-vector": {
       "p50_ms": 400,
       "p95_ms": 500,
       "hard_timeout_ms": 500,
-      "note": "The query-embedding path on the 500 ms events (ADR-020). Measured with a stub embedder, so this bounds the kit's own work -- store read, cosine over the corpus, reorder -- and not the backend round trip, which is network-bound and carries its own 2 s timeout. Budgeting the round trip here would make the number a property of whoever ran it."
+      "note": "The query-embedding path on the 500 ms events (ADR-020). Measured with a stub embedder, so this bounds the kit's own work -- store read, cosine over the corpus, reorder -- and not the backend round trip, which is network-bound and carries its own 2 s timeout. Budgeting the round trip here would make the number a property of whoever ran it.",
+      "kind": "workload"
+    },
+    "adr": {
+      "kind": "startup",
+      "p50_ms": 350,
+      "p95_ms": 350,
+      "hard_timeout_ms": 2000
+    },
+    "adr-audit": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-context": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-discover": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-doctor": {
+      "kind": "startup",
+      "p50_ms": 550,
+      "p95_ms": 550,
+      "hard_timeout_ms": 2000
+    },
+    "adr-embed": {
+      "kind": "startup",
+      "p50_ms": 450,
+      "p95_ms": 450,
+      "hard_timeout_ms": 2000
+    },
+    "adr-generate-scripts": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-grill-signal": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-guardian": {
+      "kind": "startup",
+      "p50_ms": 350,
+      "p95_ms": 350,
+      "hard_timeout_ms": 2000
+    },
+    "adr-index": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-judge": {
+      "kind": "startup",
+      "p50_ms": 500,
+      "p95_ms": 550,
+      "hard_timeout_ms": 2000
+    },
+    "adr-migrate": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-quality": {
+      "kind": "startup",
+      "p50_ms": 350,
+      "p95_ms": 350,
+      "hard_timeout_ms": 2000
+    },
+    "adr-readiness": {
+      "kind": "startup",
+      "p50_ms": 350,
+      "p95_ms": 400,
+      "hard_timeout_ms": 2000
+    },
+    "adr-readiness-ci": {
+      "kind": "startup",
+      "p50_ms": 250,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-related": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-renumber": {
+      "kind": "startup",
+      "p50_ms": 250,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-settings": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-status": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
+    },
+    "adr-suggest": {
+      "kind": "startup",
+      "p50_ms": 450,
+      "p95_ms": 450,
+      "hard_timeout_ms": 2000
     }
   },
   "evidence": {
@@ -115,5 +238,29 @@
       "bin/adr-lint _gate_exists_locally re-read up to 5000 files per gate; now one pass resolves every gate needle",
       "both scanners descended into nested checkouts (.claude/worktrees agent trees); now any directory containing a .git entry is pruned"
     ]
+  },
+  "budget_kinds": {
+    "workload": "measured doing the work the tool exists for, on this repository's ADR set",
+    "startup": "measured with --help: the interpreter-plus-import floor every invocation pays before any work. Used where the real cost is data-dependent and a single number would describe one repository rather than the tool."
+  },
+  "excluded": {
+    "adr-watch": "long-running file watcher; it has no terminating invocation to budget",
+    "adr-mcp": "long-running stdio server; same reason",
+    "bump-version": "maintainer-only release tool, withheld from the client mirrors by COPY_EXCLUSIONS",
+    "adr-judge-precommit": "ignores argv and reads a staged diff; exercised through the pre-commit path, not as a CLI"
+  },
+  "known_over_ceiling": {
+    "note": "Measured above ADR-015's 2000 ms ceiling doing real work. Filed separately rather than budgeted here, because each needs its own decision and absorbing them would turn corpus completion into an ADR-015 amendment.",
+    "adr-audit --whole-codebase": "~10 s",
+    "adr-doctor --check": "~6.8 s",
+    "adr-discover (default, git-history scan on)": "~2.8 s on 327 commits, and it grows with the repository. The startup row above budgets --no-history."
+  },
+  "cli_measured": {
+    "date": "2026-08-05",
+    "machine": {
+      "system": "Windows",
+      "python": "3.12.9"
+    },
+    "method": "5 samples plus one warmup, per entrypoint"
   }
 }
