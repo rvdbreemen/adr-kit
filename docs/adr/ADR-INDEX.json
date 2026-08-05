@@ -1655,8 +1655,8 @@
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-hook-python-budgets-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1713,8 +1713,8 @@
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-hook-ceiling-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -1773,8 +1773,8 @@
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-doctor-generated-tree-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],

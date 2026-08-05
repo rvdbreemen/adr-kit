@@ -3,8 +3,8 @@ id: "ADR-031"
 title: "Name the Pull-Request Moment as a Deliberately Slower User-Initiated Event"
 status: "Accepted"
 date: "2026-08-05"
-binding: false
-gate: null
+binding: true
+gate: "adr-hook-ceiling-v1"
 documents_shipped: false
 verified_in: []
 supersedes: []

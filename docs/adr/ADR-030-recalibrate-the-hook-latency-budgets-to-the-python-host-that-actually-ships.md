@@ -3,8 +3,8 @@ id: "ADR-030"
 title: "Recalibrate the Hook Latency Budgets to the Python Host That Actually Ships"
 status: "Accepted"
 date: "2026-08-05"
-binding: false
-gate: null
+binding: true
+gate: "adr-hook-python-budgets-v1"
 documents_shipped: false
 verified_in: []
 supersedes: []

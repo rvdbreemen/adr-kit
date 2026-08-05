@@ -3,8 +3,8 @@ id: "ADR-032"
 title: "Treat a Generated Client Tree as a First-Class Doctor Context"
 status: "Accepted"
 date: "2026-08-05"
-binding: false
-gate: null
+binding: true
+gate: "adr-doctor-generated-tree-v1"
 documents_shipped: false
 verified_in: []
 supersedes: []
