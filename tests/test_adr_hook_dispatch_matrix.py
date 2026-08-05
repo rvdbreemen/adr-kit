@@ -21,6 +21,9 @@ process: the same command line the generated `hooks.json` names, the payload a
 client would send, and an assertion on raw bytes.
 """
 
+# Gate anchor for ADR-029: adr-single-retrieval-engine-v1
+# Verified here: one retrieval engine: the native host runs only under ADR_KIT_NATIVE_HOOK=1.
+
 from __future__ import annotations
 
 import json

@@ -17,6 +17,9 @@ The two properties worth pinning:
   code violates an ADR" have different owners. One conflated non-zero tells the
   caller nothing about what to go and fix.
 """
+
+# Gate anchor for ADR-026: adr-audit-exit-contract-v1
+# Verified here: the combined audit command and its five-way exit contract.
 from __future__ import annotations
 
 import json

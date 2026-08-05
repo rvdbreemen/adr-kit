@@ -3,8 +3,8 @@ id: "ADR-029"
 title: "Retire the Native Hook Binary Rather Than Maintain a Second Retrieval Engine"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-single-retrieval-engine-v1"
 documents_shipped: false
 verified_in: []
 supersedes: []
@@ -198,10 +198,7 @@ and the measurement is committed alongside the budget.
 
 ### Verification
 
-* `adr-single-retrieval-engine-v1`: the gate this decision is to be anchored
-  by. It does not exist yet, so `gate` is null and `binding` is false: a
-  frontmatter that declares enforcement it cannot deliver is worse than one
-  that admits the gap. Both fields flip back together when the gate ships. It
+* `adr-single-retrieval-engine-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships. It
   asserts that no second ranking implementation ships, and that the edit-tier
   path meets its declared budget.
 

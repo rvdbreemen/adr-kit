@@ -3,8 +3,8 @@ id: "ADR-020"
 title: "Embed the Query Where the Query Is Asked, and Read Authority From the Index"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-query-embedding-v1"
 documents_shipped: false
 verified_in: []
 supersedes:
@@ -258,10 +258,7 @@ than wall-clock against a live model.
 
 ### Verification
 
-* `adr-query-embedding-v1`: the gate this decision is to be anchored by. It
-  does not exist yet, so `gate` is null and `binding` is false: a frontmatter
-  that declares enforcement it cannot deliver is worse than one that admits the
-  gap. Both fields flip back together when the gate ships. It covers the three
+* `adr-query-embedding-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships. It covers the three
   acceptance cases above and the R21 latency bound.
 
 ## Consequences

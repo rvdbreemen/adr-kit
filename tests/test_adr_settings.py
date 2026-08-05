@@ -5,6 +5,9 @@ could be switched on by a shipped writer but never off, and a personal setting
 had nowhere to live that a user would find.
 """
 
+# Gate anchor for ADR-025: adr-config-trust-boundary-v1
+# Verified here: tracked configuration may select among backends; only machine-local configuration may introduce one.
+
 from __future__ import annotations
 
 import json

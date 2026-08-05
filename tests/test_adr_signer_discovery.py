@@ -20,6 +20,9 @@ Two properties survive the change, and this file holds both:
   configured values that name a machine, and R8 asks for evidence of which
   *human* accepted. Those fall through to the refusal.
 """
+
+# Gate anchor for ADR-027: adr-signer-derivation-v1
+# Verified here: the lifecycle signer derives from a person-named git identity, and is announced.
 from __future__ import annotations
 
 import importlib.machinery

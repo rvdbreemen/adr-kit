@@ -32,7 +32,11 @@ ADR_DIR = ROOT / "docs" / "adr"
 # task file's table must not be able to make a gate "exist".
 ANCHOR_ROOTS = ("bin", "hooks", "scripts", "tests", "clients", ".github")
 
-_GATE_NAME = re.compile(r"^\s*[*-]\s*`([a-z0-9][a-z0-9-]*-v\d+)`\s*$", re.M)
+# The name may be the whole bullet, or may be followed by a colon and prose --
+# ADR-020..029 all use the second form. Anchoring on `$` matched neither of them
+# and the check silently found nothing, which is the failure mode a gate about
+# silent decay can least afford.
+_GATE_NAME = re.compile(r"^\s*[*-]\s*`([a-z0-9][a-z0-9-]*-v\d+)`", re.M)
 
 
 def _verification_gate(text: str) -> str | None:
