@@ -1174,8 +1174,8 @@
         "path_globs": []
       },
       "metadata": {
-        "binding": false,
-        "gate": null,
+        "binding": true,
+        "gate": "adr-open-questions-append-only-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],

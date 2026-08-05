@@ -6,6 +6,24 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **`## Open Questions` is append-only while an ADR is Proposed** (ADR-022). Every
+  consumer of this data checked only *unresolved* items, so deleting a question
+  raised the quality score and cleared the acceptance gate exactly as answering
+  it did — while `bin/adr answer` was the strictly more expensive path. The
+  cheapest route through the gates destroyed the record of the grilling, and
+  nobody had to act in bad faith for that to happen.
+
+  A question that disappears from a Proposed ADR without a matching answered
+  line is now a lint FAIL, and the message quotes the question that was lost.
+  Adding questions is still free; answering one still passes.
+
+  Readiness stops treating the two as equivalent: a record that still carries an
+  unanswered question is not resolved, however the section is spelled.
+
+  **The check needs git, and says so when it cannot have it.** Outside a
+  repository, or on a file with no history, it degrades to an ADVISORY that
+  states the rule was not verified — a named hole rather than a silent pass.
+
 - **The pull-request moment now asks both halves of R2.** It asked whether a
   branch violates an accepted decision; it did not ask whether the branch
   *contains* a decision nobody recorded. That second question happened only if
