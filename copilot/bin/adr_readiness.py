@@ -9,7 +9,39 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from adr_catalog import build_relationships, load_adr_records, normalize_adr_id
+from adr_format import all_open_questions
 from adr_quality_core import QUALITY_THRESHOLD, score_path
+
+
+def _open_questions_resolved(record: Dict, adr_dir: Optional[Path] = None) -> bool:
+    """True when this record has no question still open AND kept its answers.
+
+    The old reading was `not record["open_questions"]`, which an answered
+    question and a deleted one both satisfy -- so deleting was the cheap way to
+    score, while `bin/adr answer` was the expensive one (ADR-022).
+
+    A record that never carried a question is still resolved: there is nothing
+    to preserve. What changes is the record that HAD questions, where at least
+    one must survive in answered form.
+    """
+    if record.get("open_questions"):
+        return False
+    path = record.get("path")
+    if not path:
+        return True
+    try:
+        source = Path(path)
+        if not source.is_absolute() and adr_dir is not None:
+            source = Path(adr_dir) / source
+        text = source.read_text(encoding="utf-8", errors="replace")
+    except (OSError, TypeError, ValueError):
+        # Cannot read the body: fall back to the old reading rather than
+        # inventing a failure from a file-system problem.
+        return True
+    questions = all_open_questions(text)
+    if not questions:
+        return True
+    return any(questions.values())
 
 
 def _scored_quality(record: Dict, adr_dir: Optional[Path] = None) -> Optional[float]:
@@ -270,7 +302,13 @@ def readiness_for_record(
     quality_checks = {
         "decision": bool(str(record.get("decision_text", "")).strip()),
         "evidence": bool(record.get("verified_in")),
-        "open_questions_resolved": not bool(record.get("open_questions")),
+        # "Resolved" used to mean "the unresolved list is empty", which an
+        # answer and a deletion both produce. Requiring at least one ANSWERED
+        # item makes the two distinguishable: a record that was grilled and
+        # answered scores here, and one whose questions were quietly removed
+        # does not (ADR-022). A record that never had questions is unchanged --
+        # nothing to preserve, nothing to reward.
+        "open_questions_resolved": _open_questions_resolved(record, adr_dir),
     }
     quality_score = _scored_quality(record, adr_dir)
     if quality_score is None:

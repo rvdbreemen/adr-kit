@@ -38,6 +38,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import date
@@ -137,6 +138,7 @@ from adr_catalog import (
 )
 from adr_format import (
     SUPPORTED_PROFILES,
+    all_open_questions,
     detect_profile,
     is_migration_candidate,
     migration_notice,
@@ -208,6 +210,7 @@ ALL_GATES = [
     "consistency",
     "policy",
     "quality",
+    "open-questions",
 ]
 DEFAULT_GATES = ["completeness", "audit", "consistency"]
 
@@ -1223,6 +1226,84 @@ def _extract_enforcement_block(content: str) -> Tuple[Optional[Dict], Optional[s
     return data, None
 
 
+def check_open_questions_append_only(
+    path: Path, text: str, status: str
+) -> List[Dict]:
+    """A question may go from open to answered, and nowhere else (ADR-022).
+
+    Every consumer of this data checks only *unresolved* items, so deleting a
+    question raises the quality score and clears the acceptance gate exactly as
+    answering it does -- while `bin/adr answer` is the strictly more expensive
+    path. The cheapest route through the gates destroyed the record of the
+    grilling. Nobody has to act in bad faith for that to happen; it is what the
+    incentive rewarded.
+
+    The check needs the previous revision, so it needs git. Outside a repository,
+    or on a file with no history, it degrades to ADVISORY and says so rather than
+    passing silently -- a hole named is worth more than a check that pretends.
+    """
+    if status != "Proposed":
+        return []
+
+    previous = _previous_revision(path)
+    if previous is None:
+        return [{
+            "code": "open-questions-unverifiable",
+            "severity": "ADVISORY",
+            "message": (
+                f"{path.name}: cannot check the append-only rule for Open "
+                "Questions without git history for this file. The rule still "
+                "applies; nothing verified it here."
+            ),
+        }]
+
+    before = all_open_questions(previous)
+    if not before:
+        return []
+    after = all_open_questions(text)
+
+    vanished = [question for question in before if question not in after]
+    if not vanished:
+        return []
+    return [{
+        "code": "open-questions-deleted",
+        "severity": "FAIL",
+        "message": (
+            f"{path.name}: {len(vanished)} Open Question(s) disappeared without "
+            "an answer: "
+            + "; ".join(f'"{question}"' for question in sorted(vanished))
+            + ". Answer it with `bin/adr answer` -- the reasoning is what a "
+            "future reader needs in order to re-evaluate the decision."
+        ),
+    }]
+
+
+def _previous_revision(path: Path) -> Optional[str]:
+    """The committed content of this file, or None when git cannot say.
+
+    None covers every case the check cannot see through: no git on PATH, not a
+    repository, a file that has never been committed. They are one outcome here
+    because the remedy is the same -- say the rule was not verified.
+    """
+    if shutil.which("git") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:./{path.name}"],
+            cwd=str(path.parent),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
 def check_policy_gate(content: str, adr_id: str) -> List[Dict]:
     """Validate the ## Enforcement JSON block in an ADR.
 
@@ -1693,6 +1774,16 @@ def lint_file(
         retrieval_finding = check_retrieval_metadata(text, cfg)
         if retrieval_finding:
             findings.append(retrieval_finding)
+
+    if "open-questions" in enabled_gates and "open-questions" not in skip_gates:
+        for oqf in check_open_questions_append_only(fp, text, _current_status(text) or ""):
+            findings.append({
+                "gate": "open-questions",
+                "level": "ADVISORY" if file_advisory else oqf["severity"],
+                "code": oqf["code"],
+                "details": [oqf["message"]],
+                "summary": oqf["message"],
+            })
 
     if "quality" in enabled_gates and "quality" not in skip_gates:
         quality_findings = check_quality_gate(text, adr_id)
