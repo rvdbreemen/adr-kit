@@ -1602,6 +1602,184 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-030",
+      "title": "Recalibrate the Hook Latency Budgets to the Python Host That Actually Ships",
+      "path": "ADR-030-recalibrate-the-hook-latency-budgets-to-the-python-host-that-actually-ships.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: recalibrate the budgets to the Python host, because it is the only option under which the declared num...",
+      "topics": [
+        "hooks",
+        "latency",
+        "measurement",
+        "performance budget"
+      ],
+      "aliases": [
+        "hook budget recalibration",
+        "hook latency",
+        "python host budgets"
+      ],
+      "components": [
+        "hook benchmark",
+        "hook latency budgets",
+        "hooks/manifest.json"
+      ],
+      "symbols": [
+        "hook_benchmark",
+        "latency_budget_ms",
+        "measure"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every event in hooks/manifest.json must carry a latency block whose numbers were produced by measurement against the host that ships by default.",
+          "The fixture must record the machine, the interpreter version and the date the measurement was taken, next to the numbers it produced.",
+          "The measured interpreter start floor must be a named constant carrying the measurement that produced it.",
+          "Every recalibrated budget must remain at or below ADR-015's 2000 ms ceiling."
+        ],
+        "must_not": [
+          "No budget may be set to a number that the default host cannot meet on a supported platform.",
+          "No budget may be justified by the native binary's performance while run-hook.cmd runs that binary only under ADRKITNATIVEHOOK=1."
+        ],
+        "exceptions": [
+          "pr-create is out of scope here; its budget is settled by ADR-031."
+        ],
+        "verification": [
+          "adr-hook-python-budgets-v1"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-031",
+      "title": "Name the Pull-Request Moment as a Deliberately Slower User-Initiated Event",
+      "path": "ADR-031-name-the-pull-request-moment-as-a-deliberately-slower-user-initiated-event.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: name the pull-request moment as a deliberately slower, user-initiated event, because the property ADR-...",
+      "topics": [
+        "hooks",
+        "latency",
+        "performance budget",
+        "pull request"
+      ],
+      "aliases": [
+        "pr-create budget",
+        "pull-request ceiling exception",
+        "user-initiated event"
+      ],
+      "components": [
+        "hook latency ceiling",
+        "pull-request guard budget"
+      ],
+      "symbols": [
+        "adr_pr_guard",
+        "latency_budget_ms",
+        "pr-create"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every latencybudgetms in hooks/manifest.json must be at or below 2000 ms unless an Accepted ADR names that event as user-initiated.",
+          "An exempt event's budget must be bounded by the runnertimeoutsec the client actually enforces, so the declared number and the kill timeout agree.",
+          "The exemption must be resolved from the ADR record, never from a literal list of event names in test code."
+        ],
+        "must_not": [
+          "No event that fires as a side effect of other work may carry a budget above 2000 ms, regardless of what it does.",
+          "No exemption may be added without an Accepted ADR that states which event and why."
+        ],
+        "exceptions": [
+          "pr-create is the one exempt event, on the grounds stated above."
+        ],
+        "verification": [
+          "adr-hook-ceiling-v1"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-032",
+      "title": "Treat a Generated Client Tree as a First-Class Doctor Context",
+      "path": "ADR-032-treat-a-generated-client-tree-as-a-first-class-doctor-context.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-05",
+      "decision_summary": "Chosen option: declare a generated tree a first-class doctor context, because a user who installed the Codex payload...",
+      "topics": [
+        "client generation",
+        "diagnostics",
+        "doctor",
+        "mirrors"
+      ],
+      "aliases": [
+        "doctor degradation",
+        "generated tree doctor",
+        "mirror doctor context"
+      ],
+      "components": [
+        "adr-doctor reporting contract",
+        "generated client tree identity"
+      ],
+      "symbols": [
+        "client_root",
+        "generated_tree_owner",
+        "RUNTIME_SUPPORT_FILES"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every module a bin/ entrypoint imports must resolve inside the client tree it was mirrored into, verified transitively rather than one hop deep.",
+          "A generated client tree must be identified by the absence of clients/workflows.json plus a client-specific plugin manifest, never by a failed import.",
+          "A check that cannot apply in a generated tree must report unsupported with required false, and must say why.",
+          "Running the doctor from a generated tree, in any mode including repair, must leave every file in that tree byte-identical."
+        ],
+        "must_not": [
+          "clients/workflows.json must not be mirrored into a generated client tree.",
+          "The generator's own source must not be imported at module scope by anything a bin/ entrypoint reaches, because it is deliberately not mirrored.",
+          "A mirror must not report failed for a client that is simply not installed there."
+        ],
+        "exceptions": [
+          "clientgeneration may be imported lazily, inside the function that has already established the tree is not a mirror."
+        ],
+        "verification": [
+          "adr-doctor-generated-tree-v1"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2226,6 +2404,54 @@
     {
       "source": "ADR-029",
       "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-030",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-030",
+      "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-030",
+      "target": "ADR-031",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-031",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-031",
+      "target": "ADR-023",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-031",
+      "target": "ADR-030",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-032",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-032",
+      "target": "ADR-029",
       "type": "related",
       "resolved": true
     }
