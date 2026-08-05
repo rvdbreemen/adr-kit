@@ -3,10 +3,10 @@ id: TASK-95
 title: >-
   Let the hook regenerate a stale ADR index, under a lock and only on the events
   that can afford it
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-03 19:31'
-updated_date: '2026-08-03 20:53'
+updated_date: '2026-08-05 08:15'
 labels:
   - hooks
   - adr
@@ -39,11 +39,11 @@ Amends ADR-007. Spec: R7, R7.3, R21.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 An ADR records the decision, names the read-only property it reverses, and states the concurrency and size limits it accepts
-- [ ] #2 `session-start` and `user-prompt-submit` regenerate a stale index in-process, never by spawning `bin/adr-index`
-- [ ] #3 `pre-tool-use` and `post-tool-use` keep reading only and render 'the ADR index is stale; run bin/adr-index docs/adr' rather than silence
-- [ ] #4 A lock guards concurrent regeneration; a second session that cannot take the lock reads what is there instead of waiting, with a test that runs two at once
-- [ ] #5 Regeneration is skipped and the message rendered when the projected render time exceeds the event budget, so a large ADR set degrades to a nudge rather than a timeout
-- [ ] #6 An end-to-end test writes an ADR file, submits a prompt, and asserts the new ADR is injected in the same session
+- [x] #2 `session-start` and `user-prompt-submit` regenerate a stale index in-process, never by spawning `bin/adr-index`
+- [x] #3 `pre-tool-use` and `post-tool-use` keep reading only and render 'the ADR index is stale; run bin/adr-index docs/adr' rather than silence
+- [x] #4 A lock guards concurrent regeneration; a second session that cannot take the lock reads what is there instead of waiting, with a test that runs two at once
+- [x] #5 Regeneration is skipped and the message rendered when the projected render time exceeds the event budget, so a large ADR set degrades to a nudge rather than a timeout
+- [x] #6 An end-to-end test writes an ADR file, submits a prompt, and asserts the new ADR is injected in the same session
 <!-- AC:END -->
 
 ## Comments
@@ -61,3 +61,25 @@ The unanticipated part: the PostToolUse route the task listed as an alternative 
 Remaining: AC#2 through AC#6 are implementation, blocked on nothing but time.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+session-start and user-prompt-submit regenerate a stale index in place, in-process; the edit tier stays read-only and says so. ADR-021 flipped to binding:true with gate adr-hook-index-refresh-v1.
+
+AC#2 -- regeneration goes through adr_index_core.regenerate_index(), the write half of bin/adr-index without the process. In-process is not a preference: ~84 ms for 29 ADRs against ~302 ms through a subprocess, and the 500 ms these events declare cannot hold the difference.
+
+AC#3 -- pre-tool-use, post-tool-use and the plan-exit branch render an actionable message instead of silence. Putting a write on the path taken before every edit is not a trade worth making, and 100 ms cannot hold a render at any realistic set size.
+
+AC#4 -- an O_EXCL lock file guards the render. The loser READS rather than waits, asserted with a timing bound: waiting would spend a budget it cannot recover on work another session is already doing, and the client kills the hook at its own bound regardless. The lock is released in a finally block, because one left behind would turn a single crash into a permanently stale index.
+
+AC#5 -- projected_render_ms() estimates from an ADR count and the measured 4.7 ms per record, and the event budget is read from the manifest rather than hardcoded. Over budget bails out BEFORE starting: a render killed halfway leaves the artefacts disagreeing with each other, which is worse than the staleness it set out to fix.
+
+AC#6 -- verified end to end: write an ADR into a workspace, submit a prompt through hooks/adr-hook.py, and the new ADR appears in the injected context of that same session.
+
+evaluate() is wrapped rather than edited in place so every return path in the renderer carries the notice; missing one would reproduce the silence on exactly the branch nobody thought about.
+
+Two fixture details found by tests failing honestly. The staleness fixture backdates the index rather than future-dating the ADR -- a future-dated ADR stays newer than anything written afterwards, including the regeneration, so the fixture would have reported failure for a state the feature had fixed. And test_an_empty_plan_stays_silent now asserts on its subject rather than the whole tuple, because it runs against the live repository and an unrelated ADR edit would otherwise fail it for the wrong reason.
+
+Verified: 11 tests in the new module, 73 across the hook, dispatch, performance and generation suites.
+<!-- SECTION:FINAL_SUMMARY:END -->

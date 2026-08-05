@@ -3,8 +3,8 @@ id: "ADR-021"
 title: "Let the Session-Scoped Hooks Regenerate a Stale ADR Index"
 status: "Accepted"
 date: "2026-08-04"
-binding: false
-gate: null
+binding: true
+gate: "adr-hook-index-refresh-v1"
 documents_shipped: false
 verified_in: []
 supersedes: []

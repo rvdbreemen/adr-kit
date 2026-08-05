@@ -389,3 +389,55 @@ def index_probably_fresh(adr_dir: Path) -> bool:
     except OSError:
         return False
     return oldest_index >= newest_adr
+
+
+# Measured on this repository, 2026-08-05: a full in-process render of 29 ADRs
+# costs ~84 ms median, about 4.7 ms per ADR, against a 2.8 ms freshness probe.
+# Through a subprocess the same work costs ~302 ms, which is why ADR-021 requires
+# in-process regeneration rather than spawning the generator.
+MS_PER_ADR_RENDER = 4.7
+RENDER_FIXED_COST_MS = 50.0
+
+
+def projected_render_ms(adr_dir: Path) -> float:
+    """What a full regeneration of this directory is likely to cost.
+
+    Deliberately a projection from a count rather than a trial run: the point is
+    to decide whether to start, and a measurement that had to render first would
+    have already spent the budget it exists to protect.
+    """
+    try:
+        count = sum(1 for _ in discover_adr_files(adr_dir))
+    except OSError:
+        return float("inf")
+    return RENDER_FIXED_COST_MS + count * MS_PER_ADR_RENDER
+
+
+def regenerate_index(adr_dir: Path, readme: Optional[Path] = None) -> List[str]:
+    """Rewrite the generated index artefacts in place. Returns what changed.
+
+    The write half of `bin/adr-index`, without the process. ADR-021 needs this
+    callable from the hook: spawning the generator costs ~302 ms against ~84 ms
+    in-process, and the events that may regenerate carry a budget that cannot
+    hold the difference.
+
+    Raises rather than guessing when the ADR set has issues the generator cannot
+    resolve -- the caller is a fail-open hook and decides what to do with that.
+    """
+    payload = build_readme_payload(adr_dir, readme or (adr_dir / "README.md"))
+    desired_readme = payload.pop("_desired_readme")
+    desired_markdown = payload.pop("_desired_markdown")
+    desired_json = payload.pop("_desired_json")
+    if payload["issues"]:
+        raise ValueError("; ".join(str(issue) for issue in payload["issues"]))
+
+    target_readme = readme or (adr_dir / "README.md")
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    target_readme.parent.mkdir(parents=True, exist_ok=True)
+    target_readme.write_text(desired_readme, encoding="utf-8")
+    (adr_dir / "ADR-INDEX.md").write_text(desired_markdown, encoding="utf-8")
+    (adr_dir / "ADR-INDEX.json").write_text(desired_json, encoding="utf-8")
+    # `summary["changed"]` is a boolean in the CLI's payload, not a list of
+    # names. Report which artefacts this call rewrote rather than passing that
+    # flag through as if it were the answer.
+    return list(INDEX_ARTIFACTS) if payload["summary"].get("changed") else []

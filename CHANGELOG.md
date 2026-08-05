@@ -6,6 +6,27 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- **The session hooks regenerate a stale ADR index instead of going dark**
+  (ADR-021). An agent that writes `docs/adr/ADR-NNN.md` directly — the common
+  case in a harness — left the generated index stale. The query then raised,
+  the hook swallowed it into an empty list, and ADR injection went dark for the
+  rest of the session **with no message at all**. An empty answer reads exactly
+  like "no ADR was relevant", which is the whole defect.
+
+  `session-start` and `user-prompt-submit` now regenerate in place, in-process:
+  measured ~84 ms for 29 ADRs against ~302 ms through a subprocess, inside the
+  500 ms those events declare. `pre-tool-use`, `post-tool-use` and the plan-exit
+  branch stay read-only and render an actionable message instead of silence —
+  100 ms cannot hold a render at any realistic ADR set size.
+
+  This reverses the read-only property `hooks/adr_hook_core.py` documents in its
+  own first line, so the limits are pinned by tests: a lock guards regeneration
+  and the loser **reads rather than waits**; a set whose projected cost exceeds
+  the event's declared budget degrades to the message rather than being killed
+  mid-write; and every failure path returns the message rather than raising,
+  because a governance tool that breaks a session is worse than one that asks
+  for a command to be run.
+
 - **`## Open Questions` is append-only while an ADR is Proposed** (ADR-022). Every
   consumer of this data checked only *unresolved* items, so deleting a question
   raised the quality score and cleared the acceptance gate exactly as answering
