@@ -69,13 +69,23 @@ def _body(num: int, title: str, status: str, date: str) -> str:
     )
 
 
+# A freshly written ADR, dated whenever the suite runs. It used to be the
+# literal "2026-07-06", which was recent when it was written and aged into a
+# failure: doctor flags a Proposed ADR older than doctor.proposed_stale_days
+# (30 by default), so on 2026-08-06 the fixture crossed the threshold and
+# --fix-index started exiting 1 on a finding that has nothing to do with the
+# index. Tests that want an *old* record pass date="2000-01-01" explicitly, so
+# only the default needed to stop ageing.
+_TODAY = date.today().isoformat()
+
+
 def _write_adr(
     adr_dir: Path,
     *,
     num: int = 1,
     title: str = "Doctor Check",
     status: str = "Proposed",
-    date: str = "2026-07-06",
+    date: str = _TODAY,
     binding: bool = False,
     gate=None,
     verified_in=None,
