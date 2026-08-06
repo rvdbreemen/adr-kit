@@ -13,15 +13,16 @@
   registry, an installer library, and a prose instruction corpus. It owns no ADR semantics; every
   path here terminates in a `bin/` CLI.
 - **Technology**: Python 3.10+ (stdlib only; zero third-party runtime packages), Rust (one committed
-  `windows-x64` native hook host, `std` only), one polyglot `cmd.exe`/POSIX-`sh` script, JSON-RPC 2.0
-  over stdio, JSON file contracts, and 64 Markdown + 1 YAML files of model-facing prose.
+  `windows-x64` native hook host, `std` only, opt-in via `ADR_KIT_NATIVE_HOOK=1` since ADR-029), one
+  polyglot `cmd.exe`/POSIX-`sh` script, JSON-RPC 2.0 over stdio, JSON file contracts, and 64 Markdown +
+  1 YAML files of model-facing prose.
 
 ### One-sentence shape per path
 
 | Path | Direction | Shape |
 |---|---|---|
 | MCP | pull | `stdin line -> dispatch() -> subprocess(sys.executable, bin/<cli>) -> stdout line` |
-| Hooks | push | `client event -> run-hook.cmd -> native or Python host -> ADR-INDEX.json -> one JSON line` |
+| Hooks | push | `client event -> run-hook.cmd -> Python host (native opt-in) -> ADR-INDEX.json -> one JSON line` |
 | Skills / prompts | instruct | `slash command -> SKILL.md prose -> agent runs bin/<cli> with the documented flags` |
 | Installer | provision | `detect -> plan -> prepare per-user payload -> smoke-test -> native plugin manager under a lock` |
 
@@ -39,8 +40,11 @@ It solves four problems:
 1. **Machine-readable access without a key.** The MCP server exposes retrieval, judging, health,
    quality and readiness as five read-only tools. No `mcp` SDK, no network, no credential, no LLM
    path. `adr-suggest` is deliberately *not* exposed because its value is LLM-only.
-2. **Context arrival before the mistake.** The hooks implement ADR-004's session, prompt, edit and
-   subagent/compact injection tiers. Every path exits 0 and prints nothing rather than blocking.
+2. **Context arrival before the mistake.** The hooks implement ADR-004's session, prompt, edit,
+   plan-exit and subagent/compact injection tiers. Every hook process exits 0 — including the one
+   exception, where the `pr-create` guard can still deny a `gh pr create` call on Claude Code by
+   encoding `permissionDecision: "deny"` in its JSON response rather than by a non-zero exit
+   (ADR-024, ADR-031). See [`c4-code-hooks.md`](c4-code-hooks.md) for the guard's mechanics.
 3. **Same outcome, three clients.** `clients/capabilities.json` declares the seven required outcomes
    and the per-client event mappings; where a client genuinely cannot do something (Copilot has no
    pre-edit hook) the gap is a *registered degradation* with a named fixture, not silence.
@@ -48,40 +52,50 @@ It solves four problems:
    reasoning — the four verification gates, the nine anti-rationalisation guards, the immutability
    rule — that no CLI flag can encode.
 
-**The boundary that defines this component**: nothing in it enforces. ADR-004 puts blocking
-authority solely in `bin/adr-judge` at pre-commit (component `bin-cli-enforcement`). Every mechanism
-here is advisory and fail-open, and that posture is structural rather than incidental —
-[`hooks/adr-hook.py:36`](../hooks/adr-hook.py) catches `BaseException` (including
-`KeyboardInterrupt` and `SystemExit`) and returns 0, with an inline comment recording why. Do not
-narrow it to `except Exception`.
+**The boundary that defines this component**: nothing here replaces `bin/adr-judge` at pre-commit
+(component `bin-cli-enforcement`) as ADR-004's single fail-closed floor — that verdict is still what
+decides violation vs. clean. What changed is *how many moments* can ask for that verdict: since
+ADR-024/ADR-031 the `pr-create` hook spawns `bin/adr-judge` a second time, before the pull request
+exists, and on Claude Code alone can turn a violation into a denied `gh pr create` call
+(`permissionDecision: "deny"`) rather than merely reporting it. Codex receives the same `PreToolUse`
+event but its adapter has no `permissionDecision` override to render, so the same violation there is
+advisory only; Copilot's manifest entry for `pr-create` is `null` and the guard never fires there at
+all. Every other mechanism in this component remains advisory and fail-open, and that posture is
+structural rather than incidental — [`hooks/adr-hook.py:147-149`](../hooks/adr-hook.py) wraps the
+whole dispatch, including the guard call, in `except BaseException: return 0` (catching
+`KeyboardInterrupt` and `SystemExit` too), with an inline comment recording why. Do not narrow it to
+`except Exception`. See [`c4-code-hooks.md`](c4-code-hooks.md) for `judge_branch()`, `_nudge()` and
+the guard's own budget accounting.
 
 ### Governing ADRs
 
-Verified against each record's frontmatter and `## Enforcement` block. Only two mechanically-enforced
-rules exist across this entire component; everything else is prose governance.
+Verified against each record's frontmatter and `## Enforcement` block. Two distinct mechanical
+enforcement mechanisms show up in this component: `bin/adr-judge`'s `require_pattern`/`forbid_pattern`
+rules, checked against staged diffs at pre-commit (three ADRs carry these here, all below); and a
+pytest "gate anchor" convention — a `# Gate anchor for ADR-NNN: <gate-id>` comment tying one test
+directly to an ADR's `gate:` frontmatter field, checked by running the suite in CI rather than by
+`adr-judge`. All five of the newer hook ADRs (021, 024, 029, 030, 031) use the second mechanism.
+Everything else is prose governance.
 
 | ADR | Strength here | What it binds |
 |---|---|---|
+| **ADR-016** — serve both MCP protocol eras from one hand-rolled stdio server | **Mechanically enforced, six ways** — the most of any ADR in this component. Two `forbid_pattern`/`forbid_import` rules (no verbatim `protocolVersion` echo; stdlib-only imports) plus four `require_pattern` rules (`MODERN_PROTOCOL_VERSIONS`, `server/discover` in the server files, `server/discover` again in `tests/test_adr_mcp.py`, `UNSUPPORTED_PROTOCOL_VERSION`), each globbed across `{bin,codex/bin,copilot/bin}/adr-mcp`. The `require_pattern` rules were added 2026-07-31 (TASK-58.5), after Acceptance — see notable finding on the resolution. | The dual-era dispatch: `initialize`/`ping` on the legacy handshake surface (2024-11-05 .. 2025-11-25), `server/discover` on the modern surface (2026-07-28), `tools/list`/`tools/call` served on both with different result stamping. Era is a pure function of one frame — no per-connection lock. |
 | **ADR-011** — deterministic readiness, human-gated grilling | **Mechanically enforced, twice.** `require_pattern "adr_readiness"` with `path_glob: bin/adr-mcp` ("MCP must expose deterministic readiness without lifecycle mutation") and `require_pattern "grill"` with `path_glob: clients/workflows.json`. | The `adr_readiness` tool must stay present and read-only; the `grill` workflow must stay in the catalog. |
 | **ADR-010** — certify three native CLI clients through one outcome contract | **Enforced on the schema, not the data.** Both `require_pattern` rules glob `schemas/client-capabilities.schema.json`. | The closed three-client roster, the seven required outcomes, the documented-degradation rule, the 300/400-line module budgets, "equal outcomes not identical event names". |
-| **ADR-004** — layered ADR context injection | Prose-governing. Enforcement block present but empty. | The four injection tiers the hooks implement, the `PreToolUse` `Edit\|MultiEdit\|Write` matcher, bounded injected content, and the single fail-closed pre-commit floor. Names the MCP `adr_context` tool as the key-free exposure of the task tier. |
+| **ADR-004** — layered ADR context injection | Prose-governing. Enforcement block present but empty. | The five injection tiers the hooks implement (session, prompt, edit, plan-exit, subagent/compact), the `PreToolUse` `Edit\|MultiEdit\|Write` matcher, bounded injected content, and the single fail-closed pre-commit floor. Names the MCP `adr_context` tool as the key-free exposure of the task tier. |
 | **ADR-014** — generated ADR graph as the selective-context query engine | Component-level claim, no `path_glob` here. `binding: true`, gate `index-first-retrieval`; `verified_in` names `hooks/adr_hook_core.py`, `components[]` includes `adr-mcp`. | Hook and query hot paths stay local, deterministic, bounded, stdlib-first, model-free, key-free. No service, database, embedding model or LLM in the hook path. |
-| **ADR-015** — two-second deterministic latency budget as a fixture contract | Prose-governing the hook half only; its `path_glob` is `tests/fixtures/cli/latency-corpus.json`. | Every deterministic CLI *or hook* path keeps p50/p95/hard budgets in a committed fixture with measured evidence. The hook corpus (`tests/fixtures/hooks/reference-corpus.json`, method `adr-kit-hook-latency-v1`) satisfies this; **`bin/adr-mcp` has no entry in either corpus**. |
+| **ADR-015** — two-second deterministic latency budget as a fixture contract | Prose-governing the hook half only; its `path_glob` is `tests/fixtures/cli/latency-corpus.json`. | Every deterministic CLI *or hook* path keeps p50/p95/hard budgets in a committed fixture with measured evidence. The hook corpus (`tests/fixtures/hooks/reference-corpus.json`, method `adr-kit-hook-latency-v1`) satisfies this; **`bin/adr-mcp` has no entry in either corpus**. Its 2000 ms ceiling is the one this component mechanically enforces outside `adr-judge` — see ADR-031 below. |
+| **ADR-020** — embed the query where the query is asked, read authority from the index | Prose-governing; no `## Enforcement` block. Anchored by `tests/test_adr_semantic_route.py` (gate `adr-query-embedding-v1`). | `SessionStart` and `UserPromptSubmit` only (`EMBEDDING_EVENTS`, [`hooks/adr-hook.py:108`](../hooks/adr-hook.py)) may embed the query if the corpus has been vector-embedded; edit-tier events stay lexical because a round trip does not fit their budget. `adr_embed_query.embedder_for` declines rather than raises when no backend resolves, with a 2 s `EMBED_TIMEOUT_S`; `adr_hook_core.py` itself must import nothing that can reach a model. |
+| **ADR-021** — let session-scoped hooks regenerate a stale ADR index | Prose-governing; no `## Enforcement` block (`binding: true`, `gate: "adr-hook-index-refresh-v1"` in frontmatter, but the gate is a pytest anchor, not an `adr-judge` pattern rule). Anchored by the comment `# Gate anchor for ADR-021: adr-hook-index-refresh-v1` in `tests/test_adr_hook_index_refresh.py`. | `session-start` and `user-prompt-submit` regenerate `docs/adr/ADR-INDEX.json` in-process when `index_is_stale()` finds it stale and the projected cost fits the event's *p50* budget (400 ms / 450 ms respectively — not the hard timeout); every other event stays read-only and renders `STALE_INDEX_MESSAGE` instead of a silent empty result. |
+| **ADR-024** — ask about a missing ADR at the pull-request moment | Prose-governing; no `## Enforcement` block. Anchored by `# Gate anchor for ADR-024: adr-pr-suggest-v1` in `tests/test_pr_suggest_nudge.py`. | The `pr-create` guard's advisory nudge for an unrecorded decision, reusing the diff the judge already read; the nudge can never turn into a denial. |
+| **ADR-029** — retire the native hook binary rather than maintain a second retrieval engine | Prose-governing; no `## Enforcement` block. Anchored by `# Gate anchor for ADR-029: adr-single-retrieval-engine-v1` in `tests/test_adr_hook_dispatch_matrix.py`. | The Rust host is opt-in only (`ADR_KIT_NATIVE_HOOK=1`); Python is the default and certified path. Measured against the Python oracle the binary returned 1 of 4 governing ADRs on an edit and 0 of 1 on `ExitPlanMode`. |
+| **ADR-030** — recalibrate hook latency budgets to the Python host that ships | `## Enforcement` block present but empty for `adr-judge` (`require_pattern: []`); pytest-gated via `# Gate anchor for ADR-030: adr-hook-python-budgets-v1` in `tests/test_hook_performance.py`. | The eight `latency`/`latency_budget_ms` triples in `hooks/manifest.json`, keyed by event **id** rather than client-facing name so `plan-exit` and `pr-create` are measured instead of colliding with `pre-tool-use`. Names the ~183 ms interpreter floor (`MEASURED_INTERPRETER_FLOOR_MS`) as a bound no hook optimisation can beat. |
+| **ADR-031** — name `pr-create` a deliberately slower user-initiated event | `## Enforcement` block present but empty for `adr-judge`; **separately, mechanically gated** by `tests/test_hook_performance.py::test_every_hook_budget_is_under_the_ceiling_or_named_by_an_accepted_adr` (`# Gate anchor for ADR-031: adr-hook-ceiling-v1`), which fails the suite if any event's `latency_budget_ms` exceeds ADR-015's 2000 ms ceiling without a `latency_ceiling_exception` naming an ADR whose frontmatter `status` is exactly `"Accepted"` — a made-up ADR id or a Proposed one both fail the gate. | `pr-create`'s 5000 ms budget as the one sanctioned exception to ADR-015's ceiling — a judge pass before the PR exists is worth the latency, not a ceiling to relax. |
 | **ADR-006** — prepare platform-local marketplaces for native installs | Prose-governing `payload.py` and `native.py`; Enforcement block empty. | Validate source, copy to a versioned per-user directory, patch only the copy, prove MCP `initialize`+`tools/list` before touching a client marketplace, isolate failures per client. |
 | **ADR-005** — selectable ADR body profiles | Prose-governing the profile handling in `skills/migrate` and `skills/adr`; its `path_glob` is `schemas/adr-kit-config.schema.json`. | `adr profiles --format json` discovery before scaffolding; accept only a returned `available: true` id. |
 
 **ADR-012 does not govern this component.** Verified: its text contains zero occurrences of "hook"
 and its decision is release version-consistency across marketplace manifests.
-
-**ADR-016 exists but does not govern yet.** A drafted record,
-`docs/adr/ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md`, is
-`status: "Proposed"`, dated 2026-07-29, and **untracked in git** (`git status` reports `??`). It is
-the decision TASK-58's AC #12 required and which the Code-phase MCP document correctly reported as
-not existing. Its Enforcement block already names `bin/adr-mcp` directly — `require_pattern` for
-`MODERN_PROTOCOL_VERSIONS`, `UNSUPPORTED_PROTOCOL_VERSION` and `server/discover`, `forbid_import` on
-`^\s*(?:import|from)\s+(?:mcp|mcp_types|…)` (the rejected official SDK), and a `forbid_pattern` on
-the current verbatim protocol-echo expression. Because `bin/adr-judge` reads the Enforcement block of
-**Accepted** ADRs only, none of that is applied today. Treat it as a drafted intent, not a constraint.
 
 ---
 
@@ -91,7 +105,7 @@ the current verbatim protocol-echo expression. Because `bin/adr-judge` reads the
 
 | Feature | Description |
 |---|---|
-| Hand-rolled stdio MCP server | 763 lines, newline-delimited JSON-RPC 2.0, no `Content-Length` framing, no `mcp` SDK, no `pydantic`. Four methods: `initialize`, `ping`, `tools/list`, `tools/call`. |
+| Hand-rolled stdio MCP server | 1093 lines, newline-delimited JSON-RPC 2.0, no `Content-Length` framing, no `mcp` SDK, no `pydantic`. Dual-era (ADR-016): five distinct method names ship across both eras — `initialize`, `ping` (legacy handshake, 2024-11-05..2025-11-25 only), `server/discover` (modern, 2026-07-28 only), and `tools/list`/`tools/call` (both, with different result stamping). |
 | Five read-only tools | `adr_context`, `adr_judge`, `adr_status`, `adr_quality`, `adr_readiness`. Each is a subprocess call into a sibling `bin/` CLI via `sys.executable`. No tool can mutate ADR lifecycle state. |
 | Key-free by construction | `adr_judge` omits `--llm` *and* injects `ADR_KIT_NO_LLM=1` into the child environment; `adr-suggest` is excluded from the tool set on purpose. Belt and braces — but see the notable finding: neither is machine-checked. |
 | Per-call workspace override with containment | Every tool accepts optional `project_root` (must be absolute and exist) and `adr_dir`; `_call_paths` asserts `adr_dir.relative_to(root)` so an untrusted argument cannot point outside the project. |
@@ -103,16 +117,18 @@ the current verbatim protocol-echo expression. Because `bin/adr-judge` reads the
 | Feature | Description |
 |---|---|
 | Polyglot single-file dispatcher | `hooks/run-hook.cmd` is simultaneously valid batch and valid `sh`. Line 1 `: << 'CMDBLOCK'` makes `sh` discard the whole batch half as a here-document; `cmd.exe` runs the batch half and exits before reaching the shell half. |
-| Fastest-host selection | Platform native binary → `$ADR_KIT_PYTHON` → the install-time-substituted `__ADR_KIT_PYTHON__` pin → `python3`/`python`/`py -3` → exit 0 having done nothing. |
+| Host selection, native opt-in | `ADR_KIT_NATIVE_HOOK=1` **and** a binary present → the opt-in native host; else `$ADR_KIT_PYTHON` → the install-time-substituted `__ADR_KIT_PYTHON__` pin → `python3`/`python`/`py -3` → exit 0 having done nothing. Python is the default and the only certified path since ADR-029 retired native as the preference. |
 | One normalized envelope | `hooks/adr_hook_core.py` maps any client's snake_case/camelCase payload onto a frozen `Envelope` dataclass, resolving 14 event aliases and 10 aliased key families. |
-| Four ADR-004 injection tiers | `SessionStart` (global-scope Accepted ADRs + readiness queue), `UserPromptSubmit` (query by prompt), `PreToolUse`/`PostToolUse` (governing ADRs for the edit path), `SubagentStart`/`PreCompact` (bounded parent-context relay, no index read). |
-| Bounded everything | 64 KiB stdin (read as `64*1024+1` so overflow is *detectable*, not silently truncated), 4 KiB injected context, 8 KiB parent context, 3 results, 2 MiB index cap, 256 KiB queue cap. |
+| Five ADR-004 injection tiers | `SessionStart` (global-scope Accepted ADRs + readiness queue), `UserPromptSubmit` (query by prompt), `PreToolUse`/`PostToolUse` on `Edit\|MultiEdit\|Write` (governing ADRs for the edit path), `PreToolUse` on `ExitPlanMode` (plan-exit: query the plan text, prompt for an unrecorded decision), `SubagentStart`/`PreCompact` (bounded parent-context relay, no index read). |
+| Bounded everything | 64 KiB stdin (read as `64*1024+1` so overflow is *detectable*, not silently truncated), 4 KiB injected context, 8 KiB parent context, 5 results by default (`DEFAULT_MAX_RESULTS`, overridable 1–20 via project config `context.default_limit`; the opt-in Rust host still hardcodes 3), 2 MiB index cap, 256 KiB queue cap. |
 | Index-first retrieval | `_query` calls `query_adr_context(..., strict_index=True)` — use the generated graph or nothing, never parse Markdown on the hot path (ADR-014). |
 | Cross-process dedupe | A canonical signature written to `<tempdir>/adr-kit-hook-<session>.seen` via write-temp-then-`os.replace`; any `OSError` returns `False`, so dedupe failure never suppresses context. |
 | Per-invocation kill switch | `adr_kit_disabled: true` in the payload → immediate silent noop in both hosts. |
 | Path-traversal and injection guards | `_safe_edit_path` returns `None` when `resolved.relative_to(workspace)` raises; `_safe_source_argument` allowlists `[A-Za-z0-9_./\\ -]{1,4096}` before a path is interpolated into a suggested command; a queue entry is honoured only if `command` equals exactly `/adr-kit:grill <ADR-\d{3,4}>`. |
-| Native hot-path host | `hooks/native/adr-hook.rs` (630 lines) reimplements the protocol dependency-free: hand-rolled JSON scanner, glob matcher, FNV-1a dedupe, own weighted ranking. Committed as a 248,832-byte `windows-x64` binary. |
-| Honest latency measurement | `hook_benchmark.measure` includes process startup, gives each sample a unique `agent_id` so dedupe cannot fake a fast noop, and counts a timeout in `timeout_count` while still appending its elapsed time so percentiles inflate rather than lie. |
+| Session-hook index self-repair | `session-start` and `user-prompt-submit` probe `index_is_stale()` (~2.8 ms) and, when stale and the projected render cost fits the event's p50 budget, regenerate `ADR-INDEX.json` in-process under a lock file (`.adr-index.lock`) before querying it. A session that cannot take the lock reads what is on disk rather than waiting. Every path that skips the write — edit-tier events, budget overrun, lock contention — renders `STALE_INDEX_MESSAGE` instead of an empty result, closing the defect where a stale-and-silent index looked identical to "no ADR was relevant" (ADR-021). |
+| Pull-request enforcement gate | The `pr-create` event (matcher `Bash`, detecting `gh pr create`) spawns `bin/adr-judge` against the branch diff before the PR exists. A violation denies the call on Claude Code (`permissionDecision: "deny"`); on a clean, checked branch the guard instead asks `bin/adr-suggest` whether the diff contains a decision no ADR records yet, advisory only and riding the diff the judge already read (ADR-024, ADR-031). The one hook path that can reach a **generative** model with no way to suppress it — see notable findings. (`SessionStart`/`UserPromptSubmit` may separately embed the query per ADR-020, but that backend declines rather than raises when none resolves — a different, weaker kind of reach.) |
+| Opt-in native hot-path host | `hooks/native/adr-hook.rs` (630 lines) reimplements the protocol dependency-free: hand-rolled JSON scanner, glob matcher, FNV-1a dedupe, own weighted ranking. Committed as a 248,832-byte `windows-x64` binary, selected only when `ADR_KIT_NATIVE_HOOK=1` (ADR-029) — retired as the default because, measured against the Python oracle, it returned 1 of 4 governing ADRs on an edit and carries its own `MAX_RESULTS = 3` against the Python core's default of 5. |
+| Honest latency measurement | `hook_benchmark.measure` includes process startup, gives each sample a unique `agent_id` so dedupe cannot fake a fast noop, and counts a timeout in `timeout_count` while still appending its elapsed time so percentiles inflate rather than lie. Keyed by event **id**, not client-facing name, since `plan-exit` and `pr-create` both register as `pre-tool-use` and previously collided into one silently-skipped entry (ADR-030). |
 
 ### Instruction layer
 
@@ -161,14 +177,22 @@ per request, strictly serialised. Startup banner on stderr.
 `os.getcwd()`. Exit 0 on EOF or `KeyboardInterrupt`; exit 2 only when the resolved root is not a
 directory. Never exits non-zero for a tool or protocol failure.
 
-| Method | Behaviour |
-|---|---|
-| `initialize` | `{protocolVersion, capabilities: {tools: {}}, serverInfo: {name: "adr-kit", version}}`. **Echoes the client's requested `protocolVersion` verbatim.** |
-| `ping` | `{}` |
-| `tools/list` | `{tools: [...5...]}` in literal `TOOL_DEFINITIONS` order. No pagination cursor, no `ttlMs`/`cacheScope`. |
-| `tools/call` | MCP content result, or a *successful* result carrying `isError: true`. |
-| `notifications/*` | Silently dropped, no reply — including `notifications/cancelled`. |
-| anything else, incl. `server/discover` | `-32601 Method not found` |
+Dual-era since ADR-016 (Accepted). `frame_is_modern(method, params)` is a pure function of one frame,
+consulting no per-process or per-connection state: `server/discover`, or a `params._meta` carrying
+the reserved `io.modelcontextprotocol/protocolVersion` key, routes modern; `initialize` is a hard
+exception that always routes legacy even under a modern envelope (revision 2026-07-28 has no
+`initialize` method at all, so a modern-stamped one is a client defect, not an era signal); everything
+else is legacy. No era lock — the same bytes always answer the same way, as the spec requires.
+
+| Method | Era | Behaviour |
+|---|---|---|
+| `initialize` | legacy only | `{protocolVersion, capabilities: {tools: {}}, serverInfo: {name: "adr-kit", version}}`. `negotiate_handshake_version` confirms the requested version when it is one of `HANDSHAKE_PROTOCOL_VERSIONS` (2024-11-05 .. 2025-11-25), else counter-offers the newest — it no longer echoes an unrecognised value verbatim. |
+| `ping` | legacy only | `{}`. Not advertised or served in the modern era (2026-07-28 removed it); a modern-routed `ping` falls through to `-32601`. |
+| `tools/list` | both | Legacy: `{tools: [...5...]}` in literal `TOOL_DEFINITIONS` order, no pagination cursor. Modern: the same payload wrapped by `_modern_result` — `resultType: "complete"`, `_meta.serverInfo`, and (cacheable) `ttlMs`/`cacheScope`. |
+| `tools/call` | both | MCP content result, or a *successful* result carrying `isError: true`; modern wraps the same payload with `resultType`/`_meta.serverInfo` (not cacheable). |
+| `server/discover` | modern only | The handshake's modern-era replacement: `{supportedVersions: [...MODERN_PROTOCOL_VERSIONS], capabilities: {tools: {}}, instructions}`, cacheable. A malformed or unsupported modern envelope fails first with `-32602`/`-32022` (`UNSUPPORTED_PROTOCOL_VERSION`), before this handler runs. |
+| `notifications/*` | both | Silently dropped, no reply — including `notifications/cancelled`. |
+| anything else | both | `-32601 Method not found` |
 
 | Tool | Required / optional arguments | Delegates to (subprocess, `cwd=root`) |
 |---|---|---|
@@ -217,26 +241,41 @@ Codex and Copilot must declare their paths as exact strings, also generator-chec
 | `codex-cli` | `codex/hooks/hooks.json` | `"hooks": "./hooks/hooks.json"` | Same nesting plus `commandWindows` with `%PLUGIN_ROOT%`, 6 events |
 | `github-copilot-cli` | `copilot/hooks.json` (client **root**) | `"hooks": "hooks.json"` | Flat lowerCamel `{version: 1, hooks: {sessionStart: [{type, bash, powershell, cwd, timeoutSec}]}}`, **3 events** |
 
-Six canonical events with their committed budgets:
+Eight canonical events with their committed budgets, recalibrated to the Python host that ships
+(ADR-030):
 
 | Event id | Matcher | Runner timeout | p50 / p95 / hard (ms) | Copilot |
 |---|---|---|---|---|
-| `session-start` | — | 5 s | 50 / 150 / 500 | `sessionStart` |
-| `user-prompt-submit` | — | 5 s | 75 / 250 / 500 | `userPromptSubmitted` |
-| `pre-tool-use` | `Edit\|MultiEdit\|Write` | 1 s | 25 / 50 / 100 | **null** |
-| `post-tool-use` | `Edit\|MultiEdit\|Write` | 1 s | 25 / 50 / 100 | `postToolUse` |
-| `subagent-start` | — | 1 s | 30 / 100 / 250 | **null** |
-| `pre-compact` | — | 1 s | 30 / 100 / 500 | **null** |
+| `session-start` | — | 5 s | 400 / 500 / 1000 | `sessionStart` |
+| `user-prompt-submit` | — | 5 s | 450 / 450 / 900 | `userPromptSubmitted` |
+| `pre-tool-use` | `Edit\|MultiEdit\|Write` | 1 s (default) | 450 / 550 / 1100 | **null** |
+| `post-tool-use` | `Edit\|MultiEdit\|Write` | 1 s (default) | 650 / 750 / 1500 | `postToolUse` |
+| `plan-exit` | `ExitPlanMode` | 1 s (default) | 700 / 900 / 1800 | **null** |
+| `pr-create` | `Bash` | 5 s | 1500 / 3000 / 5000 | **null** |
+| `subagent-start` | — | 1 s (default) | 600 / 800 / 1600 | **null** |
+| `pre-compact` | — | 1 s (default) | 650 / 1000 / 2000 | **null** |
+
+Three events register as `pre-tool-use` in the manifest's `command` field with three different
+`matcher` values (`Edit\|MultiEdit\|Write`, `ExitPlanMode`, `Bash`) — `plan-exit` and `pr-create` are
+real, separately budgeted events even though they share a `command` with the edit tier; the earlier
+practice of keying measurement by client-facing event name silently collapsed all three into one and
+left two unmeasured (fixed by ADR-030). `pr-create`'s 5000 ms budget is the sole exception to
+ADR-015's 2000 ms ceiling, sanctioned by ADR-031 and mechanically gated (see Governing ADRs above).
+`session-start` and `user-prompt-submit` may additionally regenerate `ADR-INDEX.json` in-process
+before rendering (ADR-021); the other six stay read-only.
 
 **Copilot bypasses the polyglot dispatcher entirely.** Its `bash` branch runs `python3
 "${PLUGIN_ROOT}/hooks/adr-hook.py" … || true` directly and its `powershell` branch re-implements
-native-first host selection inline (`if (Test-Path $native) { & $native … } else { Get-Command
+host selection inline (`if (Test-Path $native) { & $native … } else { Get-Command
 python … }; exit 0`). Verified in `_copilot_hook_config`
-([`scripts/client_generation_artifacts.py:181-206`](../scripts/client_generation_artifacts.py)):
+([`scripts/client_generation_artifacts.py:192-216`](../scripts/client_generation_artifacts.py)):
 `run-hook.cmd` appears in neither branch. So `run-hook.cmd`'s host-selection ladder — the
 `$ADR_KIT_PYTHON` override, the `__ADR_KIT_PYTHON__` install-time pin, the `py -3` fallback — governs
 Claude and Codex only. Copilot gets a hardcoded `python3` on POSIX and no honouring of the
-install-time interpreter pin.
+install-time interpreter pin. Sharper since ADR-029: Copilot's inline PowerShell branch prefers the
+native binary with **no `ADR_KIT_NATIVE_HOOK` check at all** — the one client surface where the
+now-opt-in native host would still run unconditionally if a `windows-x64/adr-hook.exe` happened to be
+present.
 
 ### 4. Hook dispatcher and host CLIs
 
@@ -246,9 +285,11 @@ adr-hook.py --client {claude-code-cli,codex-cli,github-copilot-cli} [--event <Ev
 adr-hook.exe --client <id> [--event <EventName>]
 ```
 
-`--client` is required and enum-validated in the Python host — the *only* path in the whole hook
-cluster that can exit non-zero, because argparse rejects it outside the `try`. The native host
-silently exits 0 instead. Neither host supports `--flag=value`. Unknown extra flags are tolerated
+`adr-hook.py` is the default; `adr-hook.exe` runs only when `ADR_KIT_NATIVE_HOOK=1` is set and the
+binary is present — every other invocation of `run-hook.cmd` selects Python (ADR-029). `--client` is
+required and enum-validated in the Python host — the *only* path in the whole hook cluster that can
+exit non-zero, because argparse rejects it outside the `try`. The native host silently exits 0
+instead. Neither host supports `--flag=value`. Unknown extra flags are tolerated
 (`parse_known_args`).
 
 ### 5. Hook stdin/stdout JSON contract
@@ -272,9 +313,21 @@ Copilot's pre-edit suppression is the registered ADR-010 degradation
 `copilot-pretool-context-limit` — emitting pre-edit context to a client with no pre-edit hook would
 be a false promise. The docstring calls the `postToolUse` mapping "an honest post-edit backstop".
 
+Claude has a second response shape, reserved for `kind == "pr-guard-deny"`:
+`{"hookSpecificOutput":{"hookEventName":…,"permissionDecision":"deny","permissionDecisionReason":…}}`,
+which the Claude Code permission system honours to block the `gh pr create` tool call (ADR-024,
+ADR-031). Codex and Copilot render only their default shape for that `kind` — the denial reason
+reaches the agent as text, but neither adapter has a permission override to carry it, so the branch
+that Claude would refuse to open still opens on those two clients (`pr-create`'s Copilot mapping is
+`null`, so Copilot never even sees the event).
+
 **Exit code: always 0**, asserted at four independent levels (`except BaseException` in Python,
 `Option`-returning `run()` in Rust, `exit /b 0` / `|| true` on every dispatcher branch, and two
-dedicated protocol tests).
+dedicated protocol tests) — this is not in tension with the `pr-guard-deny` shape above. The *process*
+still exits 0 every time; what blocks the `gh pr create` call on Claude Code is the permission system
+reading `permissionDecision: "deny"` out of the JSON body, not a non-zero exit. Exit code was never
+the enforcement mechanism, on this event or any other. See `c4-code-hooks.md`'s "Exit-code convention"
+section for the same distinction stated once, in detail.
 
 ### 6. Guardian SessionStart entry — the second, independent injection producer
 
@@ -383,18 +436,18 @@ the MCP path and the installer path meet, and it is a hard coupling — see nota
 
 | Slug | Mechanism |
 |---|---|
-| `bin-cli-retrieval` | MCP `adr_context` → **subprocess** `bin/adr-context --format json`. Hooks read the `docs/adr/ADR-INDEX.json` graph that `bin/adr-index` **generates** (a JSON file on disk, not a call). |
-| `bin-cli-enforcement` | MCP `adr_judge` → **subprocess** `bin/adr-judge --diff - --json` with `ADR_KIT_NO_LLM=1`. Also the fail-closed floor this whole component must never replace. |
+| `bin-cli-retrieval` | MCP `adr_context` → **subprocess** `bin/adr-context --format json`. Hooks read the `docs/adr/ADR-INDEX.json` graph that `bin/adr-index` **generates** (a JSON file on disk, not a call) and, since ADR-021, **write** it back in-process: `hooks/adr_hook_core.py` imports `index_probably_fresh`, `projected_render_ms`, `regenerate_index` from `bin/adr_index_core.py` (used only by `index_is_stale()`/`refresh_index()`, gated to `session-start`/`user-prompt-submit`). The `pr-create` guard's nudge → **subprocess** `bin/adr-suggest --diff - --llm-timeout <remaining>` at `adr_pr_guard.py:208-220` (ADR-024) — the one hook path that can reach a *generative* model with no flag or `ADR_KIT_NO_LLM` override to suppress it. Separately, `SessionStart`/`UserPromptSubmit` may embed the query through `adr_embed_query.embedder_for` (ADR-020) — a weaker, declining-not-raising reach to whatever embedding backend the corpus was built with. |
+| `bin-cli-enforcement` | MCP `adr_judge` → **subprocess** `bin/adr-judge --diff - --json` with `ADR_KIT_NO_LLM=1`. The `pr-create` hook → **subprocess** `bin/adr-judge --diff - --snapshot worktree --llm-timeout <remaining> --json` at `adr_pr_guard.py:270` — no `--llm` flag and no `ADR_KIT_NO_LLM`, so it stays deterministic by omission rather than by the MCP path's explicit suppression. Also the fail-closed floor this whole component must never replace. |
 | `bin-cli-gates` | MCP `adr_quality` → **subprocess** `bin/adr-quality --format json <file>`, one process per ADR. |
 | `bin-cli-lifecycle` | MCP `adr_status` → **subprocess** `bin/adr-status --format json`. The guardian `SessionStart` entry → **subprocess** `bin/adr-guardian check`. Skills drive `bin/adr`, `adr-guardian`, `adr-doctor`, `adr-retire`. |
 | `bin-cli-readiness` | MCP `adr_readiness` → **subprocess** `bin/adr-readiness --format json`. Hooks read the `docs/adr/.adr-kit-readiness.json` queue that `adr-guardian refresh-readiness` writes. |
-| `bin-lib-semantic-core` | The one **import** edge out of this component: `hooks/adr_hook_core.py:15-19` injects `<root>/bin` into `sys.path` and imports `query_adr_context`, `IndexQueryError` from `bin/adr_query.py`. Python host only — the Rust host reimplements retrieval instead. |
+| `bin-lib-semantic-core` | The one **import** edge out of this component: `hooks/adr_hook_core.py:27-29` injects `<root>/bin` into `sys.path` and imports `query_adr_context`, `IndexQueryError` from `bin/adr_query.py`. Python host only — the Rust host reimplements retrieval instead. |
 | `bin-cli-migration` | Skills drive `bin/adr-migrate --plan` / `--to-profile` (prose reference only). |
 | `bin-lib-doctor` | **Inbound consumer**: `bin/adr_doctor_probes.py` imports `detect_clients` and `from hooks.hook_benchmark import measure`, and drives a 4-message MCP session asserting the exact five-tool set. `bin/adr_doctor_checks.py` imports `CLIENT_IDS`, `detect_clients`. |
 | `schemas-templates` | `schemas/client-capabilities.schema.json` validates the registry (and carries ADR-010's enforcement). `templates/cc-settings/guardian-hook-entry.json` and `templates/githooks/pre-commit` are the project-side copy-out artefacts. |
 | `packaging-ci` | Owns the generator (`scripts/build-client-adapters.py` → `client_generation*.py`) that renders skills, prompts and every `hooks.json` from this component's registries, and owns the real install entry point `scripts/install-agent-envs.py` plus the project-side `scripts/project_setup.py`. |
 | `generated-distributions` | `codex/` and `copilot/` are **generated** downstream projections, not hand-synced copies: `bin` is one of the four `COPY_ROOTS` (`scripts/client_generation_model.py:31`, consumed at `client_generation.py:145`), so `codex/bin/adr-mcp` and `copilot/bin/adr-mcp` are written by `scripts/build-client-adapters.py` and drift-checked by `--check` in three CI workflows. `codex/hooks/` and `copilot/hooks/` carry the 8 `HOOK_RUNTIME_FILES`; `codex/skills/` and `copilot/skills/` are the thin generated corpora. Edit `bin/`, then re-run the generator — never edit a mirror. |
-| `tests` | Protocol, parity, latency and contract certification: `test_adr_mcp.py` (24 subprocess-driven tests), `test_hook_protocol.py`, `test_hook_performance.py`, `test_agent_installer.py`, `test_client_adapter_generation.py`, `test_client_capabilities_schema.py`. |
+| `tests` | Protocol, parity, latency and contract certification: `test_adr_mcp.py` (24 subprocess-driven tests), `test_hook_protocol.py`, `test_hook_performance.py` (also the ADR-031 ceiling gate), `test_adr_hook_index_refresh.py` (ADR-021 gate), `test_pr_suggest_nudge.py` (ADR-024 gate), `test_adr_hook_dispatch_matrix.py` (ADR-029 gate), `test_agent_installer.py`, `test_client_adapter_generation.py`, `test_client_capabilities_schema.py`. |
 
 ### External systems
 
@@ -404,14 +457,14 @@ the MCP path and the installer path meet, and it is a hard coupling — see nota
 | Target Python interpreter | `-c` probe by `validate_python`; embedded as the patched MCP `command`; `sys.executable` for every MCP tool subprocess | Minimum 3.10 |
 | `cmd.exe` / POSIX `sh` / PowerShell | Both halves of `run-hook.cmd`; `cmd.exe /d /c` or `sh` for the hook smoke test; PowerShell for Copilot's own hook branch | |
 | `where` / `command -v` / `shutil.which` | Interpreter and client discovery | |
-| `git` | Reached *indirectly*: `adr_readiness` with `base`/`head`, `adr-judge`'s snapshot logic, and the skills' documented `git diff`/`log`/`merge-base`/`config core.hooksPath` commands | `bin/adr-mcp` itself shells out only to `sys.executable` |
-| `gh` (GitHub CLI) | Optional PR metadata in the `review` and `grill` skill prose | Documented to degrade honestly when absent |
-| `claude` CLI as a model | Only through the skills' documented `adr-judge --llm` / `adr-suggest` paths | **Never** through MCP or hooks — both are key-free |
+| `git` | Reached *indirectly* through `adr_readiness` with `base`/`head`, `adr-judge`'s snapshot logic, and the skills' documented `git diff`/`log`/`merge-base`/`config core.hooksPath` commands — **and directly** by the `pr-create` hook, which shells out to `git diff --unified=0 origin/<base>...HEAD` and probes `origin/HEAD`/`init.defaultBranch`/`main`/`master`/`dev` to find the target branch (`hooks/adr_pr_guard.py`, ADR-024) | `bin/adr-mcp` itself shells out only to `sys.executable` |
+| `gh` (GitHub CLI) | Optional PR metadata in the `review` and `grill` skill prose; also the command shape (`gh pr create`) the `pr-create` hook pattern-matches to trigger the guard | Documented to degrade honestly when absent |
+| `claude` CLI as a generative model | Through the skills' documented `adr-judge --llm` / `adr-suggest` paths, **and** through the `pr-create` hook's nudge (`adr_pr_guard._nudge()` → `bin/adr-suggest`, ADR-024) | **Never** through MCP, which explicitly suppresses it (`ADR_KIT_NO_LLM=1`; `adr-suggest` excluded from the tool set). The hook path is the one exception: `hooks/` itself imports nothing beyond the standard library, but the `bin/adr-suggest` subprocess it spawns for the pull-request nudge resolves `judge.backend` (default `host`, the client CLI recorded at install time) and calls it unconditionally — fail-open only if that CLI is genuinely absent from `PATH`. A separate, weaker reach exists for embedding (not generation): ADR-020's `embedder_for` may resolve to a networked backend for `SessionStart`/`UserPromptSubmit`, but declines to lexical ranking rather than raising when none is configured |
 | `rustc` | Build-time only, manual per `hooks/native/README.md` | No CI step compiles the `.rs` files |
 | `kernel32.dll` | Link-time `ExitProcess` in the `no_std` floor probe | |
 | Filesystem and OS | Per-user data roots (`%LOCALAPPDATA%`, `~/Library/Application Support`, `$XDG_DATA_HOME`); `os.open` with `O_CREAT\|O_EXCL` for locking; `os.replace` for atomic swaps; POSIX `chmod`; the OS temp directory for hook dedupe state | |
-| Environment | Read: `PROJECT_ROOT`, `ADR_KIT_PYTHON`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`. Written for probes: `CLAUDE_PLUGIN_ROOT`, `PLUGIN_ROOT`, `COPILOT_PLUGIN_ROOT` | |
-| **Network** | **None.** `hooks/manifest.json` declares `network_allowed: false`; no code in this component opens a socket, reads a credential, or invokes a model | |
+| Environment | Read: `PROJECT_ROOT`, `ADR_KIT_PYTHON`, `ADR_KIT_NATIVE_HOOK`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`. Written for probes: `CLAUDE_PLUGIN_ROOT`, `PLUGIN_ROOT`, `COPILOT_PLUGIN_ROOT` | |
+| **Network** | **Declared none, not verified none.** `hooks/manifest.json` declares `network_allowed: false`, and no test asserts that against runtime behaviour. `hooks/` itself opens no socket and reads no credential directly. The one path that can reach outward is the `pr-create` guard's nudge, which spawns `bin/adr-suggest` — an LLM call, fail-open if no backend resolves. Everywhere else in this component the declared claim holds: MCP is key-free by construction, and every other hook tier is lexical retrieval over a local JSON file | |
 
 ---
 
@@ -441,11 +494,12 @@ flowchart TB
             MJ["*.mcp.json x3<br/>mcpServers['adr-kit']"]
         end
 
-        subgraph HOOKS["hooks — push path (ADR-004 tiers, always exit 0)"]
+        subgraph HOOKS["hooks — push path (ADR-004 tiers, fail-open except one Claude-only deny)"]
             HJ["hooks.json x3 shapes<br/>generated from manifest.json<br/>Claude: convention-discovered"]
             DISP["run-hook.cmd<br/>polyglot cmd + sh<br/>&lt;event&gt; &lt;client&gt;"]
-            NAT["hooks/bin/windows-x64/adr-hook.exe<br/>Rust, own JSON scanner + rank()"]
-            PYH["adr-hook.py -> adr_hook_core.py<br/>Envelope · evaluate() · bounded"]
+            NAT["hooks/bin/windows-x64/adr-hook.exe<br/>Rust, own JSON scanner + rank()<br/>opt-in: ADR_KIT_NATIVE_HOOK=1 (ADR-029)"]
+            PYH["adr-hook.py -> adr_hook_core.py<br/>Envelope · evaluate() · bounded<br/>+ refresh_index() (ADR-021)"]
+            PRG["adr_pr_guard.judge_branch()<br/>+ _nudge()<br/>ADR-024 · ADR-031"]
             AD["adapters/ claude · codex · copilot<br/>copilot returns {} on pre-edit"]
         end
 
@@ -460,7 +514,7 @@ flowchart TB
     end
 
     subgraph ENGINE["Deterministic engine (other components)"]
-        CTX["bin-cli-retrieval<br/>adr-context · adr-index"]
+        CTX["bin-cli-retrieval<br/>adr-context · adr-index · adr-suggest"]
         JUD["bin-cli-enforcement<br/>bin/adr-judge = THE fail-closed floor"]
         QUA["bin-cli-gates<br/>adr-quality · adr-lint"]
         LIF["bin-cli-lifecycle<br/>adr · adr-guardian · adr-status"]
@@ -509,20 +563,26 @@ flowchart TB
     CX -->|"registered event"| DISP
     CP -->|"bypasses run-hook.cmd:<br/>python3 adr-hook.py directly"| PYH
     HJ -.->|"registers"| DISP
-    DISP -->|"native present"| NAT
-    DISP -->|"else interpreter chain"| PYH
+    DISP -->|"ADR_KIT_NATIVE_HOOK=1<br/>+ present (opt-in, ADR-029)"| NAT
+    DISP -->|"default path"| PYH
     PYH -->|"import query_adr_context<br/>strict_index=True"| QRY
     QRY --> IDX
+    PYH -.->|"regenerate in-process when<br/>stale + p50 budget fits (ADR-021)"| IDX
     NAT -->|"hand-rolled JSON scan,<br/>own weighted rank()"| IDX
     PYH --> QUE
     NAT --> QUE
     PYH --> SEEN
     NAT --> SEEN
+    PYH -->|"gh pr create detected"| PRG
+    PRG -->|"subprocess, no --llm"| JUD
+    PRG -.->|"subprocess, LLM nudge<br/>(ADR-024)"| CTX
+    PRG -->|"branch diff + base probe"| GIT
+    PRG -->|"(context, kind=pr-guard-*)"| AD
     PYH --> AD
     CTX -->|"generates"| IDX
     RDY -->|"feeds"| QUE
 
-    AD -->|"one compact JSON line,<br/>advisory only"| CC
+    AD -->|"one compact JSON line;<br/>Claude-only deny for pr-guard"| CC
     NAT -.->|"same 3 shapes as format! templates"| CC
 
     GEN -->|"renders from"| REG
@@ -541,7 +601,6 @@ flowchart TB
     DET -.->|"--version"| PM
 
     SK -.-> GIT
-    AD -.->|"never blocks"| JUD
 ```
 
 ---
@@ -573,47 +632,48 @@ Code phase measured them `diff`-clean. As of this writing `bin/adr-mcp` is 773 l
 `codex/bin/adr-mcp` and `copilot/bin/adr-mcp` are 763; all three have zero CR bytes, so this is *not*
 the TASK-57 line-ending artefact. `--check` now reports 15 drift entries rather than 13, the two new
 ones being `codex/bin/adr-mcp` and `copilot/bin/adr-mcp`. See finding 1 for what changed and why it
-matters.
+matters. **Resolved as of this refresh**: the generator was re-run since, and all three copies are
+byte-identical again at 1093 lines each (verified via `wc -l` and a clean `git status --porcelain`) —
+kept here as a record of the drift window, not a current condition.
 
 ### Ranked findings
 
 Ranked by how likely each is to bite a maintainer or an integrator.
 
-1. **The MCP server implements the handshake era only, and now has a drafted-but-not-Accepted
-   decision.** `DEFAULT_PROTOCOL_VERSION = "2025-06-18"`; `server/discover` is unrouted and answers
-   `-32601`; `handle_initialize` **echoes the client's requested `protocolVersion` verbatim**, so it
-   will claim to speak `2026-07-28` or any arbitrary string without implementing it, with no
-   intersection against a supported set and no `-32022 UnsupportedProtocolVersion`; `dispatch()` never
-   checks that `initialize` arrived first, so a modern-only client that skips the probe gets
-   `tools/call` silently processed under legacy semantics. The echo is currently *asserted as
-   intended* by `tests/test_adr_mcp.py:203-208`. Per the spec's own backward-compatibility rules a
-   dual-era client must not key its fallback to a specific error code, so it correctly classifies
-   this server as legacy — **non-compliant, not broken**. Tracked as TASK-58 (To Do, high, 12 ACs),
-   now joined by an untracked TASK-58.1 ("version registry, negotiation and wire-derived era
-   detection").
+1. **RESOLVED as of this refresh — the MCP server now implements both protocol eras, and ADR-016 is
+   Accepted and mechanically enforced.** This finding previously described a handshake-era-only server
+   with a drafted-but-unimplemented dual-era decision: `DEFAULT_PROTOCOL_VERSION` hardcoded,
+   `server/discover` unrouted and answering `-32601`, the requested `protocolVersion` echoed back
+   verbatim with no supported-set intersection, and `ADR-016` sitting untracked in git as a `Proposed`
+   draft. All of that is now resolved, verified from primary source rather than taken on the prior
+   text's word:
 
-   **Work is in progress in the working tree, and right now the docstring is ahead of the code.**
-   Verified state: `bin/adr-mcp` is modified but uncommitted, and `git diff` shows the change is
-   **entirely inside the module docstring** — 13 insertions, 3 deletions, no executable line touched.
-   That new docstring asserts the server "Serves BOTH protocol eras from one process (ADR-016)" with
-   `server/discover`, `resultType`, `_meta.serverInfo` and `ttlMs`/`cacheScope`. The implementation
-   does not do any of that yet: `MODERN_PROTOCOL_VERSIONS`, `HANDSHAKE_PROTOCOL_VERSIONS`,
-   `UNSUPPORTED_PROTOCOL_VERSION` and `KNOWN_PROTOCOL_VERSIONS` each occur **zero** times;
-   `DEFAULT_PROTOCOL_VERSION` is still live; `server/discover` is still unrouted; and the verbatim
-   protocol echo survives at `bin/adr-mcp:651` as
-   `protocol = requested if isinstance(requested, str) and requested else DEFAULT_PROTOCOL_VERSION`
-   — which is *precisely* the expression ADR-016's `forbid_pattern` targets. This is the same class of
-   defect the Code phase found in this file's other stale docstring (the LLM pass described as
-   "opt-out" long after ADR-001 made it opt-in): `bin/adr-mcp` again documents behaviour it does not
-   have.
+   - `bin/adr-mcp`, `codex/bin/adr-mcp` and `copilot/bin/adr-mcp` — all three server copies — are
+     clean in `git status --porcelain` and byte-identical again at 1093 lines each.
+   - `frame_is_modern(method, params)` classifies each frame, as a pure function with no per-connection
+     state: `server/discover`, or the reserved `io.modelcontextprotocol/protocolVersion` key inside
+     `params._meta`, routes modern; `initialize` is a hard exception that always routes legacy, because
+     the 2026-07-28 revision has no `initialize` method at all.
+   - `negotiate_handshake_version()` confirms a requested legacy version or counter-offers the newest —
+     it no longer echoes an unrecognised value verbatim.
+   - `server/discover` is routed (`handle_server_discover`) and returns `supportedVersions`,
+     `capabilities`, and `instructions`, stamped `resultType`/`_meta.serverInfo`/`ttlMs`/`cacheScope`.
+   - `MODERN_PROTOCOL_VERSIONS = ("2026-07-28",)` and
+     `HANDSHAKE_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")` are both
+     live constants; `UNSUPPORTED_PROTOCOL_VERSION` (`-32022`) is reachable on the modern surface only,
+     as the spec requires.
+   - `docs/adr/ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md` is
+     `status: "Accepted"`, `binding: true`, gate `adr-mcp-dual-era-v1`, with an Enforcement block
+     carrying 2 `forbid_pattern`/`forbid_import` rules plus 4 `require_pattern` rules across all three
+     server copies and `tests/test_adr_mcp.py` — added 2026-07-31 (TASK-58.5), once both the
+     implementation and the conformance test existed to enforce against. See the Governing ADRs table
+     above.
 
-   The ADR that TASK-58's AC #12 required now exists as an **untracked `Proposed`** draft, `ADR-016`,
-   whose Enforcement block would `require_pattern` `MODERN_PROTOCOL_VERSIONS`,
-   `UNSUPPORTED_PROTOCOL_VERSION` and `server/discover` in `bin/adr-mcp`, `forbid_import` the official
-   `mcp` SDK, and `forbid_pattern` the echo expression above. Because `bin/adr-judge` reads Accepted
-   ADRs only, **none of it is enforced today** — so nothing mechanical currently catches the
-   docstring/implementation gap. Once ADR-016 is Accepted, three of its four rules would fail on the
-   file as it stands.
+   Worth remembering as a pattern rather than a current risk: a docstring got ahead of the code once
+   before in this same file (the LLM pass described as "opt-out" long after ADR-001 made it opt-in),
+   and — per the state this finding originally recorded — it happened again here before the
+   implementation caught up. Check docstrings against the executable lines they describe, not the
+   other way round.
 
 2. **Latent UTF-8 corruption in the native hook host.**
    [`hooks/native/adr-hook.rs:84`](../hooks/native/adr-hook.rs) does `result.push(value as char)` on a
@@ -660,26 +720,38 @@ Ranked by how likely each is to bite a maintainer or an integrator.
    ADR-011's `require_pattern` only guards that the literal string `adr_readiness` stays present. A
    future edit could add an LLM path without tripping any enforcement.
 
-8. **The native binary exists for `windows-x64` only, so edit-hook latency certification is
-   structurally unreachable elsewhere.** Both halves of `run-hook.cmd` and
-   `hook_benchmark.host_command` reference `bin/darwin-{x64,arm64}/adr-hook` and
-   `bin/linux-{x64,arm64}/adr-hook` paths that do not exist in the repository. Combined with
-   `docs/hook-performance.md` ("Python … is not eligible for the edit-hook latency certification"),
-   and with the 25/50/100 ms edit budget that exists because a 3,072-byte `no_std` no-CRT Windows
-   process already costs 18.1 ms p50 / 25.9 ms p95 to launch, off-Windows platforms cannot meet the
-   edit-hook budget at all. No CI step compiles the `.rs` sources; the 248,832-byte `.exe` is
-   committed while the 1.5 MB `.pdb` is gitignored.
+8. **The native binary exists for `windows-x64` only, and since ADR-029 that no longer blocks
+   anything — it is simply unavailable off Windows for an opt-in path nobody is required to take.**
+   Both halves of `run-hook.cmd` and `hook_benchmark.host_command` reference
+   `bin/darwin-{x64,arm64}/adr-hook` and `bin/linux-{x64,arm64}/adr-hook` paths that do not exist in
+   the repository, so setting `ADR_KIT_NATIVE_HOOK=1` on macOS or Linux finds no binary and falls
+   through to Python exactly as if the variable were unset. The edit-tier budget that used to make
+   this a hard problem — 25/50/100 ms, achievable only by the process-launch floor probe — is gone:
+   ADR-030 recalibrated `pre-tool-use` to 450/550/1100 ms and `post-tool-use` to 650/750/1500 ms
+   against the ~183 ms Python interpreter floor (`MEASURED_INTERPRETER_FLOOR_MS`,
+   [`hook_benchmark.py:60`](../hooks/hook_benchmark.py)), and Python is the certified default
+   everywhere. The 3,072-byte `no_std` floor probe's evidence
+   (`tests/fixtures/hooks/windows-process-floor.json`) is retained as measurement history, not as a
+   binding constraint. No CI step compiles the `.rs` sources; the 248,832-byte `.exe` is committed
+   while the 1.5 MB `.pdb` is gitignored.
 
-9. **Copilot's hook path diverges twice, only one of which is a declared degradation.** The declared
-   one: 3 of 6 lifecycle events, no `PreToolUse`, so ADR-004's edit-tier context never fires — a
-   registered degradation with a `postToolUse` backstop, and ADR-004's fail-closed floor is
-   unaffected because that floor is `bin/adr-judge` at pre-commit, client-independent, and ADR-004
-   explicitly *rejects* a fail-closed `PreToolUse` gate. The undeclared one: Copilot's `hooks.json`
-   bypasses `run-hook.cmd` entirely (verified in `_copilot_hook_config`), hardcoding `python3` on
-   POSIX and re-implementing host selection inline in PowerShell — so `$ADR_KIT_PYTHON` and the
-   `__ADR_KIT_PYTHON__` install-time pin are not honoured for Copilot. Nothing records this as a
-   degradation. A consequence visible only at component level, where both halves sit in one document:
-   the installer nevertheless substitutes `__ADR_KIT_PYTHON__` into `copilot/hooks/run-hook.cmd`
+9. **Copilot's hook path diverges three ways, only one of which is a declared degradation.** The
+   declared one: 3 of 8 lifecycle events (`sessionStart`, `userPromptSubmitted`, `postToolUse`), no
+   `PreToolUse` at all — so ADR-004's edit-tier, the plan-exit tier, and the pull-request guard never
+   fire on Copilot — a registered degradation with a `postToolUse` backstop for the edit tier, and
+   ADR-004's fail-closed floor is unaffected because that floor is `bin/adr-judge` at pre-commit,
+   client-independent, and ADR-004 explicitly *rejects* a fail-closed `PreToolUse` gate. The first
+   undeclared one: Copilot's `hooks.json` bypasses `run-hook.cmd` entirely (verified in
+   `_copilot_hook_config`,
+   [`scripts/client_generation_artifacts.py:192-216`](../scripts/client_generation_artifacts.py)),
+   hardcoding `python3` on POSIX and re-implementing host selection inline in PowerShell — so
+   `$ADR_KIT_PYTHON` and the `__ADR_KIT_PYTHON__` install-time pin are not honoured for Copilot. The
+   second undeclared one, sharpened by ADR-029: that inline PowerShell branch prefers the native
+   binary with no `ADR_KIT_NATIVE_HOOK` check at all — the one client surface where the now-opt-in
+   native host would still run unconditionally if a `windows-x64/adr-hook.exe` happened to be present.
+   Nothing records either of these as a degradation. A consequence visible only at component level,
+   where both halves sit in one document: the installer nevertheless substitutes
+   `__ADR_KIT_PYTHON__` into `copilot/hooks/run-hook.cmd`
    (`_patch_mcp_python`, [`clients/installer/payload.py:151`](../clients/installer/payload.py)) and
    raises if the placeholder is absent — patching a wrapper no Copilot hook ever executes. That file
    is also absent from `REQUIRED_INSTALL_FILES`, so `validate_source` would not catch it missing; the
@@ -731,13 +803,14 @@ Ranked by how likely each is to bite a maintainer or an integrator.
     `"_remove_marker": "adr-guardian-session-start"` has **no reader** anywhere outside the generated
     mirrors.
 
-16. **Dead code confirmed in the hook core, and copied into both mirrors.** `load_records` (:194),
-    `rank` (:262) and `_matching_path_records` (:319) are unreferenced by the module and by every test
+16. **Dead code confirmed in the hook core, and copied into both mirrors.** `load_records` (:231),
+    `rank` (:299) and `_matching_path_records` (:528) are unreferenced by the module and by every test
     — `evaluate` uses `_query`/`query_adr_context` exclusively. They are vestigial keyword ranking
     from before ADR-014 moved retrieval to the shared index-first engine, and they travel verbatim
     into `codex/hooks/` and `copilot/hooks/`. Relatedly, `bin/adr-watch` is **no longer the wired
     edit-tier implementation** (the shipped runtime dispatches through `hooks/hooks.json` →
-    `adr_hook_core`; greps for `adr-watch` across all of `hooks/` return zero hits) even though
+    `adr_hook_core`; the sole surviving mention of `adr-watch` anywhere under `hooks/` is a comment in
+    `_switched_off()` explaining a bug fix, not a functional reference) even though
     `templates/adr-kit-guide.md`, `CHANGELOG.md` and ADR-004 all still describe
     `bin/adr-watch --pre-edit/--hook` as the edit tier.
 
@@ -798,13 +871,18 @@ Ranked by how likely each is to bite a maintainer or an integrator.
     `adr-mcp` entry**, so ADR-015's 2,000 ms ceiling does not currently bind this file — whether an
     agent-facing MCP call counts as a "deterministic user-facing path" is an open question.
 
-24. **README documentation drift against the live `inputSchema`.** `README.md:384` documents
+24. **README documentation drift against the live `inputSchema`.** `README.md:388` documents
     `adr_readiness` as taking `changed_paths?` and `source_text?` — neither exists; the real optional
-    pair is `base`+`head`. `README.md:380` lists `history?` where the actual property is
+    pair is `base`+`head`. `README.md:384` lists `history?` where the actual property is
     `include_history`. An agent following the README sends arguments the server ignores. Two ADRs also
     carry stale line anchors into this file: `ADR-014:396` cites `bin/adr-mcp:295-316` and
-    `ADR-004:191` cites `bin/adr-mcp:293`, but `tool_adr_context` starts at `:363` and line 293 sits
-    inside `run_cli`'s `subprocess.run`.
+    `ADR-004:191` cites `bin/adr-mcp:293`, and both anchors have drifted further since — `bin/adr-mcp`
+    grew from 763 to 1093 lines when ADR-016's dual-era dispatch landed, so `tool_adr_context` now
+    starts at `:443` (was `:363` at the previous drift check) and line 293 now sits inside the
+    `adr_quality` tool's `inputSchema` in `TOOL_DEFINITIONS`, nowhere near `run_cli`. The finding's
+    shape is durable even as its numbers keep moving: nobody re-derives these anchors when the file
+    grows, so treat any specific line number cited against `bin/adr-mcp` — including the ones in this
+    document — as approximate and re-verify before relying on it.
 
 25. **Honesty mechanisms worth preserving.** The degradation registry is credible because
     `tests/test_client_adapter_generation.py:159` requires each `exceptions.json` entry to have a
@@ -822,4 +900,25 @@ Ranked by how likely each is to bite a maintainer or an integrator.
 26. **Cost and latency figures in the instruction layer are asserted, not measured.** "~$0.10–0.30 per
     commit", "5–10 s latency", "up to 2 Sonnet calls per commit each with a 120 s timeout" appear in
     `skills/init/SKILL.md:263-267`, `skills/guardian/SKILL.md:129-132` and
-    `instructions/adr.review.md:92`. Treat them as documentation claims.
+    `instructions/adr.review.md:92`. Treat them as documentation claims — that 120 s figure is
+    `bin/adr-judge`'s `DEFAULT_LLM_TIMEOUT_S`, not `bin/adr-suggest`'s, whose own default dropped to
+    30 s. Do not conflate the two CLIs' timeouts.
+
+27. **The `pr-create` hook is the one hook path that can reach a *generative* model with no way to
+    suppress it, undeclared as such anywhere in the manifest's policy block.**
+    `hooks/manifest.json`'s `policy.network_allowed: false` is a declaration no test checks against
+    runtime behaviour. Part of the surrounding claim still holds: `hooks/` itself imports only the
+    standard library, so nothing in the package can dial out directly. But `adr_pr_guard._nudge()`
+    ([`hooks/adr_pr_guard.py:191-228`](../hooks/adr_pr_guard.py)) spawns `bin/adr-suggest` on every
+    clean, checked branch to ask about missing decisions (ADR-024). Unlike the judge call the same
+    guard makes just before it — which passes no `--llm` flag and inherits no `ADR_KIT_NO_LLM`, so it
+    stays deterministic by omission — `bin/adr-suggest` has no flag or environment variable that
+    suppresses its model call at all: it resolves `judge.backend` (default `host`, the client CLI
+    recorded at install time) and calls it, failing open only if that CLI is genuinely absent from
+    `PATH`. A second, weaker case exists too: ADR-020 lets `SessionStart`/`UserPromptSubmit` embed the
+    query through `adr_embed_query.embedder_for`, which may itself resolve to a networked backend —
+    but that function declines rather than raises when nothing resolves, so it degrades to lexical
+    ranking rather than reaching outward unconditionally the way `adr-suggest` does. The MCP surface's
+    "key-free by construction" claim and this component's "advisory and fail-open" framing both remain
+    true in the sense they were written for; neither anticipated a hook-initiated model call when they
+    were written.

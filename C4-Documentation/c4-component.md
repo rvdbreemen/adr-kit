@@ -2,30 +2,35 @@
 
 Seven components, synthesized from the eighteen `c4-code-*.md` cluster documents.
 Every claim below is traceable to a component document; this file adds only the
-cross-component structure that no single component document can see.
+cross-component structure that no single component document can see. It is one
+of four C4 levels — see [Document map](#document-map) at the end of this file
+for how to navigate from here to the code, container and context levels.
 
 ## System Components
 
 | Component | Short description | Document |
 | --- | --- | --- |
 | **Decision Record Engine** (`decision-engine`) | The semantic core: what an ADR *means*. Three body profiles mapped onto stable semantic roles, the frontmatter dialect, the directory-to-graph projection, and the retrieval query engine — plus the two mutators of ADR *identity* (profile migration, renumbering). 7 files, 3,396 lines, stdlib-only, **zero outbound repository dependencies**. | [c4-component-decision-engine.md](./c4-component-decision-engine.md) |
-| **Enforcement and Verification Engine** (`enforcement-engine`) | The only part of adr-kit that **blocks**. Judges a staged diff against every Accepted ADR's fenced JSON `## Enforcement` block, scores and gates ADR quality, and owns the killable-subprocess regex sandbox that makes repository-authored policy safe to execute. 5 CLIs (~4,700 lines) over 4 runtime modules (~600 lines). | [c4-component-enforcement-engine.md](./c4-component-enforcement-engine.md) |
+| **Enforcement and Verification Engine** (`enforcement-engine`) | The only part of adr-kit that **blocks**. Judges a staged diff against every Accepted ADR's fenced JSON `## Enforcement` block, scores and gates ADR quality, and owns the killable-subprocess regex sandbox that makes repository-authored policy safe to execute. Since ADR-017 the LLM pass is **on by default**, judged one ADR at a time in isolation, and resolved through a pluggable backend registry (host CLI / OpenRouter / Ollama / OpenAI-compatible) rather than a pinned model. 5 CLIs plus 6 importable runtime/backend modules, ~6,600 lines total. | [c4-component-enforcement-engine.md](./c4-component-enforcement-engine.md) |
 | **Selective Context Retrieval** (`retrieval-and-injection`) | Makes recorded decisions *findable* at the moment an agent needs them. One generator (`adr-index`, the sole writer of every derived index view) plus four readers covering ADR-004's session, task and edit tiers. 5 CLIs, 2,743 lines, fail-open by construction — every path exits 0. | [c4-component-retrieval-and-injection.md](./c4-component-retrieval-and-injection.md) |
-| **Health, Guardian and Lifecycle** (`health-and-lifecycle`) | The time dimension of an ADR set: the only sanctioned status writer (`bin/adr`, transactional with snapshot rollback), the SessionStart staleness detector, the health ledger, retirement scoring, seven-class readiness with a CI merge gate, and the local `adr-doctor` check/repair/probe engine. 17 files, 5,745 lines. | [c4-component-health-and-lifecycle.md](./c4-component-health-and-lifecycle.md) |
-| **Agent and Client Integration** (`agent-integration`) | Every path by which an LLM agent or CLI client reaches the engine, deliberately kept separate: a hand-rolled MCP stdio server (5 read-only tools, key-free), a lifecycle-hook runtime that pushes context unasked, an instruction corpus of skills/prompts/one subagent, and a capability registry plus desired-state installer. Owns no ADR semantics — every path terminates in a `bin/` CLI. | [c4-component-agent-integration.md](./c4-component-agent-integration.md) |
+| **Health, Guardian and Lifecycle** (`health-and-lifecycle`) | The time dimension of an ADR set: the only sanctioned status writer (`bin/adr`, transactional with snapshot rollback, now requiring `--confirm` and a person-named signer on acceptance per ADR-027), the SessionStart staleness detector, the health ledger, retirement scoring, seven-class readiness with a CI merge gate, and the local `adr-doctor` check/repair/probe engine. 17 files, 7,178 lines. | [c4-component-health-and-lifecycle.md](./c4-component-health-and-lifecycle.md) |
+| **Agent and Client Integration** (`agent-integration`) | Every path by which an LLM agent or CLI client reaches the engine, deliberately kept separate: a hand-rolled MCP stdio server (5 read-only tools, key-free), a lifecycle-hook runtime that pushes context unasked, an instruction corpus of skills/prompts/one subagent, and a capability registry plus desired-state installer. Owns no ADR semantics — every path terminates in a `bin/` CLI. Since ADR-023/024, one of its hooks (`hooks/adr_pr_guard.py`) is also a second, direct caller into the enforcement floor at the `gh pr create` moment. | [c4-component-agent-integration.md](./c4-component-agent-integration.md) |
 | **Contracts, Packaging and Distribution** (`contracts-and-distribution`) | The declarative contract layer and the release toolchain that acts on it: 11 JSON Schemas, 11 copy-out templates, 8 `packaging/*.json` registries, 20 `scripts/*.py` modules, 10 workflows plus 2 composite actions, and the two generated client payloads (`codex/`, `copilot/` — 91 tracked files each, 88 of them a deterministic projection). | [c4-component-contracts-and-distribution.md](./c4-component-contracts-and-distribution.md) |
 | **Quality Assurance** (`quality-assurance`) | The single pytest suite plus its fixture, corpus and certification-evidence families — 71 modules, 806 test functions collecting as 903 tests, 19,906 lines, larger than `bin/` itself. Dominated by black-box subprocess tests over the extensionless CLIs, and the only mechanical guard on several ADR gates. | [c4-component-quality-assurance.md](./c4-component-quality-assurance.md) |
 
-**Not covered by any of the seven:** `bin/adr-audit` (485 lines). See
-[Coverage gap](#coverage-gap-binadr-audit).
+**Not covered by any of the seven:** `bin/adr-discover` (546 lines, the
+renamed missing-ADR scanner) and `bin/adr-audit` (419 lines, the combined
+`adr-lint` + `adr-judge` command ADR-026 records). See
+[Coverage gap](#coverage-gap-binadr-discover-and-binadr-audit).
 
-## Component Relationships
+## Component Relationships Diagram
 
 ```mermaid
 flowchart TB
     subgraph ext["External systems"]
         GIT(["git CLI"])
-        LLM(["claude CLI<br/>only LLM path"])
+        LLM(["claude CLI<br/>adr-suggest's fixed LLM path"])
+        BACKEND(["judge.backend:<br/>host CLI / OpenRouter /<br/>Ollama / openai_compatible<br/>(ADR-017)"])
         GHA(["GitHub Actions + gh"])
         PCF(["pre-commit.com"])
         HOSTS(["Claude Code / Codex<br/>Copilot hosts"])
@@ -52,7 +57,8 @@ flowchart TB
     end
 
     QA["quality-assurance<br/>tests/ — 903 tests"]
-    ORPHAN["bin/adr-audit<br/>NO component"]
+    DISCOVER["bin/adr-discover<br/>missing-ADR scanner<br/>renamed via ADR-026 · NO component"]
+    AUDIT["bin/adr-audit<br/>combined lint+judge · ADR-026<br/>5-way exit · NO component"]
 
     MD[("ADR-NNN-*.md<br/>3 writers")]
     IDX[("ADR-INDEX.json<br/>3 readers, 3 strictnesses")]
@@ -62,20 +68,23 @@ flowchart TB
     HL -->|import| DE
     AI -->|import| DE
     QA -->|import| DE
-    ORPHAN -->|import| DE
+    DISCOVER -->|import| DE
 
     RI -->|import| RT
     HL -->|import| RT
 
     HL -->|subprocess| JUDGE
     AI -->|MCP tool call| JUDGE
+    AI -->|"subprocess, ADR-023 PR guard<br/>deny on violation"| JUDGE
     RELEASE -->|subprocess| JUDGE
     QA -->|subprocess| JUDGE
     PCF -->|git hook| JUDGE
     CONTRACTS -->|git hook| JUDGE
+    AUDIT -->|"subprocess (ADR-026):<br/>adr-lint + adr-judge"| JUDGE
 
     HL -->|subprocess| RI
     AI -->|MCP tool call| RI
+    AI -.->|"subprocess, ADR-024<br/>advisory nudge, never blocks"| RI
     RELEASE -->|subprocess| RI
     GHA -->|subprocess| RI
     QA -->|subprocess| RI
@@ -84,7 +93,7 @@ flowchart TB
     AI -->|MCP tool call| HL
     QA -->|subprocess| HL
     HOSTS -->|subprocess| HL
-    HL -->|subprocess| ORPHAN
+    HL -->|"subprocess, material drift"| DISCOVER
 
     HL -->|import| AI
     HL -->|MCP tool call| AI
@@ -119,8 +128,8 @@ flowchart TB
     HL -->|reads JSON| IDX
     AI -->|reads JSON| IDX
 
-    JUDGE -->|subprocess| LLM
     RI -->|subprocess| LLM
+    JUDGE -->|"subprocess / HTTP<br/>opt-in per-ADR (ADR-017)"| BACKEND
     JUDGE -->|subprocess| GIT
     HL -->|subprocess| GIT
     RELEASE -->|subprocess| GIT
@@ -144,6 +153,7 @@ flowchart TB
 | `writes` | File write on disk — durable via `os.fsync` + `os.replace` throughout |
 | `copies bytes` | Verbatim file copy by `scripts/build-client-adapters.py`, drift-checked with `--check` |
 | `loopback HTTP` | Bounded probe to `127.0.0.1:11434` for Ollama *identity* that never invokes a model |
+| `subprocess / HTTP (opt-in)` | Either a subprocess to the installer-recorded host CLI, or a stdlib-`urllib` HTTP call to OpenRouter or a local Ollama daemon, selected by `judge.backend`; every path degrades to declarative-only on failure (ADR-017) |
 | `build-time only` | `rustc` over `hooks/native/*.rs` — manual, invoked by no CI step |
 
 Three conventions matter for reading the arrows.
@@ -184,16 +194,20 @@ and four components read them downward at runtime.
 
 **Engines.** `enforcement-engine`, `retrieval-and-injection` and `health-and-lifecycle`
 sit above the leaf. They divide by posture, not by subject matter: enforcement is the sole
-fail-closed mechanism (ADR-004 puts blocking authority in `bin/adr-judge` and nowhere
-else), while retrieval and health are fail-open and report-only — every read path exits 0.
-That posture split is the load-bearing boundary in the whole system, and it is enforced
-socially rather than mechanically.
+fail-closed mechanism (ADR-004 puts blocking authority in `bin/adr-judge`, joined since
+ADR-023 by the pull-request guard's own call into that same judge), while retrieval and
+health are fail-open and report-only — every read path exits 0. That posture split is the
+load-bearing boundary in the whole system, and it is enforced socially rather than
+mechanically.
 
 **Surfaces.** `agent-integration` and the *release half* of `contracts-and-distribution`
 are the outer skin. Nothing in either owns ADR semantics; every path terminates in a
-`bin/` CLI. `agent-integration`'s single import edge out of itself
-(`hooks/adr_hook_core.py` importing `query_adr_context`) is the exception that proves the
-rule — everything else is a subprocess or a file read.
+`bin/` CLI. `agent-integration`'s import edge out of itself
+(`hooks/adr_hook_core.py` importing `query_adr_context`) remains the exception that
+mostly proves the rule — but it is no longer the *only* one: since ADR-023/024, its
+`hooks/adr_pr_guard.py` also reaches directly into `enforcement-engine` (a fail-closed
+subprocess call, not an import) and into `retrieval-and-injection` (an advisory subprocess
+nudge that can never block) — both drawn above as new edges out of `AI`.
 
 **Verification.** `quality-assurance` sits on top and depends on all six others. It should
 be removable without affecting behaviour. It is not — see below.
@@ -207,7 +221,7 @@ the leaf; nothing should reach up. Four things violate that.
 apparent tangle. Its `schemas/` + `templates/` half is *declarative data consumed
 downward* by `enforcement-engine`, `retrieval-and-injection`, `health-and-lifecycle` and
 `agent-integration`. Its `packaging/` + `scripts/` + `codex/` + `copilot/` half consumes
-those same four components *upward* — copying all 39 mirrored `bin/` files verbatim,
+those same four components *upward* — copying every mirrored `bin/` file verbatim,
 subprocessing nine of the CLIs in workflow steps, and rendering
 `agent-integration`'s skills, prompts and `hooks.json` from `agent-integration`'s own
 registries.
@@ -297,11 +311,12 @@ correctly one-way.
   `retrieval-and-injection` and `bin/adr-judge`, because everything in retrieval fails open
   and the judge fails closed. The price is verbatim copies: `bin/adr-suggest` carries
   `glob_to_regex`, `parse_diff`, `_split_cmd` and `_fence` copied from `bin/adr-judge` with
-  a "keep these in sync" instruction, and `bin/adr-audit:127` carries a third
-  `glob_to_regex` commented "Same translator as `bin/adr-judge`". **Path-glob translation —
-  the function that decides which files an ADR governs — therefore has three homes and no
-  mechanical guard.** That is the highest-consequence duplication in the repository,
-  because a divergence changes enforcement *scope* silently.
+  a "keep these in sync" instruction, and `bin/adr-discover:155` carries a third
+  `glob_to_regex` commented "Same translator as `bin/adr-judge`" (moved here from the file
+  formerly named `bin/adr-audit` when ADR-026 renamed it — the duplication itself did not
+  move). **Path-glob translation — the function that decides which files an ADR governs —
+  therefore has three homes and no mechanical guard.** That is the highest-consequence
+  duplication in the repository, because a divergence changes enforcement *scope* silently.
 
 - **Three readers of `ADR-INDEX.json` at three strictness levels.**
   `adr_query.load_index_graph` validates schema version, staleness, node structure and
@@ -315,39 +330,84 @@ correctly one-way.
   (transactionally, with snapshot rollback), `bin/adr-migrate` and `bin/adr-renumber` own
   profile and identity, and `bin/adr-judge --migrate-status-history` is a third write path
   in the component whose entire purpose is otherwise read-only judging. Only `bin/adr` is
-  transactional.
+  transactional. Neither `bin/adr-discover` nor `bin/adr-audit` writes ADR files, so this
+  count is unaffected by the ADR-026 rename.
 
-### Coverage gap: `bin/adr-audit`
+### Coverage gap: `bin/adr-discover` and `bin/adr-audit`
 
-`bin/adr-audit` (485 lines, a deterministic missing-ADR candidate scanner) belongs to no
-component. The arithmetic is exact: `bin/` holds 40 files, and the seven components
-account for 39 of them — `decision-engine` 7, `enforcement-engine` 9,
-`retrieval-and-injection` 5, `health-and-lifecycle` 17, `agent-integration` 1
-(`bin/adr-mcp`). `adr-audit` is the remainder.
+The census here no longer lands on a single orphan file. [ADR-026](../docs/adr/ADR-026-record-the-combined-audit-command-and-its-five-way-exit-contract.md)
+(Accepted 2026-08-04) records a rename that split what earlier versions of this index
+called `bin/adr-audit` into two files with different jobs:
 
-The three documents that mention it point three different ways, so the evidence does not
-settle its home:
+- **`bin/adr-discover`** (546 lines) is the deterministic missing-ADR candidate scanner
+  this index used to describe under the name `bin/adr-audit` — the tool `/adr-kit:init`
+  runs to discover undocumented decisions. It still imports `SUPPORTED_PROFILES` and
+  `detect_profile` from `adr_format` (verified at `bin/adr-discover:66`) — a
+  `decision-engine` format-registry consumer, unchanged by the rename — and it still
+  carries the duplicated `glob_to_regex` translator noted above, now at
+  `bin/adr-discover:155`. Its only known in-repo caller is
+  `bin/adr_doctor_core.py:216` (`audit_script = bin_dir / "adr-discover"`, verified by
+  direct read), which subprocesses it on material drift — that caller is
+  `health-and-lifecycle`.
+- **`bin/adr-audit`** (419 lines) now names something new: the combined `adr-lint` +
+  `adr-judge` command ADR-026 records, with a five-way exit contract —
+  `EXIT_OK=0`, `EXIT_CODE_VIOLATION=1`, `EXIT_TOOLING=2`, `EXIT_ADR_QUALITY=3`,
+  `EXIT_BOTH=4` — implemented by `exit_code()` at `bin/adr-audit:246` (verified by direct
+  read; the `lint`/`judge` outcomes feed `bad_adrs`/`bad_code` booleans that combine into
+  one of the five codes). It runs `bin/adr-lint` and `bin/adr-judge` as subprocesses,
+  either against a diff (the default) or, in `--whole-codebase` mode, against a diff of
+  every tracked file versus the empty tree — a caller *into* `enforcement-engine`, not a
+  member of it. A bare invocation with neither `--diff` nor `--whole-codebase` is refused
+  at exit 2, naming `bin/adr-discover` rather than silently reporting a clean pass against
+  an empty diff. Unlike the scanner, it imports nothing from `decision-engine`: its only
+  imports are stdlib (`argparse`, `json`, `os`, `subprocess`, `sys`, `pathlib`, `typing`).
 
-- Its only in-repo caller is `bin/adr_doctor_core.py:216`, which subprocesses
-  `bin/adr-audit --root <repo_root>` on material drift — that is `health-and-lifecycle`,
-  whose document flags the file as appearing in no Code-level cluster document.
-- Its only repository import is `from adr_format import SUPPORTED_PROFILES, detect_profile`
-  (verified at `bin/adr-audit:41`) — a `decision-engine` format-registry consumer, and
-  nothing more.
-- It carries a duplicated `glob_to_regex` from `bin/adr-judge`, and the
-  `decision-engine` dependency table attributes it to the `enforcement` slug — while the
-  `enforcement-engine` document explicitly disclaims it: "It lives in a different
-  component."
+Neither file is claimed as a Code Element by any of the seven component documents;
+`enforcement-engine`'s own document is explicit that both are "documented here only as an
+inbound caller."
 
-Functionally it is closest to `bin/adr-suggest` (the LLM missing-ADR detector in
-`retrieval-and-injection`), which makes a fourth candidate. Documenting it under
-`health-and-lifecycle` — its sole caller — is the smallest defensible fix, but the
-assignment is a judgement call, not a fact the code supplies.
+The arithmetic that used to close this section no longer holds at all. `bin/` now holds
+**50** files (verified by direct listing, 2026-08-06) — not the 40 the previous refresh
+counted. Summing what the seven components' own just-refreshed documents claim for
+themselves: `decision-engine` 7, `enforcement-engine` 11 (up from 9 — `adr_llm.py` and
+`adr_quality_core.py` are new since ADR-017), `retrieval-and-injection` 5,
+`health-and-lifecycle` 17, `agent-integration` 1 (`bin/adr-mcp`) — 41 files. Add the two
+named above and the total reaches 43, seven short of 50. The remaining seven —
+`adr_embedding_runtime.py`, `adr_history_scan.py`, `adr_index_core.py`,
+`adr_llm_judge_migration.py`, `adr_vector_store.py`, `adr-embed` and `adr-settings` —
+arrived after, or independent of, this refresh cycle and are named by none of the seven
+component documents. Three of them — `adr_embedding_runtime.py`, `adr_vector_store.py`
+and `adr-embed` — evidently belong together with `hooks/adr_embed_query.py` under
+[ADR-020](../docs/adr/ADR-020-embed-the-query-where-the-query-is-asked-and-read-authority-from-the-index.md)
+(query-time semantic embedding retrieval, described in `c4-context.md` §4.1 and §5 but
+not yet in `c4-component-retrieval-and-injection.md`). `adr_index_core.py` is the module
+`bin/adr-index` was split into so the guardian can answer "is the committed index still
+what the generator would produce?" without spawning a subprocess (per its own docstring);
+it belongs with `retrieval-and-injection` by the same logic that already places
+`adr_quality_core.py` in `enforcement-engine`, but that component's document does not yet
+say so. The other three's purpose was only skimmed from their own module docstrings for
+this refresh, not verified against any component document, and are named here so the next
+refresh does not have to rediscover them from a bare directory listing.
 
 ### One number that looks like agreement and is not
 
 Two different 39s appear in the component documents and they exclude different files.
 `contracts-and-distribution` reports **39 `bin/` files copied into each client mirror** —
-that is 40 minus `bin/bump-version`, a declared `COPY_EXCLUSIONS` entry. The component
-census above also reaches **39** — that is 40 minus `bin/adr-audit`. Same total, different
-exclusion. Do not read the match as corroboration.
+that is 40 minus `bin/bump-version`, a declared `COPY_EXCLUSIONS` entry. This index's own
+previous census also reached **39** — that is 40 minus the file then named `bin/adr-audit`.
+Same total, different exclusion; do not read the match as corroboration. Neither 39 holds
+today: as the coverage-gap arithmetic above shows, a direct listing of `bin/` on
+2026-08-06 counts 50 files, meaning both cited 39s — and this index's own former 40 —
+predate at least eleven files that have since landed.
+
+## Document map
+
+Four C4 levels document this system. This file is the component level; the other three
+are one hop away.
+
+| Level | Document(s) | What it covers |
+| --- | --- | --- |
+| Code | 18 `c4-code-*.md` cluster documents, linked individually from each component document's own "Code Elements" table above | Function signatures, arguments, module-level dependencies and line-anchored facts for one cluster of files at a time |
+| Component (this level) | The seven `c4-component-*.md` documents indexed above, synthesized here | Component boundaries, cross-component dependencies, layering and cycles |
+| Container | [c4-container.md](./c4-container.md) | What actually runs: CLI Toolkit, MCP Server, Hook Runtime, Pre-commit Gate, Instruction & Skill Corpus, Client Generation & Release Toolchain, Generated Client Mirrors. Substitutes **distribution** for **deployment** throughout, because this repository ships no deployment artifact of any kind — no Dockerfile, Kubernetes manifest, Terraform file, docker-compose file or serverless function definition exists anywhere in the tree — and deliberately carries no `apis/` directory or OpenAPI specification, because adr-kit exposes no HTTP interface (its three machine-readable contracts are a stdio JSON-RPC tool surface, a native lifecycle-hook event contract, and a set of CLI exit-code contracts). |
+| Context | [c4-context.md](./c4-context.md) | Who uses adr-kit and why, one level above the container boundary: four evidenced personas (maintainer/human decision-maker, coding agent, committing engineer, CI/the automated gate), the system features and user journeys each one drives, and the external systems (git, the host CLI runtime, the public GitHub repository, GitHub Actions, an optional LLM backend, an optional local embedding model, the pre-commit.com framework) adr-kit depends on. |

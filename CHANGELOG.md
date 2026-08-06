@@ -169,10 +169,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Removed
 
-- **Nine config keys that nothing ever read.** `judge.llm_timeout_ms`,
+- **Ten config keys that nothing ever read.** `judge.llm_timeout_ms`,
   `judge.pre_push_timeout_ms`, `policy.regex_compile_checks`,
-  `policy.pattern_warnings` and the whole `context.weights` block (five keys) were
-  declared in `schemas/adr-kit-config.schema.json` and resolved by no code path.
+  `policy.pattern_warnings` and the whole `context.weights` block (the block path
+  itself plus its five children) were declared in
+  `schemas/adr-kit-config.schema.json` and resolved by no code path.
   `judge.llm_timeout_ms` duplicated `judge.llm_timeout_seconds` in different units;
   `pre_push_timeout_ms` bounded a pre-push hook adr-kit does not ship;
   `context.weights` was retired when the index-first scorer replaced weighted
