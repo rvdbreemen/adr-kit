@@ -228,8 +228,8 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "When true, the pre-commit hook runs the adr-suggest pass. Default false (opt-in as of v0.17.0); enable per-project here or per-commit with ADR_KIT_SUGGEST=1. Honored by bin/adr-suggest directly (prior versions documented but did not read this flag).",
-          "default": false
+          "description": "When true, the pre-commit hook and the pull-request guard run the adr-suggest pass. Default true (ADR-035), on the same terms ADR-017 set for the judge: one shared backend registry and the host CLI's own model, so no separate metered spend against a pin. The opt-in this replaced came from ADR-001, which ADR-017 superseded without carrying its reasoning to this second entry point. Set false here to switch it off per project, or export ADR_KIT_SUGGEST_DISABLE=1 to switch it off for one run; ADR_KIT_SUGGEST=1 still re-enables it per commit for a project that has set false. Honored by bin/adr-suggest directly.",
+          "default": true
         },
         "llm_model": {
           "type": "string",

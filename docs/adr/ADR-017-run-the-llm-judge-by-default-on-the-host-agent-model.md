@@ -13,6 +13,7 @@ superseded_by: null
 related:
   - "ADR-025"
   - "ADR-034"
+  - "ADR-035"
 topics:
   - "llm judging"
   - "backend selection"
@@ -68,6 +69,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-034
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-035
     changed_via: adr-kit lifecycle
 ```
 

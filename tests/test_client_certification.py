@@ -101,9 +101,27 @@ def test_same_day_release_and_policy_reversal_require_explicit_evidence():
     policy = value["records"][0]["release_policy"]
     policy["stable_releases_today"] = 1
     policy["default_or_hook_reversal"] = True
+    # The fixture now carries a real reversal (ADR-035 defaults adr-suggest on),
+    # so the naming evidence has to be removed for this to still test the gate
+    # rather than the fixture. Setting the flag alone stopped proving anything
+    # the moment the flag became true for a legitimate reason.
+    policy.pop("superseding_proposed_adr", None)
     result = errors(value)
     assert any("same-day stable release" in item for item in result)
     assert any("Proposed ADR" in item for item in result)
+
+
+def test_a_declared_reversal_with_its_adr_named_passes():
+    """The other half: the gate must accept a reversal that carries its record.
+
+    Without this, the fixture could quietly drop `superseding_proposed_adr` and
+    only the negative case above would still be exercised.
+    """
+    value = passing()
+    policy = value["records"][0]["release_policy"]
+    assert policy["default_or_hook_reversal"] is True
+    assert policy["superseding_proposed_adr"] == "ADR-035"
+    assert not [item for item in errors(value) if "Proposed ADR" in item]
 
 
 def test_schema_and_fixture_scope_exclude_future_clients():

@@ -8,7 +8,7 @@
       "path": "ADR-001-llm-gates-opt-in.md",
       "format": "canonical",
       "status": "Superseded",
-      "date": "2026-07-30",
+      "date": "2026-08-06",
       "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
       "topics": [
         "cost control",
@@ -1898,6 +1898,60 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-035",
+      "title": "Run the Suggestion Pass by Default on the Same Terms as the Judge",
+      "path": "ADR-035-run-the-suggestion-pass-by-default-on-the-same-terms-as-the-judge.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-06",
+      "decision_summary": "Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied...",
+      "topics": [
+        "cost control",
+        "defaults",
+        "suggestion pass"
+      ],
+      "aliases": [
+        "adr-suggest default",
+        "suggest.enabled"
+      ],
+      "components": [
+        "adr-suggest"
+      ],
+      "symbols": [
+        "ADR_KIT_SUGGEST_DISABLE",
+        "suggest.enabled"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Default suggest.enabled to true.",
+          "Honour ADRKITSUGGESTDISABLE in bin/adr-suggest itself.",
+          "Keep the no-backend and non-decision skips ahead of any model call."
+        ],
+        "must_not": [
+          "A suggestion may never block a commit or a pull request.",
+          "Do not advertise a switch that only one caller reads."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "adr-suggest-default-on-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false. Both fields flip together when it ships."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -1905,6 +1959,12 @@
       "source": "ADR-001",
       "target": "ADR-017",
       "type": "superseded-by",
+      "resolved": true
+    },
+    {
+      "source": "ADR-001",
+      "target": "ADR-035",
+      "type": "related",
       "resolved": true
     },
     {
@@ -2304,6 +2364,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-017",
+      "target": "ADR-035",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-018",
       "target": "ADR-004",
       "type": "related",
@@ -2490,6 +2556,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-024",
+      "target": "ADR-035",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-025",
       "target": "ADR-017",
       "type": "related",
@@ -2654,6 +2726,24 @@
     {
       "source": "ADR-034",
       "target": "ADR-031",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-035",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-035",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-035",
+      "target": "ADR-024",
       "type": "related",
       "resolved": true
     }
