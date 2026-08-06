@@ -3,9 +3,10 @@ id: TASK-139
 title: >-
   CHANGELOG link block rots every release: the runbook's bump tool cannot write
   it, an unreferenced one can
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-06 05:58'
+updated_date: '2026-08-06 18:33'
 labels:
   - release
   - tooling
@@ -50,10 +51,34 @@ Found while refreshing the C4 architecture documentation; the `bin/bump-version:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One tool is named canonical for bumping the version, and the other is either deleted or reduced to a thin delegation — two independent implementations of the same release step do not survive this task
-- [ ] #2 The canonical tool writes the CHANGELOG link block: `[Unreleased]` retargeted to the new version and a `[X.Y.Z]` compare link added
-- [ ] #3 The link block is declared in `packaging/version-sites.json` so `scripts/check-release-version.py` fails the release when it disagrees with the tag, the same way every other site does (ADR-013)
-- [ ] #4 `docs/RELEASING.md` names the canonical tool and no longer claims coverage the tool does not have
-- [ ] #5 A test cuts a fake version against a fixture CHANGELOG and asserts both link lines are written, so the gap cannot reopen silently
-- [ ] #6 Every existing `## [X.Y.Z]` heading has a matching link target — verified by a check, not by inspection; 65 headings had 58 targets before the manual backfill in a31cb04
+- [x] #1 One tool is named canonical for bumping the version, and the other is either deleted or reduced to a thin delegation — two independent implementations of the same release step do not survive this task
+- [x] #2 The canonical tool writes the CHANGELOG link block: `[Unreleased]` retargeted to the new version and a `[X.Y.Z]` compare link added
+- [x] #3 The link block is declared in `packaging/version-sites.json` so `scripts/check-release-version.py` fails the release when it disagrees with the tag, the same way every other site does (ADR-013)
+- [x] #4 `docs/RELEASING.md` names the canonical tool and no longer claims coverage the tool does not have
+- [x] #5 A test cuts a fake version against a fixture CHANGELOG and asserts both link lines are written, so the gap cannot reopen silently
+- [x] #6 Every existing `## [X.Y.Z]` heading has a matching link target — verified by a check, not by inspection; 65 headings had 58 targets before the manual backfill in a31cb04
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed on `fix/backlog-todo-sweep` (commit 2ec18f1).
+
+**AC#1 — `scripts/bump-version.py` is canonical; `bin/bump-version` is now a four-line delegation.** ADR-013 and the runbook already named the former, so the deciding question was which implementation to keep, not which name. `bin/bump-version` is kept rather than deleted because it is what people have in shell history; it implements nothing. Its two preflight validations moved across, since only the *unnamed* tool performed them: the client manifests must agree on the plugin name, and every marketplace pointer must resolve to that plugin's entry — the runbook's tool could previously bump a tree where those disagreed.
+
+**AC#2.** The canonical writer writes both lines: `[Unreleased]` retargeted, and a `[X.Y.Z]` compare link added. Re-running for the same version does not add a second target.
+
+**The clobber that would have made AC#3 a silent no-op.** `main` planned the CHANGELOG and the registry separately, then did `changes[CHANGELOG] = changelog_bytes` — discarding any registry-computed bytes for that file. Harmless while nothing declared the CHANGELOG; a silent no-op the moment something did, which is exactly what AC#3 asks for. `plan_writes` now takes an `overrides` pre-image and the CHANGELOG is folded through **one** image in order: heading → links → declared sites.
+
+**AC#3.** The `[Unreleased]` link is declared in `packaging/version-sites.json` as a `regex` site. Verified end to end: a real bump to 0.47.0 wrote both lines and `check-release-version.py --expect 0.47.0` passed listing the new site; staling the link by hand made it exit 1 with `CHANGELOG Unreleased compare link (CHANGELOG.md) = '0.45.0', expected '0.47.0'`. Trial bump reverted.
+
+The `[X.Y.Z]` target is an *existence* property, not a substitution, so it fits no kind in `SITE_KINDS` and is covered by AC#6's check instead — declaring an unwritable kind is the verified-but-never-written failure ADR-013 exists to stop.
+
+**AC#4.** `docs/RELEASING.md` names `scripts/bump-version.py` as canonical, says `bin/bump-version` forwards and implements nothing, and now lists the link block and the two preflight validations among what it writes.
+
+**AC#5 and AC#6.** Seven tests in `tests/test_version_sites.py`: both link lines written, idempotent re-run, a CHANGELOG with no block gets one, the site is declared, the declared pattern actually matches the real file (a pattern matching nothing is verified-but-never-written), heading↔target parity, and `bin/bump-version` carries no second implementation. Parity is scoped to semver so the genuine `## [0.2.0-attribution]` heading is not dragged into the contract. It passes today.
+
+**Contract differences resolved in the canonical writer's favour, each now asserted rather than assumed:** usage errors exit 2 (argparse, matching every other adr-kit CLI) rather than 1; a leading `v` is accepted and stripped, matching the tag spelling and `check-release-version.py`, where `bin/bump-version` rejected it; and the release section is a TODO placeholder rather than promotion of the Unreleased body — the behaviour that has been shipping.
+
+`test_bump_writes_every_registry_site` checked staleness by scanning for the old version string. CHANGELOG.md is a declared site now and the old version legitimately survives in it — in the previous release heading, and inside the new `v0.30.0...v0.31.0` compare link, which is the entire point of a compare link. It now checks the declared value through the engine.
+<!-- SECTION:FINAL_SUMMARY:END -->

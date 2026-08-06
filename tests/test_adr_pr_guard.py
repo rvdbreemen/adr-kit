@@ -531,15 +531,23 @@ def test_the_declared_false_is_structural_not_a_promise():
     """The six closed events cannot reach out, because they cannot spawn.
 
     ADR-018's gate forbids `hooks/adr_hook_core.py` from importing subprocess or
-    any network module, and every event except `pr-create` is served by it. That
-    makes their `false` checkable rather than asserted -- which is the property
-    the flat declaration lost.
+    any network module. Seven of the eight events are served by that module --
+    every one except `pr-create`, which the guard intercepts before it gets
+    there -- but only six of them declare `false`.
+
+    The seventh is `user-prompt-submit`, and the difference is the whole point
+    of ADR-034's boundary: being served by `adr_hook_core` is not what makes an
+    event closed. The entrypoint adds reach that the module cannot have, and it
+    does so for that event by name through `EMBEDDING_EVENTS`. So this check
+    establishes the floor -- nothing reaches out *via adr_hook_core* -- and
+    `test_the_embedding_event_set_cannot_outrun_the_declaration` covers what the
+    entrypoint layers on top.
     """
     core = (REPO_ROOT / "hooks" / "adr_hook_core.py").read_text(encoding="utf-8")
     for module in ("subprocess", "socket", "urllib", "http", "ssl", "asyncio"):
         assert f"import {module}" not in core, (
-            f"adr_hook_core imports {module}; the seven events it serves can no "
-            "longer declare network_allowed: false structurally (ADR-018)"
+            f"adr_hook_core imports {module}; no event it serves can declare "
+            "network_allowed: false structurally any more (ADR-018)"
         )
 
 

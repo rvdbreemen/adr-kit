@@ -1,4 +1,9 @@
-"""Validate certification evidence and render evidence-backed support claims."""
+"""Validate certification evidence.
+
+Rendering the support document lives in `client_support_matrix.py`, which this
+module re-exports `support_matrix` from so no caller had to change when the two
+were split apart (ADR-010's support-module line budget).
+"""
 
 from __future__ import annotations
 
