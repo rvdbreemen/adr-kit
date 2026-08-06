@@ -82,7 +82,9 @@ still gates the binary behind `ADR_KIT_NATIVE_HOOK=1` opt-in (the state ADR-029 
 calls out as "where v0.44.1 left it"), and ADR-029's own `documents_shipped: false`
 marks the removal as not yet shipped.
 
-Meanwhile `templates/adr-kit-guide.md:262`, `CHANGELOG.md:513` and ADR-004 itself all
+Meanwhile `templates/adr-kit-guide.md:296` (re-anchored from a stale `:262`, which pointed
+at an unrelated guardian-response table), `CHANGELOG.md:1582` (re-anchored from a stale
+`:513`, which pointed at an unrelated `adr signer --audit` entry) and ADR-004 itself all
 still describe `bin/adr-watch --pre-edit` / `--hook` as the wired edit tier. So the
 edit-tier behaviour exists in two (Python) or three (counting Rust) places, with only the
 newer one actually installed, and the documentation points at the older one. This
@@ -165,7 +167,7 @@ generation engine, not to the five scripts this component contains.
 | **ADR-004** — Layered ADR Context Injection | Accepted 2026-07-05, `binding: false` | Names `bin/adr-index`, the `adr-watch` matcher and `bin/adr-context` by file in its Decision (read directly: Decision items 1–4). Mandates exit 0 on every path, pins scope = Enforcement `path_glob` and status = `## Status` reconciled with `status_history[-1]`, and caps injected content to the single top-ranked ADR's Decision within a token budget. |
 | **ADR-007** — JSON ADR Graph Index for Agent Retrieval | Accepted 2026-07-23 | Enforcement scope is `docs/adr/ADR-INDEX.json` — **the artefact this component writes**, not its code. Two `require_pattern` rules on that file: `"schema_version"\s*:\s*2` and `"relationships"\s*:`. Items 5–7 assign generation to `adr-index`, enriched ranked results to `adr-context`, and shared relationship-extraction rules to `adr-related`. |
 | **ADR-014** — Use the Generated ADR Graph as the Selective-Context Query Engine | Accepted 2026-07-23, `binding: true`, `gate: index-first-retrieval` | Frontmatter `components:` includes `adr-context` (verified). Makes the graph the normal runtime projection with Markdown as *visible* fallback, and separates relevance from authority: Accepted governs, Proposed advises, Superseded redirects to a live successor. This is why `adr-context` delegates all scoring to `adr_query`. Its declarative rule arrays are **deliberately empty** — the ADR body states rules "are deferred until the implementation surface exists; empty rules do not weaken the named gate". |
-| **ADR-001** — Make Per-Commit LLM Gates Opt-In | Accepted 2026-05-31, `binding: false` | Names `bin/adr-suggest` directly (`ADR-001:59`: "Fix `bin/adr-suggest` to honor `suggest.enabled` (default `false`)"). Implemented at the opt-in gate `bin/adr-suggest:687` (line moved since the 2026-07-30 baseline; the file has grown from 758 to 790 lines). Enforcement is "manual review only" for this ADR. |
+| **ADR-001** — Make Per-Commit LLM Gates Opt-In | Accepted 2026-05-31, `binding: false` | Names `bin/adr-suggest` directly (`ADR-001:88-89`, re-anchored from a stale `:59`: "Fix `bin/adr-suggest` to honor `suggest.enabled` (default `false`)"). Implemented at the opt-in gate `bin/adr-suggest:687` (line moved since the 2026-07-30 baseline; the file has grown from 758 to 790 lines). Enforcement is "manual review only" for this ADR. |
 | **ADR-021** — Let the Session-Scoped Hooks Regenerate a Stale ADR Index | Accepted 2026-08-04, `binding: true`, `gate: "adr-hook-index-refresh-v1"` in frontmatter — but the ADR's own Verification section still reads "It does not exist yet, so `gate` is null and `binding` is false", contradicting its own frontmatter; reported as observed, not adjudicated here | Frontmatter `components:` includes `adr-index` (verified). Fixes a defect in this component's own generated artefact: an agent writing `docs/adr/ADR-NNN.md` directly leaves `ADR-INDEX.json` stale, `adr_query.query_adr_context(strict_index=True)` raises, and every task-tier and edit-tier query goes dark with no message. See the new subsection below and Software Features. |
 
 **ADR-015 does not govern this component** — corrected against the Code-phase doc, which
@@ -454,12 +456,12 @@ Named concretely, because "uses" is not an interface description:
 
 | Caller | Mechanism |
 |---|---|
-| [`bin/adr-mcp`](../bin/adr-mcp) | **Subprocess** via `sys.executable` to `adr-context --format json --adr-dir …` (`bin/adr-mcp:450`), re-exposed as the MCP tool `adr_context` over newline-delimited JSON-RPC 2.0 on stdio. It validates `min_score` ∈ [0,1] before passing it through. `adr-suggest` is **deliberately not exposed** (`bin/adr-mcp:23`) — the MCP surface is key-free by construction. |
-| [`bin/adr`](../bin/adr) | **Subprocess** to `adr-index` inside its snapshot/rollback lifecycle transaction (`bin/adr:228-236`). The snapshot covers `ADR-INDEX.md`, `ADR-INDEX.json` and `README.md`, so a failed index regeneration rolls the whole transition back. |
-| [`templates/githooks/pre-commit`](../templates/githooks/pre-commit) | **Pipes `git diff --cached` on stdin** into `adr-suggest` (`:246`), swallowing the status so the advisory can never block a commit. |
+| [`bin/adr-mcp`](../bin/adr-mcp) | **Subprocess** via `sys.executable` (the generic `run_cli` wrapper, `cmd = [sys.executable, str(BIN_DIR / script)] + args` at `bin/adr-mcp:353`) to `adr-context --format json --adr-dir …` (args built in `tool_adr_context` at `bin/adr-mcp:451`), re-exposed as the MCP tool `adr_context` over newline-delimited JSON-RPC 2.0 on stdio. It validates `min_score` ∈ [0,1] before passing it through. `adr-suggest` is **deliberately not exposed** (`bin/adr-mcp:41`, re-anchored from a stale `:23`) — the MCP surface is key-free by construction. |
+| [`bin/adr`](../bin/adr) | **Subprocess** to `adr-index` inside its snapshot/rollback lifecycle transaction. `_commit_lifecycle_changes` (`bin/adr:387-414`, re-anchored from a stale `:228-236`, which pointed at an unrelated `history_entry` helper) snapshots first (`:392`), runs `adr-index` via `run_index`'s own `subprocess.run` (`:376-384`), and restores the snapshot on any exception (`:404-405`). The snapshot covers `ADR-INDEX.md`, `ADR-INDEX.json` and `README.md`, so a failed index regeneration rolls the whole transition back. |
+| [`templates/githooks/pre-commit`](../templates/githooks/pre-commit) | **Pipes `git diff --cached` on stdin** into `adr-suggest` (`:322`, re-anchored from a stale `:246`, which pointed at an unrelated comment about the judge call's `set -e`), swallowing the status (`|| true`) so the advisory can never block a commit. |
 | [`hooks/adr_hook_core.py`](../hooks/adr_hook_core.py), [`hooks/native/adr-hook.rs`](../hooks/native/adr-hook.rs) | **Read `docs/adr/ADR-INDEX.json` as a file** — no call into this component. Both read at *looser* strictness than `adr_query.load_index_graph`: no schema-version check, no staleness check, a 2 MiB cap, `[]` on any problem. Consequence: a stale or schema-v1 graph is rejected by the CLI and silently accepted by both hook readers. |
 | GitHub Actions | **Subprocess** `python bin/adr-index --check docs/adr` as a freshness gate (`adr-index-check.yml:24`, `release-candidate.yml:50`, `release-publish.yml:74`, `validate.yml:151`). |
-| `skills/{context,related,supersede,review,judge,adr}`, `agents/adr-generator.md`, `clients/workflows.json:142` | **Documented subprocess invocation by path** in agent-facing prose. |
+| `skills/{context,related,supersede,review,judge,adr}`, `agents/adr-generator.md`, `clients/workflows.json:158` (`adr-related` invocation inside the `"related"` workflow block; re-anchored from a stale `:142`, which pointed at an unrelated `"migrate"` block) | **Documented subprocess invocation by path** in agent-facing prose. |
 
 ## Dependencies
 
@@ -655,7 +657,8 @@ this component. None is sanitized.
 2. **Stale scoring documentation in two places, one of them unfixable.** The
    `adr-context` docstring still claims "heuristic scoring with 5 weighted signals"
    (`bin/adr-context:4`, unchanged), and ADR-004's References line points at "five
-   weighted signals, weights at `bin/adr-context:249`" (`ADR-004:191`). Neither holds:
+   weighted signals, weights at `bin/adr-context:249`" (`ADR-004:212`, re-anchored from a
+   stale `:191`). Neither holds:
    `score_adr` (now at `:376`, was `:343-350`) states that status, age, domain and
    relationship count no longer contribute, and scoring is `adr_query.score_record`
    field-weighted positive evidence over eight fields (ADR-014). ADR-004 is Accepted and
