@@ -127,7 +127,7 @@ flowchart TB
     HL -->|reads JSON| IDX
     AI -->|reads JSON| IDX
 
-    RI -->|"subprocess / HTTP<br/>adr-suggest, advisory (ADR-017)"| BACKEND
+    RI -->|"subprocess / HTTP<br/>adr-suggest, on by default (ADR-035)"| BACKEND
     JUDGE -->|"subprocess / HTTP<br/>on by default (ADR-017)"| BACKEND
     JUDGE -->|subprocess| GIT
     HL -->|subprocess| GIT
