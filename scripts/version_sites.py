@@ -225,8 +225,22 @@ def _rewrite(site: dict, text: str, version: str) -> str:
     raise VersionSiteError(_unknown_kind_message(kind, site["path"]))
 
 
-def plan_writes(root: Path, version: str, registry: dict | None = None) -> dict[Path, bytes]:
+def plan_writes(
+    root: Path,
+    version: str,
+    registry: dict | None = None,
+    overrides: dict[Path, str] | None = None,
+) -> dict[Path, bytes]:
     """Compute the post-image of every declared site without touching the disk.
+
+    `overrides` seeds a file's pre-image with text the caller has already
+    computed, instead of reading it from disk. The bump writer needs this for
+    CHANGELOG.md: it inserts the release heading and rewrites the compare-link
+    block, and the registry *also* declares the `[Unreleased]` link line as a
+    site. Without a shared pre-image the two are computed from the same stale
+    bytes and the caller has to pick one, which is how the link block came to be
+    written by a tool the runbook does not name (TASK-139). One image, folded in
+    order, is the only version of this that cannot silently drop half the edit.
 
     Planning the whole registry before the first byte is written is what makes an
     undeclarable site loud instead of silent: a `kind` this module does not
@@ -250,6 +264,12 @@ def plan_writes(root: Path, version: str, registry: dict | None = None) -> dict[
     working: dict[Path, str] = {}
     missing: set[Path] = set()
     errors: list[str] = []
+
+    # An override still compares against the bytes on disk, so a file the caller
+    # rewrote is reported as changed even when no declared site matched in it.
+    for path, text in (overrides or {}).items():
+        originals[path] = path.read_text(encoding="utf-8") if path.is_file() else ""
+        working[path] = text
 
     for site in registry["sites"]:
         path = root / site["path"]
