@@ -176,19 +176,20 @@ exit 2 is reserved for genuine usage errors (`SuggestError`, `FileNotFoundError`
 | `read_intent` | `read_intent(intent_arg: str) -> str` | Reads the author's stated intent, truncated to `INTENT_MAX_CHARS` (8000) with a `[intent truncated]` marker. Unreadable file ⇒ `SuggestError`. | `bin/adr-suggest:316` |
 | `build_suggest_prompt` | `build_suggest_prompt(adr_list: str, diff_text: str, intent_text: Optional[str] = None) -> str` | Builds the detector prompt: what does/doesn't warrant an ADR, an explicit prompt-injection warning, and the required JSON response shape. ADR list, diff and intent are each wrapped in content-derived sentinel fences and declared untrusted data. Byte-identical to the no-intent form when `intent_text` is empty. | `bin/adr-suggest:332` |
 | `parse_suggest_response` | `parse_suggest_response(raw: str) -> Optional[Dict]` | Three-stage extraction (direct JSON → fenced block → first/last brace span), then normalisation: `needs_adr` coerced to bool, `confidence` clamped to low/medium/high, `category` clamped to the six-value set, `reason` ≤200 chars, `suggested_title` ≤80. `None` ⇒ graceful skip. | `bin/adr-suggest:402` |
-| `run_llm_suggest` | `run_llm_suggest(prompt: str, llm_cmd: List[str], timeout_s: int) -> Optional[Dict]` | `shutil.which` pre-check, then `subprocess.run` with the prompt on stdin. Missing binary, timeout, non-zero exit or unparseable output all return `None`. | `bin/adr-suggest:463` |
-| `resolve_llm_cmd` | `resolve_llm_cmd(args, cfg: Dict) -> List[str]` | Precedence `--llm-cmd` > `ADR_KIT_LLM_CMD` > `suggest.llm_cmd` > `suggest.llm_model` > `judge.llm_cmd` > `judge.llm_model` > `DEFAULT_LLM_CMD`. Repo-tracked `*.llm_cmd` binaries are checked against `_LLM_CMD_ALLOWLIST` by name **and** stem; a rejected value logs a warning and falls through rather than being honoured. | `bin/adr-suggest:495` |
+| `run_llm_suggest` | `run_llm_suggest(prompt: str, backend, timeout_s: int) -> Optional[Dict]` | Calls `backend.judge()` after an `unavailable_reason()` pre-check. No backend, an unavailable one, a timeout, a non-zero exit, an HTTP error or unparseable output all return `None` — the caller turns that into exit 0. | `bin/adr-suggest:518` |
+| `resolve_backend` | `resolve_backend(args, cfg: Dict, local_cfg: Dict)` | Resolves through the shared registry in `bin/adr_llm.py` — the same resolver `adr-judge` uses (ADR-017). Precedence `--llm-cmd` > `ADR_KIT_LLM_CMD` > `judge.backend`. There is no `suggest.backend`: the backend is a property of the project, not of which tool is asking. Repo-tracked `suggest.llm_cmd` / `suggest.llm_model` are reported as ignored rather than honoured, because this file is committed and honouring them would let repository content pick the binary this script executes (ADR-017 Must Not, TASK-72). | `bin/adr-suggest:547` |
 | `resolve_llm_timeout` | `resolve_llm_timeout(args, cfg: Dict) -> int` | `--llm-timeout` > `suggest.llm_timeout_seconds` > `judge.llm_timeout_seconds` > `DEFAULT_LLM_TIMEOUT_S` (30 s). | `bin/adr-suggest:571` |
+| `load_local_config` | `load_local_config(adr_dir: Path) -> Dict` | Reads the machine-local, gitignored `.adr-kit.local.json` the installer writes, which is where `judge.host_client` lives. | `bin/adr-suggest:293` |
 | `emit_advisory` | `emit_advisory(result: Dict) -> None` | Four-line advisory block, always on **stderr** so stdout stays pipe-clean. | `bin/adr-suggest:559` |
 | `main` | `main() -> int` | Opt-in gate → read diff/intent → skip-glob filter → collect ADRs → prompt → LLM → advisory or JSON. Emits the advisory only when `needs_adr` and confidence is medium/high. | `bin/adr-suggest:590` |
 
 Private helpers summarised: `_split_cmd` (`:123`, `shlex.split` with `posix=False` on Windows so
 `C:\Users\…` survives, then manual quote-stripping), `_data_fence_token` (`:296`, 16 hex chars of
 SHA-256 over the fenced content so a guessed END marker changes the token), `_fence` (`:306`) and
-`_ensure_utf8_streams` (`:580`). Module data: `DEFAULT_LLM_CMD` (`:55`,
-`claude -p --model claude-sonnet-4-6`), `DEFAULT_LLM_TIMEOUT_S` (`:112`, 30 seconds), `INTENT_MAX_CHARS` (`:117`),
-`_LLM_CMD_ALLOWLIST` (`:67`), `SKIP_GLOBS` (`:122`), `_VALID_CONFIDENCE`/`_VALID_CATEGORY`
-(`:391-399`).
+`_ensure_utf8_streams` (`:580`). Module data: `DEFAULT_LLM_TIMEOUT_S` (`:112`, 30 seconds), `INTENT_MAX_CHARS` (`:117`),
+`SKIP_GLOBS` (`:122`), `_VALID_CONFIDENCE` (`:446`). There is no `DEFAULT_LLM_CMD` and no
+`_LLM_CMD_ALLOWLIST`: ADR-017 moved every command, endpoint and model to the code-side registry in
+`bin/adr_llm.py`, so this script names no vendor CLI and pins no model tag (TASK-72).
 
 ## Dependencies
 

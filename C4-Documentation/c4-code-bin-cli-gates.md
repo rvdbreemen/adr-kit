@@ -222,7 +222,7 @@ schema.
 
 ### Retired configuration keys
 
-`bin/adr_config.py` maintains a `RETIRED_KEYS` mapping ([`bin/adr_config.py:20`](../bin/adr_config.py#L20)) of nine dotted JSON paths that once existed in the schema but are no longer read. The nine retired keys are:
+`bin/adr_config.py` maintains a `RETIRED_KEYS` mapping ([`bin/adr_config.py:20`](../bin/adr_config.py#L20)) of ten dotted JSON paths that once existed in the schema but are no longer read. The ten retired keys are:
 
 1. `$.judge.llm_timeout_ms` — replaced by `judge.llm_timeout_seconds`
 2. `$.judge.pre_push_timeout_ms` — no pre-push hook exists to use this

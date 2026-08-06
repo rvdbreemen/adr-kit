@@ -29,7 +29,6 @@ renamed missing-ADR scanner) and `bin/adr-audit` (419 lines, the combined
 flowchart TB
     subgraph ext["External systems"]
         GIT(["git CLI"])
-        LLM(["claude CLI<br/>adr-suggest's fixed LLM path"])
         BACKEND(["judge.backend:<br/>host CLI / OpenRouter /<br/>Ollama / openai_compatible<br/>(ADR-017)"])
         GHA(["GitHub Actions + gh"])
         PCF(["pre-commit.com"])
@@ -128,8 +127,8 @@ flowchart TB
     HL -->|reads JSON| IDX
     AI -->|reads JSON| IDX
 
-    RI -->|subprocess| LLM
-    JUDGE -->|"subprocess / HTTP<br/>opt-in per-ADR (ADR-017)"| BACKEND
+    RI -->|"subprocess / HTTP<br/>adr-suggest, advisory (ADR-017)"| BACKEND
+    JUDGE -->|"subprocess / HTTP<br/>on by default (ADR-017)"| BACKEND
     JUDGE -->|subprocess| GIT
     HL -->|subprocess| GIT
     RELEASE -->|subprocess| GIT
