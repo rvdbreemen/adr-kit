@@ -320,9 +320,9 @@
         {
           "id": "copilot-pretool-context-limit",
           "outcome": "edit-governance",
-          "reason": "Copilot PreToolUse cannot inject arbitrary model context.",
-          "user_effect": "The same deterministic guard runs proactively and PostToolUse verifies the result.",
-          "backstop": "Generated workflow prompts require context lookup before edits and PostToolUse records drift.",
+          "reason": "Copilot CLI exposes no pre-tool-use event, so ADR-004's edit tier has no moment to fire in. That tier is an injection tier, not a floor: what is absent here is context before the write, not enforcement.",
+          "user_effect": "The governing decision is not injected before an edit; postToolUse reports drift after the write instead.",
+          "backstop": "Generated workflow prompts require an ADR lookup before edits, postToolUse records drift, and the commit tier still blocks a violation on every client.",
           "blocks_certification": false
         },
         {

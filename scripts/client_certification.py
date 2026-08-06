@@ -227,6 +227,153 @@ def _lifecycle_rows(labels: dict) -> list:
         rows.append(f"| {labels[client]} | " + " | ".join(cells) + " |")
     return rows
 
+def _enforcement_rows(labels: dict) -> list:
+    """State which tiers block, from the two files that decide it.
+
+    This section replaces a hardcoded paragraph that attributed to ADR-004 the
+    option ADR-004 rejected: it called the pre-edit tier "the *fail-closed*
+    floor of the injection model". ADR-004 says the opposite twice -- injection
+    hooks "never block; they steer", and a fail-closed edit gate is listed under
+    the rejected alternatives ("Blocking belongs at commit, not keystroke").
+    The paragraph then contradicted itself four sentences later by naming the
+    pre-commit hook as the enforcement that does not weaken.
+
+    It was hardcoded, which is the same reason `_lifecycle_rows` gives for the
+    claims it had to remove: nothing derived it, so nothing could contradict it.
+    The per-client half is now the manifest's own answer plus whatever
+    `clients/capabilities.json` declares, so a tier cannot be claimed here
+    unless it is registered, and cannot be claimed as enforcing on a client that
+    declares it advisory.
+
+    Falls back to a stated absence rather than raising, for the same reason
+    `_lifecycle_rows` does.
+    """
+    manifest, capabilities = _read_contract_sources()
+    if manifest is None or capabilities is None:
+        return [
+            "",
+            "## Where enforcement is fail-closed",
+            "",
+            "_Unavailable: `hooks/manifest.json` or `clients/capabilities.json`"
+            " could not be read, so no claim is made here rather than an"
+            " unverified one._",
+        ]
+
+    pr_clients = manifest.get("pr-create", {}).get("clients", {})
+    rows = [
+        "",
+        "## Where enforcement is fail-closed",
+        "",
+        "Derived from `hooks/manifest.json` and `clients/capabilities.json`.",
+        "",
+        "ADR-004 puts all three injection tiers -- session, edit and task -- on",
+        "the fail-open side without exception: they steer, and none of them",
+        "blocks. It rejected a fail-closed edit gate by name, because legitimate",
+        "compliant edits touch governed paths constantly, so blocking belongs at",
+        "commit rather than at keystroke. There is no pre-edit floor on any",
+        "client, and the absence of one is not a degradation.",
+        "",
+        "Two tiers block, and neither is an injection tier:",
+        "",
+        "* **Commit tier** (ADR-004) -- `bin/adr-judge` at pre-commit and in CI.",
+        "  Client-independent, because `git commit` happens whether or not an",
+        "  agent is running. A violation is caught before the commit lands on",
+        "  every client in this table, and on no client at all.",
+        "* **Pull-request tier** (ADR-023) -- `hooks/adr_pr_guard.py` on",
+        "  `gh pr create`. Client-qualified: a client that has no permission",
+        "  decision to return cannot stop the tool call, and where it cannot the",
+        "  branch is still judged and the verdict shown, labelled as advisory.",
+        "",
+        "| Client | Pull-request tier |",
+        "|---|---|",
+    ]
+    for client in CLIENTS:
+        advisory = next(
+            (
+                entry
+                for entry in _degradations(capabilities, client)
+                if entry.get("outcome") == "enforcement"
+            ),
+            None,
+        )
+        if not pr_clients.get(client):
+            cell = "no native event: the commit tier is the only floor here"
+        elif advisory:
+            cell = f"advisory only (`{advisory.get('id', 'declared degradation')}`)"
+        else:
+            cell = f"enforced at `{pr_clients[client]}`"
+        rows.append(f"| {labels[client]} | {cell} |")
+    return rows
+
+
+def _degradation_rows(labels: dict) -> list:
+    """Render every declared degradation, and claim no others.
+
+    The heading this replaces named one degradation for one client in prose.
+    Prose cannot be checked against the registry, so the section could describe
+    a weakening that was never declared -- which is what it did.
+    """
+    _manifest, capabilities = _read_contract_sources()
+    if capabilities is None:
+        return []
+    rows = [
+        "",
+        "## Known degradations",
+        "",
+        "Every entry is declared in `clients/capabilities.json`, with its reason,",
+        "its user-visible effect and the backstop that still holds (ADR-010,",
+        "ADR-023). A weakening that is not declared there does not appear here.",
+        "",
+        "| Client | Outcome | Reason | User effect | Backstop |",
+        "|---|---|---|---|---|",
+    ]
+    found = False
+    for client in CLIENTS:
+        for entry in _degradations(capabilities, client):
+            found = True
+            cells = [
+                labels[client],
+                f"`{entry.get('outcome', '?')}`",
+                str(entry.get("reason", "")).replace("|", r"\|"),
+                str(entry.get("user_effect", "")).replace("|", r"\|"),
+                str(entry.get("backstop", "")).replace("|", r"\|"),
+            ]
+            rows.append("| " + " | ".join(cells) + " |")
+    return rows if found else []
+
+
+def _degradations(capabilities: dict, client: str) -> list:
+    for entry in capabilities.get("clients", []):
+        if isinstance(entry, dict) and entry.get("id") == client:
+            declared = entry.get("degradations")
+            return [item for item in declared if isinstance(item, dict)] if isinstance(declared, list) else []
+    return []
+
+
+def _read_contract_sources() -> tuple:
+    """The manifest events by id and the capability registry, or (None, None)."""
+    import json
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parents[1]
+    try:
+        events = {
+            event["id"]: event
+            for event in json.loads(
+                (root / "hooks" / "manifest.json").read_text(encoding="utf-8")
+            )["events"]
+        }
+    except (OSError, ValueError, KeyError, TypeError):
+        events = None
+    try:
+        capabilities = json.loads(
+            (root / "clients" / "capabilities.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        capabilities = None
+    return events, capabilities
+
+
 def _probe_rows(labels: dict) -> list:
     """Report what a real client answered, separately from what we believe.
 
@@ -328,22 +475,10 @@ def support_matrix(bundle: dict) -> str:
     lines.extend([
         "",
         "All retrieval is local, bounded, and index-first. Unsupported native lifecycle events are not advertised; deterministic pre-commit enforcement remains the backstop.",
-        "",
-        "### Known degradation: no fail-closed edit floor on GitHub Copilot CLI",
-        "",
-        "ADR-004 names the pre-edit tier the *fail-closed* floor of the injection",
-        "model: the one place that refuses rather than degrades, because an edit is",
-        "the last moment before a decision is violated in code. Copilot CLI exposes",
-        "no pre-tool-use event that can carry model context, so on that client the",
-        "floor does not exist. What runs instead is a backstop, and a backstop is a",
-        "weaker guarantee by construction: `postToolUse` reports drift after the",
-        "edit has already been written, and the generated workflow prompts ask for",
-        "an ADR lookup before editing, which is instruction rather than enforcement.",
-        "",
-        "This is stated here rather than left to be inferred from a null in",
-        "`hooks/manifest.json`. The enforcement that does not weaken is the",
-        "pre-commit hook, which is client-independent: a violation is caught before",
-        "the commit lands on every client, including this one.",
+    ])
+    lines.extend(_enforcement_rows(labels))
+    lines.extend(_degradation_rows(labels))
+    lines.extend([
         "",
         "IDE, cloud, preview, wrappers, legacy surfaces, and TASK-43 clients are not promoted by this matrix.",
         "",
