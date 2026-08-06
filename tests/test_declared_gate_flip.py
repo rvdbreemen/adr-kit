@@ -38,15 +38,41 @@ ANCHOR_ROOTS = ("bin", "hooks", "scripts", "tests", "clients", ".github")
 # silent decay can least afford.
 _GATE_NAME = re.compile(r"^\s*[*-]\s*`([a-z0-9][a-z0-9-]*-v\d+)`", re.M)
 
+# Sentences that are only true while the gate is still pending. Each one was
+# written next to `gate: null, binding: false` and is a false statement the
+# moment those fields flip.
+#
+# This exists because the frontmatter half of the flip was mechanical and the
+# prose half was not (TASK-141). The sweep that closed TASK-127 replaced the
+# opening sentence of seven Verification bullets and left the trailing clause
+# behind, so seven records read "the gate that anchors this decision. Both
+# fields flip back together when the gate ships" -- corrected and stale in the
+# same sentence. A half-applied sweep is exactly what a check catches and a
+# reader does not.
+_PENDING_PROSE = (
+    (re.compile(r"does not exist yet", re.I), "says the gate does not exist yet"),
+    (re.compile(r"flip back together", re.I), "still promises a future flip"),
+    (re.compile(r"`gate` is null", re.I), "says gate is null"),
+    (re.compile(r"`binding` is false", re.I), "says binding is false"),
+    (re.compile(r"when the gate ships", re.I), "defers to a gate that has shipped"),
+    (re.compile(r"is to be anchored by", re.I), "describes the anchor as future"),
+    (re.compile(r"stays empty until", re.I), "says verified_in stays empty"),
+)
 
-def _verification_gate(text: str) -> str | None:
-    """The gate name an ADR declares in its Verification section, if any."""
+
+def _verification_section(text: str) -> str | None:
     match = re.search(
         r"^### Verification\s*$(.*?)^##", text, re.M | re.S
     ) or re.search(r"^### Verification\s*$(.*)", text, re.M | re.S)
-    if not match:
+    return match.group(1) if match else None
+
+
+def _verification_gate(text: str) -> str | None:
+    """The gate name an ADR declares in its Verification section, if any."""
+    section = _verification_section(text)
+    if section is None:
         return None
-    names = _GATE_NAME.findall(match.group(1))
+    names = _GATE_NAME.findall(section)
     return names[0] if names else None
 
 
@@ -90,6 +116,47 @@ def test_an_adr_whose_named_gate_exists_no_longer_says_it_has_none():
         + "\n\nSet gate to the declared name and binding to true, together. While "
         "binding is false, adr_retrieval_health never checks the record's "
         "Decision Contract."
+    )
+
+
+def test_the_prose_half_of_the_flip_is_not_left_behind():
+    """A record that carries its gate must not still explain why it has none.
+
+    The frontmatter half of a gate flip is two fields and gets remembered. The
+    prose half is a paragraph arguing that `gate: null` was the honest choice,
+    and it survives the flip unnoticed -- which leaves the corpus of the tool
+    that lints ADR corpora stating that its own enforcement does not exist.
+
+    Keyed on the frontmatter rather than on the gate anchor: once a record
+    declares `gate` and `binding: true`, every pending-tense sentence in its
+    Verification section is false, whatever the tree looks like.
+    """
+    stale = []
+    for path in sorted(ADR_DIR.glob("ADR-*.md")):
+        text = path.read_text(encoding="utf-8")
+        if _frontmatter(text, "status") != "Accepted":
+            continue
+        declared = _frontmatter(text, "gate")
+        if declared in (None, "null") or _frontmatter(text, "binding") != "true":
+            continue
+        section = _verification_section(text)
+        if section is None:
+            continue
+        for pattern, complaint in _PENDING_PROSE:
+            found = pattern.search(section)
+            if found:
+                stale.append(
+                    f"{path.name}: frontmatter carries gate: {declared} and "
+                    f"binding: true, but Verification {complaint} "
+                    f"({found.group(0)!r})"
+                )
+
+    assert not stale, (
+        "these records flipped their frontmatter and kept the paragraph "
+        "explaining why they had not:\n  "
+        + "\n  ".join(stale)
+        + "\n\nRewrite the Verification bullet in the present tense, naming the "
+        "file the gate ships in. Both halves of the flip are the flip."
     )
 
 

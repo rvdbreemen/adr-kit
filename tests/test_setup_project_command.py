@@ -319,8 +319,14 @@ def test_the_lifecycle_table_is_not_hand_written():
     which that event never fired, because nothing derived the row and so nothing
     could contradict it.
     """
-    source = (REPO_ROOT / "scripts" / "client_certification.py").read_text(
-        encoding="utf-8"
+    # Read both halves of the certification module. Rendering moved from
+    # client_certification.py to client_support_matrix.py when the former
+    # outgrew ADR-010's 400-line support-module budget, and this guard is about
+    # the table being *derived* rather than about which file derives it -- so it
+    # must not break, or silently pass, on the next split either.
+    source = "\n".join(
+        (REPO_ROOT / "scripts" / name).read_text(encoding="utf-8")
+        for name in ("client_certification.py", "client_support_matrix.py")
     )
 
     assert "LIFECYCLE_COLUMNS" in source

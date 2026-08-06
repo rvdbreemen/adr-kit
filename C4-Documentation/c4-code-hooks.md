@@ -207,7 +207,7 @@ Every branch ends in `exit /b 0` or `|| true; exit 0`. Argument order is **event
 
 ### `hooks/manifest.json` — canonical event manifest
 
-The single source of truth for hook wiring, and an *input* to code generation rather than a runtime read. Declares `policy` (`fail_open: true`, `network_allowed: false`, `future_clients_allowed: false`) and eight events, each with `id`, `command`, `matcher`, `outcome`, optional `runner_timeout_sec`, `latency_budget_ms`, a `latency` triple with measured p50/p95/hard values, and a `clients` map giving the native event name per client (`null` where the client has no such hook). Measured on Windows 11 / CPython 3.12.9 with 29 ADRs; every hard timeout is above the 182.6 ms interpreter floor.
+The single source of truth for hook wiring, and an *input* to code generation rather than a runtime read. Declares `policy` (`fail_open: true`, `network_allowed: false`, `future_clients_allowed: false`) and eight events, each with `id`, `command`, `matcher`, `outcome`, optional `runner_timeout_sec`, `latency_budget_ms`, a `latency` triple with measured p50/p95/hard values, and a `clients` map giving the native event name per client (`null` where the client has no such hook). Since ADR-034 the network line is a default rather than a set-wide property: `user-prompt-submit` and `pr-create` carry their own `network_allowed: true` with a `network_reason` naming what they reach. Measured on Windows 11 / CPython 3.12.9 with 29 ADRs; every hard timeout is above the 182.6 ms interpreter floor.
 
 | Event id | Matcher | Outcome | Runner timeout | p50 / p95 / hard (ms) | Copilot mapping | Regenerates index? |
 |---|---|---|---|---|---|---|
@@ -306,7 +306,7 @@ The opt-in release build recipe: `rustc -C opt-level=3 -C lto=fat -C codegen-uni
 
 ### External
 
-**None third-party — confirmed.** Every Python import in this cluster resolves to the standard library: `argparse`, `dataclasses`, `datetime`, `fnmatch`, `json`, `os`, `pathlib`, `platform`, `re`, `shutil`, `statistics`, `subprocess`, `sys`, `tempfile`, `time`, `typing`. The opt-in Rust host uses only `core`/`std` (`std::cmp`, `std::collections::HashSet`, `env`, `fs`, `io`, `path`, `time`); the floor probe uses neither, linking `kernel32` directly. `hooks/manifest.json` declares `"network_allowed": false` and no code in the cluster opens a socket, spawns a model, or reads a credential.
+**None third-party — confirmed.** Every Python import in this cluster resolves to the standard library: `argparse`, `dataclasses`, `datetime`, `fnmatch`, `json`, `os`, `pathlib`, `platform`, `re`, `shutil`, `statistics`, `subprocess`, `sys`, `tempfile`, `time`, `typing`. The opt-in Rust host uses only `core`/`std` (`std::cmp`, `std::collections::HashSet`, `env`, `fs`, `io`, `path`, `time`); the floor probe uses neither, linking `kernel32` directly. `hooks/manifest.json` declares `"network_allowed": false` as the *default*, and two events override it (ADR-034). `adr_hook_core.py` opens no socket, spawns no model and reads no credential -- ADR-018's import gate forbids it the imports to do so -- and that is what the six inheriting events rest on. The two that override step outside that module by name: `adr_pr_guard.py` spawns `bin/adr-judge` for `pr-create`, and `adr_embed_query.py` loads `bin/adr-embed` for `user-prompt-submit`.
 
 **Build-time / OS:**
 

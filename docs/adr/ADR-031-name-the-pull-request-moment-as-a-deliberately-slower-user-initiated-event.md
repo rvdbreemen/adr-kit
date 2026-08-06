@@ -9,6 +9,8 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-034"
 topics:
   - "latency"
   - "pull request"
@@ -50,6 +52,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: "Maintainer accepted: the pull-request moment is user-initiated, so the ceiling may be exceeded there when an ADR names it."
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-034
     changed_via: adr-kit lifecycle
 ```
 

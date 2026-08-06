@@ -48,20 +48,45 @@ Regenerate with `python scripts/probe-client-events.py`, which exits 0 when a cl
 
 All retrieval is local, bounded, and index-first. Unsupported native lifecycle events are not advertised; deterministic pre-commit enforcement remains the backstop.
 
-### Known degradation: no fail-closed edit floor on GitHub Copilot CLI
+## Where enforcement is fail-closed
 
-ADR-004 names the pre-edit tier the *fail-closed* floor of the injection
-model: the one place that refuses rather than degrades, because an edit is
-the last moment before a decision is violated in code. Copilot CLI exposes
-no pre-tool-use event that can carry model context, so on that client the
-floor does not exist. What runs instead is a backstop, and a backstop is a
-weaker guarantee by construction: `postToolUse` reports drift after the
-edit has already been written, and the generated workflow prompts ask for
-an ADR lookup before editing, which is instruction rather than enforcement.
+Derived from `hooks/manifest.json` and `clients/capabilities.json`.
 
-This is stated here rather than left to be inferred from a null in
-`hooks/manifest.json`. The enforcement that does not weaken is the
-pre-commit hook, which is client-independent: a violation is caught before
-the commit lands on every client, including this one.
+ADR-004 puts all three injection tiers -- session, edit and task -- on
+the fail-open side without exception: they steer, and none of them
+blocks. It rejected a fail-closed edit gate by name, because legitimate
+compliant edits touch governed paths constantly, so blocking belongs at
+commit rather than at keystroke. There is no pre-edit floor on any
+client, and the absence of one is not a degradation.
+
+Two tiers block, and neither is an injection tier:
+
+* **Commit tier** (ADR-004) -- `bin/adr-judge` at pre-commit and in CI.
+  Client-independent, because `git commit` happens whether or not an
+  agent is running. A violation is caught before the commit lands on
+  every client in this table, and on no client at all.
+* **Pull-request tier** (ADR-023) -- `hooks/adr_pr_guard.py` on
+  `gh pr create`. Client-qualified: a client that has no permission
+  decision to return cannot stop the tool call, and where it cannot the
+  branch is still judged and the verdict shown, labelled as advisory.
+
+| Client | Pull-request tier |
+|---|---|
+| Claude Code CLI | enforced at `PreToolUse` |
+| Codex CLI | advisory only (`codex-pr-guard-advisory-only`) |
+| GitHub Copilot CLI | no native event: the commit tier is the only floor here |
+
+## Known degradations
+
+Every entry is declared in `clients/capabilities.json`, with its reason,
+its user-visible effect and the backstop that still holds (ADR-010,
+ADR-023). A weakening that is not declared there does not appear here.
+
+| Client | Outcome | Reason | User effect | Backstop |
+|---|---|---|---|---|
+| Claude Code CLI | `workflow-discovery` | Claude supports richer skill metadata and native slash-command discovery. | Claude receives the canonical rich skill while the other clients receive generated concise adapters with the same outcome. | All clients also receive generated prompt wrappers and use the same executables. |
+| Codex CLI | `enforcement` | The Codex hook adapter has no permission decision to return, so a PreToolUse hook cannot stop the tool call. | The branch is judged and the violation is shown, labelled as not enforced at this moment, rather than the pull request being stopped. | The pre-commit hook blocks the commit, and adr-judge-self.yml judges the branch diff on the pull request. |
+| GitHub Copilot CLI | `edit-governance` | Copilot CLI exposes no pre-tool-use event, so ADR-004's edit tier has no moment to fire in. That tier is an injection tier, not a floor: what is absent here is context before the write, not enforcement. | The governing decision is not injected before an edit; postToolUse reports drift after the write instead. | Generated workflow prompts require an ADR lookup before edits, postToolUse records drift, and the commit tier still blocks a violation on every client. |
+| GitHub Copilot CLI | `task-context` | Copilot CLI does not expose SubagentStart or PreCompact lifecycle hooks. | Selected ADR context cannot be re-injected at those unavailable event boundaries. | Session and prompt context remain native; generated workflow instructions require agents to carry the selected ADR bundle forward without broadening it. |
 
 IDE, cloud, preview, wrappers, legacy surfaces, and TASK-43 clients are not promoted by this matrix.

@@ -79,12 +79,23 @@ python scripts/bump-version.py X.Y.Z                # writes EVERY version site
 python scripts/build-client-adapters.py             # regenerate codex/ and copilot/
 ```
 
-`bump-version.py` is the only place a version is typed. It writes the CHANGELOG
-release heading, the three client plugin manifests, the two versioned marketplace
-manifests, the template version stamps and the README version pins, all from the
-declarative registry in `packaging/version-sites.json`. Never hand-edit a version:
-if a file is missing from the bump, declare it in the registry instead, and every
-tool (writer, gate, generator, tests) learns about it at once.
+`scripts/bump-version.py` is the canonical writer and the only place a version is
+typed. `bin/bump-version` forwards to it and implements nothing; there is no
+second bump tool to choose between. Until v0.47.0 there was, and the two did not
+do the same thing — the one this runbook names could not write the CHANGELOG
+compare-link block, so that block went stale on every release (TASK-139).
+
+It writes the CHANGELOG release heading, the CHANGELOG compare-link block
+(`[Unreleased]` retargeted and a `[X.Y.Z]` link added), the three client plugin
+manifests, the two versioned marketplace manifests, the template version stamps
+and the README version pins, all from the declarative registry in
+`packaging/version-sites.json`. Before writing anything it checks that the client
+manifests agree on the plugin name and that every marketplace pointer resolves to
+that plugin's entry.
+
+Never hand-edit a version: if a file is missing from the bump, declare it in the
+registry instead, and every tool (writer, gate, generator, tests) learns about it
+at once.
 
 - **Release notes**: add the `## [X.Y.Z] - YYYY-MM-DD` section at the top of
   `CHANGELOG.md`, written to release-note quality (grouped `### Added`/`### Changed`/

@@ -339,23 +339,115 @@ def test_no_existing_adrs_prompt_has_sentinel(tmp_path):
     assert "new architecture decision" in err
 
 
-def test_opt_in_disabled_by_default_no_llm_call(tmp_path):
-    """With default config (no suggest block), adr-suggest exits 0 and does NOT
-    invoke the fake LLM binary — the opt-in skip fires before any LLM round-trip.
+def test_the_pass_runs_by_default(tmp_path):
+    """ADR-035: on by default, on the same terms ADR-017 set for the judge.
+
+    This asserted the opposite until 2026-08-06. The opt-in came from ADR-001,
+    which ADR-017 superseded without carrying its reasoning to this second entry
+    point, so the default outlived the decision behind it and R2's second half
+    -- "is there a decision nobody recorded?" -- effectively never ran.
+
+    The test it replaces could not have caught the flip either way: it asserted
+    `"skipped" in err` against a fake that exits 99, and an LLM failure prints
+    "skipped" exactly like an opt-in skip does. It passed under both defaults.
+    This one asserts the advisory itself.
     """
-    # No .adr-kit.json written; suggest.enabled defaults to false.
     (tmp_path / "docs" / "adr").mkdir(parents=True)
     (tmp_path / "docs" / "adr" / "ADR-001-eventual.md").write_text(
         textwrap.dedent(EXISTING_ADR), encoding="utf-8"
     )
-    # Crashing fake: if invoked, exits 99 to make the test fail loudly.
-    crashing = tmp_path / "crashing-fake.py"
-    crashing.write_text("import sys; sys.exit(99)\n", encoding="utf-8")
-    code, out, err = _run_suggest(tmp_path, CODE_DIFF, "--llm-cmd", _fake_cmd(crashing))
-    assert code == 0, "opt-in skip must not block commits"
-    assert "skipped" in err, "should report skip reason"
-    # Verify the crashing fake was NOT invoked (if it were, code would be 0 only
-    # because adr-suggest swallows the exit — but stderr would carry no advisory).
+    fake = _make_fake_claude(tmp_path, json.dumps({
+        "needs_adr": True,
+        "confidence": "high",
+        "reason": "new redis dependency",
+        "suggested_title": "Adopt Redis",
+        "category": "dependency",
+    }))
+
+    code, out, err = _run_suggest(tmp_path, CODE_DIFF, "--llm-cmd", _fake_cmd(fake))
+
+    assert code == 0, "a suggestion may never block"
+    assert "This change looks like a new" in err
+
+
+def test_the_disable_switch_works_in_this_script_not_only_in_the_hook(tmp_path):
+    """ADR-035: the variable this script advertises has to work when it runs.
+
+    `bin/adr-suggest` prints "Disable: ADR_KIT_SUGGEST_DISABLE=1" in its own
+    advisory, but only `templates/githooks/pre-commit` read it. The pull-request
+    guard spawns this script directly, so at that moment the documented switch
+    did nothing -- the documented-but-unread no-op ADR-001 was written to fix,
+    in this same file. Off by default hid it; on by default makes it the first
+    thing a user reaches for.
+
+    Asserted against an *explicitly enabled* pass, so it discriminates. Run
+    against a default-off build with no config, nothing happens either way and
+    the test proves nothing -- the trap the replaced default test fell into.
+    """
+    import os as _os
+
+    project = _make_project(
+        tmp_path, {"ADR-001-eventual.md": EXISTING_ADR}, enabled=True
+    )
+    fake = _make_fake_claude(tmp_path, json.dumps({
+        "needs_adr": True,
+        "confidence": "high",
+        "reason": "new redis dependency",
+        "suggested_title": "Adopt Redis",
+        "category": "dependency",
+    }))
+
+    def _run(env_extra):
+        return subprocess.run(
+            [
+                sys.executable, str(ADR_SUGGEST),
+                "--diff", "-",
+                "--adr-dir", str(project / "docs" / "adr"),
+                "--repo-root", str(project),
+                "--llm-cmd", _fake_cmd(fake),
+            ],
+            input=CODE_DIFF,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**_os.environ, **env_extra},
+        )
+
+    # Control: enabled, and the advisory appears. Without this the assertion
+    # below could pass because the pass never ran for an unrelated reason.
+    enabled = _run({"ADR_KIT_SUGGEST": "1"})
+    assert "This change looks like a new" in enabled.stderr, (
+        "the control run produced no advisory, so the disable assertion below "
+        f"would prove nothing.\nstderr={enabled.stderr!r}"
+    )
+
+    disabled = _run({"ADR_KIT_SUGGEST": "1", "ADR_KIT_SUGGEST_DISABLE": "1"})
+
+    assert disabled.returncode == 0
+    assert "This change looks like a new" not in disabled.stderr, (
+        "ADR_KIT_SUGGEST_DISABLE=1 did not suppress the pass in adr-suggest "
+        "itself; only templates/githooks/pre-commit honoured it, so the "
+        "pull-request path ignored the switch this script advertises"
+    )
+
+
+def test_a_project_can_still_switch_the_pass_off(tmp_path):
+    """`suggest.enabled: false` remains the per-project off switch (ADR-035)."""
+    project = _make_project(
+        tmp_path, {"ADR-001-eventual.md": EXISTING_ADR}, enabled=False
+    )
+    fake = _make_fake_claude(tmp_path, json.dumps({
+        "needs_adr": True,
+        "confidence": "high",
+        "reason": "new redis dependency",
+        "suggested_title": "Adopt Redis",
+        "category": "dependency",
+    }))
+
+    code, out, err = _run_suggest(project, CODE_DIFF, "--llm-cmd", _fake_cmd(fake))
+
+    assert code == 0
     assert "This change looks like a new" not in err
 
 

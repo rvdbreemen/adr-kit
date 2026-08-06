@@ -678,20 +678,33 @@ def main() -> int:
         config_path = Path(args.config) if args.config else (adr_dir / ".adr-kit.json")
         cfg = load_config(config_path)
 
-        # Opt-in gate (v0.17.0): the suggestion pass is OFF unless explicitly
-        # enabled — per-commit via ADR_KIT_SUGGEST=1, or per-project via
-        # suggest.enabled:true in .adr-kit.json. Previously suggest.enabled was
-        # documented but never read here (latent no-op); this fixes that and
-        # flips the default to off, mirroring the judge LLM opt-in.
+        # Default ON (ADR-035), on the same terms ADR-017 set for the judge:
+        # one shared backend registry, the host CLI's own model, no pin. The
+        # opt-in this replaces rested on ADR-001, which ADR-017 superseded
+        # without carrying its reasoning to this second entry point — so the
+        # default outlived the decision behind it, and R2's second half
+        # effectively never ran.
+        #
+        # `ADR_KIT_SUGGEST_DISABLE` is read HERE rather than only in
+        # templates/githooks/pre-commit. This script advertises that variable in
+        # its own advisory output, but only the commit path honoured it, so at
+        # the pull-request moment the documented switch did nothing. That is the
+        # documented-but-unread no-op ADR-001 was written to fix, in this file.
+        # Off by default hid it; on by default makes it the first thing someone
+        # reaches for.
+        #
+        # Precedence, highest first: DISABLE beats everything, then the
+        # per-commit ADR_KIT_SUGGEST=1, then per-project suggest.enabled.
         suggest_cfg = cfg.get("suggest") or {}
+        env_disable = os.environ.get("ADR_KIT_SUGGEST_DISABLE", "0") == "1"
         env_enable = os.environ.get("ADR_KIT_SUGGEST", "0") == "1"
-        if not (env_enable or bool(suggest_cfg.get("enabled", False))):
+        if env_disable or not (env_enable or bool(suggest_cfg.get("enabled", True))):
             if args.json:
                 json.dump(
                     {
                         "needs_adr": False,
                         "confidence": "low",
-                        "reason": "adr-suggest disabled (opt-in: set suggest.enabled or ADR_KIT_SUGGEST=1)",
+                        "reason": "adr-suggest disabled (ADR_KIT_SUGGEST_DISABLE=1 or suggest.enabled: false)",
                         "suggested_title": "",
                         "category": "none",
                         "skipped": True,
@@ -701,7 +714,7 @@ def main() -> int:
                 )
                 sys.stdout.write("\n")
             else:
-                print("[adr-suggest] (skipped: disabled — opt-in)", file=sys.stderr)
+                print("[adr-suggest] (skipped: disabled)", file=sys.stderr)
             return 0
 
         diff_text = read_diff(args.diff)

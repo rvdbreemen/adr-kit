@@ -258,8 +258,10 @@ than wall-clock against a live model.
 
 ### Verification
 
-* `adr-query-embedding-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships. It covers the three
-  acceptance cases above and the R21 latency bound.
+* `adr-query-embedding-v1`: the gate that anchors this decision. It ships in
+  `tests/test_adr_semantic_route.py`, so `gate` carries the name and `binding`
+  is true. It covers the three acceptance cases above and the R21 latency
+  bound.
 
 ## Consequences
 

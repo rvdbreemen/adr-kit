@@ -556,9 +556,19 @@ def test_repository_graph_matches_versioned_schema_surface():
     assert all(set(node) == adr_required for node in graph["adrs"])
     assert all(set(edge) == edge_required for edge in graph["relationships"])
     assert all(len(node["decision_summary"]) <= 120 for node in graph["adrs"])
-    graph_bytes = (REPO_ROOT / "docs" / "adr" / "ADR-INDEX.json").stat().st_size
+    # Normalised rather than `st_size`, because the budget is about how much
+    # graph an agent has to carry, and a carriage return is not context. On a
+    # Windows checkout `core.autocrlf` adds one byte per line -- 2661 of them
+    # here -- which put the file 1958 bytes over a budget it clears by 703 on
+    # the LF checkout CI uses. That is a platform artefact reported as a
+    # governance failure, and the same shape as the drift false positive in
+    # TASK-57.
+    def _content_bytes(path):
+        return len(path.read_bytes().replace(b"\r\n", b"\n"))
+
+    graph_bytes = _content_bytes(REPO_ROOT / "docs" / "adr" / "ADR-INDEX.json")
     markdown_bytes = sum(
-        path.stat().st_size
+        _content_bytes(path)
         for path in (REPO_ROOT / "docs" / "adr").glob("ADR-*.md")
     )
     assert graph_bytes <= 16 * 1024 + 2 * 1024 * len(graph["adrs"])
