@@ -178,11 +178,10 @@ one.
 
 ### Verification
 
-* `adr-open-questions-append-only-v1`: the gate this decision is to be anchored
-  by. It does not exist yet, so `gate` is null and `binding` is false: a
-  frontmatter that declares enforcement it cannot deliver is worse than one
-  that admits the gap. Both fields flip back together when the gate ships,
-  covering the delete case, the answer case, and the no-history case.
+* `adr-open-questions-append-only-v1`: the gate that anchors this decision. It
+  ships in `tests/test_open_questions_append_only.py`, so `gate` carries the
+  name and `binding` is true. It covers the delete case, the answer case, and
+  the no-history case.
 
 ## Consequences
 

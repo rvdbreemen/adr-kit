@@ -784,7 +784,7 @@
           "ping remains implemented for legacy clients although revision 2026-07-28 removes it. It is reachable on a modern-routed request — any frame carrying the sentinel routes modern, including ping — and the answer there is -32601, with no res..."
         ],
         "verification": [
-          "tests/testadrmcp.py — the conformance suite described under Confirmation, carrying the gate id adr-mcp-dual-era-v1. This is where every positive obligation of this contract is verified. It does not exist yet; verifiedin stays empty until...",
+          "tests/testadrmcp.py — the conformance suite described under Confirmation, carrying the gate id adr-mcp-dual-era-v1. This is where every positive obligation of this contract is verified. It ships, carrying the gate anchor, and verifiedin...",
           "bin/adr-judge declarative rules from the Enforcement block below. They are deliberately negative only — a forbidpattern tripwire against the version echo and a forbidimport allowlist for the zero-dependency rule. No requirepattern rule i...",
           "The semantic obligations that no regex can express — resultType stamping, cacheScope: \"public\", the -32022 data shape, era routing, cache hints absent from tools/call — are covered by the conformance suite and human review, not by the LL..."
         ]
@@ -1044,7 +1044,7 @@
           "A remote embedding endpoint is permitted when the user has selected one through the settings surface, having been told the latency and privacy consequence. It is never the default and never selected by probing."
         ],
         "verification": [
-          "adr-query-embedding-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It covers the three acceptance cases above and the R21 latency bound."
+          "adr-query-embedding-v1: the gate that anchors this decision. It ships in tests/testadrsemanticroute.py, so gate carries the name and binding is true. It covers the three acceptance cases above and the R21 latency bound."
         ]
       },
       "scope": {
@@ -1107,7 +1107,7 @@
           "None."
         ],
         "verification": [
-          "adr-hook-index-refresh-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fi..."
+          "adr-hook-index-refresh-v1: the gate that anchors this decision. It ships in tests/testadrhookindexrefresh.py, so gate carries the name and binding is true. It covers the write-then-prompt sequence, the concurrent-hook case, and the budge..."
         ]
       },
       "scope": {
@@ -1167,7 +1167,7 @@
           "Outside a git repository, or where the ADR has no recorded prior state, the finding is advisory."
         ],
         "verification": [
-          "adr-open-questions-append-only-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap...."
+          "adr-open-questions-append-only-v1: the gate that anchors this decision. It ships in tests/testopenquestionsappendonly.py, so gate carries the name and binding is true. It covers the delete case, the answer case, and the no-history case."
         ]
       },
       "scope": {
@@ -1228,7 +1228,7 @@
           "ADRKITHOOKDISABLE and the per-ADR override of spec R2.1 apply here as they do at commit time. A gate that cannot be overridden with a reason is overridden outside the tool."
         ],
         "verification": [
-          "adr-pr-guard-tier-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the deny path, the advisory path, and the fail-open path."
+          "adr-pr-guard-tier-v1: the gate that anchors this decision. It ships in tests/testadrprguard.py, so gate carries the name and binding is true. It covers the deny path, the advisory path, and the fail-open path."
         ]
       },
       "scope": {
@@ -1289,7 +1289,7 @@
           "A project may add a pullrequest workflow of its own. This decision governs what adr-kit turns on by default, not what a team may choose."
         ],
         "verification": [
-          "adr-pr-suggest-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fields fli..."
+          "adr-pr-suggest-v1: the gate that anchors this decision. It ships in tests/testprsuggestnudge.py, so gate carries the name and binding is true. It covers the both-signals case, the clean-branch case, and the advisory-never-denies case."
         ]
       },
       "scope": {
@@ -1349,7 +1349,7 @@
           "The legacy judge.llmcmd allowlist is retained for existing projects. It is frozen: no new entries, no new flags."
         ],
         "verification": [
-          "adr-config-trust-boundary-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the credential refusal, the command-string refusal, and the redacted settings output."
+          "adr-config-trust-boundary-v1: the gate that anchors this decision. It ships in tests/testadrsettings.py, so gate carries the name and binding is true. It covers the credential refusal, the command-string refusal, and the redacted setting..."
         ]
       },
       "scope": {
@@ -1410,7 +1410,7 @@
           "None."
         ],
         "verification": [
-          "adr-audit-exit-contract-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts each of the five exit codes against a fixture, so the contract is enforced rather than described."
+          "adr-audit-exit-contract-v1: the gate that anchors this decision. It ships in tests/testadrauditcommand.py, so gate carries the name and binding is true. It asserts each of the five exit codes against a fixture, so the contract is enforce..."
         ]
       },
       "scope": {
@@ -1472,7 +1472,7 @@
           "None."
         ],
         "verification": [
-          "adr-signer-derivation-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering derivation, announcement, precedence, the machine-identity refusal, and the write-nothing behaviour of --suggest."
+          "adr-signer-derivation-v1: the gate that anchors this decision. It ships in tests/testadrsignerdiscovery.py, so gate carries the name and binding is true. It covers derivation, announcement, precedence, the machine-identity refusal, and t..."
         ]
       },
       "scope": {
@@ -1529,7 +1529,7 @@
           "None."
         ],
         "verification": [
-          "adr-reference-gate-scope-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the dangling case, the one-sided case, and the prose-is-ignored case."
+          "adr-reference-gate-scope-v1: the gate that anchors this decision. It ships in tests/testadrcrossreferences.py, so gate carries the name and binding is true. It covers the dangling case, the one-sided case, and the prose-is-ignored case."
         ]
       },
       "scope": {
@@ -1588,7 +1588,7 @@
           "A future native path is permitted when it delegates to the shared engine rather than reimplementing it, and carries the artefact parity test."
         ],
         "verification": [
-          "adr-single-retrieval-engine-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts that no second ranking implementation ships, and that the edit-tier path meets its declared budget."
+          "adr-single-retrieval-engine-v1: the gate that anchors this decision. It ships in tests/testadrhookdispatchmatrix.py, so gate carries the name and binding is true. It asserts that no second ranking implementation ships, and that the edit-..."
         ]
       },
       "scope": {

@@ -211,9 +211,9 @@ manifest entry declares.
 
 ### Verification
 
-* `adr-pr-guard-tier-v1`: the gate that anchors this decision.
-  Both fields flip back together when the gate ships, covering the deny path,
-  the advisory path, and the fail-open path.
+* `adr-pr-guard-tier-v1`: the gate that anchors this decision. It ships in
+  `tests/test_adr_pr_guard.py`, so `gate` carries the name and `binding` is
+  true. It covers the deny path, the advisory path, and the fail-open path.
 
 ## Consequences
 

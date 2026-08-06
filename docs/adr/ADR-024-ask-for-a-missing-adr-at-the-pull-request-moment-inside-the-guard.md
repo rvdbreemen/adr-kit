@@ -159,11 +159,10 @@ the manifest declares for the event.
 
 ### Verification
 
-* `adr-pr-suggest-v1`: the gate this decision is to be anchored by. It does not
-  exist yet, so `gate` is null and `binding` is false: a frontmatter that
-  declares enforcement it cannot deliver is worse than one that admits the gap.
-  Both fields flip back together when the gate ships, covering the both-signals
-  case, the clean-branch case, and the advisory-never-denies case.
+* `adr-pr-suggest-v1`: the gate that anchors this decision. It ships in
+  `tests/test_pr_suggest_nudge.py`, so `gate` carries the name and `binding` is
+  true. It covers the both-signals case, the clean-branch case, and the
+  advisory-never-denies case.
 
 ## Consequences
 
