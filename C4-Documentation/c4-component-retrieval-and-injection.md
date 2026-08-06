@@ -661,14 +661,17 @@ this component. None is sanitized.
    field-weighted positive evidence over eight fields (ADR-014). ADR-004 is Accepted and
    therefore immutable by policy, so only the docstring can be corrected.
 3. **`adr-index -o` reports success when the write fails.** `_run_context_mode`
-   (`bin/adr-index:110-115`, moved here from `:329-334` when the renderer was extracted
-   into `bin/adr_index_core.py` on 2026-08-02) catches `OSError` around
-   `Path(args.output).write_text(...)`, prints to stderr, and `return 0`. Deliberate
+   (`bin/adr-index:110-115`) catches `OSError` around `Path(args.output).write_text(...)`,
+   prints to stderr, and `return 0`. This logic stayed in `bin/adr-index` itself through
+   the 2026-08-02 extraction described above — only the renderers it calls moved into
+   `bin/adr_index_core.py` — so the code moved within the same 199-line file; the
+   pre-2026-08-02 doc had it around line 330 of the then-418-line file. Deliberate
    fail-open per ADR-004, but a CI step using `-o` cannot detect a failed write from the
    exit code.
 4. **`adr-index` flag precedence silently swallows `--check`.** `_should_use_context_mode`
-   (`bin/adr-index:88-93`, moved here from `:307-312` in the same extraction) tests
-   `--output`/`--adr-dir` *before* `--check`. Re-verified 2026-08-06:
+   (`bin/adr-index:88-93`) tests `--output`/`--adr-dir` *before* `--check`. Same file, same
+   2026-08-02 renumbering (it sat around line 308 of the pre-split 418-line file).
+   Re-verified 2026-08-06:
    `python bin/adr-index --adr-dir docs/adr --check` prints the Markdown index to stdout
    and exits 0 — `--check` is ignored, so a freshness gate written that way always
    passes. Repository CI is unaffected because it uses the positional form.
