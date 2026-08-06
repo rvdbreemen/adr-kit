@@ -12,6 +12,7 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-017"
+  - "ADR-034"
 topics:
   - "configuration"
   - "security"
@@ -55,6 +56,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-034
     changed_via: adr-kit lifecycle
 ```
 

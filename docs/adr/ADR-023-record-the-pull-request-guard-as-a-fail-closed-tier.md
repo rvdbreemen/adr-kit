@@ -14,6 +14,7 @@ related:
   - "ADR-004"
   - "ADR-019"
   - "ADR-024"
+  - "ADR-034"
 topics:
   - "hooks"
   - "enforcement"
@@ -67,6 +68,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-034
     changed_via: adr-kit lifecycle
 ```
 

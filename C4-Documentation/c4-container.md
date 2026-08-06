@@ -181,7 +181,9 @@ per-connection state. All three shipped copies (`bin/adr-mcp`,
 
 Eight events, read directly from the manifest (schema version 1). Global
 policy: `fail_open: true`, `network_allowed: false`,
-`future_clients_allowed: false`.
+`future_clients_allowed: false`. The network line is the *default* every event
+inherits, not a property of the set (ADR-034): `user-prompt-submit` and
+`pr-create` override it with `network_allowed: true` and a `network_reason`.
 
 | Event id | Native matcher | Outcome | p50 / p95 | Hard timeout | Claude Code | Codex | Copilot |
 | --- | --- | --- | ---: | ---: | --- | --- | --- |

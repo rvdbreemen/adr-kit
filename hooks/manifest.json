@@ -4,6 +4,7 @@
   "policy": {
     "fail_open": true,
     "network_allowed": false,
+    "network_allowed_note": "The default every event inherits, not a property of the set (ADR-034). An event overrides it with its own network_allowed plus a network_reason. Read the event, not this line.",
     "future_clients_allowed": false
   },
   "events": [
@@ -30,6 +31,8 @@
       "command": "user-prompt-submit",
       "matcher": null,
       "outcome": "task-context",
+      "network_allowed": true,
+      "network_reason": "The only event in hooks/adr-hook.py's EMBEDDING_EVENTS. Where a vector store exists, adr_embed_query.embedder_for embeds the query through the backend registry: an HTTP request to localhost:11434 for ollama, or to whatever base_url names for openai-compatible, which ADR-020 permits to be remote when the user selected it through the settings surface. No generative model and no billing; it fails soft to lexical ranking on any doubt. Declared because a local socket is still the network and the same path reaches a remote host when pointed at one (ADR-034).",
       "runner_timeout_sec": 5,
       "latency_budget_ms": 900,
       "latency": {
@@ -99,6 +102,8 @@
       "command": "pre-tool-use",
       "matcher": "Bash",
       "outcome": "enforcement",
+      "network_allowed": true,
+      "network_reason": "Served by hooks/adr_pr_guard.py, which spawns bin/adr-judge on every gh pr create and bin/adr-suggest when suggestions are enabled. The judge's LLM pass is on by default (ADR-017) and reaches a generative model whenever a backend resolves -- which it does as soon as the installer has recorded judge.host_client, or tracked config selects a backend (ADR-025). Nothing leaves the machine when no backend resolves, but the capability is declared here rather than the current machine's configuration (ADR-034).",
       "latency_budget_ms": 5000,
       "latency_ceiling_exception": "ADR-031",
       "latency": {

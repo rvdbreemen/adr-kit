@@ -3,9 +3,10 @@ id: TASK-141
 title: >-
   ADR-021's body still explains why its gate is null, but the gate shipped and
   the frontmatter flipped
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-06 06:06'
+updated_date: '2026-08-06 16:25'
 labels:
   - adr
   - docs

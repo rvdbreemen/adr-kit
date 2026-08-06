@@ -1,9 +1,10 @@
 ---
 id: TASK-138
 title: Generated client-support.md attributes to ADR-004 the option ADR-004 rejected
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-06 05:53'
+updated_date: '2026-08-06 16:31'
 labels:
   - docs
   - generated

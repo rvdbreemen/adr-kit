@@ -464,7 +464,7 @@ the MCP path and the installer path meet, and it is a hard coupling — see nota
 | `kernel32.dll` | Link-time `ExitProcess` in the `no_std` floor probe | |
 | Filesystem and OS | Per-user data roots (`%LOCALAPPDATA%`, `~/Library/Application Support`, `$XDG_DATA_HOME`); `os.open` with `O_CREAT\|O_EXCL` for locking; `os.replace` for atomic swaps; POSIX `chmod`; the OS temp directory for hook dedupe state | |
 | Environment | Read: `PROJECT_ROOT`, `ADR_KIT_PYTHON`, `ADR_KIT_NATIVE_HOOK`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`. Written for probes: `CLAUDE_PLUGIN_ROOT`, `PLUGIN_ROOT`, `COPILOT_PLUGIN_ROOT` | |
-| **Network** | **Declared none, not verified none.** `hooks/manifest.json` declares `network_allowed: false`, and no test asserts that against runtime behaviour. `hooks/` itself opens no socket and reads no credential directly. The one path that can reach outward is the `pr-create` guard's nudge, which spawns `bin/adr-suggest` — an LLM call, fail-open if no backend resolves. Everywhere else in this component the declared claim holds: MCP is key-free by construction, and every other hook tier is lexical retrieval over a local JSON file | |
+| **Network** | **Declared per event, and asserted.** `hooks/manifest.json` carries `network_allowed: false` as the default and `true` on the two events that can reach out (ADR-034): `pr-create`, whose guard spawns `bin/adr-judge` — LLM pass on by default per ADR-017 — and `bin/adr-suggest` when suggestions are enabled; and `user-prompt-submit`, the sole member of `EMBEDDING_EVENTS`, which embeds the query through the same backend registry. `tests/test_adr_pr_guard.py` asserts the `true` against behaviour and the `false` against ADR-018's import gate. Everywhere else the claim holds structurally: MCP is key-free by construction, and every other hook tier is lexical retrieval over a local JSON file | |
 
 ---
 
@@ -904,21 +904,29 @@ Ranked by how likely each is to bite a maintainer or an integrator.
     `bin/adr-judge`'s `DEFAULT_LLM_TIMEOUT_S`, not `bin/adr-suggest`'s, whose own default dropped to
     30 s. Do not conflate the two CLIs' timeouts.
 
-27. **The `pr-create` hook is the one hook path that can reach a *generative* model with no way to
-    suppress it, undeclared as such anywhere in the manifest's policy block.**
-    `hooks/manifest.json`'s `policy.network_allowed: false` is a declaration no test checks against
+27. **RESOLVED (ADR-034, TASK-140). The `pr-create` hook is the one hook path that can reach a
+    *generative* model with no way to suppress it, undeclared as such anywhere in the manifest's
+    policy block.** The manifest now declares `network_allowed` per event, `true` on `pr-create` and
+    on `user-prompt-submit`, each with a `network_reason`; `tests/test_adr_pr_guard.py` asserts both
+    directions. The finding as originally written is kept below because two of its claims were
+    wrong, and the corrections are the useful part.
+    `hooks/manifest.json`'s `policy.network_allowed: false` was a declaration no test checked against
     runtime behaviour. Part of the surrounding claim still holds: `hooks/` itself imports only the
     standard library, so nothing in the package can dial out directly. But `adr_pr_guard._nudge()`
     ([`hooks/adr_pr_guard.py:191-228`](../hooks/adr_pr_guard.py)) spawns `bin/adr-suggest` on every
-    clean, checked branch to ask about missing decisions (ADR-024). Unlike the judge call the same
-    guard makes just before it — which passes no `--llm` flag and inherits no `ADR_KIT_NO_LLM`, so it
-    stays deterministic by omission — `bin/adr-suggest` has no flag or environment variable that
-    suppresses its model call at all: it resolves `judge.backend` (default `host`, the client CLI
+    clean, checked branch to ask about missing decisions (ADR-024). **Correction:** the judge call the same guard
+    makes just before it does *not* stay deterministic by omission. ADR-017 made `judge.llm_enabled`
+    default to `true` (`bin/adr-judge:1995`), so passing no `--llm` flag leaves the pass **on**; it
+    is the larger of the two paths, not the safe one. `bin/adr-suggest` is double-gated behind
+    `suggest.enabled` / `ADR_KIT_SUGGEST=1`, though within that gate it has no flag or environment
+    variable that suppresses its model call at all: it resolves `judge.backend` (default `host`, the client CLI
     recorded at install time) and calls it, failing open only if that CLI is genuinely absent from
-    `PATH`. A second, weaker case exists too: ADR-020 lets `SessionStart`/`UserPromptSubmit` embed the
-    query through `adr_embed_query.embedder_for`, which may itself resolve to a networked backend —
-    but that function declines rather than raises when nothing resolves, so it degrades to lexical
-    ranking rather than reaching outward unconditionally the way `adr-suggest` does. The MCP surface's
+    `PATH`. **Correction:** the second case is `UserPromptSubmit` alone —
+    `hooks/adr-hook.py:108` sets `EMBEDDING_EVENTS = {"UserPromptSubmit"}`, and `SessionStart` never
+    embeds. ADR-020 lets that one event embed the query through `adr_embed_query.embedder_for`, which
+    may resolve to a networked backend; it declines rather than raises when nothing resolves, so it
+    degrades to lexical ranking rather than reaching outward unconditionally. Quieter than the guard,
+    not closed — which is why ADR-034 declares it too. The MCP surface's
     "key-free by construction" claim and this component's "advisory and fail-open" framing both remain
     true in the sense they were written for; neither anticipated a hook-initiated model call when they
     were written.
