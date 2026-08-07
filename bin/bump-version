@@ -1,40 +1,34 @@
 #!/usr/bin/env python3
-"""bump-version: adr-kit release helper.
+"""bump-version: thin delegation to the canonical release writer.
 
 Usage: bin/bump-version <new-version>
   e.g. bin/bump-version 0.16.0
   (on Windows: python bin/bump-version 0.16.0)
 
-What it does:
-  1. Validates semver format of the argument
-  2. Writes the version to EVERY site declared in packaging/version-sites.json
-     -- the three client plugin manifests, both marketplace manifests, the
-     template version stamps, this repo's own pre-commit wrapper stamp and the
-     README copy-paste pins
-  3. Replaces "## [Unreleased]" in CHANGELOG.md with "## [<version>] - <today>",
-     inserts a fresh "## [Unreleased]" block above it, and rewrites the compare
-     links at the bottom
-  4. Prints what changed; does NOT commit or tag (do that yourself)
+**This script implements nothing.** `scripts/bump-version.py` is the canonical
+writer named by ADR-013 and `docs/RELEASING.md`; this entry point exists only
+because `bin/` is where every other adr-kit command lives, and removing a path
+people have in their shell history is a worse outcome than keeping four lines
+that forward.
 
-Where the version lives is DECLARED, not coded (ADR-013). This script owns the
-CHANGELOG -- the registry's canonical read-source, which is why it is not a
-writable site -- and delegates every other file to scripts/version_sites.py, the
-shared engine that the release gate and the test suite also read. Adding a
-version-bearing file is one line in the registry; nothing here needs to learn
-about it. The two halves used to disagree: this script carried its own list of
-paths, which was missing both README pins, so they were verified by the tests but
-never written and silently shipped a stale version to every new consumer.
+Why it stopped being a second implementation (TASK-139). Both scripts bumped the
+version, and they did not do the same thing. This one knew how to rewrite the
+CHANGELOG compare-link block; the one the runbook names did not. So the runbook
+ran the weaker tool and the link block went stale on every single release --
+after v0.46.0 the block still read `compare/v0.45.0...HEAD`, and checking the
+rest of it found seven further headings with no target at all. Two files that
+both claim to bump the version is the defect underneath the missing links, and
+deleting one implementation is the only fix that does not reproduce it.
 
-Note that `scripts/bump-version.py` is the writer named by ADR-013 and
-docs/RELEASING.md. This script is the older entry point, kept because it is what
-lives in bin/ alongside every other command; both now drive the same registry
-through the same engine, so neither can miss a site the other writes.
+The link logic, the plugin-identity preflight and the marketplace-entry
+validation that used to live here now live in `scripts/bump-version.py`, so the
+runbook's tool performs them.
 
 History: this was a bash script until v0.31.0. It shelled out to python3 for
 each file edit, and on Windows the `python3` Store alias routes through the
 Python Install Manager, which scans argv for a script file and dispatches on
-ITS shebang: passing the bash-shebanged pre-commit template as an argument
-made the launcher exec bash instead of python. Pure stdlib Python avoids the
+ITS shebang: passing the bash-shebanged pre-commit template as an argument made
+the launcher exec bash instead of python. Pure stdlib Python avoids the
 launcher's argv scanning entirely, needs no Git Bash, and matches every other
 bin in this repo.
 """
@@ -43,45 +37,29 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
-import json
-import re
 import sys
-from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CHANGELOG = REPO_ROOT / "CHANGELOG.md"
-
-SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
-UNRELEASED_LINK_RE = re.compile(r"^\[Unreleased\]:\s+.*$", re.MULTILINE)
-
-# Which declared sites carry plugin identity, derived from what the registry
-# says rather than from a second list of paths: a client plugin manifest is a
-# JSON site pointing at /version, a marketplace manifest one pointing at
-# /plugins/<n>/version.
-PLUGIN_MANIFEST_POINTER = "/version"
-MARKETPLACE_POINTER_RE = re.compile(r"^/plugins/(\d+)/version$")
 
 
-def _load_engine():
-    """Load scripts/version_sites.py by explicit path, WITHOUT touching sys.path.
+def _load_writer():
+    """Load scripts/bump-version.py by explicit path, WITHOUT touching sys.path.
 
-    SEC-HIGH (TASK-62): `sys.path.insert` from a file in bin/ puts that directory
-    ahead of the standard library for every import that follows, so anything
-    committed next to this script executes as code. Loading by file location
-    keeps bin/ non-importable. Same shape as bin/adr-judge._load_sibling, aimed
-    at scripts/ because the version engine is shared with the release gate and
-    must not be mirrored into the client trees (bin/ is a copy root; scripts/
-    is not).
+    SEC-HIGH (TASK-62): `sys.path.insert` from a file in bin/ puts that
+    directory ahead of the standard library for every import that follows, so
+    anything committed next to this script executes as code. Loading by file
+    location keeps bin/ non-importable. Same shape as bin/adr-judge._load_sibling,
+    aimed at scripts/ because the writer is shared with the release gate and must
+    not be mirrored into the client trees (bin/ is a copy root; scripts/ is not).
     """
-    name = "version_sites"
+    name = "adr_kit_bump_version"
     cached = sys.modules.get(name)
     if cached is not None:
         return cached
-    source = REPO_ROOT / "scripts" / f"{name}.py"
-    if not source.is_file():
-        _fail(f"{source} not found; cannot resolve the version-site registry")
-    loader = importlib.machinery.SourceFileLoader(name, str(source))
+    loader = importlib.machinery.SourceFileLoader(
+        name, str(REPO_ROOT / "scripts" / "bump-version.py")
+    )
     spec = importlib.util.spec_from_loader(name, loader)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -89,182 +67,5 @@ def _load_engine():
     return module
 
 
-def _fail(msg: str) -> "NoReturn":
-    sys.stderr.write(f"ERROR: {msg}\n")
-    sys.exit(1)
-
-
-def _read_json(path: Path) -> object:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        _fail(f"{path}: {exc}")
-
-
-def _plugin_identity(registry: dict) -> "tuple[str, str]":
-    """Return the (name, version) every declared client manifest agrees on.
-
-    Nothing declares a canonical manifest, so agreement is the check: if the
-    three client manifests disagree on the name, there is no defensible value to
-    write into the marketplace entries.
-    """
-    manifests = [
-        site
-        for site in registry["sites"]
-        if site.get("kind") == "json" and site.get("pointer") == PLUGIN_MANIFEST_POINTER
-    ]
-    if not manifests:
-        _fail("registry declares no client plugin manifest (a JSON site at /version)")
-
-    names: dict = {}
-    version = "?"
-    for site in manifests:
-        data = _read_json(REPO_ROOT / site["path"])
-        if not isinstance(data, dict) or not isinstance(data.get("version"), str):
-            _fail(f"{site['path']}: expected an object with a string version field")
-        name = data.get("name")
-        if not isinstance(name, str) or not name:
-            _fail(f"{site['path']}: expected a non-empty string name")
-        names.setdefault(name, []).append(site["path"])
-        version = data["version"]
-    if len(names) > 1:
-        detail = "; ".join(f"{n!r} in {', '.join(p)}" for n, p in sorted(names.items()))
-        _fail(f"all client manifests must use the same plugin name: {detail}")
-    return next(iter(names)), version
-
-
-def _check_marketplace_entries(registry: dict, plugin_name: str) -> None:
-    """Assert each marketplace pointer resolves to this plugin's own entry.
-
-    The registry addresses marketplace versions positionally (/plugins/0/version)
-    but the field's meaning is name-bound: it is what the Claude Code plugin
-    update system compares against, so writing our version into a neighbouring
-    plugin's entry ships a wrong version and leaves ours stale (issue #6). A
-    positional pointer cannot express that, so it is checked here instead of
-    being weakened into a pattern.
-    """
-    for site in registry["sites"]:
-        if site.get("kind") != "json":
-            continue
-        match = MARKETPLACE_POINTER_RE.match(site.get("pointer") or "")
-        if not match:
-            continue
-        index = int(match.group(1))
-        path = site["path"]
-        data = _read_json(REPO_ROOT / path)
-        plugins = data.get("plugins") if isinstance(data, dict) else None
-        if not isinstance(plugins, list):
-            _fail(f"{path}: expected a plugins array")
-        if index >= len(plugins):
-            _fail(f"{path}: pointer {site['pointer']} is past the end of the array")
-        target = plugins[index]
-        if not isinstance(target, dict):
-            _fail(f"{path}: the entry at {site['pointer']} is not an object")
-        if target.get("name") != plugin_name:
-            _fail(
-                f"no plugin named {plugin_name!r} at {site['pointer']} in {path} "
-                f"(found {target.get('name')!r} there)"
-            )
-        if not isinstance(target.get("version"), str):
-            _fail(f"{path}: matching plugin entries require string version fields")
-        others = [
-            position
-            for position, entry in enumerate(plugins)
-            if position != index
-            and isinstance(entry, dict)
-            and entry.get("name") == plugin_name
-        ]
-        if others:
-            _fail(
-                f"{path}: {plugin_name!r} also appears at index {others}, which the "
-                f"pointer {site['pointer']} would leave stale"
-            )
-
-
-def _update_changelog_links(changelog: str, current: str, new: str) -> str:
-    unreleased = (
-        "[Unreleased]: "
-        f"https://github.com/rvdbreemen/adr-kit/compare/v{new}...HEAD"
-    )
-    release = (
-        f"[{new}]: "
-        "https://github.com/rvdbreemen/adr-kit/compare/"
-        f"v{current}...v{new}"
-    )
-    if UNRELEASED_LINK_RE.search(changelog):
-        return UNRELEASED_LINK_RE.sub(
-            unreleased + "\n" + release,
-            changelog,
-            count=1,
-        )
-    return changelog.rstrip() + "\n\n" + unreleased + "\n" + release + "\n"
-
-
-def main(argv: list) -> int:
-    if len(argv) != 2:
-        prog = Path(argv[0]).name if argv else "bump-version"
-        sys.stderr.write(f"Usage: {prog} <new-version>\n")
-        sys.stderr.write(f"  e.g. {prog} 0.16.0\n")
-        return 1
-    new_version = argv[1]
-
-    if not SEMVER_RE.match(new_version):
-        _fail(f"version must be semver (e.g. 0.16.0), got: {new_version}")
-
-    engine = _load_engine()
-
-    # Preflight: compute every edit, and validate every assumption, before the
-    # first write. Nothing below reaches the disk until the transaction runs.
-    try:
-        registry = engine.load_registry(REPO_ROOT)
-    except engine.VersionSiteError as exc:
-        _fail(str(exc))
-
-    if not CHANGELOG.is_file():
-        _fail(f"{CHANGELOG} not found")
-    changelog = CHANGELOG.read_text(encoding="utf-8")
-    if "## [Unreleased]" not in changelog:
-        _fail("CHANGELOG.md has no '## [Unreleased]' section")
-
-    plugin_name, plugin_version = _plugin_identity(registry)
-    _check_marketplace_entries(registry, plugin_name)
-
-    try:
-        changes = engine.plan_writes(REPO_ROOT, new_version, registry)
-    except engine.VersionSiteError as exc:
-        _fail(str(exc))
-
-    # The CHANGELOG heading is the registry's canonical source; the manifests are
-    # only a fallback for a tree that has not cut a release yet.
-    current = engine.read_canonical(REPO_ROOT, registry) or plugin_version
-    today = date.today().isoformat()
-    print(f"Bumping {plugin_name}: {current} -> {new_version} (date: {today})")
-
-    changelog = changelog.replace(
-        "## [Unreleased]",
-        f"## [Unreleased]\n\n## [{new_version}] - {today}",
-        1,
-    )
-    changelog = _update_changelog_links(changelog, current, new_version)
-    changes[CHANGELOG] = changelog.replace("\r\n", "\n").encode("utf-8")
-
-    try:
-        engine.apply_transaction(changes)
-    except engine.VersionSiteError as exc:
-        _fail(str(exc))
-
-    staged = sorted(path.relative_to(REPO_ROOT).as_posix() for path in changes)
-    for relative in staged:
-        print(f"  + {relative} -> {new_version}")
-
-    print()
-    print("Done. Verify the changes, then:")
-    print("  git add " + " ".join(staged))
-    print(f'  git commit -m "chore(release): v{new_version}"')
-    print(f"  git tag v{new_version}")
-    print("  git push origin main --tags")
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(_load_writer().main(sys.argv[1:]))

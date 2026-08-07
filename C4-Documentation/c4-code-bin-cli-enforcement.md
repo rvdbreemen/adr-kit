@@ -25,11 +25,11 @@
 
 ADR-008 governs `templates/githooks/pre-commit` (engine root resolution), not the files in this cluster; ADR-014 mentions `adr-judge` only in passing. Neither is cited as governing here.
 
-#### ADR-001 compliance: verified, and one gap
+#### ADR-001 and ADR-017 compliance: verified
 
-The behavioural mandates of ADR-001 hold in the code. `judge.llm_enabled` exists and defaults false; activation is the three-way OR at [`bin/adr-judge:1699`](../bin/adr-judge); `templates/githooks/pre-commit:193-194` builds `_LLM_FLAG` from `ADR_KIT_LLM` instead of hard-coding `--llm`, which is exactly what the ADR's "Manual review only" Enforcement note asks reviewers to check.
+The behavioural mandates of ADR-001 hold in the code. `judge.llm_enabled` exists and defaults false; activation is the three-way OR at [`bin/adr-judge:1698-1699`](../bin/adr-judge). The pre-commit template at [`templates/githooks/pre-commit:243-244`](../templates/githooks/pre-commit) builds `_LLM_FLAG` from `ADR_KIT_LLM` instead of hard-coding `--llm`, which is exactly what the ADR's "Manual review only" Enforcement note requires.
 
-The **module docstring has not followed**. [`bin/adr-judge:4-18`](../bin/adr-judge) still states that "Two evaluation paths run on every commit when invoked from the pre-commit hook" and describes the LLM pass as "opt-out via `ADR_KIT_NO_LLM=1`" — the pre-ADR-001 semantics. The runtime is correct; only the prose is stale. Because ADR-001 deliberately declines a declarative rule, nothing mechanical will ever catch this drift. The `--llm` flag's own help text at [`:1636`](../bin/adr-judge) says "Default off" and is accurate, so the file contradicts itself 1600 lines apart.
+The module docstring was updated to reflect ADR-017. [`bin/adr-judge:2-35`](../bin/adr-judge) correctly describes the LLM pass as "on by default per ADR-017; opt-out via `ADR_KIT_NO_LLM=1`" and documents the per-ADR isolation introduced by ADR-017 ("`ONE ISOLATED call PER ADR`", line 13). The security fix for SEC-HIGH TASK-63 (replacing batching with per-ADR isolation) is documented in the docstring at lines 26-34.
 
 ---
 
@@ -107,10 +107,11 @@ Every regex is evaluated through `_safe_regex_search` → `adr_regex.bounded_reg
 | `read_snapshot_content(diff_file: DiffFile, repo_root: Path, snapshot_mode: str, cache: Optional[Dict[Tuple[str, str], Tuple[str, Optional[str]]]] = None) -> Tuple[str, Optional[str]]` | Returns `("present"\|"missing"\|"unknown", content)`. The cache keyed by `(snapshot_mode, path)` avoids re-spawning `git show` when several require rules target the same file. | `bin/adr-judge:810` |
 | `extract_title(body: str) -> str` | The `# ADR-NNN Title` line text, or `''`. | `bin/adr-judge:875` |
 | `extract_decision(body: str) -> str` | Body of `## Decision` — delegates to `adr_format.section_text(body, "decision")`, so it is format-profile-aware (MADR / Nygard / canonical). | `bin/adr-judge:881` |
-| `collect_llm_targets(adrs: List[Tuple[str, Path, str]]) -> List[Dict]` | `[{adr_id, title, decision}]` for Accepted ADRs whose block is valid **and** has `llm_judge: true` **and** has a non-empty Decision. Invalid blocks never reach the prompt. | `bin/adr-judge:891` |
-| `build_llm_prompt(targets: List[Dict], diff_text: str) -> str` | Builds the single batch prompt. ADR set placed **before** the diff so the prompt-cache prefix stays stable across commits. Both blobs wrapped in SHA-256-derived sentinel fences with an explicit prompt-injection warning. | `bin/adr-judge:939` |
-| `parse_llm_response(raw: str) -> Dict[str, Dict]` | Three-tier JSON recovery: direct parse → fenced ```` ```json ```` block → greedy first `{...}`. `JudgeError` when nothing is recoverable. | `bin/adr-judge:999` |
-| `run_llm_batch(targets: List[Dict], diff_text: str, llm_cmd: List[str], timeout_s: int) -> Optional[List[Dict]]` | **The LLM pass.** One subprocess call. Returns only `VIOLATION` findings (OK is the silent default). Returns **`None`** — meaning "fall back to declarative-only, do not block" — when the binary is off PATH, the call times out, exits non-zero, or returns unparseable output. | `bin/adr-judge:1038` |
+| `collect_llm_targets(adrs: List[Tuple[str, Path, str]], restrict_to: Optional[str] = None, diff_paths: Optional[Iterable[str]] = None) -> Tuple[List[Dict], List[Dict]]` | Returns `(targets, skipped)`. Targets: `[{adr_id, title, decision}]` for Accepted ADRs whose Enforcement block is valid, has `llm_judge: true` (defaults to true; requires explicit `false` to opt out), has a non-empty Decision section, and whose scope touches the diff. Skipped entries record reasons: invalid block, non-Accepted status, retired by supersession, scope not touched, no Decision section. Recorded so `--json` attests to which decisions were actually covered (TASK-63 AC #7). | `bin/adr-judge:1185` |
+| `build_llm_prompt(targets: List[Dict], diff_text: str) -> str` | Builds one prompt per isolated ADR call (ADR-017 per-ADR isolation, SEC-HIGH TASK-63). Single prompt structure: instruction preamble → `=== ADRS TO EVALUATE ===` → fenced ADR blob → `=== STAGED DIFF ===` → fenced diff. Fences are SHA-256-derived sentinel tokens (`<<<ADR-KIT-DATA-{sha256[:16]} BEGIN>>> … END>>>`) so an attacker cannot pre-place an END marker. | `bin/adr-judge:1281` |
+| `parse_llm_response(raw: str) -> Dict[str, Dict]` | Three-tier JSON recovery: direct parse → fenced ```` ```json ```` block → greedy first `{...}`. `JudgeError` when nothing is recoverable. Expects `{ADR-NNN: {verdict: OK|VIOLATION, reason: "..."}}` keyed to the single target ADR. | `bin/adr-judge:1374` |
+| `_run_llm_single(target: Dict, diff_text: str, backend: LLMBackend, timeout_s: int) -> Optional[Tuple[bool, str]]` | **One isolated LLM call per ADR** (ADR-017 per-ADR isolation, SEC-HIGH TASK-63/F2). Returns `(ok, reason)` or `None` (fall back to declarative-only). See `run_llm_batch` for failure handling. | `bin/adr-judge:1424` |
+| `run_llm_batch(targets: List[Dict], diff_text: str, backend: LLMBackend|List[str]|str|None, timeout_s: int, attestation: Optional[Dict] = None) -> Optional[List[Dict]]` | **The LLM pass orchestrator.** Runs one isolated call per ADR target (line 1545: `for t in targets: outcome = _run_llm_single(t, diff_text, resolved, timeout_s)`). Returns `None` (fall back to declarative-only) when: (1) no backend is configured (`"no LLM backend is configured"`), (2) any ADR call fails, times out, or returns unparseable output, (3) any call returns no verdict for its ADR id. Never returns a partial list: one failed call degrades the whole pass, because a partially-evaluated pass reported as complete is the failure mode this hardening exits to remove (SEC-HIGH, TASK-63). Never blocks even when the LLM CLI is missing or network unreachable — warns and skips (ADR-001 integrity). | `bin/adr-judge:1486` |
 | `parse_override_env(raw: str) -> Optional[Tuple[str, str]]` | Parse `ADR_KIT_OVERRIDE` into `("ADR-NNN", reason)` with zero-padded normalisation. An empty reason is an explicit **refusal** (returns `None`). | `bin/adr-judge:1162` |
 | `write_override_record(adr_dir: Path, repo_root: Path, record: Dict[str, object]) -> Optional[Path]` | Append one JSONL override record; never raises. Also best-effort registers the log in `.git/info/exclude`. | `bin/adr-judge:1234` |
 | `apply_override(findings: List[Dict], override_id: str, reason: str) -> int` | Downgrade `violation` → `advisory` **in place**, for exactly one ADR id. Returns the count. Other ADRs keep blocking. | `bin/adr-judge:1254` |
@@ -127,7 +128,7 @@ Every regex is evaluated through `_safe_regex_search` → `adr_regex.bounded_reg
 | Name | Value / role | Location |
 |---|---|---|
 | `DEFAULT_LLM_CMD` | `["claude", "-p", "--model", "claude-sonnet-4-6"]` | `bin/adr-judge:64` |
-| `DEFAULT_LLM_TIMEOUT_S` | `120` | `bin/adr-judge:65` |
+| `DEFAULT_LLM_TIMEOUT_S` | `120` (adr-judge); `30` (adr-suggest) | `bin/adr-judge:131`; `bin/adr-suggest:112` |
 | `_LLM_CMD_ALLOWLIST` | `{claude, claude-code, claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5, claude-haiku-4-5-20251001}` — enforced **only** for `judge.llm_cmd` from repo-tracked config; env and CLI overrides are deliberately unrestricted (operator-controlled). | `bin/adr-judge:71` |
 | `ENFORCEMENT_KNOWN_KEYS` | `{forbid_pattern, forbid_import, require_pattern, llm_judge}` | `bin/adr-judge:347` |
 | `ENFORCEMENT_RULE_KEYS` | `{pattern, path_glob, message}` | `bin/adr-judge:350` |
@@ -253,7 +254,7 @@ adr-judge [--diff PATH|-] [--adr-dir DIR] [--config PATH] [--json]
 | `--config` | `<adr-dir>/.adr-kit.json` | Schema-validated; a validation error is exit 2. |
 | `--snapshot` | `diff` | `staged` = `git show :path`; `worktree` = read the file; `diff` reconstructs new files but **fails closed** for incomplete modified-file patches. |
 | `--llm` | off | Per ADR-001. |
-| `--llm-cmd` / `--llm-timeout` | `claude -p --model claude-sonnet-4-6` / 120 s | |
+| `--llm-cmd` / `--llm-timeout` | `claude -p --model claude-sonnet-4-6` / 120 s | LLM timeout in `bin/adr-judge` defaults to 120 s (`judge.llm_timeout_seconds`). Each target ADR with `llm_judge: true` receives one isolated call; worst case is N targets × 120 s. `bin/adr-suggest` defaults to 30 s and derives its bound from `judge.pre_commit_timeout_ms` in the pre-commit hook (line 320-321), with a 10 s floor. |
 | `--profile` | off | Timing table on stderr: `Rule / Time(ms) / Count / Avg(ms) / Budget%`, budget = `judge.pre_commit_timeout_ms` (default 5000). |
 | `--dry-run-enforcement` | — | Single-ADR test, zero state changes (the override pass is skipped). Accepts `ADR-001`, `ADR-1`, `001`, `1`. Exit 2 if the id is unknown. |
 | `--check-override` | — | Validate `ADR_KIT_OVERRIDE` and exit. 0 = parses, 2 = missing/invalid. |
@@ -280,6 +281,8 @@ adr-judge [--diff PATH|-] [--adr-dir DIR] [--config PATH] [--json]
 
 [`schemas/adr-kit-config.schema.json`](../schemas/adr-kit-config.schema.json) declares the `judge` block with `additionalProperties: false`, so every key `adr-judge` reads must be listed there — and all of them are. The reverse is not true: the schema also accepts `judge.llm_timeout_ms` and `judge.pre_push_timeout_ms`, and a repo-wide grep finds **no reader** for `llm_timeout_ms` anywhere in `bin/`. Setting it validates cleanly and does nothing; the effective knob is `llm_timeout_seconds`. This is the same failure mode ADR-001's own Context calls out for `suggest.enabled` — "the opt-out was a documented-but-unread no-op" — still live in the same config file, one block over.
 
+**Performance budget (`judge.pre_commit_timeout_ms`)**: The pre-commit hook [`templates/githooks/pre-commit:203-231`](../templates/githooks/pre-commit) reads and validates this key from `.adr-kit.json`. When absent, defaults to 5000 ms (schema default). Accepts values 0–3,600,000 ms; anything outside that range is logged by name on stderr and the default 5000 ms is used. The value `0` disables the warning (the same as `warn_on_exceed: false`). The 1-hour ceiling accommodates projects with many ADRs (`judge.llm_timeout_seconds` defaults to 120 s; a 10-ADR project's worst case is 20 minutes).
+
 LLM-mode resolution ([`bin/adr-judge:1698`](../bin/adr-judge)):
 
 ```python
@@ -301,9 +304,13 @@ LLM-command precedence ([`:1706`](../bin/adr-judge)): `--llm-cmd` → `ADR_KIT_L
 
 ### LLM wire contract
 
-Prompt: instruction preamble → `=== ADRS TO EVALUATE (untrusted data) ===` → fenced ADR blob → `=== STAGED DIFF (untrusted data) ===` → fenced diff. Fences are `<<<ADR-KIT-DATA-{sha256[:16]} BEGIN>>> … END>>>` — the token is derived from the fenced content, so an attacker cannot pre-place a matching END marker: embedding a guessed token changes the content and therefore the token ([`bin/adr-judge:918`](../bin/adr-judge)).
+**Per-ADR isolation** (ADR-017, SEC-HIGH TASK-63/F2): Each ADR with `llm_judge: true` receives one isolated prompt containing only its own Decision and the diff. No sibling ADR's text reaches the context that decides its verdict, so a malicious decision cannot flip a genuine VIOLATION to OK (the historical exploit that prompted this redesign).
 
-Expected response: `{"ADR-NNN": {"verdict": "OK"}}` or `{"ADR-NNN": {"verdict": "VIOLATION", "reason": "<one sentence>"}}`. Reasons are truncated to 500 chars. Verdict comparison is `.upper() != "VIOLATION"` → anything not literally a violation is treated as OK.
+**Prompt structure**: Instruction preamble → `=== ADRS TO EVALUATE (untrusted data) ===` → fenced single-ADR blob → `=== STAGED DIFF (untrusted data) ===` → fenced diff. Fences are `<<<ADR-KIT-DATA-{sha256[:16]} BEGIN>>> … END>>>` — tokens derived from fenced content so an attacker cannot pre-place a matching END marker: embedding a guessed token changes the content and therefore the token ([`bin/adr-judge:1260`](../bin/adr-judge)).
+
+**Expected response**: `{"ADR-NNN": {"verdict": "OK"}}` or `{"ADR-NNN": {"verdict": "VIOLATION", "reason": "<one sentence>"}}`. Reasons are truncated to 500 chars. Verdict comparison (line 1469-1470): normalised = `raw_verdict.strip().upper()`, matched against `_LLM_OK_VERDICTS` (`frozenset({"OK"})`); anything not literally "OK" when uppercased is treated as a violation.
+
+**Degradation to declarative-only** (ADR-001 integrity): When no LLM backend is configured, or any call fails/times out/returns unparseable output, `run_llm_batch` prints a warning and returns `None`, which causes the whole LLM pass to be skipped and enforcement to fall back to declarative-only. This is deliberate: tooling drift must never block a legitimate commit. Never returns a partial list (one failed call degrades the whole pass). ([`bin/adr-judge:1531-1554`](../bin/adr-judge))
 
 ### `bin/adr-judge-precommit`
 

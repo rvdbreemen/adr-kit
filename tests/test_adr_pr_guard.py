@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -413,3 +414,198 @@ def test_the_startup_gap_is_paid_from_the_reserve():
     # a POSIX clock always loses a sliver between construction and the call.
     assert guard.Deadline(10).remaining() >= 9
     assert guard.Deadline(10).remaining() >= 9
+
+
+# --- ADR-034: the declared network property, asserted against behaviour -------
+
+def _manifest_events(tree: Path = REPO_ROOT):
+    payload = json.loads((tree / "hooks" / "manifest.json").read_text(encoding="utf-8"))
+    return payload["policy"], {event["id"]: event for event in payload["events"]}
+
+
+def _declared_network(policy: dict, event: dict) -> bool:
+    """What the manifest says about one event, default inherited from policy."""
+    return bool(event.get("network_allowed", policy["network_allowed"]))
+
+
+def test_pr_create_declares_the_network_it_can_reach():
+    """ADR-034: the one event that can spawn a model says so.
+
+    The manifest declared a flat `network_allowed: false` for all eight events
+    while this guard spawned `bin/adr-judge` on every `gh pr create`, whose LLM
+    pass is on by default (ADR-017). Nothing reads the property, which is
+    exactly why it drifted: a declaration with no reader is checked by nobody
+    and trusted by everybody.
+    """
+    policy, events = _manifest_events()
+    reaching = {"pr-create", "user-prompt-submit"}
+    for event_id, event in events.items():
+        declared = _declared_network(policy, event)
+        assert declared is (event_id in reaching), (
+            f"{event_id} declares network_allowed: {declared}; ADR-034 puts the "
+            "line at the two events whose handler steps outside adr_hook_core"
+        )
+        if declared:
+            assert event.get("network_reason"), (
+                f"{event_id} declares network_allowed: true and must say under "
+                "what condition"
+            )
+
+
+def test_the_embedding_event_set_cannot_outrun_the_declaration():
+    """ADR-034: widening EMBEDDING_EVENTS without declaring it is a finding.
+
+    `user-prompt-submit` reaches an embedding endpoint because
+    `hooks/adr-hook.py` lists it in EMBEDDING_EVENTS. That set is a decision the
+    file's own comment says is a decision -- "Widening this set is a decision" --
+    and widening it silently would put a reach-out behind a declared `false`.
+    Read from the source rather than restated, so the two move together.
+    """
+    source = (REPO_ROOT / "hooks" / "adr-hook.py").read_text(encoding="utf-8")
+    declared = re.search(r"EMBEDDING_EVENTS\s*=\s*\{([^}]*)\}", source)
+    assert declared, "EMBEDDING_EVENTS is no longer a literal set; update this check"
+    native = set(re.findall(r'"([^"]+)"', declared.group(1)))
+    assert native, "EMBEDDING_EVENTS is empty; nothing embeds, so nothing to declare"
+
+    policy, events = _manifest_events()
+    for event_id, event in events.items():
+        offers = set(event.get("clients", {}).values()) & native
+        if offers:
+            assert _declared_network(policy, event) is True, (
+                f"{event_id} maps to {sorted(offers)}, which embeds, but "
+                "declares network_allowed: false (ADR-034)"
+            )
+
+
+def test_the_declared_true_is_true_a_configured_backend_is_reached():
+    """Assert the declaration against behaviour, through the real guard.
+
+    ADR-034 declares `network_allowed: true` for `pr-create`. That claim is only
+    worth its ink if something drives the actual guard, so this calls
+    `judge_branch` over a real git repository and follows the chain it starts:
+    guard to judge to model CLI. Stubs stand in for the judge and the model, so
+    the test observes the reach without making a network call, but the first
+    link is `hooks/adr_pr_guard.py` itself.
+
+    It asserted less than this until Copilot pointed it out on PR #79: the body
+    ran the judge stub directly and never entered the guard, so it would have
+    stayed green if the guard stopped spawning a judge at all -- the precise
+    regression it exists to catch. That is the same fabricated-stand-in failure
+    this branch fixed in the pull-request nudge, reappearing in the test written
+    to prove the fix.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    root = Path(tempfile.mkdtemp())
+    run = lambda *a: subprocess.run(["git", "-C", str(root), *a], capture_output=True)
+    subprocess.run(["git", "init", "-q", str(root)], capture_output=True, check=True)
+    run("config", "user.email", "t@example.invalid")
+    run("config", "user.name", "t")
+    # Pin the base name locally. `base_ref` falls back to `init.defaultBranch`,
+    # which is a machine-wide setting: on a box where it reads `master` the
+    # guard would diff against an `origin/master` this fixture never created,
+    # and the test would fail for a reason that has nothing to do with the code.
+    run("config", "init.defaultBranch", "main")
+    (root / "docs" / "adr").mkdir(parents=True)
+
+    # A base commit plus a divergent HEAD, so `git diff origin/main...HEAD`
+    # yields something for the guard to hand the judge. Without a diff the guard
+    # short-circuits on "empty branch diff" and never spawns anything.
+    (root / "seed.txt").write_text("seed", encoding="utf-8")
+    run("add", "-A")
+    run("commit", "-qm", "seed")
+    run("update-ref", "refs/remotes/origin/main", "HEAD")
+    (root / "app.py").write_text("import httpx", encoding="utf-8")
+    run("add", "-A")
+    run("commit", "-qm", "change")
+
+    marker = root / "reached"
+    stub = root / ("fake_model.cmd" if os.name == "nt" else "fake_model.sh")
+    stub.write_text(
+        f'echo reached> "{marker}"\n' if os.name == "nt"
+        else f'#!/bin/sh\necho reached > "{marker}"\n',
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+
+    judge = root / "judge.py"
+    # Stands in for bin/adr-judge: resolves the backend the same way and calls
+    # it. Using the real judge would make this a test of the judge.
+    judge.write_text(
+        "import os, subprocess, sys\n"
+        "cmd = os.environ.get('ADR_KIT_LLM_CMD')\n"
+        "if cmd:\n"
+        "    subprocess.run(cmd, shell=True)\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("ADR_KIT_LLM_CMD")
+    os.environ["ADR_KIT_LLM_CMD"] = str(stub)
+    try:
+        verdict = guard.judge_branch(root, root / "docs" / "adr", judge)
+    finally:
+        if previous is None:
+            os.environ.pop("ADR_KIT_LLM_CMD", None)
+        else:
+            os.environ["ADR_KIT_LLM_CMD"] = previous
+
+    assert verdict.get("checked") is True, (
+        f"the guard never reached the judge, so this proves nothing: {verdict}"
+    )
+    assert marker.is_file(), (
+        "judge_branch did not reach the model CLI with a backend configured. "
+        "The guard is the thing pr-create declares network_allowed: true for, "
+        f"so that declaration is unproven. verdict={verdict}"
+    )
+    policy, events = _manifest_events()
+    assert _declared_network(policy, events["pr-create"]) is True
+
+
+def test_the_declared_false_is_structural_not_a_promise():
+    """The six closed events cannot reach out, because they cannot spawn.
+
+    ADR-018's gate forbids `hooks/adr_hook_core.py` from importing subprocess or
+    any network module. Seven of the eight events are served by that module --
+    every one except `pr-create`, which the guard intercepts before it gets
+    there -- but only six of them declare `false`.
+
+    The seventh is `user-prompt-submit`, and the difference is the whole point
+    of ADR-034's boundary: being served by `adr_hook_core` is not what makes an
+    event closed. The entrypoint adds reach that the module cannot have, and it
+    does so for that event by name through `EMBEDDING_EVENTS`. So this check
+    establishes the floor -- nothing reaches out *via adr_hook_core* -- and
+    `test_the_embedding_event_set_cannot_outrun_the_declaration` covers what the
+    entrypoint layers on top.
+    """
+    core = (REPO_ROOT / "hooks" / "adr_hook_core.py").read_text(encoding="utf-8")
+    for module in ("subprocess", "socket", "urllib", "http", "ssl", "asyncio"):
+        assert f"import {module}" not in core, (
+            f"adr_hook_core imports {module}; no event it serves can declare "
+            "network_allowed: false structurally any more (ADR-018)"
+        )
+
+
+def test_a_guard_served_event_may_not_declare_itself_closed():
+    """A synthetic manifest that misdeclares the guarded event is a finding."""
+    policy = {"network_allowed": False}
+    misdeclared = {"id": "pr-create", "outcome": "enforcement"}
+    assert _declared_network(policy, misdeclared) is False
+    # The real one overrides, which is the difference this test exists to pin.
+    _real_policy, events = _manifest_events()
+    assert "network_allowed" in events["pr-create"]
+
+
+@pytest.mark.parametrize("tree", ["codex", "copilot"])
+def test_every_client_tree_carries_the_same_declaration(tree):
+    """ADR-034: a mirror that declares less than the source is a false promise."""
+    policy, events = _manifest_events(REPO_ROOT / tree)
+    source_policy, source_events = _manifest_events()
+    assert _declared_network(policy, events["pr-create"]) is _declared_network(
+        source_policy, source_events["pr-create"]
+    )
+    assert events["pr-create"].get("network_reason") == source_events[
+        "pr-create"
+    ].get("network_reason")

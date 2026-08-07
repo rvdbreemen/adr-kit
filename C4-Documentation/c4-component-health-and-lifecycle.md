@@ -17,7 +17,9 @@
   `importlib.machinery.SourceFileLoader` / `spec_from_file_location`, and every production
   consumer reaches them as a **subprocess**. The 9 `.py` siblings are ordinary flat modules
   importable once `bin/` is on `sys.path`.
-- **Size**: 17 files, 5,745 lines. Largest single file: `bin/adr-guardian` (1,009 lines).
+- **Size**: 17 files, 7,178 lines. Largest single file: `bin/adr` (1,552 lines) — the lifecycle
+  writer grew past the guardian this cycle with the `answer`, `relate` and `signer` subcommands and
+  the ADR-027 signer-derivation machinery.
 
 ---
 
@@ -64,19 +66,42 @@ exit code, and neither runs on a developer's commit path.
 
 ### Lifecycle writing
 
-- **Transactional status transitions** — `bin/adr new|propose|accept|reject|supersede|document`.
-  A legal-transition table (`LEGAL_TRANSITIONS`, `bin/adr:44`) gates every mutation; the write
-  itself goes through a snapshot/apply/regenerate/rollback transaction that also covers the three
-  generated index artefacts. A failed rollback is surfaced with both error messages rather than
-  swallowed.
-- **Seven-gate acceptance check** — `_assert_acceptance_gates` (`bin/adr:413`) blocks acceptance on
+- **Ten subcommands, one writer.** `bin/adr new|profiles|propose|accept|reject|answer|relate|
+  supersede|document|signer`. `answer`, `relate` and `signer` are new since the last pass: `answer`
+  resolves an open question in place (`- [ ] text` → `- [x] text — **Answered <date> by
+  <signer>:**`), keeping both the question and the resolution inside the immutable ADR rather than
+  deleting it, which is the required path through ADR-022's append-only constraint; `relate`
+  records a `related:` cross-reference on both ADRs in one command instead of two hand-edits;
+  `signer` is read-only diagnostics over the ADR-027 machinery below (`--suggest` proposes
+  candidates and writes nothing, `--audit` lists history entries with no human actor, `--set`
+  writes the machine-local signer).
+- **Transactional status transitions** — a legal-transition table (`LEGAL_TRANSITIONS`,
+  `bin/adr:74`) gates every mutation; the write itself goes through a snapshot/apply/regenerate/
+  rollback transaction that also covers the three generated index artefacts. A failed rollback is
+  surfaced with both error messages rather than swallowed.
+- **Seven-gate acceptance check** — `_assert_acceptance_gates` (`bin/adr:611`) blocks acceptance on
   unresolved `## Open Questions`, then shells out to `bin/adr-lint --strict --gates
-  schema,completeness,audit,evidence,clarity,consistency,policy`. This is the strictest gate
-  invocation in the repo; `adr-lint` itself defaults to only three gates.
+  schema,completeness,audit,evidence,clarity,consistency,policy` with `--context-dir` pointed at the
+  ADR's own directory so a `supersedes`/`related` reference can resolve against its siblings. This
+  is the strictest gate invocation in the repo; `adr-lint` itself defaults to only three gates.
+- **`accept` requires `--confirm` (ADR-027, breaking in v0.45.0).** Acceptance is the one lifecycle
+  transition that *decides* rather than records: it writes a signer name and a date into a
+  `## Status History` entry that is immutable from that point on, and the signer is commonly
+  *derived* — `git config user.name`, adopted and announced on stderr, per the resolution order
+  explicit flag → `lifecycle.signer` → derived git identity → refusal. `--confirm` is the guard
+  against that derived name landing in an immutable record nobody agreed to: it stops acceptance
+  happening *by accident* — from a stale script, from CI, from an agent following an old
+  instruction — without stopping a caller who deliberately passes it
+  (`_assert_acceptance_was_asked_for`, `bin/adr:718`). A name that would name a machine
+  (`github-actions[bot]`, `runner`, a bare `user`, …) is refused outright rather than asked to
+  confirm (`person_shaped`, `bin/adr:1238`). **`accept --auto` is exempt** — spec R1 grants the
+  init flow that exception, since there the user asked for a batch of records over code that
+  already exists, and that request is itself the consent.
 - **Human-gated auto-accept** — `accept --auto` additionally requires `documents_shipped: true`,
   at least one `verified_in` pointer, and an `adr-quality` composite score above
   `lifecycle.auto_accept.quality_threshold` (default 0.70). In the default `assist` mode it prints
-  an eligibility line and mutates nothing without `--confirm`.
+  an eligibility line and mutates nothing without `--confirm` — the same flag, a separate check
+  (`command_auto_accept`, `bin/adr:693`), reached only via the exempted path above.
 - **Body-profile instantiation** — `adr new --profile madr|nygard|canonical` and
   `adr profiles --format json`, consuming the ADR-005 profile registry.
 
@@ -164,12 +189,39 @@ exit code, and neither runs on a developer's commit path.
 
 ### The doctor
 
-- **ADR-set health engine** — `adr_doctor_core.run_doctor` runs `adr-index --check` and
-  `adr-lint --strict` as JSON subprocesses, resolves `verified_in` pointers (`commit:<sha>` via
-  `git cat-file -e <sha>^{commit}`; `path:symbol` by substring), emits `shipped_but_proposed`,
-  `old_proposed`, `accepted_evidence_changed` and `missing_gate` findings, runs retrieval health,
-  and escalates to a full `bin/adr-audit` subprocess when a finding is in
-  `MATERIAL_DRIFT_TYPES = {"accepted_evidence_changed", "missing_gate"}`.
+- **ADR-set health engine** — `adr_doctor_core.run_doctor` (`bin/adr_doctor_core.py:205`) runs
+  `adr-index --check` and `adr-lint --strict` as JSON subprocesses, resolves `verified_in` pointers
+  (`commit:<sha>` via `git cat-file -e <sha>^{commit}`; `path:symbol` by substring), and emits up to
+  seven finding types: `shipped_but_proposed` and `old_proposed` (Proposed ADRs — the latter gated
+  by `doctor.proposed_stale_days`, default 30), `accepted_evidence_changed` (an Accepted ADR's
+  `verified_in` target changed after acceptance, by mtime), `missing_gate` (from the lint
+  consistency gate), `retrieval_probe_config` and `retrieval_probe` (a configured probe errored or
+  failed), and `selective_context_metadata` at `FAIL` level. It escalates to a full `bin/adr-audit`
+  subprocess when a finding's type is in `MATERIAL_DRIFT_TYPES = {"accepted_evidence_changed",
+  "missing_gate"}`. **The resulting exit code reports findings, not repair success**
+  (`bin/adr_doctor_core.py:304`: `1 if index_code != 0 or lint_code != 0 or findings else 0`) — a
+  bare `adr-doctor` run first regenerates the index (so `index_code` returns to 0) and can still
+  exit 1 on the very same run, because none of the seven finding types above is something
+  `--fix-index` repairs; a stale Proposed ADR or a missing gate needs a human decision, not a
+  rewrite.
+- **The doctor knows about generated client trees (ADR-032).** `generated_tree_owner(plugin_root)`
+  and `client_root(plugin_root, client)` (`bin/adr_doctor_models.py:155`, `:174`) answer a question
+  the doctor could not ask before: *is this tree a canonical payload root, or is it itself one
+  client's mirrored install?* Identity is positive, not import-failure-shaped — a canonical root
+  always carries `clients/workflows.json` (the generator's own input); its absence plus a
+  client-specific plugin manifest (`.codex-plugin/plugin.json`, or `plugin.json` + `hooks.json` for
+  Copilot) identifies a mirror and names which client owns it. `client_root` then re-roots every
+  per-client check: in a canonical root each client owns a subdirectory (`codex/`, `copilot/`), but
+  in a mirror there is exactly one client and it owns the root itself — `codex/.mcp.json`, not
+  `codex/codex/.mcp.json`, a distinction whose absence used to make the doctor report six failures
+  against paths that were never meant to exist. The owning client's checks run for real; the other
+  two report `unsupported`, not `failed` — not broken, simply not installed there. `run_client_checks`
+  (`bin/adr_doctor_checks.py:338`) consumes both through every `check_mcp_launcher`/
+  `check_hook_package` call. The generated-adapters check is the sharpest edge: because the doctor's
+  default mode repairs, and a mirror carries no canonical inputs to diff, `_generated_check`
+  (`bin/adr_doctor_checks.py:222`) returns `unsupported` **before** importing the generator at all —
+  `client_generation` is imported lazily, only once a canonical root is confirmed, specifically so a
+  repair-mode run in `codex/` or `copilot/` can never write into the tree it is inspecting.
 - **Fast local client tier** — `adr_doctor_checks.run_client_checks` emits, in order:
   `generated-adapters` (byte-comparison drift against `codex/` and `copilot/`), `settings`,
   `local-judgment` (cached model health only — fast mode invokes no model), `project-guidance`
@@ -182,15 +234,34 @@ exit code, and neither runs on a developer's commit path.
 - **Bounded deep probes** — `--deep` adds a 10 s native `<cli> plugin list`, a 15 s four-message
   stdio MCP handshake against `bin/adr-mcp`, a 1 s + 2 s loopback Ollama identity probe
   (`127.0.0.1:11434`), and a 5-sample hook-latency harness via `hooks.hook_benchmark.measure`.
-  Every probe failure becomes a check, never an exception.
+  Every probe failure becomes a check, never an exception. The `hook-latency-extension` check
+  (`bin/adr_doctor_probes.py:341`) reports `healthy` when `all_targets_met`, else `degraded`,
+  `required: false` — until ADR-030 (below), `all_targets_met` was false on every platform, every
+  run, because seven of the eight budgets in `hooks/manifest.json` were calibrated for the native
+  hook binary ADR-029 retired in v0.44.1 and could not be met by the Python host that replaced it.
+  Re-run live on this checkout after the recalibration: `adr-doctor --check --deep` now reports
+  `hook-latency-extension: healthy` with every event's p50/p95/hard-timeout target met — and the
+  run's `overall_status` was still `failed`, from an unrelated `native-registration claude:
+  trust-pending` (this machine's Claude CLI plugin needing a trust prompt). That is the signal
+  ADR-030 restores: a specific, actionable finding about one client, not a permanent red that
+  taught nobody to look.
 - **Model-judgment honesty** — `classify_model_probe` maps nine ordered states to a status such
   that a missing provider, missing model, unreachable backend, nonexistent tag, ambiguous
   discovery, empty model list or rejected probe all report `degraded` — never successful judgment
   (ADR-010).
 - **Versioned report and single exit code** — `adr_doctor_models.check()` is the sole producer of
-  the ten-key check object; `build_report` folds checks into a per-client rollup (worst status
-  wins), an `overall_status`, counters, legacy flat fields, and
-  `exit_code = 1 if adr_exit_code or any required check is failed|stale`.
+  the ten-key check object. Each check carries two independent axes: a `status` on an eight-value
+  ladder (`STATUS_ORDER`, `bin/adr_doctor_models.py:10`, worst-to-best) — `failed` > `stale` >
+  `trust-pending` > `degraded` > `repaired` > `disabled` > `unsupported` > `healthy` — and a
+  `required` bool. `build_report` folds checks into a per-client rollup by taking the worst status
+  on that ladder, an `overall_status` (`failed` if the exit code is set, else `degraded` if any
+  check is `degraded`/`trust-pending`, else `repaired` if anything repaired, else `healthy`), and
+  `exit_code = 1 if adr_exit_code or any required check is failed|stale`. `FAILURE_STATUSES =
+  {failed, stale}` is deliberately a two-value set: `trust-pending` and `degraded` can turn
+  `overall_status` red without ever failing the exit code, which is what lets ADR-032's
+  `unsupported` sit two rungs *below* `failed` on the same ladder rather than needing a separate
+  vocabulary — "not applicable here" and "broken" are different points on one ordering, not
+  different types.
 
 ---
 
@@ -198,7 +269,7 @@ exit code, and neither runs on a developer's commit path.
 
 | Code-level document | Role in this component |
 |---|---|
-| [`c4-code-bin-cli-lifecycle.md`](./c4-code-bin-cli-lifecycle.md) | The five entry points that own the time dimension: `bin/adr` (the only sanctioned lifecycle writer, transactional with snapshot rollback), `bin/adr-guardian` (two-tier staleness detector + `.adr-kit-state.json` ledger + trend history), `bin/adr-status` (coverage dashboard), `bin/adr-retire` (four-signal retirement scorer), `bin/adr-doctor` (80-line argparse shell over the doctor libraries). |
+| [`c4-code-bin-cli-lifecycle.md`](./c4-code-bin-cli-lifecycle.md) | The five entry points that own the time dimension: `bin/adr` (the only sanctioned lifecycle writer, transactional with snapshot rollback), `bin/adr-guardian` (two-tier staleness detector + `.adr-kit-state.json` ledger + trend history), `bin/adr-status` (coverage dashboard), `bin/adr-retire` (four-signal retirement scorer), `bin/adr-doctor` (166-line argparse shell over the doctor libraries, up from 80 — the sys.path hardening from TASK-62 and the generated-tree import support from ADR-032 both landed here). |
 | [`c4-code-bin-lib-doctor.md`](./c4-code-bin-lib-doctor.md) | The whole of `adr-doctor`'s logic in four flat modules: `adr_doctor_core` (ADR-set health, index/lint/staleness/retrieval, escalation to `adr-audit`), `adr_doctor_checks` (fast local client tier + enumerated safe repairs), `adr_doctor_probes` (bounded deep tier: native CLI, MCP handshake, Ollama identity, hook latency), `adr_doctor_models` (the versioned JSON contract, `check()`/`build_report()`/`render_human()` and the exit-code rule). |
 | [`c4-code-bin-cli-readiness.md`](./c4-code-bin-cli-readiness.md) | The three thin readiness entry points: `bin/adr-readiness` (human/JSON/GitHub renderer and the component's de-facto internal RPC), `bin/adr-readiness-ci` (the CI merge gate — the only exit-1-on-findings path here), `bin/adr-grill-signal` (index-only fail-open hook advisories). 354 lines total; all classification lives in the libraries. |
 | [`c4-code-bin-lib-readiness-grill.md`](./c4-code-bin-lib-readiness-grill.md) | The deterministic engine behind readiness and grilling: `adr_readiness` (seven-class model + implementation-link evidence), `adr_readiness_ci` (GitHub Step Summary, annotations, step outputs, escaping), `adr_grill_signal` (bounded index-only advisories), `adr_guardian_queue` (ranked Proposed queue + 24 h TTL cache), `adr_retrieval_health` (probe validation + selective-metadata findings, the pass/fail/degraded trichotomy). |
@@ -216,9 +287,17 @@ exit code, and neither runs on a developer's commit path.
   - `adr new <title> [--adr-dir DIR] [--date YYYY-MM-DD] [--changed-by WHO] [--reason TEXT] [--profile madr|nygard|canonical] [--config PATH]`
   - `adr profiles [--format human|json]`
   - `adr propose|reject <adr>`
-  - `adr accept <adr> [--auto] [--auto-mode auto|assist] [--confirm] [--quality-threshold F] [--repo-root DIR]`
+  - `adr accept <adr> [--auto] [--auto-mode auto|assist] --confirm [--quality-threshold F] [--repo-root DIR]`
+  - `adr answer <adr> --answer TEXT [--question <number|text>]`
+  - `adr relate <adr> --to <other-adr> [--remove]`
   - `adr supersede <old> --by <new>`
   - `adr document <adr> --verified-in POINTER [--verified-in ...]`
+  - `adr signer [--adr-dir DIR] [--set NAME] [--audit] [--suggest] [--format text|json]`
+- **`--confirm` is required for `accept` since v0.45.0 (ADR-027, breaking).** Acceptance writes a
+  signer and date into an immutable `## Status History` entry; the flag exists so that write is
+  asked for rather than arrived at, and it blocks an accidental caller — a stale script, CI, an
+  agent on an old instruction — without stopping a deliberate one. Omitting it exits 2 naming the
+  signer that would have been written. `accept --auto` is exempt (spec R1's init-flow consent).
 - **Stdout**: one line per performed action (`accepted: ADR-016-foo.md`).
 
 ### 2. `bin/adr-guardian` — detector CLI and SessionStart hook contract
@@ -265,7 +344,14 @@ exit code, and neither runs on a developer's commit path.
   `schema_version` const 1, `mode` `fast|deep`, checks `additionalProperties:false` over exactly
   ten keys, `exit_code` enum `[0,1]`, plus the flat legacy fields
   `adr_dir/repo_root/index/lint/findings/audit`. **Declared but never validated anywhere.**
-- **Exit codes**: 0 / 1 from `report["exit_code"]`.
+- **Exit codes**: 0 / 1 from `report["exit_code"]` (`adr_doctor_models.build_report`:
+  `1 if adr.get("exit_code") or required_failures else 0`). Two independent sources feed it, and
+  neither is repair success: the ADR side's own `1 if index_code != 0 or lint_code != 0 or findings
+  else 0` (`bin/adr_doctor_core.py:304`, seven finding types — see *The doctor* above), and any
+  client-side check with `required: true` whose status is `failed`/`stale`. **A bare `adr-doctor`
+  run can regenerate the index, pass strict lint, and still exit 1** on the same run, because a
+  stale Proposed ADR or a missing gate is a finding no repair touches — the exit code reports what
+  was found, not what was fixed.
 
 ### 6. `bin/adr-readiness` — the component's de-facto internal RPC
 
@@ -352,7 +438,7 @@ Blocks this component reads:
 - `retirement`: `threshold_days` (90), `check_supersession`, `check_tech_removal`,
   `check_policy_mismatch`
 - `lifecycle.auto_accept`: `mode` (`assist`), `quality_threshold` (0.70)
-- `doctor.proposed_stale_days`
+- `doctor.proposed_stale_days` (default 30)
 - `context.probes_file`, `context.retrieval_completeness` (`off|advisory|strict`, default
   `advisory`)
 - `template.profile` (for `adr new`)
@@ -376,7 +462,7 @@ require `<root>` and `<root>/scripts` on the path because they import from `scri
 - `adr_doctor_checks.{run_client_checks, check_mcp_launcher, check_hook_package, resolve_launcher_target}`
 - `adr_doctor_probes.{run_deep_extensions, classify_model_probe}` (plus `_mcp_deep`, imported by
   `tests/test_client_doctor.py:25` despite the underscore)
-- `adr_doctor_models.{check, benchmark_extension, build_report, render_human}`
+- `adr_doctor_models.{check, benchmark_extension, build_report, render_human, generated_tree_owner, client_root}`
 
 The 8 extensionless entry points expose `main()` (and `build_parser()` in `bin/adr-readiness`)
 in form only. Tests reach `extract_status`, `compute_summary`, `find_retirement_candidates`,
@@ -396,7 +482,7 @@ in form only. Tests reach `extract_status`, `compute_summary`, `find_retirement_
 |---|---|---|
 | `bin-lib-semantic-core` (Semantic Core) | **Python import** | `adr_format` (`SUPPORTED_PROFILES`, `profile_catalog`, `profile_template_path`, `configured_profile`, `normalize_profile`, `unresolved_open_questions`, `section_text`); `adr_schema` (`migrate_text`, `parse_frontmatter`, `render_frontmatter`, `split_frontmatter`); `adr_catalog` (`adr_status`, `ENFORCEMENT_BLOCK_RE`, `ADR_FILENAME_RE`, `load_adr_records`, `build_relationships`, `normalize_adr_id`); `adr_query` (`load_index_graph`, `query_records`, `IndexQueryError`) via `adr_retrieval_health`. `bin/adr-status` imports `adr_catalog.adr_status` **specifically so the dashboard reports the same status `adr-judge` acts on**. |
 | `bin-lib-runtime` (Runtime Safety) | **Python import** | `adr_config.load_json_config` (fail-open config read) and `adr_state.{find_project_adr_dir, load_state, update_state}` (advisory-locked, fsync'd, atomically replaced state transactions). |
-| `bin-cli-gates` (Verification Gates) | **Subprocess** (`sys.executable`) | `bin/adr-lint --strict --gates schema,completeness,audit,evidence,clarity,consistency,policy` for acceptance (`bin/adr:413`) and `--strict` for the doctor's ADR tier; `bin/adr-quality --format json` for the `accept --auto` threshold. |
+| `bin-cli-gates` (Verification Gates) | **Subprocess** (`sys.executable`), plus one **direct Python import** | `bin/adr-lint --strict --gates schema,completeness,audit,evidence,clarity,consistency,policy` for acceptance (`bin/adr:611`) and `--strict` for the doctor's ADR tier; `bin/adr-quality --format json` for the `accept --auto` threshold. Separately, `adr_readiness.py` imports `adr_quality_core.{QUALITY_THRESHOLD, score_path}` directly to populate the `quality`/`below_threshold` fields of its own JSON report — the one place in this component that reaches a gates module in-process rather than through a subprocess. |
 | `bin-cli-retrieval` (Retrieval and Context) | **Subprocess** | `bin/adr-index` inside every lifecycle transaction (`bin/adr:228`) and in the doctor's default mode; the doctor's `adr-index --check` freshness gate. `bin/adr-grill-signal` and `adr_retrieval_health` **read the artefact** this component produces: `docs/adr/ADR-INDEX.json`. |
 | `bin-cli-enforcement` (Enforcement Floor) | **Subprocess, orchestrated by the agent** | `bin/adr-judge` is the cheap-tier drift tool and, with `--llm`, the LLM-tier audit tool. This component never spawns it: the `/adr-kit:guardian` skill runs it and reports counts back through `adr-guardian stamp --violations N` / `--audit N`. |
 | `bin-cli-mcp` (MCP Server) | **Subprocess, bidirectional** | *Outbound*: `adr_doctor_probes._mcp_deep` spawns `bin/adr-mcp` as an MCP client. *Inbound*: `bin/adr-mcp` spawns `bin/adr-readiness`, `bin/adr-status` and `bin/adr-quality` to serve three of its five tools. Coupling is purely process-level in both directions. |
@@ -449,10 +535,13 @@ Verified against the ADR sources and every Enforcement block in `docs/adr/`.
 |---|---|---|---|
 | **ADR-002** — ADR Guardian: SessionStart Staleness Detector with Two-Tier Cadence | Accepted 2026-05-31, `binding: false` | Names `bin/adr-guardian check` as the dumb SessionStart detector plus in-session smart sweep, and names `adr-retire`/`adr-lint`/`adr-status` as the cheap-tier tools (ADR-002:52, :62, :173). Defines `.adr-kit-state.json` as gitignored per-machine state with independent tier clocks. | No. Enforcement block present with empty rule arrays. |
 | **ADR-004** — Layered ADR Context Injection for Agent Work | Accepted | Its **session tier *is*** `bin/adr-guardian check` (ADR-004:46). Its three fail-open tiers / one fail-closed floor model is why every read path here exits 0 and why the floor lives in `bin/adr-judge` instead. The three enforcement-floor buckets `adr-status` reports are this ADR's model. Its "pin canonical fields" clause fixes the `entries[-1]` status reconciliation the readers use. | No. Enforcement block present with empty rule arrays. |
-| **ADR-010** — Certify Three Native CLI Clients Through One Outcome Contract | Accepted 2026-07-23, `binding: true`, gate `three-client-release` | Names `bin/adr-doctor` as the measurement surface (ADR-010:66, :406) and dictates the doctor almost clause by clause: fast tier uses local files and cached health only; both tiers may repair an enumerated set of safe ADR-Kit-owned state; `--check` is the same diagnosis without mutation; `--fix` adds backed-up managed rewrites; deep probes must be bounded; a missing/ambiguous/unreachable/rejected model must never read as successful judgment. Also supplies the per-event hook latency budgets the `hook-latency-extension` checks. | No — its `require_pattern`s glob `schemas/client-capabilities.schema.json`, not `bin/`. |
+| **ADR-010** — Certify Three Native CLI Clients Through One Outcome Contract | Accepted 2026-07-23, `binding: true`, gate `three-client-release` | Names `bin/adr-doctor` as the measurement surface (ADR-010:66, :406) and dictates the doctor almost clause by clause: fast tier uses local files and cached health only; both tiers may repair an enumerated set of safe ADR-Kit-owned state; `--check` is the same diagnosis without mutation; `--fix` adds backed-up managed rewrites; deep probes must be bounded; a missing/ambiguous/unreachable/rejected model must never read as successful judgment. Requires that the per-event hook latency budgets the `hook-latency-extension` checks be honest numbers — ADR-030 is the ADR that made them so, by replacing the values this ADR's era inherited from the retired native binary. | No — its `require_pattern`s glob `schemas/client-capabilities.schema.json`, not `bin/`. |
 | **ADR-011** — Adopt Deterministic Readiness and Human-Gated Grilling | Accepted 2026-07-20, `binding: false` | Directly defines the readiness boundary: a shared stdlib-only read-only engine, the seven classification values implemented verbatim in `READINESS_CLASSES`, stable ordering under an injected date, hooks emitting only short fail-open advisories with an exact grill command, CI needing "no secret or model", and CI blocking **only** on explicit inspectable evidence of a linked implemented Proposed ADR. Its warm p95 targets: 500 ms single-record CLI, 1 s all-Proposed over 50 records, ≤100 ms MCP adapter overhead, ≤5 s PR action overhead. | Only indirectly — its `require_pattern`s glob `clients/workflows.json` and `bin/adr-mcp`. Nothing guards the read-only or fail-open posture of the readiness files themselves. |
 | **ADR-014** — Use the Generated ADR Graph as the Selective-Context Query Engine | Accepted 2026-07-23, `binding: true`, gate `index-first-retrieval` | Governs `adr_retrieval_health.py`: probes run through the one shared engine, a historical-authority result is itself a failure, and the `degraded` status implements ADR-014's "missing, invalid, unsupported or stale graph handling will be explicit and observable". Its `verified_in` names `tests/test_adr_retrieval_health.py` directly. Also governs `adr_grill_signal`'s index-only posture. | No — its declarative rule arrays are deliberately empty; the gate is enforced by tests. |
-| **ADR-015** — Enforce a Two-Second Deterministic Latency Budget as a Test Fixture Contract | Accepted 2026-07-26, `binding: true`, gate `adr-kit-cli-latency-v1` | Its frontmatter `components` lists **`adr-retire`** and its `symbols` list `resolve_present_terms` and `_WALK_CACHE` — both in this component. `tests/fixtures/cli/latency-corpus.json` carries the measured budget `adr-retire: p50 800 ms / p95 1200 ms / hard 2000 ms`, with the recorded root cause "walked the full repository once per ADR from `detect_tech_removal`; now one memoized walk plus one single-pass term resolution per run". | Not by the judge — its `require_pattern` globs the fixture file, so the budget is guarded by `tests/test_cli_performance.py`. |
+| **ADR-015** — Enforce a Two-Second Deterministic Latency Budget as a Test Fixture Contract | Accepted 2026-07-26, `binding: true`, gate `adr-kit-cli-latency-v1` | Its frontmatter `components` lists **`adr-retire`** and its `symbols` list `resolve_present_terms` and `_WALK_CACHE` — both in this component. `tests/fixtures/cli/latency-corpus.json` carries the measured budget `adr-retire: p50 800 ms / p95 1200 ms / hard 2000 ms`, with the recorded root cause "walked the full repository once per ADR from `detect_tech_removal`; now one memoized walk plus one single-pass term resolution per run". Its 2000 ms ceiling is also the constraint every ADR-030 hook budget below stays under. | Not by the judge — its `require_pattern` globs the fixture file, so the budget is guarded by `tests/test_cli_performance.py`. |
+| **ADR-027** — Derive the Lifecycle Signer From a Person-Named Git Identity, Announced | Accepted 2026-08-04, `binding: true`, gate `adr-signer-derivation-v1` | Governs `bin/adr`'s signer machinery directly: `resolve_signer`'s four-step order, the mandatory stderr announcement of a derived name, the machine-identity denylist in `person_shaped`, the machine-local (never repository-tracked) `lifecycle.signer`, and the `signer --suggest` read-only proposal. It is also why `--confirm` matters: acceptance most often signs with a *derived* name, which is exactly the value a human has not yet agreed to. | No Enforcement block in the ADR at all — the invariants are held by `tests/test_adr_signer_discovery.py` alone. |
+| **ADR-030** — Recalibrate the Hook Latency Budgets to the Python Host That Actually Ships | Accepted 2026-08-05, `binding: true`, gate `adr-hook-python-budgets-v1` | Rewrites every `latency` block in `hooks/manifest.json` from measurement against the Python host, replacing budgets calibrated for the native binary ADR-029 retired. Directly names the visible cost this component carries: `bin/adr_doctor_probes.py`'s `hook-latency-extension` check reported `degraded` on every platform, every run, before this ADR, because three events declared a 100 ms hard timeout against a measured 182.6 ms bare-interpreter floor (`MEASURED_INTERPRETER_FLOOR_MS`, `hooks/hook_benchmark.py:60`) — no hook-side optimisation could ever have met them. | No — empty rule arrays; guarded by `tests/test_hook_performance.py` against the recorded corpus. |
+| **ADR-032** — Treat a Generated Client Tree as a First-Class Doctor Context | Accepted 2026-08-05, `binding: true`, gate `adr-doctor-generated-tree-v1` | Directly defines `generated_tree_owner`/`client_root` (`bin/adr_doctor_models.py:155`, `:174`) and the resulting `_generated_check` short-circuit in `adr_doctor_checks.py` — the positive-identity rule, the per-client re-rooting, the `unsupported`-not-`failed` posture for a client not installed in a mirror, and the lazy, guarded import of `client_generation` so a repair-mode run in a mirror can never write into it. Names `bin/adr-doctor` as ADR-010's measurement surface, applied to the codex/copilot mirrors specifically. | No — empty rule arrays; guarded by `tests/generated_tree_imports.py`'s transitive import-closure walk and a before/after SHA-256 snapshot test. |
 
 Not governing, verified: **ADR-005** supplies the profile registry `adr new --profile` consumes
 (contract-level only); **ADR-001** is an *inherited* constraint (no model on a hook hot path) that
@@ -460,7 +549,12 @@ explains `_model_fast` reading a cache and `_model_deep` only talking to loopbac
 Decision never mentions the doctor; **ADR-007** constrains the produced `ADR-INDEX.json` artefact,
 not its readers here; **ADR-009** is scoped to `bin/adr-lint` yet mentions `bin/adr accept` and
 constrains the seven-gate set `_assert_acceptance_gates` invokes. **ADR-016** exists but is
-`Proposed` and untracked, so it governs nothing.
+`Proposed` and untracked, so it governs nothing. **ADR-029** (Accepted 2026-08-04, retiring the
+native hook binary) governs `hooks/`, not this component — but it is the reason ADR-030 exists:
+retiring the compiled host is what made the eight `hooks/manifest.json` budgets false, and it is
+also what makes `hook_benchmark.host_command` fall through to `python-fallback` unless
+`ADR_KIT_NATIVE_HOOK=1` is set, which the doctor's benchmark now follows rather than the filesystem
+(finding 14, below).
 
 ---
 
@@ -529,15 +623,18 @@ constrains the seven-gate set `_assert_acceptance_gates` invokes. **ADR-016** ex
    A native CLI whose `plugin list` output lacks `adr-kit` yields `stale` + `required` → exit 1 under
    `--deep` where fast mode exited 0. `trust-pending` is deliberately excluded from
    `FAILURE_STATUSES`, so a trust prompt does not block.
-9. **The fast doctor tier fails on integrations the user never installed.** `mcp-launcher` and
-   `hook-package` run for every non-disabled client regardless of whether the CLI is present —
-   `detected.get(name)` feeds only the `native-client` check. In a set-up project, a missing
-   `codex/.mcp.json` is a `required` `failed` check → exit 1 for a CLI that was never installed.
+9. **The fast doctor tier fails on integrations the user never installed — in a canonical root.**
+   `mcp-launcher` and `hook-package` run for every non-disabled client regardless of whether the CLI
+   is present — `detected.get(name)` feeds only the `native-client` check. In a set-up project, a
+   missing `codex/.mcp.json` is a `required` `failed` check → exit 1 for a CLI that was never
+   installed. This is a different code path from ADR-032's `unsupported`: that status fires only
+   when `client_root` returns `None` because the tree itself *is* another client's mirror; this
+   finding fires when the tree is canonical and the client's owned config is simply absent.
 
 ### The health check that mutates the tree
 
 10. **A bare `adr-doctor` writes, and on Windows it very likely writes for no reason.**
-    `bin/adr-doctor:47` forces `args.fix_index = bool(args.fix_index or not args.check)`, so default
+    `bin/adr-doctor:133` forces `args.fix_index = bool(args.fix_index or not args.check)`, so default
     mode regenerates `ADR-INDEX.{md,json}` as a side effect of a health check. Worse,
     `_generated_check` builds its drift result with `status="stale"` and no `required=`, so the
     default `required=True` applies and `stale ∈ FAILURE_STATUSES` → **`adr-doctor --check` exits 1
@@ -567,10 +664,15 @@ constrains the seven-gate set `_assert_acceptance_gates` invokes. **ADR-016** ex
     `os.path.getmtime` against the acceptance date, so a fresh clone, a checkout or a line-ending
     rewrite can manufacture `accepted_evidence_changed` findings — and because that type is in
     `MATERIAL_DRIFT_TYPES`, it escalates to a full `bin/adr-audit` subprocess.
-14. **Hook-latency evidence is single-host.** `hooks/hook_benchmark.py:86` calls
+14. **Hook-latency evidence is single-host.** `hooks/hook_benchmark.py:155` calls
     `host_command(plugin_root, "codex-cli", event)` for every event — a hardcoded host — which
     qualifies any ADR-010 *parity* reading of the reported latency. The doctor further aggregates
-    per-event p50/p95/max by **max across events** (worst event wins).
+    per-event p50/p95/max by **max across events** (worst event wins). This is the same file whose
+    recalibrated budgets (ADR-030) made `hook-latency-extension` reportable as `healthy` at all: the
+    numbers behind that verdict are still evidence from one client name, and
+    `MEASURED_INTERPRETER_FLOOR_MS` (`:60`, 182.6 ms on this machine, 124 ms recorded on the corpus's
+    original 2026-07-26 measurement) is a property of the machine the doctor runs on, not of the
+    kit — a slower CI runner narrows the margin the recalibrated budgets carry.
 15. **`signal_count` under-reports the payload.** `adr_grill_signal.py:122` computes
     `min(3, len(linked) + len(suspected))` while `MAX_SIGNALS` is applied *per list*, so 3 linked +
     3 suspected emits **six** items and still reports `3`. The only test asserts `signal_count <= 3`.

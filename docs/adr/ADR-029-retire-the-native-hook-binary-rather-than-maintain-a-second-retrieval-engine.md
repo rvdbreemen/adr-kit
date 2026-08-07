@@ -198,9 +198,10 @@ and the measurement is committed alongside the budget.
 
 ### Verification
 
-* `adr-single-retrieval-engine-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships. It
-  asserts that no second ranking implementation ships, and that the edit-tier
-  path meets its declared budget.
+* `adr-single-retrieval-engine-v1`: the gate that anchors this decision. It
+  ships in `tests/test_adr_hook_dispatch_matrix.py`, so `gate` carries the name
+  and `binding` is true. It asserts that no second ranking implementation
+  ships, and that the edit-tier path meets its declared budget.
 
 ## Consequences
 

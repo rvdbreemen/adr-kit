@@ -77,6 +77,7 @@ def test_task_40_python_modules_stay_within_adr_010_line_budgets():
     support_modules = (
         "scripts/adr_settings.py",
         "scripts/client_certification.py",
+        "scripts/client_support_matrix.py",
         "scripts/client_evidence.py",
         "scripts/client_generation.py",
         "scripts/client_generation_artifacts.py",

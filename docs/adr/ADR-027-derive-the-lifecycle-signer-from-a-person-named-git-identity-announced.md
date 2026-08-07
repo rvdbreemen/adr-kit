@@ -174,9 +174,10 @@ of the machine identities refuses, names why, and writes nothing.
 
 ### Verification
 
-* `adr-signer-derivation-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships, covering derivation,
-  announcement, precedence, the machine-identity refusal, and the write-nothing
-  behaviour of `--suggest`.
+* `adr-signer-derivation-v1`: the gate that anchors this decision. It ships in
+  `tests/test_adr_signer_discovery.py`, so `gate` carries the name and `binding`
+  is true. It covers derivation, announcement, precedence, the machine-identity
+  refusal, and the write-nothing behaviour of `--suggest`.
 
 ## Consequences
 

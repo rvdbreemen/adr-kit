@@ -23,11 +23,12 @@
 # As of v0.14.1 the hook measures adr-judge wall-clock time and warns (non-blocking)
 # when execution exceeds 5000ms. Uses `date +%s%3N`; falls back to perl on macOS.
 #
-# As of v0.16.0 the hook also runs `adr-suggest` (advisory, opt-in as of v0.17.0):
-# it detects whether the staged diff introduces a NEW architectural decision not
-# covered by an ADR and prints a one-line nudge. This NEVER blocks the commit.
-# Enable per-commit:              ADR_KIT_SUGGEST=1 git commit ...
-# Enable project-wide:            set suggest.enabled:true in docs/adr/.adr-kit.json
+# As of v0.16.0 the hook also runs `adr-suggest` (advisory, on by default as of
+# ADR-035): it detects whether the staged diff introduces a NEW architectural
+# decision not covered by an ADR and prints a one-line nudge. This NEVER blocks
+# the commit.
+# Disable per-commit:             ADR_KIT_SUGGEST_DISABLE=1 git commit ...
+# Disable project-wide:           set suggest.enabled:false in docs/adr/.adr-kit.json
 #
 # Override ONE ADR's FAIL (audited): a reasoned override downgrades violations
 # of a single named ADR to loud warnings for this commit only. The override is
@@ -51,7 +52,7 @@ set -e
 # freezes at install time. adr-guardian compares this stamp against the
 # installed plugin version and nudges /adr-kit:upgrade when the wrapper lags.
 # Maintained by scripts/bump-version.py; do not edit by hand.
-ADR_KIT_WRAPPER_VERSION="0.46.0"
+ADR_KIT_WRAPPER_VERSION="0.47.0"
 
 if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   echo "[adr-kit] hook disabled for this commit (ADR_KIT_HOOK_DISABLE=1)" >&2
@@ -304,15 +305,18 @@ if [ -n "$ADR_GRILL_SIGNAL" ] && [ -f "$ADR_GRILL_SIGNAL" ]; then
   printf '%s\n' "$GRILL_OUT" | grep -aE "^\[adr-grill\] (STRONG|ADVISORY) " >&2 || true
 fi
 
-# --- Advisory ADR-suggestion pass (adr-suggest, v0.16.0+; opt-in as of v0.17.0) -
+# --- Advisory ADR-suggestion pass (adr-suggest, v0.16.0+; on by default) ------
 # Distinct from adr-judge above: adr-judge ENFORCES existing ADRs and can block
 # the commit. adr-suggest only DETECTS whether the diff introduces a NEW
 # architectural decision not yet covered by any ADR, and prints a one-line
 # nudge. It NEVER blocks — its exit status is swallowed with `|| true`.
 #
-# Opt-in since v0.17.0: requires ADR_KIT_SUGGEST=1 (per-commit) or
-# suggest.enabled:true in .adr-kit.json (per-project). adr-suggest itself
-# self-skips when not opted in. Suppressed under lock contention.
+# On by default since ADR-035, on the same terms ADR-017 set for the judge.
+# Switch it off with ADR_KIT_SUGGEST_DISABLE=1 (per-commit) or
+# suggest.enabled:false in .adr-kit.json (per-project); adr-suggest honours both
+# itself, so the switch holds on every path that runs it, not only this hook.
+# It also self-skips when no backend resolves or the diff carries no code.
+# Suppressed under lock contention.
 if [ "${ADR_KIT_SUGGEST_DISABLE:-0}" != "1" ] && [ "${_NO_LLM_OVERRIDE:-0}" != "1" ] && [ -n "$ADR_SUGGEST" ] && [ -x "$ADR_SUGGEST" ]; then
   # Derive the suggest bound from the same budget the judge warning uses, so the
   # advisory pass cannot outlast what this hook declares it may cost. Floor of

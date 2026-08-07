@@ -11,6 +11,8 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-023"
+  - "ADR-034"
+  - "ADR-035"
 topics:
   - "hooks"
   - "missing decisions"
@@ -54,6 +56,16 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-034
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-035
     changed_via: adr-kit lifecycle
 ```
 
@@ -159,11 +171,10 @@ the manifest declares for the event.
 
 ### Verification
 
-* `adr-pr-suggest-v1`: the gate this decision is to be anchored by. It does not
-  exist yet, so `gate` is null and `binding` is false: a frontmatter that
-  declares enforcement it cannot deliver is worse than one that admits the gap.
-  Both fields flip back together when the gate ships, covering the both-signals
-  case, the clean-branch case, and the advisory-never-denies case.
+* `adr-pr-suggest-v1`: the gate that anchors this decision. It ships in
+  `tests/test_pr_suggest_nudge.py`, so `gate` carries the name and `binding` is
+  true. It covers the both-signals case, the clean-branch case, and the
+  advisory-never-denies case.
 
 ## Consequences
 

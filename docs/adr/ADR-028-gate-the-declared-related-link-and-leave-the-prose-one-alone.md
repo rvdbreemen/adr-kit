@@ -160,9 +160,10 @@ produces no finding.
 
 ### Verification
 
-* `adr-reference-gate-scope-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships,
-  covering the dangling case, the one-sided case, and the prose-is-ignored
-  case.
+* `adr-reference-gate-scope-v1`: the gate that anchors this decision. It ships
+  in `tests/test_adr_cross_references.py`, so `gate` carries the name and
+  `binding` is true. It covers the dangling case, the one-sided case, and the
+  prose-is-ignored case.
 
 ## Consequences
 

@@ -55,9 +55,10 @@ def _module_names(node: ast.stmt, source: Path) -> list[list[str]]:
     """Per import, the dotted names it could refer to, relative ones resolved.
 
     One entry per module the statement imports; each entry is the list of
-    spellings that could name it, tried in order. An absolute import has
-    exactly one spelling. A relative one has two, because how it resolves
-    depends on which directory ends up on sys.path.
+    spellings that could name it, tried in order. An absolute import has one.
+    A relative one has two when it sits inside a nested package, because how it
+    resolves depends on which directory ends up on sys.path -- and one when it
+    does not, since both spellings collapse to the same string there.
 
     `from .contracts import ...` in clients/installer/detection.py is
     `clients.installer.contracts` when the plugin root is the path root, and

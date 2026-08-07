@@ -1,4 +1,17 @@
-"""Tests for bin/bump-version (Python rewrite, post-v0.30.0).
+"""Tests for the release bump, driven through `bin/bump-version`.
+
+`bin/bump-version` is a thin delegation to `scripts/bump-version.py`, the
+canonical writer named by ADR-013 and docs/RELEASING.md. It is still the entry
+point under test here because it is the one people have in their shell history,
+and running it proves the delegation as well as the writer.
+
+Until v0.47.0 the two were separate implementations of the same release step,
+and they disagreed: only the unnamed one could write the CHANGELOG compare-link
+block, so the runbook ran the weaker tool and the block went stale on every
+release (TASK-139). Where the two contracts differed, the delegation takes the
+canonical writer's -- exit 2 for a usage error, a leading `v` accepted and
+stripped, and a TODO placeholder release section rather than promotion of the
+Unreleased body. Each of those is asserted below.
 
 Background: bump-version was a bash script that shelled out to python3 per
 file edit. On Windows the `python3` Store alias routes through the Python
@@ -168,7 +181,14 @@ def test_bump_updates_both_client_manifests_and_release_artifacts(tmp_path):
     )
     assert marketplace["plugins"][0]["version"] == "0.31.0"
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## [Unreleased]\n\n## [0.31.0] - " in changelog
+    # The canonical writer inserts a placeholder release section under the
+    # marker and leaves the existing Unreleased body in place; the runbook then
+    # has the author write the real notes into it. `bin/bump-version` used to
+    # promote the Unreleased body into the release instead. The delegation
+    # adopts the canonical writer's behaviour, which is what has been shipping.
+    assert "## [Unreleased]" in changelog
+    assert "## [0.31.0] - " in changelog
+    assert changelog.index("## [Unreleased]") < changelog.index("## [0.31.0] - ")
     assert "## [0.30.0] - 2026-06-12" in changelog
     assert (
         "[Unreleased]: "
@@ -233,15 +253,24 @@ def test_bump_writes_every_registry_site_including_the_readme_pins(tmp_path):
     own_wrapper = (root / ".githooks" / "pre-commit").read_text(encoding="utf-8")
     assert 'ADR_KIT_WRAPPER_VERSION="0.31.0"' in own_wrapper
 
-    registry = json.loads(
-        (root / "packaging" / "version-sites.json").read_text(encoding="utf-8")
-    )
+    # Checked through the engine rather than by scanning for the old string.
+    # CHANGELOG.md is a declared site now (the `[Unreleased]` compare link), and
+    # the old version legitimately survives in it -- in the previous release
+    # heading, and inside the new `v0.30.0...v0.31.0` compare link, which is the
+    # whole point of a compare link. A substring scan calls both of those stale.
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    from version_sites import read_all  # noqa: E402
+
     stale = [
         site["path"]
-        for site in registry["sites"]
-        if "0.30.0" in (root / site["path"]).read_text(encoding="utf-8")
+        for site, values in read_all(root)
+        if any(value != "0.31.0" for value in values)
     ]
     assert not stale, f"declared sites left at the old version: {stale}"
+
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [0.30.0] - 2026-06-12" in changelog, "release history was rewritten"
+    assert "v0.30.0...v0.31.0" in changelog, "the compare link lost its base"
 
 
 def test_a_site_added_to_the_registry_is_bumped_without_touching_the_writer(tmp_path):
@@ -345,18 +374,40 @@ def test_sanctioned_writer_does_not_orphan_the_changelog_heading(tmp_path):
 
 
 def test_invalid_semver_rejected(tmp_path):
+    """Exit 2, from the canonical writer's argparse.
+
+    `bin/bump-version` hand-rolled this and exited 1. It now delegates, so the
+    usage contract is argparse's -- exit 2, which is what every other adr-kit
+    CLI already returns for a usage error.
+    """
     root = _make_tree(tmp_path)
-    for bad in ("0.31", "v0.31.0", "0.31.0-rc1", "banana"):
+    for bad in ("0.31", "0.31.0-rc1", "banana", "0.31.0.1", ""):
         proc = _run(root, bad)
-        assert proc.returncode == 1, bad
-        assert "semver" in proc.stderr
+        assert proc.returncode == 2, bad
+        assert "MAJOR.MINOR.PATCH" in proc.stderr
+
+
+def test_a_leading_v_is_accepted_and_normalised(tmp_path):
+    """`v0.31.0` is the tag spelling, and the canonical writer strips it.
+
+    `bin/bump-version` rejected it; `scripts/bump-version.py` documents the
+    strip and `scripts/check-release-version.py` does the same, so the
+    delegation takes the behaviour that already matches the rest of the release
+    path rather than the stricter one that did not.
+    """
+    root = _make_tree(tmp_path)
+    proc = _run(root, "v0.31.0")
+
+    assert proc.returncode == 0, proc.stderr
+    plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+    assert plugin["version"] == "0.31.0", "the leading v leaked into a manifest"
 
 
 def test_usage_error_without_argument(tmp_path):
     root = _make_tree(tmp_path)
     proc = _run(root)
-    assert proc.returncode == 1
-    assert "Usage" in proc.stderr
+    assert proc.returncode == 2
+    assert "usage" in proc.stderr.lower()
 
 
 def test_missing_marketplace_entry_fails(tmp_path):

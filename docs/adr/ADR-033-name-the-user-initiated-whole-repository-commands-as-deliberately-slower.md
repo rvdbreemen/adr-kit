@@ -1,15 +1,14 @@
 ---
 id: "ADR-033"
 title: "Name the User-Initiated Whole-Repository Commands as Deliberately Slower"
-status: "Proposed"
-date: "2026-08-05"
+status: "Accepted"
+date: "2026-08-06"
 binding: false
 gate: null
 documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
-format: "madr"
 topics:
   - "latency"
   - "cli"
@@ -26,6 +25,7 @@ symbols:
   - "adr-doctor"
   - "latency_ceiling_exception"
 context_scope: "selective"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -34,7 +34,7 @@ context_scope: "selective"
 
 ## Status
 
-Proposed, 2026-08-05.
+Accepted, 2026-08-06.
 
 ## Status History
 
@@ -45,6 +45,11 @@ status_history:
     changed_by: "User: Robert van den Breemen"
     reason: Three CLI paths exceed ADR-015's ceiling doing whole-repository work the user asked for; the hook side already has this distinction in ADR-031.
     changed_via: adr-kit
+  - date: 2026-08-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement

@@ -38,4 +38,6 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-030 | Accepted | - | Chosen option: recalibrate the budgets to the Python host, because it is the only option under which the declared num... |
 | ADR-031 | Accepted | - | Chosen option: name the pull-request moment as a deliberately slower, user-initiated event, because the property ADR-... |
 | ADR-032 | Accepted | - | Chosen option: declare a generated tree a first-class doctor context, because a user who installed the Codex payload... |
-| ADR-033 | Proposed | - | Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks. |
+| ADR-033 | Accepted | - | Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks. |
+| ADR-034 | Accepted | - | Chosen option: declare the property per event, because the difference between the two events that can reach out and t... |
+| ADR-035 | Proposed | - | Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied... |

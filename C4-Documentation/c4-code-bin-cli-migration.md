@@ -129,7 +129,7 @@ Shelled-out-to: **none**. No `subprocess`, no `os.system` in any of the three fi
 ### External
 
 - **Python stdlib only**: `argparse`, `json`, `re`, `sys`, `os`, `tempfile`, `pathlib`, `datetime.date`, `typing`. No third-party import was found — the dependency-free design holds for this cluster.
-- **External CLIs**: none invoked. `git` is referenced only as printed operator instructions (`bin/bump-version:281-290`).
+- **External CLIs**: none invoked. `git` is referenced only as printed operator instructions (`bin/bump-version:262-265`).
 - **OS services**: `os.fsync` and `os.replace` for durable atomic replacement; `Path.rename` for the ADR file move; `tempfile.NamedTemporaryFile(dir=path.parent)` to keep the temp file on the same filesystem so `os.replace` is atomic.
 
 ---

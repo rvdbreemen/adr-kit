@@ -337,7 +337,7 @@ Three layers, each with a clear path:
 - **`adr-generator` agent** scaffolds the ADR for you: decision tree for "does this need an ADR?", a proposed `## Enforcement` block when the decision has a code surface, and a post-write quality check.
 - **`/adr-kit:init`'s audit** mines an existing codebase for decisions already in effect, so you start with a real decision log instead of an empty directory.
 - **`/adr-kit:review`** audits a finished branch or PR: it enforces the existing ADRs against the committed range diff and, crucially, hunts for **new decisions the branch introduced but never recorded**, reading both the diff and the stated intent (commit messages, PR description), because decisions are often confessed in prose while the diff looks like plumbing. Found candidates are deduped against your existing set and drafted as `Proposed`, never auto-accepted.
-- **`bin/adr-suggest`** (opt-in) runs the same missing-decision detector per commit and prints a one-line nudge. It never blocks.
+- **`bin/adr-suggest`** (on by default) runs the same missing-decision detector per commit and prints a one-line nudge. It never blocks. Switch it off with `suggest.enabled: false` per project, or `ADR_KIT_SUGGEST_DISABLE=1` for one run.
 
 ### Guard the agent while it works
 
@@ -563,7 +563,7 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
 ```
 
 - The pre-commit hook's declarative pass is always on and free. The LLM judge pass is opt-in (`judge.llm_enabled`, or `ADR_KIT_LLM=1` per commit; `ADR_KIT_NO_LLM=1` to suppress). A flock guard serializes LLM passes across parallel commits.
-- `suggest.enabled` (or `ADR_KIT_SUGGEST=1` per commit) turns on the advisory missing-decision nudge; it never blocks and silently skips on any failure.
+- `suggest.enabled` defaults to `true` (ADR-035): the advisory missing-decision nudge runs on the same terms as the judge, resolving through the shared backend registry with no pinned model. It never blocks and silently skips on any failure. Set `suggest.enabled: false` to switch it off per project, or export `ADR_KIT_SUGGEST_DISABLE=1` for a single run; `ADR_KIT_SUGGEST=1` still re-enables it per commit for a project that has set it false.
 - The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo).
 - `watch` tunes the in-flight nudges; `cooldown_hours: 0` disables the cooldown, `enabled: false` silences the watcher.
 
@@ -608,7 +608,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.46.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.47.0
         with:
           adr-dir: docs/adr/
 ```
@@ -622,7 +622,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.46.0
+    rev: v0.47.0
     hooks:
       - id: adr-judge
 ```

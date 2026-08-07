@@ -17,7 +17,7 @@
   Python 3.10+ stdlib-only (`from __future__ import annotations` throughout, zero third-party
   imports across all 20 `scripts/` modules), GitHub Actions YAML with embedded `bash`/`pwsh`,
   POSIX shell, Markdown, and one committed Windows PE binary (`hooks/bin/windows-x64/adr-hook.exe`,
-  248,832 bytes, mirrored into both trees but stored as a single git blob).
+  248,320 bytes, mirrored into both trees but stored as a single git blob).
 
 ### Component boundary — what is owned versus consumed
 

@@ -8,7 +8,7 @@
       "path": "ADR-001-llm-gates-opt-in.md",
       "format": "canonical",
       "status": "Superseded",
-      "date": "2026-07-30",
+      "date": "2026-08-06",
       "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
       "topics": [
         "cost control",
@@ -784,7 +784,7 @@
           "ping remains implemented for legacy clients although revision 2026-07-28 removes it. It is reachable on a modern-routed request — any frame carrying the sentinel routes modern, including ping — and the answer there is -32601, with no res..."
         ],
         "verification": [
-          "tests/testadrmcp.py — the conformance suite described under Confirmation, carrying the gate id adr-mcp-dual-era-v1. This is where every positive obligation of this contract is verified. It does not exist yet; verifiedin stays empty until...",
+          "tests/testadrmcp.py — the conformance suite described under Confirmation, carrying the gate id adr-mcp-dual-era-v1. This is where every positive obligation of this contract is verified. It ships, carrying the gate anchor, and verifiedin...",
           "bin/adr-judge declarative rules from the Enforcement block below. They are deliberately negative only — a forbidpattern tripwire against the version echo and a forbidimport allowlist for the zero-dependency rule. No requirepattern rule i...",
           "The semantic obligations that no regex can express — resultType stamping, cacheScope: \"public\", the -32022 data shape, era routing, cache hints absent from tools/call — are covered by the conformance suite and human review, not by the LL..."
         ]
@@ -812,7 +812,7 @@
       "path": "ADR-017-run-the-llm-judge-by-default-on-the-host-agent-model.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-03",
+      "date": "2026-08-06",
       "decision_summary": "Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a...",
       "topics": [
         "backend selection",
@@ -873,7 +873,7 @@
       "path": "ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md",
       "format": "madr",
       "status": "Superseded",
-      "date": "2026-08-04",
+      "date": "2026-08-06",
       "decision_summary": "Chosen option: a local precomputed vector store that the query and hook paths only read, because it delivers semantic...",
       "topics": [
         "embeddings",
@@ -1044,7 +1044,7 @@
           "A remote embedding endpoint is permitted when the user has selected one through the settings surface, having been told the latency and privacy consequence. It is never the default and never selected by probing."
         ],
         "verification": [
-          "adr-query-embedding-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It covers the three acceptance cases above and the R21 latency bound."
+          "adr-query-embedding-v1: the gate that anchors this decision. It ships in tests/testadrsemanticroute.py, so gate carries the name and binding is true. It covers the three acceptance cases above and the R21 latency bound."
         ]
       },
       "scope": {
@@ -1107,7 +1107,7 @@
           "None."
         ],
         "verification": [
-          "adr-hook-index-refresh-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fi..."
+          "adr-hook-index-refresh-v1: the gate that anchors this decision. It ships in tests/testadrhookindexrefresh.py, so gate carries the name and binding is true. It covers the write-then-prompt sequence, the concurrent-hook case, and the budge..."
         ]
       },
       "scope": {
@@ -1167,7 +1167,7 @@
           "Outside a git repository, or where the ADR has no recorded prior state, the finding is advisory."
         ],
         "verification": [
-          "adr-open-questions-append-only-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap...."
+          "adr-open-questions-append-only-v1: the gate that anchors this decision. It ships in tests/testopenquestionsappendonly.py, so gate carries the name and binding is true. It covers the delete case, the answer case, and the no-history case."
         ]
       },
       "scope": {
@@ -1188,7 +1188,7 @@
       "path": "ADR-023-record-the-pull-request-guard-as-a-fail-closed-tier.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-04",
+      "date": "2026-08-06",
       "decision_summary": "Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b...",
       "topics": [
         "enforcement",
@@ -1228,7 +1228,7 @@
           "ADRKITHOOKDISABLE and the per-ADR override of spec R2.1 apply here as they do at commit time. A gate that cannot be overridden with a reason is overridden outside the tool."
         ],
         "verification": [
-          "adr-pr-guard-tier-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the deny path, the advisory path, and the fail-open path."
+          "adr-pr-guard-tier-v1: the gate that anchors this decision. It ships in tests/testadrprguard.py, so gate carries the name and binding is true. It covers the deny path, the advisory path, and the fail-open path."
         ]
       },
       "scope": {
@@ -1251,7 +1251,7 @@
       "path": "ADR-024-ask-for-a-missing-adr-at-the-pull-request-moment-inside-the-guard.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-04",
+      "date": "2026-08-06",
       "decision_summary": "Chosen option: extend the guard, because the moment is already intercepted, the user is already present, and the cost...",
       "topics": [
         "hooks",
@@ -1289,7 +1289,7 @@
           "A project may add a pullrequest workflow of its own. This decision governs what adr-kit turns on by default, not what a team may choose."
         ],
         "verification": [
-          "adr-pr-suggest-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false: a frontmatter that declares enforcement it cannot deliver is worse than one that admits the gap. Both fields fli..."
+          "adr-pr-suggest-v1: the gate that anchors this decision. It ships in tests/testprsuggestnudge.py, so gate carries the name and binding is true. It covers the both-signals case, the clean-branch case, and the advisory-never-denies case."
         ]
       },
       "scope": {
@@ -1310,7 +1310,7 @@
       "path": "ADR-025-separate-what-tracked-configuration-may-select-from-what-only-a-machine-may-introduce.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-04",
+      "date": "2026-08-06",
       "decision_summary": "Chosen option: repository-tracked configuration may select among backends an operator has enabled, and may never intr...",
       "topics": [
         "configuration",
@@ -1349,7 +1349,7 @@
           "The legacy judge.llmcmd allowlist is retained for existing projects. It is frozen: no new entries, no new flags."
         ],
         "verification": [
-          "adr-config-trust-boundary-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the credential refusal, the command-string refusal, and the redacted settings output."
+          "adr-config-trust-boundary-v1: the gate that anchors this decision. It ships in tests/testadrsettings.py, so gate carries the name and binding is true. It covers the credential refusal, the command-string refusal, and the redacted setting..."
         ]
       },
       "scope": {
@@ -1410,7 +1410,7 @@
           "None."
         ],
         "verification": [
-          "adr-audit-exit-contract-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts each of the five exit codes against a fixture, so the contract is enforced rather than described."
+          "adr-audit-exit-contract-v1: the gate that anchors this decision. It ships in tests/testadrauditcommand.py, so gate carries the name and binding is true. It asserts each of the five exit codes against a fixture, so the contract is enforce..."
         ]
       },
       "scope": {
@@ -1472,7 +1472,7 @@
           "None."
         ],
         "verification": [
-          "adr-signer-derivation-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering derivation, announcement, precedence, the machine-identity refusal, and the write-nothing behaviour of --suggest."
+          "adr-signer-derivation-v1: the gate that anchors this decision. It ships in tests/testadrsignerdiscovery.py, so gate carries the name and binding is true. It covers derivation, announcement, precedence, the machine-identity refusal, and t..."
         ]
       },
       "scope": {
@@ -1529,7 +1529,7 @@
           "None."
         ],
         "verification": [
-          "adr-reference-gate-scope-v1: the gate that anchors this decision. Both fields flip back together when the gate ships, covering the dangling case, the one-sided case, and the prose-is-ignored case."
+          "adr-reference-gate-scope-v1: the gate that anchors this decision. It ships in tests/testadrcrossreferences.py, so gate carries the name and binding is true. It covers the dangling case, the one-sided case, and the prose-is-ignored case."
         ]
       },
       "scope": {
@@ -1588,7 +1588,7 @@
           "A future native path is permitted when it delegates to the shared engine rather than reimplementing it, and carries the artefact parity test."
         ],
         "verification": [
-          "adr-single-retrieval-engine-v1: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts that no second ranking implementation ships, and that the edit-tier path meets its declared budget."
+          "adr-single-retrieval-engine-v1: the gate that anchors this decision. It ships in tests/testadrhookdispatchmatrix.py, so gate carries the name and binding is true. It asserts that no second ranking implementation ships, and that the edit-..."
         ]
       },
       "scope": {
@@ -1669,7 +1669,7 @@
       "path": "ADR-031-name-the-pull-request-moment-as-a-deliberately-slower-user-initiated-event.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-05",
+      "date": "2026-08-06",
       "decision_summary": "Chosen option: name the pull-request moment as a deliberately slower, user-initiated event, because the property ADR-...",
       "topics": [
         "hooks",
@@ -1786,8 +1786,8 @@
       "title": "Name the User-Initiated Whole-Repository Commands as Deliberately Slower",
       "path": "ADR-033-name-the-user-initiated-whole-repository-commands-as-deliberately-slower.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-05",
+      "status": "Accepted",
+      "date": "2026-08-06",
       "decision_summary": "Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks.",
       "topics": [
         "cli",
@@ -1837,6 +1837,121 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-034",
+      "title": "Declare the Hook Network Property Per Event Rather Than for the Hook Set",
+      "path": "ADR-034-declare-the-hook-network-property-per-event-rather-than-for-the-hook-set.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-06",
+      "decision_summary": "Chosen option: declare the property per event, because the difference between the two events that can reach out and t...",
+      "topics": [
+        "declared contract",
+        "governance",
+        "hooks",
+        "network"
+      ],
+      "aliases": [
+        "hook policy block",
+        "network_allowed",
+        "per-event network declaration"
+      ],
+      "components": [
+        "hook manifest",
+        "pull-request guard"
+      ],
+      "symbols": [
+        "adr_pr_guard",
+        "network_allowed",
+        "resolve_llm_backend"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Declare networkallowed for every event, by inheritance or by override.",
+          "Declare true where the handler can spawn a model or open a connection, whatever the reading machine is configured with.",
+          "Give every true a networkreason.",
+          "Keep the client mirrors carrying the same declaration."
+        ],
+        "must_not": [
+          "Do not declare false for an event that can reach out under any supported configuration.",
+          "Do not express a conditional capability as a declared value.",
+          "Do not drop the model pass from the pull-request moment to make a declaration true."
+        ],
+        "exceptions": [
+          "None. An event that cannot be classified declares true.",
+          "A local-only endpoint still counts: ollama on localhost:11434 opens a socket, and the same path reaches a remote host when pointed at one."
+        ],
+        "verification": [
+          "adr-hook-network-declaration-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false. Both fields flip together when it ships, covering the configured-backend case, the structural-clos..."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-035",
+      "title": "Run the Suggestion Pass by Default on the Same Terms as the Judge",
+      "path": "ADR-035-run-the-suggestion-pass-by-default-on-the-same-terms-as-the-judge.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-08-06",
+      "decision_summary": "Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied...",
+      "topics": [
+        "cost control",
+        "defaults",
+        "suggestion pass"
+      ],
+      "aliases": [
+        "adr-suggest default",
+        "suggest.enabled"
+      ],
+      "components": [
+        "adr-suggest"
+      ],
+      "symbols": [
+        "ADR_KIT_SUGGEST_DISABLE",
+        "suggest.enabled"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Default suggest.enabled to true.",
+          "Honour ADRKITSUGGESTDISABLE in bin/adr-suggest itself.",
+          "Keep the no-backend and non-decision skips ahead of any model call."
+        ],
+        "must_not": [
+          "A suggestion may never block a commit or a pull request.",
+          "Do not advertise a switch that only one caller reads."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "adr-suggest-default-on-v1: the gate this decision is to be anchored by. It does not exist yet, so gate is null and binding is false. Both fields flip together when it ships."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -1844,6 +1959,12 @@
       "source": "ADR-001",
       "target": "ADR-017",
       "type": "superseded-by",
+      "resolved": true
+    },
+    {
+      "source": "ADR-001",
+      "target": "ADR-035",
+      "type": "related",
       "resolved": true
     },
     {
@@ -2237,6 +2358,18 @@
       "resolved": true
     },
     {
+      "source": "ADR-017",
+      "target": "ADR-034",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-017",
+      "target": "ADR-035",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-018",
       "target": "ADR-004",
       "type": "related",
@@ -2276,6 +2409,12 @@
       "source": "ADR-018",
       "target": "ADR-020",
       "type": "superseded-by",
+      "resolved": true
+    },
+    {
+      "source": "ADR-018",
+      "target": "ADR-034",
+      "type": "related",
       "resolved": true
     },
     {
@@ -2387,6 +2526,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-023",
+      "target": "ADR-034",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-024",
       "target": "ADR-017",
       "type": "related",
@@ -2405,6 +2550,18 @@
       "resolved": true
     },
     {
+      "source": "ADR-024",
+      "target": "ADR-034",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-024",
+      "target": "ADR-035",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-025",
       "target": "ADR-017",
       "type": "related",
@@ -2419,6 +2576,12 @@
     {
       "source": "ADR-025",
       "target": "ADR-020",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-025",
+      "target": "ADR-034",
       "type": "related",
       "resolved": true
     },
@@ -2501,6 +2664,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-031",
+      "target": "ADR-034",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-032",
       "target": "ADR-010",
       "type": "related",
@@ -2521,6 +2690,60 @@
     {
       "source": "ADR-033",
       "target": "ADR-031",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-034",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-034",
+      "target": "ADR-018",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-034",
+      "target": "ADR-023",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-034",
+      "target": "ADR-024",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-034",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-034",
+      "target": "ADR-031",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-035",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-035",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-035",
+      "target": "ADR-024",
       "type": "related",
       "resolved": true
     }
