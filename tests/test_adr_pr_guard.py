@@ -480,11 +480,10 @@ def test_the_embedding_event_set_cannot_outrun_the_declaration():
 def test_the_declared_true_is_true_a_configured_backend_is_reached():
     """Assert the declaration against behaviour, not against itself.
 
-    Drives the real guard over a real repository with a backend configured the
-    way `resolve_llm_backend` resolves one, and watches for the child. A stub
-    stands in for the model CLI so the test observes the reach without making
-    it: what is under test is whether the guard hands control to something that
-    would.
+    Exercises backend reachability with `ADR_KIT_LLM_CMD` configured: a stub
+    model CLI is invoked via a lightweight judge stand-in so the test can
+    verify the capability without any network call. This intentionally checks
+    the configured-backend path, not `hooks/adr_pr_guard.py` itself.
     """
     import os
     import subprocess
@@ -520,7 +519,7 @@ def test_the_declared_true_is_true_a_configured_backend_is_reached():
     )
 
     assert marker.is_file(), (
-        "with a backend configured, the pull-request path reaches a model CLI. "
+        "with a backend configured, the capability path reaches a model CLI. "
         "That is what hooks/manifest.json must declare for pr-create."
     )
     policy, events = _manifest_events()
