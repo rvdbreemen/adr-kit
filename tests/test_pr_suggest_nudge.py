@@ -59,7 +59,7 @@ def test_the_nudge_is_extracted_from_what_adr_suggest_actually_prints(monkeypatc
     the guard noisy on exactly the branches it has nothing to say about.
     """
     noisy = SUGGESTION + "[adr-suggest] (skipped: no LLM backend configured)\n"
-    monkeypatch.setattr(GUARD, "_run", lambda *a, **k: _Result(stdout=noisy))
+    monkeypatch.setattr(GUARD, "_run", lambda *a, **k: _Result(stderr=noisy))
     suggest = tmp_path / "adr-suggest"
     suggest.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
 
@@ -73,7 +73,7 @@ def test_the_nudge_is_extracted_from_what_adr_suggest_actually_prints(monkeypatc
 def test_a_branch_with_no_candidate_decision_says_nothing(monkeypatch, tmp_path):
     """AC#5. A clean branch must see nothing at all."""
     monkeypatch.setattr(
-        GUARD, "_run", lambda *a, **k: _Result(stdout="[adr-suggest] (skipped: no decision)\n")
+        GUARD, "_run", lambda *a, **k: _Result(stderr="[adr-suggest] (skipped: no decision)\n")
     )
     suggest = tmp_path / "adr-suggest"
     suggest.write_text("", encoding="utf-8")
@@ -110,7 +110,7 @@ def test_the_nudge_is_bounded_by_what_is_left_of_the_guards_budget(monkeypatch, 
     def capture(argv, cwd, timeout, stdin_text=None):
         seen["argv"] = argv
         seen["timeout"] = timeout
-        return _Result(stdout=SUGGESTION)
+        return _Result(stderr=SUGGESTION)
 
     monkeypatch.setattr(GUARD, "_run", capture)
     suggest = tmp_path / "adr-suggest"
@@ -161,3 +161,95 @@ def test_both_mirrors_carry_the_nudge(client):
     assert "def _nudge(" in mirrored
     entry = (ROOT / client / "hooks" / "adr-hook.py").read_text(encoding="utf-8")
     assert "pr-guard-suggest" in entry
+
+
+def test_the_nudge_reads_the_stream_adr_suggest_actually_writes_to(tmp_path):
+    """End to end against the real script, because the fakes agreed with the bug.
+
+    `_nudge` filtered `result.stdout`. `emit_advisory` writes every advisory
+    line to **stderr** -- deliberately, so stdout stays pipe-clean for `--json`
+    -- so the filter matched nothing and ADR-024's nudge could never reach a
+    user. Every unit test above passed throughout: each one fabricated a
+    `_Result` carrying the text on stdout, so the suite asserted the guard
+    against the guard's own mistaken belief rather than against the program it
+    calls.
+
+    This drives the real `bin/adr-suggest` with a stub backend, so the two
+    sides have to agree on the stream or this fails.
+    """
+    import json
+    import subprocess
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / ".adr-kit.json").write_text(
+        json.dumps({"suggest": {"enabled": True}}), encoding="utf-8"
+    )
+
+    reply = json.dumps(
+        {
+            "needs_adr": True,
+            "confidence": "high",
+            "reason": "swapping the HTTP client is a dependency choice",
+            "suggested_title": "Choose an HTTP client",
+            "category": "dependency",
+        }
+    )
+    stub = tmp_path / "stub.py"
+    stub.write_text(
+        "import sys\nsys.stdout.write(%r)\n" % reply, encoding="utf-8"
+    )
+
+    diff = (
+        "diff --git a/app.py b/app.py\n"
+        "--- a/app.py\n"
+        "+++ b/app.py\n"
+        "@@ -1 +1 @@\n"
+        "-import requests\n"
+        "+import httpx\n"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "bin" / "adr-suggest"),
+            "--diff", "-",
+            "--adr-dir", str(adr_dir),
+            "--llm-cmd", f'"{sys.executable}" "{stub}"',
+        ],
+        input=diff,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    on_stderr = [
+        line for line in (result.stderr or "").splitlines()
+        if line.startswith("[adr-suggest] This change")
+    ]
+    on_stdout = [
+        line for line in (result.stdout or "").splitlines()
+        if line.startswith("[adr-suggest] This change")
+    ]
+    assert on_stderr, (
+        "bin/adr-suggest emitted no advisory on stderr, so this test can no "
+        f"longer prove which stream _nudge must read.\nstdout={result.stdout!r}"
+        f"\nstderr={result.stderr!r}"
+    )
+    assert not on_stdout, "the advisory reached stdout; _nudge now reads the wrong stream"
+
+    # Given that real process output, the guard surfaces it.
+    class _Real:
+        stdout, stderr, returncode = result.stdout, result.stderr, 0
+
+    original = GUARD._run
+    GUARD._run = lambda *a, **k: _Real()
+    try:
+        suggest = tmp_path / "adr-suggest"
+        suggest.write_text("", encoding="utf-8")
+        text = GUARD._nudge(tmp_path, adr_dir, suggest, diff, 5)
+    finally:
+        GUARD._run = original
+
+    assert "This change looks like" in text
+    assert "dependency choice" in text

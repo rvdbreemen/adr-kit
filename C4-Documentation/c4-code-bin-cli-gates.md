@@ -24,13 +24,14 @@ eight gates.
 | **Audit** | yes (default) | — | Deterministic. `status_history` chain: required fields, ISO dates, no future dates, monotonic order, last entry agrees with the `## Status` section. |
 | **Policy** | opt-in via `--gates` | — | Mixed. Deterministic for `## Enforcement` JSON parse + regex compilability (`FAIL`); heuristic for the anti-pattern advisories (excessive wildcard, broad glob) and the selective-retrieval-metadata check. |
 | **Quality** | opt-in via `--gates`, always `ADVISORY` | — (this *is* `adr-quality`) | Heuristic. A deliberately reduced subset of `adr-quality`; see [`bin/adr-lint:1013`](../bin/adr-lint#L1013). |
+| **Open Questions** | opt-in via `--gates` | — | **Deterministic.** A Proposed ADR's `## Open Questions` section is append-only: each question either graduates to answered or remains (ADR-022). Deleted questions without an answer are a `FAIL`. Requires git history; outside a repository, reported `ADVISORY`. |
 
-`ALL_GATES` is defined at [`bin/adr-lint:127`](../bin/adr-lint#L127);
+`ALL_GATES` is defined at [`bin/adr-lint:204`](../bin/adr-lint#L204) and includes nine gates (added: `"open-questions"`);
 `DEFAULT_GATES = ["completeness", "audit", "consistency"]` at
-[`bin/adr-lint:137`](../bin/adr-lint#L137). The default set is the three
+[`bin/adr-lint:215`](../bin/adr-lint#L215). The default set is three
 deterministic gates — the heuristic gates `evidence` and `clarity` are off by
 default precisely because, per the module docstring, "they need judgement that a
-regex cannot reliably provide" ([`bin/adr-lint:6`](../bin/adr-lint#L6)).
+regex cannot reliably provide" ([`bin/adr-lint:6`](../bin/adr-lint#L6)). The `open-questions` gate is deterministic but opt-in because it requires git history to function and reads the previous revision via `git show HEAD:./<filename>`.
 
 ### How ADR-009 bounds the heuristic clarity gate
 
@@ -103,7 +104,8 @@ within `config.severity`: `always_strict > always_advisory > advisory_before_str
 | `check_policy_gate(content: str, adr_id: str) -> List[Dict]` | Validate the `## Enforcement` JSON block. Returns finding dicts `{gate, severity, code, message}`. `FAIL` codes: `POLICY_SCHEMA_INVALID`, `POLICY_BAD_REGEX`. `ADVISORY` codes: `POLICY_EXCESSIVE_WILDCARD` (`.*.*.*` in a pattern), `POLICY_BROAD_GLOB` (missing `path_glob`, or `**` / `**/*`). Absent section → `[]` (silent skip). | [`bin/adr-lint:926`](../bin/adr-lint#L926) |
 | `check_quality_gate(content: str, adr_id: str) -> List[Dict]` | Three always-`ADVISORY` checks: `QUALITY_VAGUE_LANGUAGE` in `## Decision`, `QUALITY_NO_METRICS` in `## Consequences`, `QUALITY_FEW_ALTERNATIVES` (<2 items). Docstring explicitly defers comprehensive scoring to `bin/adr-quality`. | [`bin/adr-lint:1013`](../bin/adr-lint#L1013) |
 | `check_retrieval_metadata(content: str, cfg: Dict) -> Optional[Dict]` | Reported under the `policy` gate. Flags an Accepted + `binding: true` ADR that has no `topics`/`aliases`/`components`/`symbols`, no non-`None` `## Decision Contract` bullet, and no `context_scope: global`. Code `SELECTIVE_CONTEXT_METADATA`; level driven by `config.context.retrieval_completeness` (`off` / `advisory` (default) / `strict`). | [`bin/adr-lint:1069`](../bin/adr-lint#L1069) |
-| `_gate_exists_locally(gate: str, repo_root: Path) -> bool` | Single-gate wrapper over `_resolve_gates_locally`; underscored but documented as "kept for direct callers and tests". | [`bin/adr-lint:758`](../bin/adr-lint#L758) |
+| `check_open_questions_append_only(path: Path, text: str, status: str) -> List[Dict]` | **Deterministic, git-dependent (ADR-022).** A `Proposed` ADR's `## Open Questions` must only grow: questions may move to answered (with `- [x] Why ...? — **Answered ...**` annotation), but deletions without answers produce a `FAIL`. Returns two possible finding dicts: `open-questions-unverifiable` (ADVISORY, when git cannot read history) or `open-questions-deleted` (FAIL, lists vanished questions). Uses `all_open_questions(text)` and `_previous_revision(path)` ([`bin/adr-lint:1281`](../bin/adr-lint#L1281)). | [`bin/adr-lint:1229`](../bin/adr-lint#L1229) |
+| `_gate_exists_locally(gate: str, repo_root: Path) -> bool` | Single-gate wrapper over `_resolve_gates_locally`; underscored but documented as "kept for direct callers and tests". | [`bin/adr-lint:1038`](../bin/adr-lint#L1038) |
 
 #### Orchestration and rendering
 
@@ -148,21 +150,21 @@ severity model, no directory mode.
 
 Composite: `completeness × 0.4 + evidence × 0.2 + clarity × 0.2 + consistency × 0.2`,
 clamped to `[0.0, 1.0]` and rounded to 4 places
-([`bin/adr-quality:565`](../bin/adr-quality#L565)). Grades:
+([`bin/adr_quality_core.py:592`](../bin/adr_quality_core.py#L592)). Grades:
 `A ≥ 0.85`, `B ≥ 0.70`, `C ≥ 0.55`, `D < 0.55`
-([`bin/adr-quality:474`](../bin/adr-quality#L474)).
+([`bin/adr_quality_core.py:501`](../bin/adr_quality_core.py#L501)).
 
 | Signature | Description | Location |
 | --- | --- | --- |
-| `@dataclass class QualityIssue` | Structured gate finding. Fields: `code: str`, `detail: str = ""`, `severity: str = "medium"` (`"high"` / `"medium"` / `"low"`). | [`bin/adr-quality:114`](../bin/adr-quality#L114) |
-| `QualityIssue.message(self) -> str` | Render `ISSUE_MESSAGES[code]` with `{detail}` interpolated; falls back to the raw code on `KeyError`/`IndexError`. | [`bin/adr-quality:126`](../bin/adr-quality#L126) |
-| `QualityIssue.to_dict(self) -> Dict` | `{code, detail, severity, message}` for JSON output. | [`bin/adr-quality:133`](../bin/adr-quality#L133) |
-| `gate_completeness(content: str) -> Dict` | Weight 0.4. Starts at 1.0; `−1/7` per missing required section (profile-aware set via `detect_profile`/`required_headings`, falling back to the canonical seven), `−0.1` if `## Decision` ≤ 100 chars, `−0.15` if `## Alternatives Considered` has <2 bullet/`###` items, `−0.1` if `## Consequences` is empty. Returns `{score, issues, checks}`. | [`bin/adr-quality:166`](../bin/adr-quality#L166) |
-| `gate_evidence(content: str) -> Dict` | Weight 0.2. **Additive, starts at 0.0**: `+0.4` non-empty `## References`, `+0.3` a measurement matching `METRICS_RE` (`\d+\s*(ms\|MB\|GB\|KB\|%\|req\|s\|hours?)`), `+0.2` an `https?://` link, `+0.1` a `file:line` reference. | [`bin/adr-quality:251`](../bin/adr-quality#L251) |
-| `gate_clarity(content: str) -> Dict` | Weight 0.2. Base 0.5; `−0.15` for `VAGUE_WORDS_RE` in `## Decision`, `+0.3` for a `# ADR-NNN` title, `−0.2` for >3 undefined acronyms, `+0.2` for `## Context` > 50 chars. | [`bin/adr-quality:307`](../bin/adr-quality#L307) |
-| `gate_consistency(content: str, adr_dir: Optional[Path] = None) -> Dict` | Weight 0.2. Additive, starts at 0.0: `+0.4` non-empty `## Related Decisions`, `+0.3` for referenced `ADR-NNN` numbers existing in `adr_dir` (or partial credit when unverifiable), `+0.3` for a `## Status` word in `VALID_STATUSES`. | [`bin/adr-quality:390`](../bin/adr-quality#L390) |
-| `score_adr_quality(content: str, adr_path: Path) -> Dict` | Run all four gates, weight them, sort every `QualityIssue` by `SEVERITY_ORDER`, derive recommendations. Returns `{overall, grade, gates, issues, recommendations}`. `adr_dir` is inferred as `adr_path.parent`. | [`bin/adr-quality:541`](../bin/adr-quality#L541) |
-| `main(argv: Optional[List[str]] = None) -> int` | Parse args, read the file, score, render text or JSON, return `0` when `overall ≥ 0.70` else `1`; `2` on a missing/unreadable file. | [`bin/adr-quality:675`](../bin/adr-quality#L675) |
+| `@dataclass class QualityIssue` | Structured gate finding. Fields: `code: str`, `detail: str = ""`, `severity: str = "medium"` (`"high"` / `"medium"` / `"low"`). | [`bin/adr_quality_core.py:142`](../bin/adr_quality_core.py#L142) |
+| `QualityIssue.message(self) -> str` | Render `ISSUE_MESSAGES[code]` with `{detail}` interpolated; falls back to the raw code on `KeyError`/`IndexError`. | [`bin/adr_quality_core.py:153`](../bin/adr_quality_core.py#L153) |
+| `QualityIssue.to_dict(self) -> Dict` | `{code, detail, severity, message}` for JSON output. | [`bin/adr_quality_core.py:160`](../bin/adr_quality_core.py#L160) |
+| `gate_completeness(content: str) -> Dict` | Weight 0.4. Starts at 1.0; `−1/7` per missing required section (profile-aware set via `detect_profile`/`required_headings`, falling back to the canonical seven), `−0.1` if `## Decision` ≤ 100 chars, `−0.15` if `## Alternatives Considered` has <2 bullet/`###` items, `−0.1` if `## Consequences` is empty. Returns `{score, issues, checks}`. | [`bin/adr_quality_core.py:193`](../bin/adr_quality_core.py#L193) |
+| `gate_evidence(content: str) -> Dict` | Weight 0.2. **Additive, starts at 0.0**: `+0.4` non-empty `## References`, `+0.3` a measurement matching `METRICS_RE` (`\d+\s*(ms\|MB\|GB\|KB\|%\|req\|s\|hours?)`), `+0.2` an `https?://` link, `+0.1` a `file:line` reference. | [`bin/adr_quality_core.py:278`](../bin/adr_quality_core.py#L278) |
+| `gate_clarity(content: str) -> Dict` | Weight 0.2. Base 0.5; `−0.15` for `VAGUE_WORDS_RE` in `## Decision`, `+0.3` for a `# ADR-NNN` title, `−0.2` for >3 undefined acronyms, `+0.2` for `## Context` > 50 chars. | [`bin/adr_quality_core.py:334`](../bin/adr_quality_core.py#L334) |
+| `gate_consistency(content: str, adr_dir: Optional[Path] = None) -> Dict` | Weight 0.2. Additive, starts at 0.0: `+0.4` non-empty `## Related Decisions`, `+0.3` for referenced `ADR-NNN` numbers existing in `adr_dir` (or partial credit when unverifiable), `+0.3` for a `## Status` word in `VALID_STATUSES`. | [`bin/adr_quality_core.py:417`](../bin/adr_quality_core.py#L417) |
+| `score_adr_quality(content: str, adr_path: Path) -> Dict` | Run all four gates, weight them, sort every `QualityIssue` by `SEVERITY_ORDER`, derive recommendations. Returns `{overall, grade, gates, issues, recommendations}`. `adr_dir` is inferred as `adr_path.parent`. | [`bin/adr_quality_core.py:568`](../bin/adr_quality_core.py#L568) |
+| `main(argv: Optional[List[str]] = None) -> int` | Parse args, read the file, score, render text or JSON, return `0` when `overall ≥ 0.70` else `1`; `2` on a missing/unreadable file. | [`bin/adr-quality:271`](../bin/adr-quality#L271) |
 
 #### Private helpers (summarized, not enumerated one by one)
 
@@ -174,8 +176,8 @@ Eight private helpers: `_section_text` (142, role-mapped through
 
 #### Issue-code contract
 
-`ISSUE_MESSAGES` ([`bin/adr-quality:82`](../bin/adr-quality#L82)) and
-`_RECOMMENDATIONS_BY_CODE` ([`bin/adr-quality:493`](../bin/adr-quality#L493))
+`ISSUE_MESSAGES` ([`bin/adr_quality_core.py:109`](../bin/adr_quality_core.py#L109)) and
+`_RECOMMENDATIONS_BY_CODE` ([`bin/adr_quality_core.py:520`](../bin/adr_quality_core.py#L520))
 are parallel dicts keyed by the same 15 stable codes. This is the machine-readable
 contract consumers should key on rather than parsing the human text — the comment
 at line 491 says exactly that: "Driven by the structured issue code rather than
@@ -196,9 +198,10 @@ by name — there is no package, so `bin/` is effectively a flat namespace.
 
 | Module | Imported by | Symbols used |
 | --- | --- | --- |
-| `bin/adr_format.py` | both | `SUPPORTED_PROFILES`, `detect_profile`, `required_headings`, `section_text`; `adr-lint` additionally `is_migration_candidate`, `migration_notice`, `unresolved_open_questions` |
+| `bin/adr_format.py` | both | `SUPPORTED_PROFILES`, `detect_profile`, `required_headings`, `section_text`; `adr-lint` additionally `is_migration_candidate`, `migration_notice`, `unresolved_open_questions`, `all_open_questions` |
 | `bin/adr_schema.py` | `adr-lint` only | `FrontmatterError`, `migrate_text`, `parse_frontmatter`, `split_frontmatter`, `validate_frontmatter` |
 | `bin/adr_catalog.py` | `adr-lint` only | `ENFORCEMENT_BLOCK_RE`, `STATUS_BOLD_INLINE_RE`, `STATUS_HEADING_RE`, `STATUS_LINE_RE`, `adr_status` |
+| `bin/adr_config.py` | `adr-lint` only | `load_config`, `retired_keys_present`, `RETIRED_KEYS` |
 | `schemas/adr-kit-config.schema.json` | `adr-lint` | read at [`bin/adr-lint:237`](../bin/adr-lint#L237) when `jsonschema` is importable |
 | `schemas/adr-enforcement.schema.json` | `adr-lint` | read at [`bin/adr-lint:115`](../bin/adr-lint#L115), cached validator |
 | `bin/adr-renumber` | `adr-lint` | referenced by name in the duplicate-number message only (no exec) |
@@ -214,6 +217,40 @@ schema.
 - **`git` CLI** — `_verified_pointer_resolves` ([`bin/adr-lint:680`](../bin/adr-lint#L680)) shells out to `git -C <repo_root> cat-file -e <sha>^{commit}` with a 5-second timeout to resolve `verified_in: ["commit:<sha>"]` pointers. `OSError` and `TimeoutExpired` are caught and treated as "does not resolve", so a missing `git` degrades to a consistency finding rather than a crash. This is the cluster's only subprocess call.
 - **Filesystem / OS** — `adr-lint` walks the whole consuming repo via `os.walk` for gate-name resolution (capped at 5000 files, `followlinks=False`).
 - **No LLM, no network.** `.github/workflows/adr-guardian-audit.yml:8` records this as the invariant for the guardian's cheap tier: "Cheap tier only: adr-lint + adr-retire + adr-status. NEVER runs an LLM (ADR-001 posture: LLM gates are opt-in and local)."
+
+## Configuration and Gate Resolution
+
+### Retired configuration keys
+
+`bin/adr_config.py` maintains a `RETIRED_KEYS` mapping ([`bin/adr_config.py:20`](../bin/adr_config.py#L20)) of ten dotted JSON paths that once existed in the schema but are no longer read. The ten retired keys are:
+
+1. `$.judge.llm_timeout_ms` — replaced by `judge.llm_timeout_seconds`
+2. `$.judge.pre_push_timeout_ms` — no pre-push hook exists to use this
+3. `$.policy.regex_compile_checks` — `adr-lint` always compiles patterns regardless
+4. `$.policy.pattern_warnings` — `adr-lint` always emits anti-pattern advisories
+5. `$.context.weights` — deprecated in v0.40.0 by the index-first scorer
+6. `$.context.weights.exact_keyword` — part of deprecated weights block
+7. `$.context.weights.domain_tag` — part of deprecated weights block
+8. `$.context.weights.related_decisions` — part of deprecated weights block
+9. `$.context.weights.acceptance_status` — part of deprecated weights block
+10. `$.context.weights.recency` — part of deprecated weights block
+
+Keys in `RETIRED_KEYS` are silently accepted and ignored during config validation, preventing breakage of existing `.adr-kit.json` files. The `retired_keys_present(config: Any) -> List[str]` function ([`bin/adr_config.py:48`](../bin/adr_config.py#L48)) identifies which retired keys a config still sets, enabling callers to emit a warning without blocking the lint run.
+
+### Named-gate anchoring for Accepted binding ADRs
+
+An Accepted ADR with `binding: true` must declare a `gate` string in its frontmatter that resolves to an actual gate implementation in the consuming repository. Gate resolution is performed by `detect_frontmatter_consistency()` ([`bin/adr-lint:1046`](../bin/adr-lint#L1046)), which calls `_resolve_gates_locally(gates: Iterable[str], repo_root: Path) -> Set[str]` ([`bin/adr-lint:1013`](../bin/adr-lint#L1013)).
+
+**Gate resolution mechanism:**
+- `_resolve_gates_locally` performs a single pass over the consuming repository (via `_iter_gate_scan_files`, which caps at 5000 files and skips `.git` directories).
+- For each file under `repo_root`, it reads the text and checks whether any of the pending gate strings appear as a substring.
+- Returns the set of gate names that were found.
+
+**Failure conditions for Accepted binding ADRs:**
+- If `gate` is absent or empty: finding `"Accepted binding ADR requires a named gate"` ([`bin/adr-lint:1140`](../bin/adr-lint#L1140)).
+- If the gate string is present but not found under `repo_root`: finding `f"gate {gate!r} was not found under {repo_root}"` ([`bin/adr-lint:1142`](../bin/adr-lint#L1142)).
+
+Both findings are produced by the consistency gate and reported as `FAIL` when strict mode is on, else `ADVISORY`.
 
 ## Interfaces
 
@@ -297,9 +334,10 @@ Neither file has a `.py` extension, so normal `import` does not work. Tests
 ## Governing ADRs
 
 Verified against `docs/adr/ADR-INDEX.md` and each ADR's own text — only these
-three name this cluster:
+four name this cluster:
 
 - **ADR-009 — Bound Heuristic Gates to Findings an Author Can Act On** (Accepted, `binding: false`). The governing decision for the heuristic gates. Enforcement `require_pattern` on `CLARITY_ACRONYM_ALLOWLIST` with `path_glob: bin/adr-lint`. References name `gate_clarity`, `_strip_frontmatter_lines` and the allowlist directly.
+- **ADR-022 — Make Open Questions Append-Only for a Proposed ADR** (Accepted, `binding: false`). The governing decision for the `open-questions` gate. Prevents the incentive to delete questions instead of answering them (which would clear the acceptance gate at lower cost). The check requires git history; files without history degrade to ADVISORY. The gate names `check_open_questions_append_only` and functions from `adr_format.all_open_questions`.
 - **ADR-015 — Enforce a Two-Second Deterministic Latency Budget as a Test Fixture Contract** (Accepted, `binding: true`, `gate: adr-kit-cli-latency-v1`). Lists `adr-lint` in `components` and `_resolve_gates_locally` in `symbols`. `tests/fixtures/cli/latency-corpus.json` sets `adr-lint` budgets p50 1200 ms / p95 1600 ms / hard timeout 2000 ms, and records the measured pre-fix regression (p95 2032 ms on a contaminated tree) that the single-pass scan and `.git`-pruning fixed. The Enforcement `path_glob` targets the fixture, not `bin/adr-lint`, so the budget is guarded by `tests/test_cli_performance.py` rather than by the judge.
 - **ADR-004 — Layered ADR Context Injection** (Accepted). Its "Pin canonical fields" clause names `bin/adr-lint` explicitly: status is "the `## Status` line reconciled with the latest (last) `status_history` entry, the same `entries[-1]` comparison `bin/adr-judge` and `bin/adr-lint` already make" ([`ADR-004:118`](../docs/adr/ADR-004-layered-adr-context-injection.md)). That comparison is `gate_audit` at [`bin/adr-lint:440`](../bin/adr-lint#L440).
 
@@ -308,20 +346,33 @@ reference to them): ADR-005 defines the semantic format registry that both CLIs
 consume through `adr_format.detect_profile` / `required_headings`, which is why
 the completeness gate is profile-aware. ADR-001's opt-in-LLM posture is cited by
 `.github/workflows/adr-guardian-audit.yml` as the reason `adr-lint` stays
-LLM-free, but ADR-001 itself is about the judge.
+LLM-free, but ADR-001 itself is about the judge. ADR-025 governs tracked configuration options (the `tracking: true` fields in the schema) that may be selected via `config.severity`, but does not scope over this cluster's implementation.
 
 ## Notable findings
 
-1. **`bin/adr-quality`'s clarity gate never received the ADR-009 bounding.** Verified two ways — source read and runtime. Its `_ACRO_RE = r"\b([A-Z]{2,})\b"` ([`bin/adr-quality:72`](../bin/adr-quality#L72)) scans the whole document *including* frontmatter, matches 2-letter acronyms, recognises only `ACRONYM (`/`stands for`/`means`/`:` as a definition (never `expansion (ACRONYM)`), and its `acro_stopwords` set ([`:348`](../bin/adr-quality#L348)) contains only `ADR` and `ID` plus 20 two-letter English words — no allowlist of `JSON`, `YAML`, `HTTP`, `MCP`, `CLI`. Running both tools on `docs/adr/ADR-007-…md` (the very record ADR-009 was written about): `adr-lint --gates clarity` reports **PASS** with zero findings; `adr-quality` reports `ACRONYM_UNEXPLAINED: CI, CLI, INDEX, JSON, MADR` and deducts 0.2 from clarity. `CLI` is ADR-009's own worked example of a false positive, and `JSON`/`MADR` are in its allowlist. Because `bin/adr accept --quality-threshold` gates on `overall`, this un-bounded heuristic can still contribute to blocking acceptance (0.2 × 0.2 = 0.04 off the composite). ADR-009's Confirmation section only pins `tests/test_adr_lint_clarity.py`, so nothing catches the divergence.
-2. **The `adr-lint` module docstring contradicts `DEFAULT_GATES`.** Lines 5–6 say "Default gates are completeness and consistency (the deterministic ones)", but line 137 is `DEFAULT_GATES = ["completeness", "audit", "consistency"]`. The `audit` gate was added without updating the docstring or the `.claude/adr-kit-guide.md` narrative, which still describes exactly four gates while the tool has eight.
-3. **`--version` strings are stale by 27 minor releases.** Both files hardcode `0.15.0` ([`bin/adr-lint:1490`](../bin/adr-lint#L1490), [`bin/adr-quality:689`](../bin/adr-quality#L689)) while `.claude-plugin/plugin.json` declares `0.42.0`. ADR-013 ("declare version sites in one registry and bump by writing") exists precisely to prevent this; these two argparse `--version` strings are apparently not registered sites. Worth checking against the registry.
-4. **`adr-quality`'s consistency checks and score can disagree.** In `gate_consistency`, the `else` branch at [`bin/adr-quality:447`](../bin/adr-quality#L447) sets `checks["referenced_adrs_exist"] = False` yet still awards `+0.3` when `## Related Decisions` is non-empty. Verified: a document with a prose-only Related Decisions section scores `1.0` while reporting `{'related_decisions_present': True, 'referenced_adrs_exist': False, 'valid_status': True}` — so the text renderer prints `[2/3 checks passed]` next to a perfect `1.00`. The `elif mentioned_adrs` branch at line 443 also awards full credit for references it explicitly could not verify.
-5. **Two "quality" implementations and two of every gate name.** `adr-lint.check_quality_gate` is a deliberately reduced re-implementation of three `adr-quality` checks, with a docstring pointing at the other tool. Only `VAGUE_WORDS_RE` is kept textually identical, and both files carry a comment asserting that ("identical to bin/adr-quality's VAGUE_WORDS_RE" / "identical to bin/adr-lint's check_quality_gate()") — an invariant maintained by comment, not by a shared constant or a test.
-6. **`adr-lint` walks the entire consuming repository during a lint run.** `_iter_gate_scan_files` exists only to answer "does the string in this ADR's `gate:` frontmatter field appear anywhere in the repo?". It prunes any directory containing `.git` — a fix driven by this repo's own `.claude/worktrees/` agent trees, which contain eight nested checkouts with full copies of `bin/` and inflated lint from p95 665 ms to p95 2032 ms. The 5000-file cap silently truncates the scan on large repos, so a legitimate `gate` string beyond file 5000 produces a false "gate not found" consistency finding.
-7. **The `policy` gate is doing two unrelated jobs.** `check_policy_gate` validates the `## Enforcement` JSON block; `check_retrieval_metadata` validates selective-context retrieval metadata (an ADR-014/ADR-004 concern) and reports under the same `policy` gate label. They share a severity bucket but not a subject, and only the latter is configurable (`context.retrieval_completeness`).
-8. **`severity_of` hardcodes an exception for `consistency`.** At [`bin/adr-lint:262`](../bin/adr-lint#L262), when `strict_from` is set, every gate defaults to `advisory_before_strict_from` *except* `consistency`, which stays `always_strict`. Defensible (structural integrity should not be grandfathered) but undocumented in the docstring's severity model.
-9. **Compiled artefacts are checked into the working tree.** `bin/__pycache__/` contains `.pyc` files for three Python versions (3.10, 3.12, 3.14), including `adr-lintcpython-*.pyc` and `adr-qualitycpython-*.pyc` in the worktree copies. Not source, but they exist and pollute the file counts the scanners walk.
-10. **Both CLIs ship as three forks, and `bin/adr-quality` has CRLF line endings while its forks have LF.** `scripts/build-client-adapters.py` generates `codex/bin/` and `copilot/bin/` copies per ADR-010's three-native-client contract. Verified byte-for-byte: `codex/bin/adr-lint` and `copilot/bin/adr-lint` are **identical** to `bin/adr-lint` (LF, 59120 bytes each). `bin/adr-quality` is 25305 bytes with 715 CRLF terminators; both forks are 24590 bytes with 0 CRLF and are identical to it after newline normalization. So `diff` reports the entire file as changed (`1,715c1,715`) with zero semantic difference — the Windows CRLF false positive in the adapter drift check tracked as TASK-57, reproduced here in this specific pair of files. `bin/adr-lint` is unaffected because it is already LF in the working tree.
+1. **New `open-questions` gate (ADR-022, commit c80441d).** The ninth gate is deterministic and git-dependent; it targets Proposed ADRs only. Governs that a deleted question in `## Open Questions` (without a corresponding answered entry) blocks acceptance. Implemented via `check_open_questions_append_only(path, text, status)` ([`bin/adr-lint:1229`](../bin/adr-lint#L1229)), which reads git history via `_previous_revision(path)` and compares via `all_open_questions()` + `_normalise_question()` from `adr_format`. Produces `open-questions-unverifiable` (ADVISORY) when git is unavailable or file has no history, or `open-questions-deleted` (FAIL) listing the vanished questions. Also referenced in `bin/adr_readiness.py`'s `_open_questions_resolved()` to distinguish between answered and deleted questions when determining ADR readiness.
+
+2. **Retired configuration keys (commit 4aa3fae).** Nine dotted JSON paths in `.adr-kit.json` are silently accepted and ignored: `$.judge.llm_timeout_ms`, `$.judge.pre_push_timeout_ms`, `$.policy.regex_compile_checks`, `$.policy.pattern_warnings`, and five under `$.context.weights.*`. Stored in `bin/adr_config.py`'s `RETIRED_KEYS` dict ([`bin/adr_config.py:20`](../bin/adr_config.py#L20)) with explanations for each. The `_validate()` function skips them during schema validation; `retired_keys_present(config)` ([`bin/adr_config.py:48`](../bin/adr_config.py#L48)) allows callers to emit a warning without breaking the lint run. This enables backward compatibility without forever accepting typos or unknown keys.
+
+3. **Module docstring is severely outdated.** Line 2 says "the four adr-kit verification gates", but the tool has nine. Lines 5–6 say "Default gates are completeness and consistency (the deterministic ones)", but line 215 defines `DEFAULT_GATES = ["completeness", "audit", "consistency"]` — missing `audit`. The docstring predates ADR-022 and the expanded gate set; it needs a complete refresh to name all nine gates and explain status-scoped gates, git-dependent gates, and the distinctions between deterministic, heuristic, and policy gates.
+
+4. **`--version` strings are stale by 27 minor releases.** Both files hardcode `0.15.0` ([`bin/adr-lint:1967`](../bin/adr-lint#L1967), [`bin/adr-quality:244`](../bin/adr-quality#L244)) while `.claude-plugin/plugin.json` declares `0.42.0`. ADR-013 ("declare version sites in one registry and bump by writing") exists precisely to prevent this; these two argparse `--version` strings are apparently not registered sites. Worth checking against the registry.
+
+5. **`bin/adr-quality`'s clarity gate never received the ADR-009 bounding.** Verified two ways — source read and runtime. Its `_ACRO_RE = r"\b([A-Z]{2,})\b"` ([`bin/adr_quality_core.py:99`](../bin/adr_quality_core.py#L99)) scans the whole document *including* frontmatter, matches 2-letter acronyms, recognises only `ACRONYM (`/`stands for`/`means`/`:` as a definition (never `expansion (ACRONYM)`), and its `acro_stopwords` set ([`bin/adr_quality_core.py:375`](../bin/adr_quality_core.py#L375)) contains only `ADR` and `ID` plus 20 two-letter English words — no allowlist of `JSON`, `YAML`, `HTTP`, `MCP`, `CLI`. Running both tools on `docs/adr/ADR-007-…md` (the very record ADR-009 was written about): `adr-lint --gates clarity` reports **PASS** with zero findings; `adr-quality` reports `ACRONYM_UNEXPLAINED: CI, CLI, INDEX, JSON, MADR` and deducts 0.2 from clarity. `CLI` is ADR-009's own worked example of a false positive, and `JSON`/`MADR` are in its allowlist. Because `bin/adr accept --quality-threshold` gates on `overall`, this un-bounded heuristic can still contribute to blocking acceptance (0.2 × 0.2 = 0.04 off the composite). ADR-009's Confirmation section only pins `tests/test_adr_lint_clarity.py`, so nothing catches the divergence.
+
+6. **`adr-quality`'s consistency checks and score can disagree.** In `gate_consistency`, the `else` branch at [`bin/adr_quality_core.py:447`](../bin/adr_quality_core.py#L447) sets `checks["referenced_adrs_exist"] = False` yet still awards `+0.3` when `## Related Decisions` is non-empty. Verified: a document with a prose-only Related Decisions section scores `1.0` while reporting `{'related_decisions_present': True, 'referenced_adrs_exist': False, 'valid_status': True}` — so the text renderer prints `[2/3 checks passed]` next to a perfect `1.00`. The `elif mentioned_adrs` branch at line 443 also awards full credit for references it explicitly could not verify.
+
+7. **Two "quality" implementations and two of every gate name.** `adr-lint.check_quality_gate` is a deliberately reduced re-implementation of three `adr-quality` checks, with a docstring pointing at the other tool. Only `VAGUE_WORDS_RE` is kept textually identical, and both files carry a comment asserting that ("identical to bin/adr-quality's VAGUE_WORDS_RE" / "identical to bin/adr-lint's check_quality_gate()") — an invariant maintained by comment, not by a shared constant or a test.
+
+8. **`adr-lint` walks the entire consuming repository during a lint run.** `_iter_gate_scan_files` exists only to answer "does the string in this ADR's `gate:` frontmatter field appear anywhere in the repo?". It prunes any directory containing `.git` — a fix driven by this repo's own `.claude/worktrees/` agent trees, which contain eight nested checkouts with full copies of `bin/` and inflated lint from p95 665 ms to p95 2032 ms. The 5000-file cap silently truncates the scan on large repos, so a legitimate `gate` string beyond file 5000 produces a false "gate not found" consistency finding.
+
+9. **The `policy` gate is doing two unrelated jobs.** `check_policy_gate` validates the `## Enforcement` JSON block; `check_retrieval_metadata` validates selective-context retrieval metadata (an ADR-014/ADR-004 concern) and reports under the same `policy` gate label. They share a severity bucket but not a subject, and only the latter is configurable (`context.retrieval_completeness`).
+
+10. **`severity_of` hardcodes an exception for `consistency`.** At [`bin/adr-lint:262`](../bin/adr-lint#L262), when `strict_from` is set, every gate defaults to `advisory_before_strict_from` *except* `consistency`, which stays `always_strict`. Defensible (structural integrity should not be grandfathered) but undocumented in the docstring's severity model.
+
+11. **Compiled artefacts are checked into the working tree.** `bin/__pycache__/` contains `.pyc` files for three Python versions (3.10, 3.12, 3.14), including `adr-lintcpython-*.pyc` and `adr-qualitycpython-*.pyc` in the worktree copies. Not source, but they exist and pollute the file counts the scanners walk.
+
+12. **Both CLIs ship as three forks, and `bin/adr-quality` has CRLF line endings while its forks have LF.** `scripts/build-client-adapters.py` generates `codex/bin/` and `copilot/bin/` copies per ADR-010's three-native-client contract. Verified byte-for-byte: `codex/bin/adr-lint` and `copilot/bin/adr-lint` are **identical** to `bin/adr-lint` (LF, 59120 bytes each). `bin/adr-quality` is 25305 bytes with 715 CRLF terminators; both forks are 24590 bytes with 0 CRLF and are identical to it after newline normalization. So `diff` reports the entire file as changed (`1,715c1,715`) with zero semantic difference — the Windows CRLF false positive in the adapter drift check tracked as TASK-57, reproduced here in this specific pair of files. `bin/adr-lint` is unaffected because it is already LF in the working tree.
 
 ## Relationships
 
@@ -336,12 +387,12 @@ flowchart TD
     end
 
     subgraph cluster["Verification Gate CLIs"]
-        LINT["bin/adr-lint<br/>main → lint_file<br/>8 gates, FAIL/ADVISORY"]
+        LINT["bin/adr-lint<br/>main → lint_file<br/>9 gates, FAIL/ADVISORY"]
         QUAL["bin/adr-quality<br/>main → score_adr_quality<br/>4 weighted gates, A-D"]
     end
 
     subgraph gates_l["adr-lint gates"]
-        DET["deterministic<br/>schema · completeness<br/>audit · consistency"]
+        DET["deterministic<br/>schema · completeness · audit<br/>consistency · open-questions"]
         HEU["heuristic<br/>evidence · clarity<br/>quality (always ADVISORY)"]
         POL["policy<br/>deterministic JSON+regex<br/>+ heuristic advisories"]
     end
@@ -354,14 +405,15 @@ flowchart TD
     end
 
     subgraph shared["shared bin/ modules"]
-        FMT["adr_format.py<br/>detect_profile, required_headings<br/>section_text, unresolved_open_questions"]
+        FMT["adr_format.py<br/>detect_profile, required_headings<br/>section_text, unresolved_open_questions<br/>all_open_questions"]
         SCH["adr_schema.py<br/>split/parse/validate_frontmatter"]
         CAT["adr_catalog.py<br/>adr_status, ENFORCEMENT_BLOCK_RE"]
+        CFG_M["adr_config.py<br/>load_config, retired_keys_present"]
     end
 
     CFG[".adr-kit.json<br/>severity · strict_from<br/>template · context"]
     JS["jsonschema<br/>OPTIONAL, import-guarded"]
-    GIT["git CLI<br/>cat-file -e (commit: pointers)"]
+    GIT["git CLI<br/>cat-file -e (commit: pointers)<br/>show HEAD:./<file> (open-questions)"]
 
     ACCEPT -->|"--strict --gates all-but-quality"| LINT
     ACCEPT -->|"--format json, threshold"| QUAL
@@ -378,7 +430,9 @@ flowchart TD
     LINT --> FMC
     FMC --> SCAN
     FMC --> GIT
+    DET -.->|open-questions| GIT
     CFG --> LINT
+    CFG_M --> LINT
     JS -.->|"deepens only"| LINT
 
     LINT --> FMT
@@ -387,10 +441,12 @@ flowchart TD
     QUAL --> FMT
 
     ADR009["ADR-009<br/>bounds the clarity gate<br/>require_pattern on bin/adr-lint"]
+    ADR022["ADR-022<br/>open-questions append-only<br/>Proposed ADRs"]
     ADR015["ADR-015<br/>p50 1200 / p95 1600 / hard 2000 ms"]
     ADR004["ADR-004<br/>entries[-1] status reconciliation"]
 
     ADR009 -.->|governs| HEU
+    ADR022 -.->|governs| DET
     ADR015 -.->|budgets| SCAN
     ADR004 -.->|pins| DET
     ADR009 -.->|"NOT applied here"| QUAL

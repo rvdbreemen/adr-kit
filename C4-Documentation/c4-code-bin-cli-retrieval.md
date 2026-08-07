@@ -95,33 +95,35 @@ and `sort_key` (`:237`) inside `build_graph`, and `_ensure_utf8_stdout` (`:306`)
 
 ### `bin/adr-index` — index generator (two modes in one command)
 
-Path: [`bin/adr-index`](../bin/adr-index) (418 lines). Mode selection is flag-shape-based, not
+Path: [`bin/adr-index`](../bin/adr-index) (199 lines, thin CLI wrapper) and [`bin/adr_index_core.py`](../bin/adr_index_core.py) (443 lines, renderer). Mode selection is flag-shape-based, not
 subcommand-based: `-o`/`--adr-dir` force **context mode**, a bare positional path or
 `--check`/`--readme` select **README mode** (see `_should_use_context_mode`, and the precedence
-footgun in Notable Findings).
+footgun in Notable Findings). The split (ADR-021) moved rendering into an importable module for in-process regeneration without subprocess overhead.
 
 | Element | Signature | Description | Location |
 |---|---|---|---|
-| `enforcement_globs` | `enforcement_globs(text: str) -> List[str]` | Thin re-export of `adr_catalog.enforcement_globs`, kept for callers/tests importing this module. | `bin/adr-index:73` |
-| `discover_files` | `discover_files(adr_dir: Path) -> List[Path]` | Re-export of `adr_catalog.discover_adr_files`. | `bin/adr-index:78` |
-| `load_index` | `load_index(adr_dir: Path) -> List[Dict]` | Re-export of `adr_catalog.load_adr_records` — one read per ADR file, shared with every other index view. | `bin/adr-index:82` |
-| `render_markdown` | `render_markdown(rows: List[Dict]) -> str` | The compact `ADR-INDEX.md` map: generated-file banner, ADR-004 scope note, one `\| ADR \| Status \| Scope \| Decision \|` row per record, `\| _(none)_ \|` when empty. | `bin/adr-index:91` |
-| `render_context_json` | `render_context_json(rows: List[Dict]) -> str` | Legacy flat JSON list (`adr_id, title, status, format, scope, decision, path`). | `bin/adr-index:115` |
-| `render_graph_json` | `render_graph_json(rows: List[Dict]) -> str` | The ADR-007 node-and-edge graph, delegated to `adr_catalog.build_graph_document`. | `bin/adr-index:131` |
-| `render_generated_readme_block` | `render_generated_readme_block(records: List[Dict], issues: List[str]) -> str` | Builds the sentinel-delimited README block: status-count summary table, per-decision table with supersession notes, optional "Index Issues" list. | `bin/adr-index:171` |
-| `default_readme` | `default_readme(block: str) -> str` | Minimal README skeleton when none exists. | `bin/adr-index:223` |
-| `update_readme` | `update_readme(existing: Optional[str], block: str) -> str` | Replaces only the text between `<!-- adr-kit-index:begin -->` and `<!-- adr-kit-index:end -->`; appends the block when the sentinels are absent, preserving all human prose. | `bin/adr-index:236` |
-| `build_readme_payload` | `build_readme_payload(adr_dir: Path, readme: Path) -> Dict` | Computes desired README, `ADR-INDEX.md` and `ADR-INDEX.json` content, diffs each against disk, detects duplicate ADR ids, and returns the payload plus three private `_desired_*` keys the caller pops before printing. | `bin/adr-index:246` |
-| `render_readme_text` | `render_readme_text(payload: Dict, check: bool) -> str` | Three-line human summary plus one line per issue. | `bin/adr-index:292` |
-| `main` | `main(argv: Optional[List[str]] = None) -> int` | Sets UTF-8 streams, parses args, dispatches to context or README mode. | `bin/adr-index:371` |
+| `enforcement_globs` | `enforcement_globs(text: str) -> List[str]` | Thin re-export of `adr_catalog.enforcement_globs`, kept for callers/tests importing this module. | `bin/adr_index_core.py:92` |
+| `discover_files` | `discover_files(adr_dir: Path) -> List[Path]` | Re-export of `adr_catalog.discover_adr_files`. | `bin/adr_index_core.py:97` |
+| `load_index` | `load_index(adr_dir: Path) -> List[Dict]` | Re-export of `adr_catalog.load_adr_records` — one read per ADR file, shared with every other index view. | `bin/adr_index_core.py:101` |
+| `render_markdown` | `render_markdown(rows: List[Dict]) -> str` | The compact `ADR-INDEX.md` map: generated-file banner, ADR-004 scope note, one `\| ADR \| Status \| Scope \| Decision \|` row per record, `\| _(none)_ \|` when empty. | `bin/adr_index_core.py:110` |
+| `render_context_json` | `render_context_json(rows: List[Dict]) -> str` | Legacy flat JSON list (`adr_id, title, status, format, scope, decision, path`). | `bin/adr_index_core.py:134` |
+| `render_graph_json` | `render_graph_json(rows: List[Dict]) -> str` | The ADR-007 node-and-edge graph, delegated to `adr_catalog.build_graph_document`. | `bin/adr_index_core.py:150` |
+| `render_generated_readme_block` | `render_generated_readme_block(records: List[Dict], issues: List[str]) -> str` | Builds the sentinel-delimited README block: status-count summary table, per-decision table with supersession notes, optional "Index Issues" list. | `bin/adr_index_core.py:190` |
+| `default_readme` | `default_readme(block: str) -> str` | Minimal README skeleton when none exists. | `bin/adr_index_core.py:242` |
+| `update_readme` | `update_readme(existing: Optional[str], block: str) -> str` | Replaces only the text between `<!-- adr-kit-index:begin -->` and `<!-- adr-kit-index:end -->`; appends the block when the sentinels are absent, preserving all human prose. | `bin/adr_index_core.py:255` |
+| `build_readme_payload` | `build_readme_payload(adr_dir: Path, readme: Path) -> Dict` | Computes desired README, `ADR-INDEX.md` and `ADR-INDEX.json` content, diffs each against disk, detects duplicate ADR ids, and returns the payload plus three private `_desired_*` keys the caller pops before printing. | `bin/adr_index_core.py:265` |
+| `render_readme_text` | `render_readme_text(payload: Dict, check: bool) -> str` | Three-line human summary plus one line per issue. | `bin/adr_index_core.py:311` |
+| `main` | `main(argv: Optional[List[str]] = None) -> int` | Sets UTF-8 streams, parses args, dispatches to context or README mode. | `bin/adr-index:152` |
 
-Private helpers summarised: `_ensure_utf8_streams` (`:55`, rewraps `sys.stdout/stderr` in a
-`TextIOWrapper` with `newline="\n"`), `_escape_cell` (`:87`), `_find_adr_dir` (`:139`, tries
-`docs/adr`, `adr`, `.`), `_readme_record` (`:149`), `_supersession_note` (`:161`),
-`_should_use_context_mode` (`:307`), `_run_context_mode` (`:315`) and `_run_readme_mode` (`:340`).
-Module data: `BEGIN`/`END` sentinels (`:46-47`) and two regexes (`TITLE_RE` `:49`,
-`DECISION_SECTION_RE` `:50`) that are declared but no longer used by this file — parsing moved into
-`adr_catalog`.
+Private helpers summarised: `_ensure_utf8_streams` (`adr_index_core.py:74`, rewraps `sys.stdout/stderr` in a
+`TextIOWrapper` with `newline="\n"`), `_escape_cell` (`adr_index_core.py:106`), `_find_adr_dir` (`adr_index_core.py:158`, tries
+`docs/adr`, `adr`, `.`), `_readme_record` (`adr_index_core.py:168`), `_supersession_note` (`adr_index_core.py:180`),
+`_should_use_context_mode` (`bin/adr-index:88`), `_run_context_mode` (`bin/adr-index:96`) and `_run_readme_mode` (`bin/adr-index:121`).
+Module data: `BEGIN`/`END` sentinels (`adr_index_core.py:65-66`) and two regexes (`TITLE_RE` `adr_index_core.py:68`,
+`DECISION_SECTION_RE` `adr_index_core.py:69-71`) that are declared but no longer used — parsing moved into
+`adr_catalog`. Additional perf helpers: `MS_PER_ADR_RENDER` (`adr_index_core.py:398`), `RENDER_FIXED_COST_MS` (`adr_index_core.py:399`),
+`projected_render_ms()` (`adr_index_core.py:402`), `regenerate_index()` (`adr_index_core.py:416`), `stale_index_artifacts()` (`adr_index_core.py:329`),
+`index_probably_fresh()` (`adr_index_core.py:368`), `INDEX_ARTIFACTS` (`adr_index_core.py:326`).
 
 ### `bin/adr-watch` — edit-tier nudge and pre-edit injector
 
@@ -174,19 +176,20 @@ exit 2 is reserved for genuine usage errors (`SuggestError`, `FileNotFoundError`
 | `read_intent` | `read_intent(intent_arg: str) -> str` | Reads the author's stated intent, truncated to `INTENT_MAX_CHARS` (8000) with a `[intent truncated]` marker. Unreadable file ⇒ `SuggestError`. | `bin/adr-suggest:316` |
 | `build_suggest_prompt` | `build_suggest_prompt(adr_list: str, diff_text: str, intent_text: Optional[str] = None) -> str` | Builds the detector prompt: what does/doesn't warrant an ADR, an explicit prompt-injection warning, and the required JSON response shape. ADR list, diff and intent are each wrapped in content-derived sentinel fences and declared untrusted data. Byte-identical to the no-intent form when `intent_text` is empty. | `bin/adr-suggest:332` |
 | `parse_suggest_response` | `parse_suggest_response(raw: str) -> Optional[Dict]` | Three-stage extraction (direct JSON → fenced block → first/last brace span), then normalisation: `needs_adr` coerced to bool, `confidence` clamped to low/medium/high, `category` clamped to the six-value set, `reason` ≤200 chars, `suggested_title` ≤80. `None` ⇒ graceful skip. | `bin/adr-suggest:402` |
-| `run_llm_suggest` | `run_llm_suggest(prompt: str, llm_cmd: List[str], timeout_s: int) -> Optional[Dict]` | `shutil.which` pre-check, then `subprocess.run` with the prompt on stdin. Missing binary, timeout, non-zero exit or unparseable output all return `None`. | `bin/adr-suggest:463` |
-| `resolve_llm_cmd` | `resolve_llm_cmd(args, cfg: Dict) -> List[str]` | Precedence `--llm-cmd` > `ADR_KIT_LLM_CMD` > `suggest.llm_cmd` > `suggest.llm_model` > `judge.llm_cmd` > `judge.llm_model` > `DEFAULT_LLM_CMD`. Repo-tracked `*.llm_cmd` binaries are checked against `_LLM_CMD_ALLOWLIST` by name **and** stem; a rejected value logs a warning and falls through rather than being honoured. | `bin/adr-suggest:495` |
-| `resolve_llm_timeout` | `resolve_llm_timeout(args, cfg: Dict) -> int` | `--llm-timeout` > `suggest.llm_timeout_seconds` > `judge.llm_timeout_seconds` > 120 s. | `bin/adr-suggest:544` |
+| `run_llm_suggest` | `run_llm_suggest(prompt: str, backend, timeout_s: int) -> Optional[Dict]` | Calls `backend.judge()` after an `unavailable_reason()` pre-check. No backend, an unavailable one, a timeout, a non-zero exit, an HTTP error or unparseable output all return `None` — the caller turns that into exit 0. | `bin/adr-suggest:518` |
+| `resolve_backend` | `resolve_backend(args, cfg: Dict, local_cfg: Dict)` | Resolves through the shared registry in `bin/adr_llm.py` — the same resolver `adr-judge` uses (ADR-017). Precedence `--llm-cmd` > `ADR_KIT_LLM_CMD` > `judge.backend`. There is no `suggest.backend`: the backend is a property of the project, not of which tool is asking. Repo-tracked `suggest.llm_cmd` / `suggest.llm_model` are reported as ignored rather than honoured, because this file is committed and honouring them would let repository content pick the binary this script executes (ADR-017 Must Not, TASK-72). | `bin/adr-suggest:547` |
+| `resolve_llm_timeout` | `resolve_llm_timeout(args, cfg: Dict) -> int` | `--llm-timeout` > `suggest.llm_timeout_seconds` > `judge.llm_timeout_seconds` > `DEFAULT_LLM_TIMEOUT_S` (30 s). | `bin/adr-suggest:571` |
+| `load_local_config` | `load_local_config(adr_dir: Path) -> Dict` | Reads the machine-local, gitignored `.adr-kit.local.json` the installer writes, which is where `judge.host_client` lives. | `bin/adr-suggest:293` |
 | `emit_advisory` | `emit_advisory(result: Dict) -> None` | Four-line advisory block, always on **stderr** so stdout stays pipe-clean. | `bin/adr-suggest:559` |
 | `main` | `main() -> int` | Opt-in gate → read diff/intent → skip-glob filter → collect ADRs → prompt → LLM → advisory or JSON. Emits the advisory only when `needs_adr` and confidence is medium/high. | `bin/adr-suggest:590` |
 
 Private helpers summarised: `_split_cmd` (`:123`, `shlex.split` with `posix=False` on Windows so
 `C:\Users\…` survives, then manual quote-stripping), `_data_fence_token` (`:296`, 16 hex chars of
 SHA-256 over the fenced content so a guessed END marker changes the token), `_fence` (`:306`) and
-`_ensure_utf8_streams` (`:580`). Module data: `DEFAULT_LLM_CMD` (`:55`,
-`claude -p --model claude-sonnet-4-6`), `DEFAULT_LLM_TIMEOUT_S` (`:56`), `INTENT_MAX_CHARS` (`:61`),
-`_LLM_CMD_ALLOWLIST` (`:67`), `SKIP_GLOBS` (`:79`), `_VALID_CONFIDENCE`/`_VALID_CATEGORY`
-(`:391-399`).
+`_ensure_utf8_streams` (`:580`). Module data: `DEFAULT_LLM_TIMEOUT_S` (`:112`, 30 seconds), `INTENT_MAX_CHARS` (`:117`),
+`SKIP_GLOBS` (`:122`), `_VALID_CONFIDENCE` (`:446`). There is no `DEFAULT_LLM_CMD` and no
+`_LLM_CMD_ALLOWLIST`: ADR-017 moved every command, endpoint and model to the code-side registry in
+`bin/adr_llm.py`, so this script names no vendor CLI and pins no model tag (TASK-72).
 
 ## Dependencies
 
@@ -438,12 +441,12 @@ core to `adr-watch` is a *documented* relationship with no code path behind it.
    longer contribute, and scoring is `adr_query.score_record` field-weighted positive evidence
    (ADR-014). ADR-004 is Accepted and therefore immutable, so this can only be fixed in the
    docstring, not the ADR.
-3. **`adr-index` reports success when the write fails.** `bin/adr-index:329-334` catches `OSError`
+3. **`adr-index` reports success when the write fails.** `bin/adr-index:110-115` catches `OSError`
    around `Path(args.output).write_text(...)`, prints to stderr, and `return 0`. A generator whose
    output never landed exits 0 — deliberate fail-open per ADR-004, but it means a CI step using
    `-o` cannot detect a failed write from the exit code.
 4. **`adr-index` flag precedence silently swallows `--check`.** `_should_use_context_mode`
-   (`bin/adr-index:307-312`) tests `--output`/`--adr-dir` *before* `--check`. Verified:
+   (`bin/adr-index:88-93`) tests `--output`/`--adr-dir` *before* `--check`. Verified:
    `python bin/adr-index --adr-dir docs/adr --check` prints the Markdown index to stdout and exits 0
    — `--check` is ignored, so a freshness gate written that way always passes. Repository CI is
    unaffected because it uses the positional form (`adr-index --check docs/adr`).
@@ -458,10 +461,15 @@ core to `adr-watch` is a *documented* relationship with no code path behind it.
    and ADR-004 all still describe `bin/adr-watch --pre-edit`/`--hook` as the wired edit tier. The
    behaviour is duplicated in two places with only the newer one actually installed.
 6. **`adr-watch`'s stated latency target is not what its test asserts.** The docstring targets
-   "<100ms for 50 ADRs" (`bin/adr-watch:26-28`) and the hook corpus sets PostToolUse/PreToolUse at
-   p50 25 ms / p95 50 ms / hard 100 ms (`tests/fixtures/hooks/reference-corpus.json`), but
-   `tests/test_adr_watch.py:417` only asserts `elapsed < 2.0` seconds — a 20× looser bound than the
-   documented budget.
+   "<100ms for 50 ADRs" (`bin/adr-watch:26-28`). The hook event budgets are declared in `hooks/manifest.json`
+   with `latency_budget_ms` values: pre-tool-use 1100 ms, post-tool-use 1500 ms, and others ranging from 900 to 5000 ms.
+   These were recalibrated by ADR-030 to the Python host after ADR-029 retired the native binary in v0.44.1.
+   Note that `pr-create` at 5000 ms exceeds ADR-015's 2000 ms deterministic ceiling; ADR-031 names it
+   a deliberately user-initiated exception with verified acceptance in the gate. Also note
+   `MEASURED_INTERPRETER_FLOOR_MS` in `hooks/hook_benchmark.py:60`: three events previously declared
+   a 100 ms hard timeout against a measured ~183 ms interpreter floor (`python -c pass` alone), so they
+   were unachievable. However, `tests/test_adr_watch.py:417` only asserts `elapsed < 2.0` seconds —
+   a 20× looser bound than the documented <100ms target.
 7. **ADR-015 latency-corpus coverage gap.** ADR-015's Must clause reads "Every deterministic
    user-facing CLI or hook path keeps a p50/p95/hard-budget entry in a committed latency fixture
    with measured evidence", and its outcome adds "New deterministic user-facing tools must be added

@@ -34,6 +34,8 @@ Governing ADRs verified against `docs/adr/`:
 | ADR-015 | Names `bin/adr-retire`'s `_walk_repo_files`/`resolve_present_terms` as the p95-latency regression the fixture contract exists to catch (`ADR-015:73`, `ADR-015:245`) |
 | ADR-014 | Governs the retrieval-health/probe contract consumed by `adr-status` and `adr-guardian retrieval-health` (contract-level, no file in this cluster is in its `path_glob`) |
 | ADR-011 | Governs the deterministic readiness + human-gated grilling model behind `adr-guardian refresh-readiness` and the `/adr-kit:grill` queue (contract-level) |
+| ADR-022 | Governs the append-only constraint on Open Questions while an ADR is Proposed (`ADR-022:112`); directly affects what `bin/adr answer` records and how `bin/adr-readiness` and the acceptance gates treat unresolved questions |
+| ADR-027 | Governs signer derivation from `git config user.name` and announcement on stderr; directs the Status History format to record `User: <name>` entries and the breaking change that `bin/adr accept` requires `--confirm` (v0.45.0, `ADR-027:99-104`) |
 | ADR-005 | Governs the selectable body-profile registry that `adr new --profile` and `adr profiles` consume (`adr_format.SUPPORTED_PROFILES`, `bin/adr_format.py:17`) (contract-level) |
 
 ADR-009 is *not* a governing ADR here — its Enforcement scope is `bin/adr-lint` — but it
@@ -54,48 +56,67 @@ writer that also regenerates the indexes and rolls both back on failure.
 
 | Element | Signature | Purpose | Location |
 |---|---|---|---|
-| `AdrLifecycleError` | `class AdrLifecycleError(Exception)` | Single error type; `main` maps it to exit 2 | `bin/adr:54` |
-| `LEGAL_TRANSITIONS` | `dict[str, set[str]]` | The transition table (see finding below) | `bin/adr:44` |
-| `normalize_adr_id` | `normalize_adr_id(value: str) -> str` | `"7"`/`"adr-7"` → `"ADR-007"` | `bin/adr:58` |
-| `find_adr_file` | `find_adr_file(adr_dir: Path, adr_id: str) -> Path` | Resolve exactly one `ADR-NNN-*.md`; raises on 0 or >1 | `bin/adr:65` |
-| `load_adr` | `load_adr(path: Path) -> Tuple[Dict, str]` | Migrate + split frontmatter, return `(frontmatter, body)` | `bin/adr:75` |
-| `write_adr` | `write_adr(path: Path, data: Dict, body: str) -> None` | Render frontmatter + body through the atomic writer | `bin/adr:111` |
-| `assert_legal_transition` | `assert_legal_transition(current: str, target: str) -> None` | Enforce `LEGAL_TRANSITIONS` | `bin/adr:152` |
-| `set_status_line` | `set_status_line(body: str, status_line: str) -> str` | Replace the `## Status` body, or synthesize the section | `bin/adr:161` |
-| `history_entry` | `history_entry(status: str, changed_by: str, reason: str, changed_via: str, when: str) -> str` | One YAML `status_history` list item | `bin/adr:167` |
-| `append_status_history` | `append_status_history(body: str, status: str, changed_by: str, reason: str, changed_via: str, when: str) -> str` | Append inside the existing `status_history` fence or create `## Status History` | `bin/adr:177` |
-| `mutate_status` | `mutate_status(path: Path, status: str, status_line: str, when: str, changed_by: str, reason: str, changed_via: str) -> str` | Compute the full new file text for a transition (no I/O) | `bin/adr:208` |
-| `run_index` | `run_index(adr_dir: Path) -> None` | Shell out to `bin/adr-index`; raise on non-zero | `bin/adr:228` |
-| `load_config` | `load_config(adr_dir: Path, explicit: str \| None = None) -> Dict` | Read `.adr-kit.json` from explicit path, `<adr_dir>`, then `<adr_dir>/../..` | `bin/adr:269` |
-| `command_new` | `command_new(args) -> List[str]` | Pick profile template, allocate `max(used)+1`, write Proposed ADR | `bin/adr:290` |
-| `command_profiles` | `command_profiles(args) -> List[str]` | Human/JSON catalog of shipped body profiles and template availability | `bin/adr:322` |
-| `command_document` | `command_document(args) -> List[str]` | Set `documents_shipped: true` + `verified_in` pointers, append history | `bin/adr:445` |
-| `command_auto_accept` | `command_auto_accept(args) -> List[str]` | `accept --auto`: eligibility gate, then assist-or-mutate | `bin/adr:469` |
-| `command_accept` | `command_accept(args) -> List[str]` | Run all seven lint gates, then transition to Accepted | `bin/adr:494` |
-| `command_set_status` | `command_set_status(args, status: str, status_line: str, default_reason: str) -> List[str]` | Shared body for `propose` and `reject` | `bin/adr:512` |
-| `command_supersede` | `command_supersede(args) -> List[str]` | Two-file transition with six pre-flight consistency checks | `bin/adr:529` |
-| `add_common_args` | `add_common_args(parser: argparse.ArgumentParser) -> None` | `--adr-dir`, `--date`, `--changed-by`, `--reason` | `bin/adr:598` |
-| `build_parser` | `build_parser() -> argparse.ArgumentParser` | Full subcommand tree | `bin/adr:605` |
-| `main` | `main(argv: List[str] \| None = None) -> int` | Dispatch; `AdrLifecycleError` → stderr + exit 2 | `bin/adr:657` |
+| `AdrLifecycleError` | `class AdrLifecycleError(Exception)` | Single error type; `main` maps it to exit 2 | `bin/adr:84` |
+| `LEGAL_TRANSITIONS` | `dict[str, set[str]]` | The transition table (see finding below) | `bin/adr:74` |
+| `normalize_adr_id` | `normalize_adr_id(value: str) -> str` | `"7"`/`"adr-7"` → `"ADR-007"` | `bin/adr:88` |
+| `find_adr_file` | `find_adr_file(adr_dir: Path, adr_id: str) -> Path` | Resolve exactly one `ADR-NNN-*.md`; raises on 0 or >1 | `bin/adr:95` |
+| `load_adr` | `load_adr(path: Path) -> Tuple[Dict, str]` | Migrate + split frontmatter, return `(frontmatter, body)` | `bin/adr:105` |
+| `write_adr` | `write_adr(path: Path, data: Dict, body: str) -> None` | Render frontmatter + body through the atomic writer | `bin/adr:141` |
+| `assert_legal_transition` | `assert_legal_transition(current: str, target: str) -> None` | Enforce `LEGAL_TRANSITIONS` | `bin/adr:182` |
+| `set_status_line` | `set_status_line(body: str, status_line: str) -> str` | Replace the `## Status` body, or synthesize the section | `bin/adr:191` |
+| `history_entry` | `history_entry(status: str, changed_by: str, reason: str, changed_via: str, when: str) -> str` | One YAML `status_history` list item | `bin/adr:229` |
+| `append_status_history` | `append_status_history(body: str, status: str, changed_by: str, reason: str, changed_via: str, when: str) -> str` | Append inside the existing `status_history` fence or create `## Status History` | `bin/adr:239` |
+| `mutate_status` | `mutate_status(path: Path, status: str, status_line: str, when: str, changed_by: str, reason: str, changed_via: str) -> str` | Compute the full new file text for a transition (no I/O) | `bin/adr:351` |
+| `run_index` | `run_index(adr_dir: Path) -> None` | Shell out to `bin/adr-index`; raise on non-zero | `bin/adr:376` |
+| `load_config` | `load_config(adr_dir: Path, explicit: str \| None = None) -> Dict` | Read `.adr-kit.json` from explicit path, `<adr_dir>`, then `<adr_dir>/../..` | `bin/adr:417` |
+| `command_new` | `command_new(args) -> List[str]` | Pick profile template, allocate `max(used)+1`, write Proposed ADR | `bin/adr:438` |
+| `command_profiles` | `command_profiles(args) -> List[str]` | Human/JSON catalog of shipped body profiles and template availability | `bin/adr:488` |
+| `command_document` | `command_document(args) -> List[str]` | Set `documents_shipped: true` + `verified_in` pointers, append history | `bin/adr:659` |
+| `command_auto_accept` | `command_auto_accept(args) -> List[str]` | `accept --auto`: eligibility gate, then assist-or-mutate | `bin/adr:693` |
+| `_assert_acceptance_was_asked_for` | `_assert_acceptance_was_asked_for(path: Path, args) -> None` | Enforce the `--confirm` flag; blocks accidental acceptance when a signer is derived | `bin/adr:718` |
+| `command_accept` | `command_accept(args) -> List[str]` | Run all seven lint gates, validate --confirm flag, then transition to Accepted | `bin/adr:761` |
+| `command_set_status` | `command_set_status(args, status: str, status_line: str, default_reason: str) -> List[str]` | Shared body for `propose` and `reject` | `bin/adr:785` |
+| `command_answer` | `command_answer(args) -> List[str]` | Resolve an open question in place, keeping both the question and the answer (ADR-022) | `bin/adr:822` |
+| `command_relate` | `command_relate(args) -> List[str]` | Write a cross-reference on both sides, or remove it from both | `bin/adr:917` |
+| `command_supersede` | `command_supersede(args) -> List[str]` | Two-file transition with six pre-flight consistency checks | `bin/adr:1013` |
+| `configured_signer` | `configured_signer(adr_dir: Path) -> Optional[str]` | Read `lifecycle.signer` from machine-local `.adr-kit.local.json` | `bin/adr:1133` |
+| `git_user_name` | `git_user_name() -> Optional[str]` | Read `git config user.name` | `bin/adr:1138` |
+| `person_shaped` | `person_shaped(name: Optional[str]) -> bool` | Denylist check: refuse machine identities like `github-actions[bot]`, `runner`, `user` | `bin/adr:1238` |
+| `resolve_signer` | `resolve_signer(adr_dir: Path, explicit: Optional[str], announce: bool = True) -> str` | Resolve the signer per ADR-027: explicit, configured, git identity, or refuse | `bin/adr:1250` |
+| `command_signer` | `command_signer(args) -> List[str]` | Show, set, audit, or suggest machine-local signers | `bin/adr:1303` |
+| `build_parser` | `build_parser() -> argparse.ArgumentParser` | Full subcommand tree (signer, new, profiles, propose, accept, reject, answer, relate, supersede, document) | `bin/adr:1410` |
+| `main` | `main(argv: List[str] \| None = None) -> int` | Dispatch; `AdrLifecycleError` → stderr + exit 2 | `bin/adr:1503` |
+| `add_common_args` | `add_common_args(parser: argparse.ArgumentParser) -> None` | `--adr-dir`, `--date`, `--changed-by`, `--reason` | `bin/adr:1395` |
 
-Private helpers, summarized rather than enumerated: `_atomic_write_text` (`bin/adr:86`,
+Private helpers, summarized rather than enumerated: `_atomic_write_text` (`bin/adr:116`,
 same-directory `NamedTemporaryFile` + `fsync` + `os.replace`), `_snapshot_files`
-(`bin/adr:115`), `_restore_snapshot` (`bin/adr:122`), `_write_transaction` (`bin/adr:136`),
-`_commit_lifecycle_changes` (`bin/adr:239`), `_slugify` (`bin/adr:283`),
-`_auto_accept_config` (`bin/adr:360`), `_run_json_tool` (`bin/adr:374`),
-`_assert_auto_accept_eligible` (`bin/adr:393`), `_assert_acceptance_gates` (`bin/adr:413`).
+(`bin/adr:145`), `_restore_snapshot` (`bin/adr:152`), `_write_transaction` (`bin/adr:166`),
+`_commit_lifecycle_changes` (`bin/adr:387`), `_slugify` (`bin/adr:431`),
+`_auto_accept_config` (`bin/adr:526`), `_run_json_tool` (`bin/adr:540`),
+`_assert_auto_accept_eligible` (`bin/adr:582`), `_assert_acceptance_gates` (`bin/adr:611`).
 
-Two of those carry the design weight and are worth naming explicitly:
+Three functions carry the design weight and are worth naming explicitly:
 
-- `_commit_lifecycle_changes(adr_dir, changes)` (`bin/adr:239`) snapshots the ADR files
+- `_assert_acceptance_was_asked_for(path, args)` (`bin/adr:718`, text at `:719-748`) enforces
+  the `--confirm` flag that became required in v0.45.0. Acceptance writes a signer name and
+  date into an immutable Status History, so it must be typed on purpose rather than arrived at
+  by accident. When the signer is derived from `git config user.name` (the common case per
+  ADR-027), the flag blocks acceptance until a human has seen the name and agreed to it.
+  The implementation calls `_assert_acceptance_was_asked_for` *before* the gates, because a
+  record that cannot be accepted should say why; checking the flag first and then the gates
+  would bury the actual problem behind a flag error. The rationale includes a detailed note
+  on why `sys.stdin.isatty()` was tried and rejected: on Windows (marked release-required in
+  `clients/capabilities.json`), a subprocess with `stdin=DEVNULL` reports `isatty() == True`
+  because `NUL` is a character device, so the test is worse than no test.
+- `_commit_lifecycle_changes(adr_dir, changes)` (`bin/adr:387`) snapshots the ADR files
   *and* `README.md`, `ADR-INDEX.md`, `ADR-INDEX.json`, applies every write, then runs
   `bin/adr-index`. Any failure — including index regeneration — restores the whole snapshot.
   A failed rollback is itself surfaced as an `AdrLifecycleError` mentioning both errors.
-- `_assert_acceptance_gates(path, args)` (`bin/adr:413`) blocks acceptance on unresolved
-  `Open Questions`, then runs `bin/adr-lint --strict --gates
+- `_assert_acceptance_gates(path, args)` (`bin/adr:611`) blocks acceptance on unresolved
+  `Open Questions` (per ADR-022's append-only constraint), then runs `bin/adr-lint --strict --gates
   schema,completeness,audit,evidence,clarity,consistency,policy`. This is the strictest gate
   invocation in the repo; `adr-lint` defaults to fewer gates (ADR-009).
-  `_run_json_tool` (`bin/adr:374`) deliberately distinguishes "non-zero with empty stdout"
+  `_run_json_tool` (`bin/adr:540`) deliberately distinguishes "non-zero with empty stdout"
   (a crash — surface stderr) from "non-zero with JSON" (a gate verdict).
 
 ### `bin/adr-guardian` — two-tier staleness detector and state ledger
@@ -291,9 +312,9 @@ Sibling CLIs invoked as subprocesses (always via `sys.executable`, never via `PA
 
 | Caller | Callee | Why |
 |---|---|---|
-| `bin/adr` (`run_index`, `bin/adr:228`) | `bin/adr-index` | Regenerate `README.md` / `ADR-INDEX.md` / `ADR-INDEX.json` inside the lifecycle transaction |
-| `bin/adr` (`_assert_acceptance_gates`, `:413`) | `bin/adr-lint` | Seven-gate strict acceptance check |
-| `bin/adr` (`_assert_auto_accept_eligible`, `:393`) | `bin/adr-quality` | `--auto` quality-score threshold |
+| `bin/adr` (`run_index`, `bin/adr:376`) | `bin/adr-index` | Regenerate `README.md` / `ADR-INDEX.md` / `ADR-INDEX.json` inside the lifecycle transaction |
+| `bin/adr` (`_assert_acceptance_gates`, `:611`) | `bin/adr-lint` | Seven-gate strict acceptance check |
+| `bin/adr` (`_assert_auto_accept_eligible`, `:582`) | `bin/adr-quality` | `--auto` quality-score threshold |
 | `bin/adr-guardian` (`cmd_refresh_readiness`, `:800`) | `bin/adr-readiness` | `--all-proposed --format json`, 10 s timeout, cwd pinned to the project root |
 | `bin/adr-doctor` → `adr_doctor_core.run_doctor` | `bin/adr-index`, `bin/adr-lint`, `bin/adr-audit` | Index check, strict lint, and an audit *only* when material drift is found (`bin/adr_doctor_core.py:279-281`) |
 
@@ -341,20 +362,39 @@ adr accept  <adr>      [common args] [--auto] [--auto-mode auto|assist] [--confi
 adr reject  <adr>      [common args]
 adr supersede <old> --by <new>   [common args]
 adr document  <adr> --verified-in POINTER [--verified-in ...]   [common args]
+adr answer  <adr> --answer TEXT  [--question <number|text>] [common args]
 ```
 
 Common args default to `--adr-dir docs/adr`, `--date` = today (bound at parser-build time),
-`--changed-by adr-kit`. `--profile` choices are `adr_format.SUPPORTED_PROFILES`, verified as
+`--changed-by` to the signer (resolved per ADR-027: explicit flag, machine-local config, git
+identity, or refusal). `--profile` choices are `adr_format.SUPPORTED_PROFILES`, verified as
 `("madr", "nygard", "canonical")` with `DEFAULT_PROFILE = "madr"`
 (`bin/adr_format.py:16-17`).
 Exit codes: **0** on success, **2** on any `AdrLifecycleError` (illegal transition, ambiguous
 ADR id, failed gate, malformed config, rolled-back transaction), argparse's **2** on bad usage.
 Stdout is one line per performed action, e.g. `accepted: ADR-016-foo.md`.
 
+**`accept --confirm` is now required (v0.45.0 breaking change).** Acceptance writes a signer
+and date into an immutable Status History entry, so it must be typed on purpose rather than
+arrived at by accident. When a signer is derived from `git config user.name` (the common case
+per ADR-027), the flag blocks acceptance until a human has seen and agreed to that name.
+`--confirm` is not needed when `--changed-by` is explicit or when `lifecycle.signer` is
+configured in the machine-local `.adr-kit.local.json`. Exit code is still **2** if the flag
+is missing; the error message names the derived signer and suggests the fix. **Exception:**
+`accept --auto` bypasses this check, since spec R1 grants the init flow that exception —
+there, the user asked for a batch of records covering existing code, and that request is the
+consent.
+
 `accept --auto` in `assist` mode (the default from `lifecycle.auto_accept.mode`) prints an
 eligibility line and mutates nothing unless `--confirm` is passed. Auto-accept additionally
 requires `documents_shipped: true`, at least one `verified_in` pointer, and an `adr-quality`
 score ≥ `lifecycle.auto_accept.quality_threshold` (default 0.70).
+
+**`answer` rewrites an open question in place, keeping both the question and the answer.**
+The question moves from `- [ ] <text>` to `- [x] <text> — **Answered <date> by <signer>:** <answer>`.
+This preserves the grilling record in the immutable ADR file. Combined with ADR-022's
+append-only constraint on Open Questions while Proposed, this makes answering the required
+path to acceptance rather than deletion.
 
 ### `bin/adr-guardian`
 
@@ -436,7 +476,7 @@ Five tools, five conventions. Anything scripting this cluster needs the distinct
 
 | Tool | Success | Failure | Notes |
 |---|---|---|---|
-| `bin/adr` | 0 | 2 | `AdrLifecycleError` → stderr + 2 (`bin/adr:691-693`) |
+| `bin/adr` | 0 | 2 | `AdrLifecycleError` → stderr + 2 (`:1543-1545`). Acceptance blocks on missing `--confirm` when signer is derived (`:752-758`); rejection reason is stderr + 2 so the operator sees why and what to change. |
 | `bin/adr-guardian` | 0 | **never** | Blanket `except Exception: return 0` for *all* subcommands (`bin/adr-guardian:1000-1003`); 2 only when no subcommand is given (`:977-979`) |
 | `bin/adr-status` | 0 (implicit) | 1 only for a missing ADR dir (`bin/adr-status:702-704`) | `main() -> None`; cannot signal "unhealthy" |
 | `bin/adr-retire` | 0 | 2 | `RetireError` handled in `__main__` (`bin/adr-retire:435-439`); a high score is *not* a non-zero exit |
@@ -564,6 +604,32 @@ the arrows marked "via the skill" are hops the in-session model performs by read
 tool's JSON and passing numbers to `adr-guardian stamp`. That indirection is exactly what
 ADR-002 prescribes — the detector stays dumb, the sweep stays in-session.
 
+### Signer derivation and Status History format
+
+Per ADR-027, the signer is resolved in order: (1) `--changed-by` explicit flag, (2)
+`lifecycle.signer` in the machine-local `docs/adr/.adr-kit.local.json` (gitignored),
+(3) `git config user.name` if it names a person, announced on stderr on first use, (4) otherwise
+refuse and surface the error.
+
+The Status History records a signer entry as `changed_by: "User: <name>"` in YAML, using the
+format that `_yaml_scalar` produces to guarantee the value survives YAML parsing. This is
+verified in every ADR that names a human: ADR-027 and ADR-022 both show
+`changed_by: "User: Robert van den Breemen"` in their Proposed and Accepted entries
+(`docs/adr/ADR-027:44`, `docs/adr/ADR-022:46`). A name that does not name a person
+(`github-actions[bot]`, `runner`, `user`, etc.) is refused with an error directing the
+operator to configure an explicit signer. This is the denylist regex `_NON_PERSON_SIGNER_RE` at `bin/adr:1155-1164`,
+checked by `person_shaped` (`:1238-1247`), which names 10+ machine identities but can never be exhaustive.
+
+The resolution order and the announcement happen in `resolve_signer` (`bin/adr:1250-1300`).
+When a signer is derived and used, stderr shows:
+```
+[adr-kit] signing as "User: <name>", from git config user.name.
+[adr-kit] set a different one with: python bin/adr signer --set "User: <name>"
+```
+
+This announcement is the whole mechanism that makes derivation safe: a name that lands in an
+immutable history must never be one the user did not know was written.
+
 ### Cross-file couplings worth knowing
 
 **Two independent retirement detectors.** `bin/adr-status:353 find_retirement_candidates`
@@ -577,14 +643,25 @@ configurable 90), and no shared code. Neither imports the other. ADR-002:62 name
 **`age_days` measures time since the last status change, not authoring age.**
 `bin/adr-status:216 parse_adr` never strips frontmatter before
 `extract_date` → `_DATE_ISO_RE.search(content)` (`bin/adr-status:121`) returns the first ISO
-date in the raw text, in practice the frontmatter `date:` field. `bin/adr:220 mutate_status`
-rewrites `data["date"] = when` on **every** transition. So the two age-based candidate rules
+date in the raw text, in practice the frontmatter `date:` field. `bin/adr:351 mutate_status`
+rewrites `data["date"] = when` (line 368) on **every** transition. So the two age-based candidate rules
 ("Proposed for >365 days without acceptance", "Accepted >730 days without Enforcement") both
 measure staleness-since-last-transition, which is not what the reason strings read as. This
 is a coupling between two tools inside this same cluster.
 
+**Open Questions are append-only while Proposed (ADR-022).** An open question cannot be
+deleted from a Proposed ADR without an accompanying answered line; deletion without answering
+is a lint FAIL. This makes answering the required path through the acceptance gates rather
+than deletion. `bin/adr answer` (`:822-880`) rewrites an open question from `- [ ] <text>`
+to `- [x] <text> — **Answered <date> by <signer>:** <answer>`, preserving both the question
+and the grilling record in the immutable ADR file. The readiness model distinguishes "answered"
+from "absent" so a question that was deleted is not counted as resolved. Consequently, the
+only way to reach the acceptance gate when Open Questions exist is to answer them, not to
+delete them. This removes the incentive that existed when deletion and answering were
+equivalent.
+
 **The lifecycle CLI cannot reach every status the readers understand.**
-`LEGAL_TRANSITIONS` (`bin/adr:44-51`) has `Deprecated` and `Amended` only as *source* states
+`LEGAL_TRANSITIONS` (`bin/adr:74-81`) has `Deprecated` and `Amended` only as *source* states
 — no value set contains them — and there is no `deprecate`/`amend` subcommand. Yet
 `CANONICAL_STATUSES` (`bin/adr-status:60`) recognizes both and
 `find_retirement_candidates` treats `deprecated` as high-confidence. Those states can only

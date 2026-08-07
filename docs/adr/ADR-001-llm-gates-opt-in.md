@@ -9,6 +9,8 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: "ADR-017"
+related:
+  - "ADR-035"
 topics:
   - "llm judge"
   - "pre-commit"
@@ -41,6 +43,11 @@ status_history:
     status: Superseded
     changed_by: "User: Robert van den Breemen"
     reason: ADR-017 flips the per-commit LLM judge back to default-on, on the host agent's own model, with a configurable backend
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-035
     changed_via: adr-kit lifecycle
 ```
 

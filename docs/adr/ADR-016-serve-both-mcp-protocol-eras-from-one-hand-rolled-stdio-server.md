@@ -453,9 +453,8 @@ decision, only the date on which it is worth re-measuring.
 
 ### Confirmation
 
-Prospective: none of this exists yet, which is why `verified_in` is empty and
-stays empty until the suite lands. Once implemented,
-`tests/test_adr_mcp.py` will carry the conformance suite for gate
+The suite has since landed, which is why `verified_in` names it.
+`tests/test_adr_mcp.py` carries the conformance suite for gate
 `adr-mcp-dual-era-v1`, driving all three shapes through `serve()` — the legacy
 `initialize` handshake, a stateless request carrying the modern `_meta` envelope
 with no prior `initialize`, and `server/discover` — and asserting:
@@ -536,8 +535,8 @@ with no prior `initialize`, and `server/discover` — and asserting:
 
 * `tests/test_adr_mcp.py` — the conformance suite described under Confirmation,
   carrying the gate id `adr-mcp-dual-era-v1`. This is where every positive
-  obligation of this contract is verified. It does not exist yet;
-  `verified_in` stays empty until it does.
+  obligation of this contract is verified. It ships, carrying the gate anchor,
+  and `verified_in` names it.
 * `bin/adr-judge` declarative rules from the Enforcement block below. They are
   deliberately negative only — a `forbid_pattern` tripwire against the version
   echo and a `forbid_import` allowlist for the zero-dependency rule. No

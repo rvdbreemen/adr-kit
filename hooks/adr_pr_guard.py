@@ -220,9 +220,15 @@ def _nudge(cwd: Path, adr_dir: Path, suggest: Path, diff_text: str, left: int) -
         )
     except (OSError, subprocess.SubprocessError):
         return ""
+    # stderr, not stdout. `emit_advisory` writes every line of the advisory to
+    # stderr on purpose -- stdout stays pipe-clean so `--json` is usable in a
+    # pipeline -- so filtering stdout matched nothing and the nudge could never
+    # reach the user. ADR-024's feature was wired, tested at the unit level, and
+    # dead end to end: the guard asked, adr-suggest answered, and the answer was
+    # read from the wrong stream.
     lines = [
         line
-        for line in (result.stdout or "").splitlines()
+        for line in (result.stderr or "").splitlines()
         if line.startswith("[adr-suggest] This change") or line.startswith("[adr-suggest]   ")
     ]
     return "\n".join(lines)

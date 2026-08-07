@@ -254,3 +254,139 @@ def test_bump_version_check_passes_for_the_current_version(registry):
         encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+# --- the CHANGELOG compare-link block (TASK-139) ------------------------------
+
+def _bump_writer():
+    """Load scripts/bump-version.py, whose filename is not importable."""
+    import importlib.machinery
+    import importlib.util
+
+    name = "bump_version_under_test"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(
+        name, str(REPO_ROOT / "scripts" / "bump-version.py")
+    )
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+BUMP = _bump_writer()
+COMPARE = "https://github.com/rvdbreemen/adr-kit/compare"
+
+
+def test_cutting_a_version_writes_both_link_lines():
+    """AC#5. The gap that reopened on every release, closed by a check.
+
+    `docs/RELEASING.md` step 1 says the bump tool "writes EVERY version site"
+    and is "the only place a version is typed". Neither covered the compare-link
+    block: the runbook names `scripts/bump-version.py`, which had no link logic
+    at all, while the tool that could write it was referenced nowhere in the
+    runbook. So the block went stale every single release.
+    """
+    before = (
+        "# Changelog\n\n## [Unreleased]\n\n## [1.2.0] - 2026-01-01\n\n"
+        f"[Unreleased]: {COMPARE}/v1.2.0...HEAD\n"
+        f"[1.2.0]: {COMPARE}/v1.1.0...v1.2.0\n"
+    )
+
+    after = BUMP.plan_changelog_links(before, "1.2.0", "1.3.0")
+
+    assert f"[Unreleased]: {COMPARE}/v1.3.0...HEAD" in after
+    assert f"[1.3.0]: {COMPARE}/v1.2.0...v1.3.0" in after
+    # The previous release keeps its own target.
+    assert f"[1.2.0]: {COMPARE}/v1.1.0...v1.2.0" in after
+    assert after.count("[Unreleased]:") == 1
+
+
+def test_cutting_the_same_version_twice_adds_one_target():
+    """A re-run must not append a second link line for a version already there."""
+    once = BUMP.plan_changelog_links(
+        f"# Changelog\n\n[Unreleased]: {COMPARE}/v1.2.0...HEAD\n", "1.2.0", "1.3.0"
+    )
+    twice = BUMP.plan_changelog_links(once, "1.2.0", "1.3.0")
+
+    assert twice.count("[1.3.0]:") == 1
+    assert twice.count("[Unreleased]:") == 1
+
+
+def test_a_changelog_with_no_link_block_gets_one():
+    after = BUMP.plan_changelog_links("# Changelog\n\n## [1.3.0] - 2026-01-01\n", "1.2.0", "1.3.0")
+
+    assert f"[Unreleased]: {COMPARE}/v1.3.0...HEAD" in after
+    assert f"[1.3.0]: {COMPARE}/v1.2.0...v1.3.0" in after
+
+
+def test_the_unreleased_link_is_a_declared_site(registry):
+    """AC#3. Declared, so `check-release-version.py` fails when it disagrees.
+
+    Every other version-bearing place is declared here (ADR-013). The link block
+    was not, so the registry that ADR-013 makes authoritative did not know it
+    existed and no gate could notice it going stale.
+    """
+    sites = [
+        site for site in registry["sites"]
+        if site["path"] == "CHANGELOG.md" and "Unreleased" in site["pattern"]
+    ]
+    assert sites, "the CHANGELOG [Unreleased] compare link is not a declared site"
+    assert sites[0]["kind"] == "regex"
+
+
+def test_the_declared_unreleased_link_matches_the_real_changelog(registry):
+    """A declared site whose pattern matches nothing is verified-but-never-written."""
+    site = next(
+        site for site in registry["sites"]
+        if site["path"] == "CHANGELOG.md" and "Unreleased" in site["pattern"]
+    )
+    import re as _re
+
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert _re.search(site["pattern"], text), (
+        "the declared pattern does not match CHANGELOG.md, so the release gate "
+        "would report the site missing rather than checking it"
+    )
+
+
+def test_every_release_heading_has_a_link_target():
+    """AC#6. Verified by a check, not by inspection.
+
+    65 headings had 58 targets before the manual backfill in a31cb04. Hand-
+    backfilling is not a fix; this is what makes the next gap fail loudly.
+
+    Scoped to semver headings: `## [0.2.0-attribution]` is a real historical
+    heading with no compare link and must not be dragged into the contract.
+    """
+    import re as _re
+
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    headings = set(_re.findall(r"^## \[(\d+\.\d+\.\d+)\]", text, _re.MULTILINE))
+    targets = set(_re.findall(r"^\[(\d+\.\d+\.\d+)\]:", text, _re.MULTILINE))
+
+    assert headings, "no release headings found; the pattern is wrong"
+    missing = sorted(headings - targets, key=lambda v: [int(p) for p in v.split(".")])
+    assert not missing, (
+        f"{len(missing)} release heading(s) have no compare-link target: "
+        + ", ".join(missing)
+    )
+    orphans = sorted(targets - headings)
+    assert not orphans, f"link targets with no heading: {', '.join(orphans)}"
+
+
+def test_bin_bump_version_delegates_rather_than_reimplementing():
+    """AC#1. Two writers of one release step do not survive this task."""
+    source = (REPO_ROOT / "bin" / "bump-version").read_text(encoding="utf-8")
+
+    assert "scripts" in source and "bump-version.py" in source, (
+        "bin/bump-version no longer points at the canonical writer"
+    )
+    for reimplemented in ("_update_changelog_links", "def _plugin_identity", "SEMVER_RE"):
+        assert reimplemented not in source, (
+            f"bin/bump-version still carries {reimplemented}; that is the second "
+            "implementation this task removed"
+        )

@@ -167,9 +167,10 @@ a file was written reports that file.
 
 ### Verification
 
-* `adr-audit-exit-contract-v1`: the gate that anchors this decision. Both fields flip back together when the gate ships. It asserts each of
-  the five exit codes against a fixture, so the contract is enforced rather
-  than described.
+* `adr-audit-exit-contract-v1`: the gate that anchors this decision. It ships
+  in `tests/test_adr_audit_command.py`, so `gate` carries the name and `binding`
+  is true. It asserts each of the five exit codes against a fixture, so the
+  contract is enforced rather than described.
 
 ## Consequences
 

@@ -10,6 +10,8 @@ verified_in: []
 supersedes:
   - "ADR-014"
 superseded_by: "ADR-020"
+related:
+  - "ADR-034"
 topics:
   - "retrieval"
   - "embeddings"
@@ -61,6 +63,11 @@ status_history:
     status: Superseded
     changed_by: "User: Robert van den Breemen"
     reason: "ADR-020 replaces the embedding-moment prohibition and the frozen authority join: the query is embedded where the query is asked, and authority is read from the index."
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-06
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-034
     changed_via: adr-kit lifecycle
 ```
 

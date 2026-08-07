@@ -4,6 +4,56 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`adr-suggest` now runs by default** (ADR-035). The "does this change contain
+  a decision nobody recorded?" pass was opt-in behind `suggest.enabled` /
+  `ADR_KIT_SUGGEST=1`. That default came from ADR-001, which ADR-017 superseded
+  when it flipped the judge back on — without carrying the same reasoning to the
+  second entry point, so the default outlived the decision behind it and the
+  check effectively never ran.
+
+  Both entry points resolve through one backend registry, so ADR-017's terms
+  apply unchanged: the host CLI's own model, no pinned model, no separate
+  metered spend. Two existing skips still bound it — no configured backend means
+  no call at all, and a diff touching only docs, markdown or lockfiles returns
+  before the model is reached. It never blocks a commit or a pull request.
+
+  To switch it off: `suggest.enabled: false` per project, or
+  `ADR_KIT_SUGGEST_DISABLE=1` for one run.
+
+### Fixed
+
+- **`ADR_KIT_SUGGEST_DISABLE=1` now works everywhere the pass runs.**
+  `bin/adr-suggest` advertised the variable in its own advisory output, but only
+  `templates/githooks/pre-commit` read it. The pull-request guard spawns the
+  script directly, so at that moment the documented switch did nothing.
+
+- **The pull-request nudge reaches the user at all** (ADR-024). The guard
+  filtered `stdout` for the advisory, while `adr-suggest` writes every advisory
+  line to `stderr` — deliberately, so `stdout` stays pipe-clean for `--json`.
+  The filter matched nothing, so the feature was wired, unit-tested and dead end
+  to end: each test fabricated a result carrying the text on `stdout`, asserting
+  the guard against its own mistaken belief rather than against the program it
+  calls. Now covered by a test that drives the real script.
+
+- **The hook manifest declares what each event can actually reach** (ADR-034).
+  `policy.network_allowed: false` covered all eight events while `pr-create`
+  spawns `bin/adr-judge` — LLM pass on by default since ADR-017 — and
+  `user-prompt-submit` embeds the query through the same backend registry. The
+  property is now per event, with a stated reason on each of the two that
+  override it.
+
+- **The generated client-support matrix no longer grants a fail-closed edit
+  tier that ADR-004 rejected.** It claimed ADR-004 "names the pre-edit tier the
+  *fail-closed* floor of the injection model"; ADR-004 lists exactly that under
+  its rejected alternatives. The enforcement and degradation sections are now
+  derived from `hooks/manifest.json` and `clients/capabilities.json` instead of
+  hardcoded prose.
+
+- **Eleven ADRs stopped explaining why their gate was null** after the gate had
+  shipped and the frontmatter had flipped. `tests/test_declared_gate_flip.py`
+  now checks the prose half of the flip, not only the frontmatter half.
 
 ## [0.46.0] - 2026-08-05
 
@@ -169,10 +219,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Removed
 
-- **Nine config keys that nothing ever read.** `judge.llm_timeout_ms`,
+- **Ten config keys that nothing ever read.** `judge.llm_timeout_ms`,
   `judge.pre_push_timeout_ms`, `policy.regex_compile_checks`,
-  `policy.pattern_warnings` and the whole `context.weights` block (five keys) were
-  declared in `schemas/adr-kit-config.schema.json` and resolved by no code path.
+  `policy.pattern_warnings` and the whole `context.weights` block (the block path
+  itself plus its five children) were declared in
+  `schemas/adr-kit-config.schema.json` and resolved by no code path.
   `judge.llm_timeout_ms` duplicated `judge.llm_timeout_seconds` in different units;
   `pre_push_timeout_ms` bounded a pre-push hook adr-kit does not ship;
   `context.weights` was retired when the index-first scorer replaced weighted

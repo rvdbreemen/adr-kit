@@ -73,6 +73,12 @@
       "kind": "regex_all",
       "pattern": "(rev: v)(\\d+\\.\\d+\\.\\d+)",
       "label": "README pre-commit rev pin"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "kind": "regex",
+      "pattern": "(\\[Unreleased\\]: https://github\\.com/rvdbreemen/adr-kit/compare/v)(\\d+\\.\\d+\\.\\d+)(\\.\\.\\.HEAD)",
+      "label": "CHANGELOG Unreleased compare link"
     }
   ],
   "must_not_carry_version": [
