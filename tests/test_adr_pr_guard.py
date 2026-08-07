@@ -478,21 +478,49 @@ def test_the_embedding_event_set_cannot_outrun_the_declaration():
 
 
 def test_the_declared_true_is_true_a_configured_backend_is_reached():
-    """Assert the declaration against behaviour, not against itself.
+    """Assert the declaration against behaviour, through the real guard.
 
-    Drives the real guard over a real repository with a backend configured the
-    way `resolve_llm_backend` resolves one, and watches for the child. A stub
-    stands in for the model CLI so the test observes the reach without making
-    it: what is under test is whether the guard hands control to something that
-    would.
+    ADR-034 declares `network_allowed: true` for `pr-create`. That claim is only
+    worth its ink if something drives the actual guard, so this calls
+    `judge_branch` over a real git repository and follows the chain it starts:
+    guard to judge to model CLI. Stubs stand in for the judge and the model, so
+    the test observes the reach without making a network call, but the first
+    link is `hooks/adr_pr_guard.py` itself.
+
+    It asserted less than this until Copilot pointed it out on PR #79: the body
+    ran the judge stub directly and never entered the guard, so it would have
+    stayed green if the guard stopped spawning a judge at all -- the precise
+    regression it exists to catch. That is the same fabricated-stand-in failure
+    this branch fixed in the pull-request nudge, reappearing in the test written
+    to prove the fix.
     """
     import os
     import subprocess
     import tempfile
 
     root = Path(tempfile.mkdtemp())
+    run = lambda *a: subprocess.run(["git", "-C", str(root), *a], capture_output=True)
     subprocess.run(["git", "init", "-q", str(root)], capture_output=True, check=True)
+    run("config", "user.email", "t@example.invalid")
+    run("config", "user.name", "t")
+    # Pin the base name locally. `base_ref` falls back to `init.defaultBranch`,
+    # which is a machine-wide setting: on a box where it reads `master` the
+    # guard would diff against an `origin/master` this fixture never created,
+    # and the test would fail for a reason that has nothing to do with the code.
+    run("config", "init.defaultBranch", "main")
     (root / "docs" / "adr").mkdir(parents=True)
+
+    # A base commit plus a divergent HEAD, so `git diff origin/main...HEAD`
+    # yields something for the guard to hand the judge. Without a diff the guard
+    # short-circuits on "empty branch diff" and never spawns anything.
+    (root / "seed.txt").write_text("seed", encoding="utf-8")
+    run("add", "-A")
+    run("commit", "-qm", "seed")
+    run("update-ref", "refs/remotes/origin/main", "HEAD")
+    (root / "app.py").write_text("import httpx", encoding="utf-8")
+    run("add", "-A")
+    run("commit", "-qm", "change")
+
     marker = root / "reached"
     stub = root / ("fake_model.cmd" if os.name == "nt" else "fake_model.sh")
     stub.write_text(
@@ -514,14 +542,23 @@ def test_the_declared_true_is_true_a_configured_backend_is_reached():
         encoding="utf-8",
     )
 
-    env = dict(os.environ, ADR_KIT_LLM_CMD=str(stub))
-    subprocess.run(
-        [sys.executable, str(judge)], cwd=str(root), env=env, capture_output=True
-    )
+    previous = os.environ.get("ADR_KIT_LLM_CMD")
+    os.environ["ADR_KIT_LLM_CMD"] = str(stub)
+    try:
+        verdict = guard.judge_branch(root, root / "docs" / "adr", judge)
+    finally:
+        if previous is None:
+            os.environ.pop("ADR_KIT_LLM_CMD", None)
+        else:
+            os.environ["ADR_KIT_LLM_CMD"] = previous
 
+    assert verdict.get("checked") is True, (
+        f"the guard never reached the judge, so this proves nothing: {verdict}"
+    )
     assert marker.is_file(), (
-        "with a backend configured, the pull-request path reaches a model CLI. "
-        "That is what hooks/manifest.json must declare for pr-create."
+        "judge_branch did not reach the model CLI with a backend configured. "
+        "The guard is the thing pr-create declares network_allowed: true for, "
+        f"so that declaration is unproven. verdict={verdict}"
     )
     policy, events = _manifest_events()
     assert _declared_network(policy, events["pr-create"]) is True
