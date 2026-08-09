@@ -85,33 +85,6 @@ _CREDENTIAL_KEY_RE = re.compile(
     r"|bearer|authorization)$"
 )
 
-# Repo-tracked llm_cmd is now IGNORED outright (ADR-017): the backend registry
-# above replaced it. What survives here is the diagnostic. When a project still carries an llm_cmd, the tool says exactly
-# WHY that particular vector was dangerous rather than emitting a generic
-# "ignored" -- an author who wrote `--dangerously-skip-permissions` into
-# committed config deserves to read that sentence.
-#
-# Env (ADR_KIT_LLM_CMD) and CLI (--llm-cmd) remain unrestricted and remain
-# honoured, because those are operator-controlled, not arbitrarily checked in
-# by collaborators.
-_LLM_CMD_ALLOWLIST = {
-    "claude",
-    "claude-code",
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "claude-haiku-4-5-20251001",
-}
-
-# SEC-HIGH (TASK-60): the argument vector from repo-tracked config is checked
-# too, not just its head. `["claude", "-p", "--dangerously-skip-permissions",
-# "--allowedTools", "Bash"]` passed the old head-only check and invoked the
-# genuine CLI with tool permissions disabled, on a prompt built from repository
-# content. Only flags that cannot grant the model new capabilities are allowed.
-_LLM_CMD_SAFE_FLAGS = frozenset({"-p", "--print"})
-_LLM_CMD_SAFE_VALUE_FLAGS = frozenset({"--model", "--output-format"})
-
-
 def _warn(message: str) -> None:
     print(f"[{TOOL}] WARN: {message}", file=sys.stderr)
 
@@ -133,119 +106,6 @@ def _split_cmd(cmd_str: str) -> List[str]:
             stripped.append(t)
         return stripped
     return tokens
-
-
-def check_repo_llm_cmd(
-    candidate: List[str], key: str = "judge.llm_cmd"
-) -> Optional[str]:
-    """Return a refusal reason for a repo-tracked llm_cmd, or None if OK.
-
-    The governing rule: repository-tracked config may select among backends the
-    operator has already enabled; it may never introduce a new binary, a new
-    endpoint, or a credential. Env (ADR_KIT_LLM_CMD) and CLI (--llm-cmd) stay
-    unrestricted because those are operator-controlled, not checked in by
-    whoever last opened a pull request.
-
-    SEC-HIGH (TASK-60), two reproduced bypasses this closes:
-
-    1. `Path(candidate[0]).stem` discarded the directory before comparing, so a
-       committed `bin/claude.exe` plus a committed `judge.llm_cmd` naming it
-       passed the allowlist -- and shutil.which() resolves a path carrying a
-       directory component directly, without a PATH search. A repository could
-       ship the binary the judge executes. The stem also made every
-       `claude.<ext>` (claude.sh, claude.bat, claude.py) pass.
-    2. Only candidate[0] was inspected; every argument after it was unvalidated.
-
-    So: no path separator anywhere in the binary token, exact match of the FULL
-    token (no Path() call at all -- taking .name or .stem is the defect), and a
-    safe-flag allowlist over the rest of the vector.
-
-    `key` names the config key in the message, because the same vector can
-    arrive from judge.llm_cmd or suggest.llm_cmd and an author fixing it needs
-    to be told which one they wrote.
-    """
-    if not candidate:
-        return f"{key} is empty"
-    binary = candidate[0]
-    if not binary:
-        return f"{key}[0] is empty"
-    # A literal "/" and "\\" are rejected on every platform, not just the
-    # platform whose os.sep they are: a POSIX runner must still refuse
-    # "bin\\claude", and a Windows runner must still refuse "bin/claude".
-    separators = {os.sep, os.altsep, "/", "\\"}
-    if any(sep and sep in binary for sep in separators):
-        return (
-            f"{key}[0]={binary!r} contains a path separator; "
-            f"repo-tracked config may only name a bare binary resolved from PATH"
-        )
-    if ":" in binary:
-        # "C:claude" is drive-relative and "name:stream" is an NTFS alternate
-        # data stream; neither is a bare PATH lookup.
-        return (
-            f"{key}[0]={binary!r} contains a drive or stream separator; "
-            f"repo-tracked config may only name a bare binary resolved from PATH"
-        )
-    if binary not in _LLM_CMD_ALLOWLIST:
-        return (
-            f"{key}[0]={binary!r} is not in the allowed list "
-            f"{sorted(_LLM_CMD_ALLOWLIST)}"
-        )
-    i = 1
-    while i < len(candidate):
-        arg = candidate[i]
-        head, sep, _value = arg.partition("=")
-        if sep and head in _LLM_CMD_SAFE_VALUE_FLAGS:
-            i += 1
-            continue
-        if arg in _LLM_CMD_SAFE_VALUE_FLAGS:
-            if i + 1 >= len(candidate):
-                return f"{key} flag {arg!r} is missing its value"
-            i += 2
-            continue
-        if arg in _LLM_CMD_SAFE_FLAGS:
-            i += 1
-            continue
-        return (
-            f"{key} argument {arg!r} is not in the allowed flag set "
-            f"{sorted(_LLM_CMD_SAFE_FLAGS | _LLM_CMD_SAFE_VALUE_FLAGS)}"
-        )
-    return None
-
-
-def legacy_command_warnings(cfg_block: Dict, block: str) -> List[str]:
-    """Say that a repo-tracked llm_cmd / llm_model is ignored, and why.
-
-    Both entry points need this and both used to honour these keys, so it lives
-    with the registry rather than in either script: the rule "repository-tracked
-    configuration may never introduce a command" (ADR-017) either holds at every
-    entry point or it holds at none of them.
-
-    Keys are dead as configuration but still present in existing projects, so
-    the message is precise about what replaced them rather than silent.
-    """
-    warnings: List[str] = []
-    raw_cfg_cmd = cfg_block.get("llm_cmd")
-    if raw_cfg_cmd:
-        candidate = (
-            [str(tok) for tok in raw_cfg_cmd]
-            if isinstance(raw_cfg_cmd, list)
-            else _split_cmd(str(raw_cfg_cmd))
-        )
-        detail = check_repo_llm_cmd(candidate, f"{block}.llm_cmd")
-        warnings.append(
-            f"{block}.llm_cmd is ignored: repository-tracked configuration may not "
-            "supply a command or an argument vector (ADR-017). Select a backend "
-            f"with judge.backend ({' | '.join(BACKEND_NAMES)}), or use "
-            "ADR_KIT_LLM_CMD / --llm-cmd for an operator-controlled override."
-            + (f" [{detail}]" if detail else "")
-        )
-    if cfg_block.get("llm_model"):
-        warnings.append(
-            f"{block}.llm_model is ignored: the host backend passes no model flag "
-            "so each CLI resolves the model its own user configured (ADR-017, "
-            "retained by ADR-036)."
-        )
-    return warnings
 
 
 class LLMBackend:
@@ -402,9 +262,9 @@ def resolve_llm_backend(
     project talks to, not which tool is asking, and a parallel `suggest.backend`
     would be a second place for the same answer to live.
     """
-    # Repo-tracked command and model keys are dead as configuration (ADR-017)
-    # but still present in old projects. Say so once, precisely.
-    warnings = legacy_command_warnings(judge_cfg, "judge")
+    # Repo-tracked command and model keys are refused at config validation
+    # (adr_config.REMOVED_KEYS, ADR-036), so a validated cfg cannot carry one.
+    warnings: List[str] = []
 
     if cli_cmd:
         return SubprocessBackend(_split_cmd(cli_cmd), source="flag"), warnings

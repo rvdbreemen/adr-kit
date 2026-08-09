@@ -154,15 +154,11 @@ HOST_COMMANDS = _adr_llm.HOST_COMMANDS
 LOCAL_CONFIG_NAME = _adr_llm.LOCAL_CONFIG_NAME
 
 _CREDENTIAL_KEY_RE = _adr_llm._CREDENTIAL_KEY_RE
-_LLM_CMD_ALLOWLIST = _adr_llm._LLM_CMD_ALLOWLIST
-_LLM_CMD_SAFE_FLAGS = _adr_llm._LLM_CMD_SAFE_FLAGS
-_LLM_CMD_SAFE_VALUE_FLAGS = _adr_llm._LLM_CMD_SAFE_VALUE_FLAGS
 
 LLMBackend = _adr_llm.LLMBackend
 SubprocessBackend = _adr_llm.SubprocessBackend
 BACKENDS = _adr_llm.BACKENDS
 
-check_repo_llm_cmd = _adr_llm.check_repo_llm_cmd
 resolve_llm_backend = _adr_llm.resolve_llm_backend
 find_credential_keys = _adr_llm.find_credential_keys
 _split_cmd = _adr_llm._split_cmd
@@ -2478,8 +2474,7 @@ def main() -> int:
 
         # LLM mode resolution. Precedence: ADR_KIT_NO_LLM env (highest,
         # force-off), then --llm, judge.llm_enabled (the user-facing per-commit
-        # master switch), or judge.llm_default (legacy knob kept for CI /
-        # direct-CLI back-compat).
+        # master switch).
         #
         # llm_enabled now defaults to TRUE (ADR-017, superseding ADR-001's
         # point 1). ADR-001 was right that surprise spend is a real defect, and
@@ -2491,7 +2486,6 @@ def main() -> int:
         llm_mode_active = (
             args.llm
             or bool(judge_cfg.get("llm_enabled", True))
-            or bool(judge_cfg.get("llm_default", False))
         ) and not env_no_llm
 
         local_cfg = load_local_config(adr_dir)
@@ -2643,7 +2637,7 @@ def main() -> int:
             )
             profiler.stop_declarative()
 
-        # LLM pass — only when the user opted in via --llm (or judge.llm_default).
+        # LLM pass — only when it is enabled for this run.
         # Failures here log a warning and fall through; they NEVER block the
         # commit, because a missing CLI or transient API hiccup must not break
         # legitimate work.

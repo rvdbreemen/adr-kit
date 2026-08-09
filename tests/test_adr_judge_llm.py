@@ -1184,7 +1184,10 @@ def test_repo_config_can_never_supply_a_command(vector):
     )
     assert backend.cmd == ["claude", "-p"], "config chose the command"
     assert backend.client == "claude-code-cli"
-    assert any("judge.llm_cmd is ignored" in w for w in warnings), warnings
+    # No warning any more: a validated config cannot carry llm_cmd at all
+    # (adr_config.REMOVED_KEYS refuses it by name, ADR-036). The resolver
+    # simply never reads the key.
+    assert warnings == []
 
 
 def test_repo_config_cannot_pin_a_model_for_the_host_backend():
@@ -1197,7 +1200,7 @@ def test_repo_config_cannot_pin_a_model_for_the_host_backend():
     )
     assert backend.cmd == ["claude", "-p"]
     assert "some-vendor-tag" not in " ".join(backend.cmd)
-    assert any("judge.llm_model is ignored" in w for w in warnings), warnings
+    assert warnings == [], "a validated config cannot carry llm_model (ADR-036)"
 
 
 def test_a_repo_shipped_binary_named_in_config_is_never_executed(tmp_path):
@@ -1219,8 +1222,9 @@ def test_a_repo_shipped_binary_named_in_config_is_never_executed(tmp_path):
     assert not marker.exists(), (
         "repo-tracked config executed a repository-shipped binary"
     )
-    assert result.returncode == 0, result.stderr[:600]
-    assert "judge.llm_cmd is ignored" in result.stderr
+    assert result.returncode == 2, result.stderr[:600]
+    assert "llm_cmd" in result.stderr
+    assert "ADR-036" in result.stderr
 
 
 def test_operator_overrides_still_outrank_the_registry():
@@ -1350,16 +1354,25 @@ def test_set_backend_refuses_an_incomplete_choice(tmp_path):
     )
 
 
-def test_set_backend_drops_the_retired_keys(tmp_path):
-    """The dead surface goes with the change instead of warning forever."""
+def test_set_backend_refuses_to_load_a_config_carrying_a_removed_key(tmp_path):
+    """Same posture as the credential refusal: every entry point, including
+    --set-backend, refuses the file while the removed key is in it. The user
+    deletes the key by hand and the error says so (ADR-036)."""
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
     _write_config(proj, {
         "judge": {
             "llm_cmd": ["claude", "-p"],
-            "llm_model": "old-tag",
             "advisory_only": True,
         }
     })
+    result = _run_judge_cli(
+        proj, "--set-backend", "host", "--host-client", "claude-code-cli"
+    )
+    assert result.returncode == 2, result.stderr[:600]
+    assert "llm_cmd" in result.stderr
+    assert "ADR-036" in result.stderr
+    # And on a clean config the same command writes the host choice.
+    _write_config(proj, {"judge": {"advisory_only": True}})
     result = _run_judge_cli(
         proj, "--set-backend", "host", "--host-client", "claude-code-cli"
     )
@@ -1367,10 +1380,8 @@ def test_set_backend_drops_the_retired_keys(tmp_path):
     config = json.loads(
         (proj / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
     )
-    assert "llm_cmd" not in config["judge"]
-    assert "llm_model" not in config["judge"]
-    assert config["judge"]["advisory_only"] is True, "unrelated settings survive"
     assert config["judge"]["backend"] == "host"
+    assert config["judge"]["advisory_only"] is True, "unrelated settings survive"
 
 
 # ---------------------------------------------------------------------------

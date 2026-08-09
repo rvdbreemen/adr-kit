@@ -18,8 +18,8 @@ The model is resolved through the SAME backend registry as bin/adr-judge
   judge.backend: host (default; the client CLI the installer recorded, with no
                  model flag; the only backend, ADR-036)
 
-Repository-tracked `suggest.llm_cmd` / `judge.llm_cmd` / `*.llm_model` are read
-only to warn that they are ignored (TASK-72): docs/adr/.adr-kit.json is
+Repository-tracked `suggest.llm_cmd` / `judge.llm_cmd` / `*.llm_model` are
+refused by name at config validation (ADR-036): docs/adr/.adr-kit.json is
 committed, so honouring them let repository content choose the binary this
 script executes. --llm-cmd and ADR_KIT_LLM_CMD stay unrestricted because those
 come from the operator running the command, not from whoever last opened a
@@ -555,13 +555,13 @@ def resolve_backend(args, cfg: Dict, local_cfg: Dict):
     second key would be a second place for that answer to live.
 
     Returns (backend_or_None, warnings). Repo-tracked suggest.llm_cmd /
-    suggest.llm_model are reported as ignored here rather than honoured — this
+    suggest.llm_model are refused at config validation (ADR-036) — this
     file is committed, so honouring them let repository content pick the binary
     this script executes (ADR-017 Must Not, TASK-72).
     """
     suggest_cfg = cfg.get("suggest") or {}
     judge_cfg = cfg.get("judge") or {}
-    warnings = _adr_llm.legacy_command_warnings(suggest_cfg, "suggest")
+    warnings = []
     backend, judge_warnings = _adr_llm.resolve_llm_backend(
         judge_cfg, local_cfg, args.llm_cmd, dict(os.environ)
     )
