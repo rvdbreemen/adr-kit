@@ -1,17 +1,29 @@
 ---
 name: setup
-description: "Set up ADR Kit project guidance without an architecture audit. Use for managed CLAUDE.md guidance, the local ADR guide, or lightweight setup."
-argument-hint: "[no arguments]"
+description: "The one entry point for installing ADR Kit in a project (R19). Modes: register (default), adopt (audit + propose ADRs, /adr-kit:init), hooks (/adr-kit:install-hooks), upgrade (/adr-kit:upgrade)."
+argument-hint: "[adopt|hooks|upgrade]"
 disable-model-invocation: true
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 
 # adr-kit setup
 
-`$ARGUMENTS` should be empty. Reject unknown arguments instead of changing the
-setup scope.
+Setting up ADR Kit is one deterministic act (spec R19) with four modes. An
+empty `$ARGUMENTS` runs the default **register** mode below. A mode name
+routes to the procedure that owns it -- follow that skill file and nothing
+else; each is a mode of this entry point, not a separate product:
 
-You are running the one-time project setup for the adr-kit plugin. Your job is to:
+| `$ARGUMENTS` | Mode | Procedure |
+|---|---|---|
+| *(empty)* | **register** -- write the managed guidance layout | this file, below |
+| `adopt` | audit the codebase and propose ADRs, then register | `skills/init/SKILL.md` (`/adr-kit:init`) |
+| `hooks` | install or remove the pre-commit gate only | `skills/install-hooks/SKILL.md` (`/adr-kit:install-hooks`) |
+| `upgrade` | refresh copied artifacts, migrate a v0.11 footprint | `skills/upgrade/SKILL.md` (`/adr-kit:upgrade`) |
+
+Reject any other argument instead of guessing a mode.
+
+You are running the one-time project setup for the adr-kit plugin (register
+mode). Your job is to:
 
 1. Write the project's instruction layout with `scripts/setup-project.py`, which owns every file in it.
 2. Leave everything outside its managed markers byte-exact.
@@ -80,9 +92,9 @@ If `pwd` lacks all of `CLAUDE.md`, `.git/`, and a recognisable project manifest 
 
 ## Cross-references
 
-- `/adr-kit:init` — full bootstrap including audit and hook installation.
-- `/adr-kit:upgrade` — migrate v0.11 → v0.12 footprint without re-auditing.
-- `/adr-kit:install-hooks` — install the pre-commit hook independently.
+- `/adr-kit:setup adopt` (alias `/adr-kit:init`) — full bootstrap including audit and hook installation.
+- `/adr-kit:setup upgrade` (alias `/adr-kit:upgrade`) — migrate v0.11 → v0.12 footprint without re-auditing.
+- `/adr-kit:setup hooks` (alias `/adr-kit:install-hooks`) — install the pre-commit hook independently.
 
 ## Step 4c — The signer: propose, never assume
 

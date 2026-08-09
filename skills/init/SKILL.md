@@ -8,6 +8,10 @@ allowed-tools: [Read, Write, Edit, Bash, Glob, Grep, Task]
 
 # adr-kit init
 
+This is the **adopt** mode of `/adr-kit:setup` (spec R19: one entry point,
+four modes). Invoked directly or via `/adr-kit:setup adopt`, the procedure
+is identical -- this file owns it.
+
 `$ARGUMENTS` is reserved for future init options and should normally be empty.
 Reject unknown arguments instead of guessing.
 

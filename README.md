@@ -418,8 +418,8 @@ architect remains part of the decision.
 |---|---|---|---|
 | `/adr [title]` | knowledge / guide | yes | Author or review an ADR: anti-rationalization guards, four gates, supersession workflow. |
 | `/adr-kit:grill [target]` | guided decision interview | yes | Complete a Proposed ADR, reconstruct one from a PR/range/source, or revalidate an existing decision; asks one evidence-backed question at a time. |
-| `/adr-kit:init` | one-time bootstrap | no | Once per project: CLAUDE.md stub, codebase audit to Accepted ADRs, pre-commit hook. |
-| `/adr-kit:setup` | one-time write | no | Lighter alternative: stub plus guide only, no audit, no hook. Idempotent. |
+| `/adr-kit:setup` | one entry point, four modes | no | Register (default): stub plus guide, idempotent. `adopt`: codebase audit to Accepted ADRs plus hooks. `hooks`: the pre-commit gate alone. `upgrade`: refresh copied artifacts. |
+| `/adr-kit:init` | mode alias | no | The `adopt` mode of `/adr-kit:setup`, kept as its own name. |
 | `/adr-kit:context [topic]` | read-only lookup | yes | Load the 3 to 5 most relevant ADRs before implementing; verify lifecycle status in the source ADR. |
 | `/adr-kit:judge` | deliberate check | yes | Interactively review a staged diff against the ADRs, including the LLM pass for `llm_judge: true` ADRs, with three resolution paths per violation. |
 | `/adr-kit:audit` | deliberate check | yes | Are we still on course? Lints the decisions and judges the code in one run, over a diff or the whole codebase. Separate exit codes for an ADR-quality failure and a code violation. Read-only. |
@@ -431,8 +431,8 @@ architect remains part of the decision.
 | `/adr-kit:retire [path]` | deliberate check | no | Rank Accepted ADRs for retirement on four deterministic signals. Read-only. |
 | `/adr-kit:migrate [path]` | guided rewrite | no | Add invariant metadata or convert between MADR, Nygard, and canonical profiles. Preview, then confirm. |
 | `/adr-kit:settings` | guided write | no | One surface for every knob: shows each setting, its current value, and where that value came from (default, project file, machine-local file, or environment). |
-| `/adr-kit:install-hooks` | installer | no | Install or remove the pre-commit hook and the project-scoped guardian hook entry. |
-| `/adr-kit:upgrade` | refresh driver | no | Refresh stale copied artifacts after a plugin update; also the legacy v0.11 to v0.12 migration. |
+| `/adr-kit:install-hooks` | mode alias | no | The `hooks` mode of `/adr-kit:setup`: install or remove the pre-commit gate. |
+| `/adr-kit:upgrade` | mode alias | no | The `upgrade` mode of `/adr-kit:setup`: refresh stale copied artifacts; also the legacy v0.11 to v0.12 migration. |
 
 The `Auto-invocable` column reflects the shipped skill metadata. Mutating skills and several deliberate read-only commands set `disable-model-invocation: true`; `judge`, `review`, and `guardian` currently do not. Model invocation does not by itself authorize file mutation, and cost-bearing guardian work still follows its confirmation/configuration rules.
 

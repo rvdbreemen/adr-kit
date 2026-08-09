@@ -91,7 +91,7 @@
     {
       "id": "init",
       "description": "Bootstrap ADR Kit in a project, including instructions, an architecture audit, initial ADR proposals, and the pre-commit gate.",
-      "title": "Initialize ADR Kit",
+      "title": "Initialize ADR Kit (the adopt mode of setup)",
       "mutates": true,
       "procedure": [
         "Run the setup workflow, preview legacy ADR migration, and audit the workspace.",
@@ -105,7 +105,7 @@
     {
       "id": "install-hooks",
       "description": "Install or remove ADR Kit's deterministic pre-commit gate without changing agent client configuration.",
-      "title": "Install ADR enforcement hooks",
+      "title": "Install ADR enforcement hooks (the hooks mode of setup)",
       "mutates": true,
       "procedure": [
         "Inspect `core.hooksPath` and preserve unrelated hooks by chaining them.",
@@ -196,9 +196,10 @@
     {
       "id": "setup",
       "description": "Register ADR Kit in a project with a managed client instruction block and versioned local guide. Idempotent.",
-      "title": "Set up an ADR Kit project",
+      "title": "Set up an ADR Kit project (register, adopt, hooks, upgrade)",
       "mutates": true,
       "procedure": [
+        "Setup is one entry point with four modes (spec R19): no argument runs register (this procedure); 'adopt' routes to the init workflow, 'hooks' to install-hooks, 'upgrade' to upgrade. Reject any other mode argument.",
         "Run `python <plugin-root>/scripts/setup-project.py --client <client-id> --project-root <workspace>`, where `<client-id>` is this client's id and `<workspace>` is the project root.",
         "Preserve all user content outside managed markers and `.adr-kit/ADR-guide.local.md`; rerunning unchanged input must be a no-op."
       ]
@@ -216,7 +217,7 @@
     {
       "id": "upgrade",
       "description": "Refresh ADR Kit project artifacts after a plugin update while preserving local edits and unrelated instructions.",
-      "title": "Upgrade ADR Kit project artifacts",
+      "title": "Upgrade ADR Kit project artifacts (the upgrade mode of setup)",
       "mutates": true,
       "procedure": [
         "Preview ADR migration without applying it.",

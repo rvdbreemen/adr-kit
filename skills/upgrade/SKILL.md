@@ -8,6 +8,10 @@ allowed-tools: [Read, Write, Edit, Bash, Task]
 
 # adr-kit upgrade
 
+This is the **upgrade** mode of `/adr-kit:setup` (spec R19: one entry point,
+four modes). Invoked directly or via `/adr-kit:setup upgrade`, the procedure
+is identical -- this file owns it.
+
 `$ARGUMENTS` should be empty. Stop for confirmation before any breaking
 migration or backup-backed rewrite.
 
