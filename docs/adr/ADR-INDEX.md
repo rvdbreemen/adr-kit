@@ -22,10 +22,10 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-014 | Superseded | - | Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain... |
 | ADR-015 | Accepted | `tests/fixtures/cli/latency-corpus.json` | Chosen option: the fixture contract, because it is the only option that survives both slow CI runners and future tool... |
 | ADR-016 | Accepted | `{bin,codex/bin,copilot/bin}/adr-mcp`, `tests/test_adr_mcp.py` | Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc... |
-| ADR-017 | Accepted | `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}` | Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a... |
+| ADR-017 | Superseded | `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}` | Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a... |
 | ADR-018 | Superseded | `hooks/adr_hook_core.py`, `bin/adr_query.py` | Chosen option: a local precomputed vector store that the query and hook paths only read, because it delivers semantic... |
 | ADR-019 | Accepted | - | Chosen option: keep the silence, and record why — this ADR is the record. |
-| ADR-020 | Accepted | - | Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact... |
+| ADR-020 | Superseded | - | Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact... |
 | ADR-021 | Accepted | - | Chosen option: the session-scoped hooks regenerate a stale index in-process; the edit-tier hooks stay read-only and s... |
 | ADR-022 | Accepted | - | Chosen option: ## Open Questions is append-only while an ADR is Proposed, because it removes the incentive at its sou... |
 | ADR-023 | Accepted | - | Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b... |
@@ -41,3 +41,5 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-033 | Accepted | - | Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks. |
 | ADR-034 | Accepted | - | Chosen option: declare the property per event, because the difference between the two events that can reach out and t... |
 | ADR-035 | Proposed | - | Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied... |
+| ADR-036 | Accepted | - | Chosen option: retire definitively; host model plus operator escape hatch. |
+| ADR-037 | Accepted | - | Chosen option: Option A, because every property the acceptance criteria ask for is a property of state granularity, n... |

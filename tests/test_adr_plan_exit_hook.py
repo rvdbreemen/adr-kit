@@ -119,3 +119,41 @@ def test_the_budget_matches_the_other_pre_tool_hooks():
     # copied 100 ms; once the numbers were measured it forced one of them to be
     # wrong.
     assert plan["latency_budget_ms"] >= pre_edit["latency_budget_ms"]
+
+
+def test_decision_shaped_lines_are_named_deterministically():
+    """B1's second half: the nudge lands on something concrete.
+
+    A line counts only when a decision verb and an architectural noun meet on
+    it; either alone is prose. Bounded at five, so a long plan cannot turn the
+    nudge into a wall."""
+    plan = (
+        "1. Refactor the parser for clarity.\n"
+        "2. Introduce a Redis cache for session state.\n"
+        "3. Update the README.\n"
+        "4. Replace the storage layer with sqlite.\n"
+    )
+    text, kind = core.evaluate(_envelope({"plan": plan}))
+
+    assert kind == "plan-exit"
+    assert "Decision-shaped lines in this plan" in text
+    assert "Introduce a Redis cache for session state." in text
+    assert "Replace the storage layer with sqlite." in text
+    assert "Refactor the parser for clarity." not in text
+    assert "Update the README." not in text
+
+
+def test_a_plan_without_decision_lines_gets_only_the_question():
+    text, _ = core.evaluate(_envelope({"plan": "Tidy the tests and fix typos."}))
+
+    assert "Decision-shaped lines" not in text
+    assert "does this plan make an architectural decision" in text
+
+
+def test_the_candidate_list_is_bounded_at_five():
+    plan = "\n".join(
+        f"{n}. Add a new dependency for feature {n}." for n in range(1, 10)
+    )
+    text, _ = core.evaluate(_envelope({"plan": plan}))
+
+    assert text.count("Add a new dependency") == 5

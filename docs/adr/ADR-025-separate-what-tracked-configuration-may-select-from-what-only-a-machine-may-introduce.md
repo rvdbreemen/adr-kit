@@ -13,6 +13,7 @@ superseded_by: null
 related:
   - "ADR-017"
   - "ADR-034"
+  - "ADR-036"
 topics:
   - "configuration"
   - "security"
@@ -61,6 +62,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-034
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-09
+    status: Accepted
+    changed_by: adr-kit
+    reason: Related to ADR-036
     changed_via: adr-kit lifecycle
 ```
 

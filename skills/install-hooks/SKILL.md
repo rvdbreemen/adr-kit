@@ -8,6 +8,10 @@ allowed-tools: [Read, Write, Edit, Bash]
 
 # adr-kit install-hooks
 
+This is the **hooks** mode of `/adr-kit:setup` (spec R19: one entry point,
+four modes). Invoked directly or via `/adr-kit:setup hooks`, the procedure
+is identical -- this file owns it.
+
 Use `$ARGUMENTS` only for `--uninstall`; empty means install. Reject all other
 arguments.
 

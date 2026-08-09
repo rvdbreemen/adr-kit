@@ -438,12 +438,13 @@ def test_pr_create_declares_the_network_it_can_reach():
     and trusted by everybody.
     """
     policy, events = _manifest_events()
-    reaching = {"pr-create", "user-prompt-submit"}
+    reaching = {"pr-create"}
     for event_id, event in events.items():
         declared = _declared_network(policy, event)
         assert declared is (event_id in reaching), (
             f"{event_id} declares network_allowed: {declared}; ADR-034 puts the "
-            "line at the two events whose handler steps outside adr_hook_core"
+            "line at the one event whose handler steps outside adr_hook_core "
+            "(ADR-036 retired the embedding reach of user-prompt-submit)"
         )
         if declared:
             assert event.get("network_reason"), (
@@ -452,31 +453,16 @@ def test_pr_create_declares_the_network_it_can_reach():
             )
 
 
-def test_the_embedding_event_set_cannot_outrun_the_declaration():
-    """ADR-034: widening EMBEDDING_EVENTS without declaring it is a finding.
+def test_no_hook_event_embeds_and_none_declares_a_quiet_reach():
+    """ADR-036 Must Not: no embedding call returns to a shipped hook path.
 
-    `user-prompt-submit` reaches an embedding endpoint because
-    `hooks/adr-hook.py` lists it in EMBEDDING_EVENTS. That set is a decision the
-    file's own comment says is a decision -- "Widening this set is a decision" --
-    and widening it silently would put a reach-out behind a declared `false`.
-    Read from the source rather than restated, so the two move together.
+    EMBEDDING_EVENTS was the one sanctioned widening point, and its absence is
+    now the property: the entrypoint has no embedder to supply, so a network
+    reach behind a declared false cannot come back through this file.
     """
     source = (REPO_ROOT / "hooks" / "adr-hook.py").read_text(encoding="utf-8")
-    declared = re.search(r"EMBEDDING_EVENTS\s*=\s*\{([^}]*)\}", source)
-    assert declared, "EMBEDDING_EVENTS is no longer a literal set; update this check"
-    native = set(re.findall(r'"([^"]+)"', declared.group(1)))
-    assert native, "EMBEDDING_EVENTS is empty; nothing embeds, so nothing to declare"
-
-    policy, events = _manifest_events()
-    for event_id, event in events.items():
-        offers = set(event.get("clients", {}).values()) & native
-        if offers:
-            assert _declared_network(policy, event) is True, (
-                f"{event_id} maps to {sorted(offers)}, which embeds, but "
-                "declares network_allowed: false (ADR-034)"
-            )
-
-
+    assert "EMBEDDING_EVENTS" not in source
+    assert "embedder" not in source
 def test_the_declared_true_is_true_a_configured_backend_is_reached():
     """Assert the declaration against behaviour, through the real guard.
 

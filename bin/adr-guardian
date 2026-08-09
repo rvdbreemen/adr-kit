@@ -13,7 +13,14 @@ Three subcommands:
   adr-guardian stamp <cheap|llm> [--violations N] [--retire N] [--suggest N] [--audit N] [--lint STR] [--coverage PCT]
       Record that a sweep tier completed. Updates .adr-kit-state.json and appends
       an entry to the append-only trend list (capped at 52 entries). Called by
-      the /adr-kit:guardian skill after a sweep completes. Always exits 0.
+      the /adr-kit:guardian skill after a sweep completes.
+
+  adr-guardian stamp llm --adr ADR-NNN --verdict <ok|violation>
+      Record ONE ADR's verdict mid-sweep (ADR-037). Does not touch the tier
+      timestamp or the trend; an interrupted sweep keeps every verdict it
+      reached, and a recorded violation keeps the llm tier due until a
+      re-judge stamps that ADR ok. Only real verdicts stamp: a timeout or
+      error is not a verdict.
 
   adr-guardian state
       Print the current .adr-kit-state.json as formatted JSON to stdout. Exits 0
@@ -21,7 +28,8 @@ Three subcommands:
 
 Design invariants (match spec §3 / §12):
   - check: pure read-only on ADRs (just counts files); never spawns; always exit 0.
-  - stamp: writes only .adr-kit-state.json; always exit 0.
+  - stamp: writes only .adr-kit-state.json; exit 0 on valid input
+    (invalid flag combinations are refused with exit 2, same as argparse).
   - cwd-guard: check exits 0 silently when cwd has no docs/adr/ with ADRs.
   - nudge_cooldown_hours: check skips output if last_nudged is within the window.
 
@@ -100,6 +108,7 @@ from adr_guardian_queue import (
     build_queue_cache,
     write_queue_cache,
 )
+from adr_catalog import adr_id_from_filename, normalize_adr_id
 from adr_retrieval_health import render_retrieval_health, run_retrieval_health
 
 
@@ -133,6 +142,11 @@ DEFAULT_STATE: Dict = {
         "last_run": None,
         "suggest_hits": 0,
         "audit_findings": 0,
+        # Per-ADR verdicts (ADR-037): {"ADR-NNN": {"last_run": iso, "verdict":
+        # "ok"|"violation"}}. Advisory and per-machine like the rest of this
+        # file; lets an interrupted sweep keep what it established and lets a
+        # recorded violation hold the tier open until a re-judge clears it.
+        "adrs": {},
     },
     "retire_seen": [],
     "last_nudged": None,
@@ -507,7 +521,25 @@ def _compute_due_tiers(
     cheap_due = cheap_days is None or cheap_days >= drift_stale_days
     llm_due = llm_days is None or llm_days >= llm_stale_days
 
+    # ADR-037: a recorded per-ADR violation keeps the llm tier due regardless
+    # of how fresh the tier timestamp is. The tier goes quiet only when a
+    # re-judge overwrites the entry with "ok".
+    if not llm_due and _outstanding_violations(llm_tier):
+        llm_due = True
+
     return cheap_due, llm_due
+
+
+def _outstanding_violations(llm_tier: Dict) -> List[str]:
+    """ADR ids whose recorded per-ADR verdict is "violation" (ADR-037)."""
+    adrs = llm_tier.get("adrs")
+    if not isinstance(adrs, dict):
+        return []
+    return sorted(
+        adr_id
+        for adr_id, entry in adrs.items()
+        if isinstance(entry, dict) and entry.get("verdict") == "violation"
+    )
 
 
 def _is_throttled(state: Dict, gcfg: Dict) -> bool:
@@ -659,9 +691,17 @@ def _format_guardian_block(
     lines.append(
         f"  • drift:     last {_age_label(cheap_days)} (daily)      {cheap_tag}"
     )
+    outstanding = _outstanding_violations(llm_tier)
+    llm_suffix = ""
+    if outstanding:
+        # ADR-037: a violation is why the tier is (still) due; say so instead
+        # of letting the line read as ordinary staleness.
+        llm_suffix = f"   ({len(outstanding)} violation(s) outstanding: "                      f"{', '.join(outstanding[:3])}"                      f"{', ...' if len(outstanding) > 3 else ''})"
+    elif llm_due:
+        llm_suffix = "   (suggest + audit, costs $)"
     lines.append(
         f"  • llm-tier:  last {_age_label(llm_days)} (bi-weekly) {llm_tag}"
-        + ("   (suggest + audit, costs $)" if llm_due else "")
+        + llm_suffix
     )
 
     drift_violations = cheap_tier.get("drift_violations", 0)
@@ -796,8 +836,48 @@ def cmd_retrieval_health(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_stamp(args: argparse.Namespace) -> int:
-    """Record completion of a sweep tier. Always exits 0."""
+    """Record completion of a sweep tier. Always exits 0 on valid input."""
     tier = args.tier  # "cheap" or "llm"
+
+    # ADR-037: the per-ADR form is llm-only and needs an explicit verdict.
+    # Refusing here (not silently ignoring) keeps "stamped" meaning "judged".
+    if args.adr is not None and (tier != "llm" or args.verdict is None):
+        sys.stderr.write(
+            "[adr-guardian] ERROR: --adr requires tier 'llm' and --verdict "
+            "{ok|violation}.\n"
+        )
+        return 2
+    if args.verdict is not None and args.adr is None:
+        sys.stderr.write(
+            "[adr-guardian] ERROR: --verdict only makes sense with --adr.\n"
+        )
+        return 2
+    if args.adr is not None:
+        # The per-ADR form records exactly one verdict and nothing else. The
+        # tier-level metrics ride the tier stamp; accepting them here and then
+        # returning before the tier writes dropped them silently (exit 0, data
+        # gone). Refuse the combination so the caller learns immediately.
+        conflicting = [
+            flag for flag, value in (
+                ("--suggest", args.suggest), ("--audit", args.audit),
+                ("--coverage", args.coverage), ("--lint", args.lint),
+                ("--violations", args.violations), ("--retire", args.retire),
+                ("--retire-seen", args.retire_seen),
+            ) if value is not None
+        ]
+        if conflicting:
+            sys.stderr.write(
+                f"[adr-guardian] ERROR: {', '.join(conflicting)} are tier-level "
+                f"flags; a per-ADR stamp (--adr) records one verdict only. "
+                f"Stamp the tier separately.\n"
+            )
+            return 2
+    if args.adr is not None and not args.adr.strip():
+        # An empty string is not None, so it passed the check above -- and it
+        # is falsy, so the dispatch below would fall through to the TIER branch
+        # and stamp a completed sweep. Observed before this guard existed.
+        sys.stderr.write("[adr-guardian] ERROR: --adr must name an ADR.\n")
+        return 2
 
     adr_dir = _find_adr_dir()
     if adr_dir is None:
@@ -814,6 +894,37 @@ def cmd_stamp(args: argparse.Namespace) -> int:
 
     now_iso = _now_utc().isoformat()
     total_adrs = _count_adrs(adr_dir) if adr_dir is not None else None
+
+    if args.adr is not None:
+        # Resolve the id against the real ADR set BEFORE any state write. The
+        # pruning step bounds the map to existing ADR files, so an id that does
+        # not resolve (a typo like ADR-999, an unpadded ADR-1) used to be
+        # written and then pruned inside the same transaction: exit 0, verdict
+        # silently lost. A lost "violation" is exactly the false state ADR-037
+        # exists to prevent, so an unresolvable id is refused, loudly.
+        if adr_dir is None:
+            sys.stderr.write(
+                "[adr-guardian] ERROR: --adr needs an ADR directory to "
+                "validate against; none was found from the cwd.\n"
+            )
+            return 2
+        # One id reader for the whole kit (adr_catalog): re-implementing the
+        # parse locally is what allowed the silent-prune mismatch, because a
+        # fourth regex disagreed with the other three on normalization.
+        # normalize_adr_id also zero-pads, so "ADR-1" resolves to ADR-001
+        # instead of being refused over a formatting difference.
+        existing_ids = {
+            catalog_id
+            for f in adr_dir.glob("ADR-*.md")
+            if (catalog_id := adr_id_from_filename(f.name))
+        }
+        adr_id = normalize_adr_id(args.adr)
+        if adr_id is None or adr_id not in existing_ids:
+            sys.stderr.write(
+                f"[adr-guardian] ERROR: {args.adr.strip()!r} does not resolve "
+                f"to any ADR file in {adr_dir}. Nothing was stamped.\n"
+            )
+            return 2
 
     def stamp_state(state):
         if tier == "cheap":
@@ -833,6 +944,23 @@ def cmd_stamp(args: argparse.Namespace) -> int:
                         state["retire_seen"] = seen_list
                 except json.JSONDecodeError:
                     pass
+        elif tier == "llm" and args.adr is not None:
+            # ADR-037: incremental per-ADR stamp. Records one verdict the
+            # moment it exists so an interrupted sweep keeps what it
+            # established. Deliberately does NOT touch llm_tier.last_run (that
+            # timestamp means "a completed sweep") and appends no trend entry.
+            # The id was validated against existing_ids above, so the prune
+            # below can only remove entries for files deleted since their stamp.
+            llm = dict(state.get("llm_tier") or {})
+            adrs = dict(llm.get("adrs") or {})
+            adrs[adr_id] = {
+                "last_run": now_iso,
+                "verdict": args.verdict,
+            }
+            adrs = {k: v for k, v in adrs.items() if k in existing_ids}
+            llm["adrs"] = adrs
+            state["llm_tier"] = llm
+            return True, None
         elif tier == "llm":
             llm = dict(state.get("llm_tier") or {})
             llm["last_run"] = now_iso
@@ -840,6 +968,8 @@ def cmd_stamp(args: argparse.Namespace) -> int:
                 llm["suggest_hits"] = args.suggest
             if args.audit is not None:
                 llm["audit_findings"] = args.audit
+            # ADR-037: a tier-level stamp marks a completed sweep; it must not
+            # erase or rewrite the per-ADR map.
             state["llm_tier"] = llm
 
         _append_trend_entry(state, tier, now_iso, total_adrs, args.coverage)
@@ -1037,6 +1167,13 @@ def main() -> int:
                          help="Enforcement coverage percent of Accepted ADRs "
                               "(from adr-status --format json, summary.coverage_pct). "
                               "Carried from the previous trend entry when omitted.")
+    stamp_p.add_argument("--adr", default=None,
+                         help="Stamp ONE ADR's verdict instead of the whole tier "
+                              "(llm tier only; ADR-037). Requires --verdict. Does "
+                              "not update the tier timestamp or the trend.")
+    stamp_p.add_argument("--verdict", choices=["ok", "violation"], default=None,
+                         help="The verdict for --adr. Only real verdicts stamp: "
+                              "a timeout or error is not a verdict (ADR-037).")
     stamp_p.add_argument("--state-dir", dest="state_dir", default=None,
                          help="Override directory for .adr-kit-state.json (tests/CI).")
 

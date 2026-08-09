@@ -79,3 +79,107 @@ def test_an_absurd_limit_is_bounded_rather_than_obeyed(tmp_path):
     )
 
     assert core._configured_limit(tmp_path) == core.DEFAULT_MAX_RESULTS
+
+
+# ---------------------------------------------------------------------------
+# Candidate phrasing: retrieval narrows, the model chooses (spec B4, R5)
+# ---------------------------------------------------------------------------
+
+CANDIDATE_HEADINGS = (
+    "Accepted ADR candidates for this prompt (retrieval-ranked):",
+    "Proposed ADR candidates for this prompt (advisory):",
+)
+SELECTION_INSTRUCTION = (
+    "These are retrieval candidates, not confirmed matches: apply "
+    "the ones that actually govern this work and ignore the rest."
+)
+
+
+def test_prompt_injection_presents_candidates_and_instructs_selection(tmp_path):
+    """The injected block hands the final relevance call to the session model.
+
+    The old heading asserted relevance ("relevant to this prompt"), which read
+    as a settled answer. R5 wants retrieval to narrow and the model to choose,
+    so the block must present candidates and say what to do with them.
+    """
+    workspace = tmp_path
+    adr_dir = workspace / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "ADR-001-pick-a-database.md").write_text(
+        "---\n"
+        'id: "ADR-001"\n'
+        'title: "Pick a database"\n'
+        'status: "Accepted"\n'
+        "---\n\n# ADR-001 Pick a database\n\n## Status\n\nAccepted, 2026-01-01.\n\n"
+        "## Decision Outcome\n\nChosen option: use SQLite for the importer "
+        "database, because it needs no server.\n",
+        encoding="utf-8",
+    )
+    # _query asks the shared engine with a strict index; a hand-written index
+    # would be stale by definition (same reasoning as the dispatch-matrix
+    # fixture), so generate the real one.
+    import subprocess
+    subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-index"), str(adr_dir)],
+        capture_output=True, check=True,
+    )
+    envelope = core.Envelope(
+        client="claude-code-cli",
+        client_version=None,
+        event="UserPromptSubmit",
+        session_id=None,
+        agent_id=None,
+        workspace=workspace,
+        tool_name=None,
+        tool_input={},
+        prompt="which database should the importer use?",
+        parent_context=None,
+    )
+    context, kind = core._evaluate_context(envelope)
+    assert kind == "prompt"
+    assert CANDIDATE_HEADINGS[0] in context
+    assert "relevant to this prompt" not in context
+    assert SELECTION_INSTRUCTION in context
+    # The instruction comes after the candidate list, where a reader lands.
+    assert context.index(SELECTION_INSTRUCTION) > context.index(CANDIDATE_HEADINGS[0])
+
+
+def test_the_rust_hook_carries_the_same_candidate_phrasing():
+    """Same invariant as the MAX_RESULTS parity test: what an agent is told must
+    not depend on the platform that told it."""
+    text = (REPO_ROOT / "hooks" / "native" / "adr-hook.rs").read_text(encoding="utf-8")
+    for heading in CANDIDATE_HEADINGS:
+        assert heading in text, f"Rust hook lost the heading: {heading}"
+    # The Rust source splits the instruction over a `\` line continuation.
+    # Canonicalise it the way rustc does — drop backslash + newline + the next
+    # line's leading whitespace, CRLF or LF — and then demand the WHOLE
+    # instruction. The first version of this test replaced the two-character
+    # sequence backslash+'n' (a no-op against real newlines) and only passed
+    # because a fragment happened to sit unbroken on one source line; a re-wrap
+    # would have failed it spuriously and a real divergence could have hidden.
+    canonical = re.sub(r"\\\r?\n[ \t]*", "", text)
+    assert SELECTION_INSTRUCTION in canonical, (
+        "the Rust host's selection instruction diverged from the Python core"
+    )
+    assert "relevant to this prompt" not in text
+
+
+def test_the_selection_instruction_survives_truncation():
+    """TASK-157 finding 4: append-then-slice cut the instruction exactly when
+    the candidate set was biggest. The instruction's length is reserved and the
+    candidates are truncated instead, keeping the total inside the budget."""
+    fat = ["X" * 3000, "Y" * 3000]           # far over MAX_CONTEXT_CHARS together
+    context = core._prompt_candidates_context(fat)
+    assert len(context) <= core.MAX_CONTEXT_CHARS
+    assert context.endswith(core.PROMPT_SELECTION_INSTRUCTION)
+    small = ["one line"]
+    context = core._prompt_candidates_context(small)
+    assert context == "one line\n" + core.PROMPT_SELECTION_INSTRUCTION
+
+
+def test_the_rust_hook_reserves_the_instruction_length_too():
+    """Same parity invariant: the native host must not exceed the budget nor
+    lose the instruction, so its source carries the reserve arithmetic."""
+    text = (REPO_ROOT / "hooks" / "native" / "adr-hook.rs").read_text(encoding="utf-8")
+    assert "saturating_sub(choose.len()" in text
+    assert "is_char_boundary" in text

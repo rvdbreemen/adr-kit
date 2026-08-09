@@ -34,8 +34,8 @@
       }
     },
     {
-      "id": "vector-layer-semantic-retrieval",
-      "query": "embed the ADRs so a query with no shared words still finds the decision",
+      "id": "retired-vector-layer-governing-record",
+      "query": "vector layer semantic retrieval embedding backend",
       "components": [
         "adr-context"
       ],
@@ -45,7 +45,7 @@
       "limit": 3,
       "expect": {
         "include": [
-          "ADR-020"
+          "ADR-036"
         ],
         "exclude": []
       }

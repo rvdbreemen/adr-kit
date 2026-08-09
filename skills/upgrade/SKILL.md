@@ -8,6 +8,10 @@ allowed-tools: [Read, Write, Edit, Bash, Task]
 
 # adr-kit upgrade
 
+This is the **upgrade** mode of `/adr-kit:setup` (spec R19: one entry point,
+four modes). Invoked directly or via `/adr-kit:setup upgrade`, the procedure
+is identical -- this file owns it.
+
 `$ARGUMENTS` should be empty. Stop for confirmation before any breaking
 migration or backup-backed rewrite.
 
@@ -136,10 +140,11 @@ Run the deterministic scan first. It writes nothing:
 python3 "$ADR_KIT/bin/adr-migrate" docs/adr/ --enable-llm-judge --dry-run --format json
 ```
 
-The result has three lists: `enabled` (what would be turned on), `opted_out` (rule-less blocks the scan proposes to mark as having no code surface), and `unchanged`.
+The result has three lists — `enabled` (what would be turned on), `opted_out` (rule-less blocks the scan proposes to mark as having no code surface), and `unchanged` — plus a `summary` carrying the two numbers that decide this step: `judged_after` (how many ADRs the LLM pass evaluates once the migration lands) and `unbounded_after` (how many of those declare no `path_glob`).
 
 **Then ask the user, once, with the whole picture in front of them.** Show:
 
+- **the `summary` totals first.** The `enabled` list is only this run's delta; on an upgraded repository the dominant cost sits in ADRs that are already on. A dry-run reading "6 enabled, 0 unbounded" has been accepted on a set that ended at 64 unscoped of 68 judged, which at the measured 20–28 s per isolated call is ~25 minutes of blocking per commit;
 - how many ADRs would be enabled, and for each one its id, its one-line Decision and its rule count;
 - which ADRs carry `unbounded_scope: true` — those have no `path_glob` to narrow with, so enabling them costs a model call on **every** commit, not only on commits that touch their area;
 - which ADRs the scan proposes to mark as no-code-surface, and why.
@@ -159,40 +164,37 @@ python3 "$ADR_KIT/bin/adr-migrate" docs/adr/ --enable-llm-judge \
   --force-enable ADR-014
 ```
 
-Report exactly which ADRs were enabled and which were left off. State the cost shape in the same breath: with N opted-in ADRs, a commit touching M distinct scopes makes M model calls, not N — a commit outside every scope makes none.
+Report exactly which ADRs were enabled and which were left off. State the cost shape in the same breath, and state it for the whole set: a commit makes one isolated call per scoped ADR whose `path_glob` the diff touches, **plus one call for every unscoped ADR regardless of the diff**. "A commit outside every scope makes none" holds only when `unbounded_after` is zero.
 
 Re-running the command after this is a no-op and says so.
 
-## Step 4c — Embedding runtime: detect, then offer
+## Step 4b² — Make the pass runnable, and decide where it runs
 
-ADR-018 permits a precomputed embedding store, and spec R16 asks setup to find
-out whether this machine can build one rather than letting the user discover the
-gap when retrieval quietly falls back.
+Enabling `llm_judge` on ADRs configures what SHOULD be judged; it does not make the judge able to run, and it does not decide where the cost lands. An upgrade that stops here can leave a project whose pass degrades silently on every commit, or one whose commits block for half an hour. Finish both halves:
+
+**1. The host client.** Read the effective configuration:
 
 ```bash
-python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --check-embedding
+python3 "$ADR_KIT/bin/adr-judge" --show-config
 ```
 
-Read-only: it installs nothing and changes nothing. Three outcomes.
+- Retired keys present (`judge.llm_cmd`, `judge.llm_model`, `judge.openrouter_model`, `judge.ollama_model`, `judge.openai_model`) → config validation refuses each by name and says what replaced it (ADR-036). Have the user delete the keys from `.adr-kit.json`; no command edits a file that carries them.
+- No recorded client → record it now rather than leaving it to the first degraded commit:
 
-- **`ready`** — a runtime with an embedding model is present. Say so and move on;
-  there is no question to ask when the answer is already yes.
-- **`runtime-without-model`** — offer the pull, with the download size stated
-  *before* it starts. 4.7 GB is a decision, not a detail.
-- **`absent`** — report it as the normal outcome it is (retrieval keeps working
-  on lexical ranking) and offer the three routes: install, point at a runtime you
-  already run, or use a remote endpoint.
+```bash
+python3 "$ADR_KIT/bin/adr-judge" --set-backend host --host-client claude-code-cli
+```
 
-**Before offering to install, read the GPU line.** Without acceleration the
-recommended route is the remote one, and the reason belongs in the sentence: an
-embedding model on CPU cannot meet the 2 s hook budget, which turns the feature
-into a regression nobody sees. The check is a heuristic and says so; Ollama runs
-on CPU either way. This is advice about speed, not a capability gate.
+The host model is the only backend (ADR-036); operators can override one run with `ADR_KIT_LLM_CMD` / `--llm-cmd`.
 
-Installing third-party software happens only on explicit consent, never with
-silent elevation, and declining must leave a working installation.
+**2. The cadence.** Take `unbounded_after` from Step 4b's summary and put the multiplication in front of the user: `unbounded_after × ~20 s` is what every commit will block, sequentially, because the pass makes one isolated call per ADR. Two honest configurations exist:
 
-## Step 4d — The signer: propose, never assume
+- `unbounded_after` is small (a handful): per-commit judging is affordable; leave `judge.llm_enabled` on.
+- `unbounded_after` is large: per-commit judging is not viable, and no faster model fixes a per-ADR multiplier. Offer `judge.llm_enabled: false` (the declarative pass keeps blocking, at milliseconds) with the **guardian llm tier** as the semantic cadence — `guardian.llm_stale_days` in `docs/adr/.adr-kit.json` (default 14; 7 for a weekly pass) makes the SessionStart nudge raise it when due, cost-gated by `guardian.llm_autorun: false`.
+
+Record the choice in the wrap-up so the next reader of `.adr-kit.json` sees a decision, not an accident.
+
+## Step 4c — The signer: propose, never assume
 
 Every lifecycle command writes a Status History entry naming who decided, and it
 refuses to sign on the user's behalf. That refusal is right, and it should not be
@@ -249,6 +251,8 @@ adr-kit upgrade complete:
 - backfill:  <N> ADRs got declarative rules, <M> got llm_judge:true, <K> skipped, <Q> already had Enforcement
 - lint:      <P> PASS, <A> ADVISORY, <F> FAIL
 - formats:   <N> deterministic migration notices, <M> guided notices; 0 auto-migrated
+- judge:     backend <name | none>, <judged_after> ADRs judged, <unbounded_after> unscoped;
+             cadence <per-commit | guardian llm tier every <D>d | declarative-only>
 ```
 
 Suggest a commit:

@@ -743,3 +743,185 @@ class TestTrendDelta:
         assert rc == 0
         assert "[adr-guardian]" in out
         assert "trend: " not in out
+
+
+# ---------------------------------------------------------------------------
+# Per-ADR verdict stamps (ADR-037)
+# ---------------------------------------------------------------------------
+
+class TestPerAdrStamp:
+    """ADR-037: llm_tier.adrs records one verdict per ADR, advisory and
+    per-machine, so an interrupted sweep keeps what it established and a
+    recorded violation holds the tier open until a re-judge clears it."""
+
+    def test_adr_stamp_writes_entry_without_tier_timestamp_or_trend(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=2)
+        rc, out, err = _run(
+            ["stamp", "llm", "--adr", "ADR-001", "--verdict", "violation",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        llm = state["llm_tier"]
+        assert llm["adrs"]["ADR-001"]["verdict"] == "violation"
+        assert llm["adrs"]["ADR-001"]["last_run"] is not None
+        # The tier timestamp means "a completed sweep"; one verdict is not that.
+        assert llm["last_run"] is None
+        assert state.get("trend", []) == []
+
+    def test_recorded_violation_keeps_llm_tier_due(self, tmp_path):
+        """A fresh tier timestamp does not silence a recorded violation."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=2)
+        _write_config(adr_dir, {"llm_stale_days": 14, "drift_stale_days": 1})
+        _write_state(adr_dir, {
+            "cheap_tier": {"last_run": _hours_ago(1)},
+            "llm_tier": {
+                "last_run": _hours_ago(1),
+                "adrs": {"ADR-002": {"last_run": _hours_ago(1),
+                                     "verdict": "violation"}},
+            },
+        })
+        rc, out, err = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        assert "DUE" in out
+        assert "1 violation(s) outstanding" in out
+        assert "ADR-002" in out
+
+    def test_rejudge_ok_clears_the_violation_and_the_nudge(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=2)
+        _write_config(adr_dir, {"llm_stale_days": 14, "drift_stale_days": 1})
+        _write_state(adr_dir, {
+            "cheap_tier": {"last_run": _hours_ago(1)},
+            "llm_tier": {
+                "last_run": _hours_ago(1),
+                "adrs": {"ADR-002": {"last_run": _hours_ago(2),
+                                     "verdict": "violation"}},
+            },
+        })
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-002", "--verdict", "ok",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        rc, out, _ = _run(["check"], cwd=str(tmp_path))
+        assert rc == 0
+        # Nothing due: both tiers fresh, no violation left. check prints nothing.
+        assert out.strip() == ""
+
+    def test_tier_stamp_preserves_the_per_adr_map(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=2)
+        _run(["stamp", "llm", "--adr", "ADR-001", "--verdict", "ok",
+              "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        rc, _, err = _run(
+            ["stamp", "llm", "--suggest", "0", "--audit", "0",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert state["llm_tier"]["adrs"]["ADR-001"]["verdict"] == "ok"
+        assert state["llm_tier"]["last_run"] is not None
+
+    def test_stamp_prunes_entries_for_deleted_adrs(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=1)
+        _write_state(adr_dir, {
+            "llm_tier": {"adrs": {"ADR-099": {"last_run": _hours_ago(1),
+                                              "verdict": "violation"}}},
+        })
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-001", "--verdict", "ok",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert "ADR-099" not in state["llm_tier"]["adrs"]
+        assert "ADR-001" in state["llm_tier"]["adrs"]
+
+    def test_invalid_flag_combinations_are_refused(self, tmp_path):
+        adr_dir = _make_adr_dir(tmp_path)
+        cases = [
+            ["stamp", "llm", "--adr", "ADR-001"],                      # no verdict
+            ["stamp", "cheap", "--adr", "ADR-001", "--verdict", "ok"],  # wrong tier
+            ["stamp", "llm", "--verdict", "ok"],                        # no adr
+        ]
+        for case in cases:
+            rc, _, err = _run(case + ["--state-dir", str(adr_dir)], cwd=str(tmp_path))
+            assert rc == 2, f"{case}: expected refusal, got rc={rc}"
+            assert "ERROR" in err
+        # A refused stamp must not have created state as a side effect.
+        assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_empty_adr_id_is_refused_not_a_tier_stamp(self, tmp_path):
+        """An empty --adr is not None (passes the pairing check) and falsy
+        (used to fall through to the TIER branch): it stamped a completed
+        sweep. TASK-157 finding 1."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "", "--verdict", "ok",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 2
+        assert "ERROR" in err
+        assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_unresolvable_adr_id_is_refused_not_silently_pruned(self, tmp_path):
+        """A typo (ADR-999) or unpadded id (ADR-1) used to be written and then
+        pruned in the same transaction: exit 0, verdict silently lost
+        TASK-157 finding 2."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=1)   # only ADR-001 exists
+        for bad in ("ADR-999",):
+            rc, _, err = _run(
+                ["stamp", "llm", "--adr", bad, "--verdict", "violation",
+                 "--state-dir", str(adr_dir)],
+                cwd=str(tmp_path),
+            )
+            assert rc == 2, f"{bad}: expected refusal, got rc={rc}"
+            assert bad in err
+        assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_prune_still_removes_entries_for_files_deleted_later(self, tmp_path):
+        """The up-front validation must not defeat the prune: an entry whose
+        ADR file is deleted AFTER its stamp still ages out on the next stamp."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=2)
+        _run(["stamp", "llm", "--adr", "ADR-002", "--verdict", "ok",
+              "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        (adr_dir / "ADR-002-stub.md").unlink()
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-001", "--verdict", "ok",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert "ADR-002" not in state["llm_tier"]["adrs"]
+        assert "ADR-001" in state["llm_tier"]["adrs"]
+
+    def test_tier_flags_on_a_per_adr_stamp_are_refused(self, tmp_path):
+        """TASK-159: the per-ADR branch returned before the tier writes, so
+        --coverage etc. were accepted and silently dropped."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-001", "--verdict", "ok",
+             "--coverage", "80", "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 2
+        assert "--coverage" in err
+        assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_unpadded_id_normalizes_to_the_canonical_form(self, tmp_path):
+        """TASK-161: the shared adr_catalog reader zero-pads, so ADR-1 resolves
+        to the ADR-001 file instead of being refused over formatting."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=1)
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-1", "--verdict", "violation",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert state["llm_tier"]["adrs"]["ADR-001"]["verdict"] == "violation"

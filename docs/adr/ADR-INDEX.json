@@ -8,7 +8,7 @@
       "path": "ADR-001-llm-gates-opt-in.md",
       "format": "canonical",
       "status": "Superseded",
-      "date": "2026-08-06",
+      "date": "2026-08-09",
       "decision_summary": "Make the per-commit LLM pass opt-in, add a concurrency guard, and ask interactively in /adr-kit:init:",
       "topics": [
         "cost control",
@@ -589,7 +589,7 @@
       "path": "ADR-014-use-the-generated-adr-graph-as-the-selective-context-query-engine.md",
       "format": "madr",
       "status": "Superseded",
-      "date": "2026-08-01",
+      "date": "2026-08-09",
       "decision_summary": "Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain...",
       "topics": [
         "ADR retrieval",
@@ -611,33 +611,10 @@
       ],
       "context_scope": "global",
       "decision_contract": {
-        "must": [
-          "Keep Markdown ADRs authoritative and all index content generated.",
-          "Use a healthy supported graph as the primary runtime retrieval projection.",
-          "Separate lifecycle authority from relevance and explain positive matches.",
-          "Keep query and hook hot paths local, deterministic, bounded, stdlib-first, model-free, and key-free.",
-          "Preserve fail-open context injection and fail-closed judge enforcement."
-        ],
-        "must_not": [
-          "Hand-edit generated retrieval metadata in ADR-INDEX.json.",
-          "Treat Proposed or historical ADRs as governing Accepted decisions.",
-          "Parse every Markdown ADR during a healthy normal index query.",
-          "Introduce a hosted service, database, embedding model, or language-model call into the default query or hook path."
-        ],
-        "exceptions": [
-          "A clearly reported compatibility fallback may parse Markdown when the graph is missing, invalid, unsupported, or stale.",
-          "An explicit historical query may return non-governing superseded, rejected, or deprecated records."
-        ],
-        "verification": [
-          "versioned frontmatter and graph schemas plus deterministic generation tests;",
-          "equivalent retrieval records across MADR, Nygard, canonical, and legacy fixtures;",
-          "shared query fixtures for CLI, MCP, Python hooks, native hooks, Claude, Codex, and Copilot;",
-          "lifecycle-authority, historical-exclusion, supersession, no-match, and fallback tests;",
-          "project retrieval probes with required top-k inclusions and exclusions;",
-          "end-to-end performance and graph-size budgets on small and representative large ADR sets;",
-          "strict ADR lint, doctor, generated artifact checks, client payload synchronization, native certification, focused tests, and the full supported regression suite; and",
-          "a literal index-first-retrieval verification anchor in shipped non-document source before this binding ADR can be Accepted."
-        ]
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
       },
       "scope": {
         "path_globs": []
@@ -811,8 +788,8 @@
       "title": "Run the LLM Judge by Default on the Host Agent's Own Model",
       "path": "ADR-017-run-the-llm-judge-by-default-on-the-host-agent-model.md",
       "format": "madr",
-      "status": "Accepted",
-      "date": "2026-08-06",
+      "status": "Superseded",
+      "date": "2026-08-09",
       "decision_summary": "Chosen option: turn the per-commit LLM pass on by default, resolve the model from the host agent rather than a pin, a...",
       "topics": [
         "backend selection",
@@ -835,19 +812,8 @@
       ],
       "context_scope": "selective",
       "decision_contract": {
-        "must": [
-          "judge.backend is an enum: \"host\", \"openrouter\", \"ollama\". Default \"host\".",
-          "The host backend uses the command the installer wrote for that client, and passes no model flag.",
-          "judge.llmenabled defaults to true only once TASK-63 has landed.",
-          "An unavailable backend — missing binary, unreachable daemon, absent key, non-zero status, unparseable output — degrades to declarative-only and returns None, preserving ADR-001's guarantee that tooling drift never blocks a commit.",
-          "The OpenRouter key is read from the environment."
-        ],
-        "must_not": [
-          "Repository-tracked configuration must not supply a command, an argument vector, an endpoint, or a credential.",
-          "A key present in .adr-kit.json must not be used; it is refused with an error naming the environment variable to use instead.",
-          "No backend may be selected by probing which CLIs exist on the machine.",
-          "No vendor SDK may enter the runtime dependency set."
-        ],
+        "must": [],
+        "must_not": [],
         "exceptions": [],
         "verification": []
       },
@@ -864,7 +830,7 @@
         "supersedes": [
           "ADR-001"
         ],
-        "superseded_by": null
+        "superseded_by": "ADR-036"
       }
     },
     {
@@ -897,28 +863,10 @@
       ],
       "context_scope": "selective",
       "decision_contract": {
-        "must": [
-          "Compute embeddings only in an explicit build step, never during a query or a hook.",
-          "Read the store with the standard library only; no third-party runtime dependency may be required for retrieval to work.",
-          "Record, per entry: the embedding model identity, the vector dimension, and a content hash of the source ADR.",
-          "Treat a missing, unreadable, dimension-mismatched or hash-mismatched store as stale, fall back to lexical ranking, and say so.",
-          "Carry lifecycle status and the superseded-by link in the store, so a historical decision stays retrievable but never governing.",
-          "Keep the store machine-local and untracked by default, because it is derived and specific to one embedding model.",
-          "Keep hook injection fail-open and the commit-time judge fail-closed, unchanged from ADR-014."
-        ],
-        "must_not": [
-          "Call an embedding model, a language model, or any network endpoint from the hook path.",
-          "Require a running daemon for retrieval to function.",
-          "Let a similarity score confer authority on a Proposed, Superseded, Rejected or Deprecated decision.",
-          "Hand-edit the store, or treat it as an authoring surface.",
-          "Introduce a hosted vector service."
-        ],
-        "exceptions": [
-          "The build step may call a local or remote model, because it is explicitly invoked, its cost is visible, and its failure blocks nothing at runtime."
-        ],
-        "verification": [
-          "adr-vector-store-v1: the named gate anchoring this decision in source. It must assert the fallback contract (retrieval works, and says so, with no store present) and the staleness contract (a recorded model identity or content hash that..."
-        ]
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
       },
       "scope": {
         "path_globs": [
@@ -992,8 +940,8 @@
       "title": "Embed the Query Where the Query Is Asked, and Read Authority From the Index",
       "path": "ADR-020-embed-the-query-where-the-query-is-asked-and-read-authority-from-the-index.md",
       "format": "madr",
-      "status": "Accepted",
-      "date": "2026-08-04",
+      "status": "Superseded",
+      "date": "2026-08-09",
       "decision_summary": "Chosen option: embed the query where the query is asked, and read authority from the index, because it puts each fact...",
       "topics": [
         "embeddings",
@@ -1018,34 +966,10 @@
       ],
       "context_scope": "selective",
       "decision_contract": {
-        "must": [
-          "Compute corpus embeddings only in an explicit build step.",
-          "Embed the query in the path that asks it, including a hook, when the store is present and a backend is configured.",
-          "Read status, supersededby and authority from ADR-INDEX.json on every search, never from the stored entry.",
-          "Drop a stored entry whose adrid is absent from the index.",
-          "Name the retrieval route — vector or lexical — in the output the user sees.",
-          "Fall back to lexical ranking and exit 0 on any backend failure, timeout, or malformed response.",
-          "Keep the query-embedding path inside spec R21's ceiling, with a backend timeout strictly below it, verified by a test.",
-          "Keep the 100 ms pre- and post-tool events on the index-only route.",
-          "Read the store with the standard library only.",
-          "Record, per entry: the embedding model identity, the vector dimension, and a content hash of the source ADR.",
-          "Keep hook injection fail-open and the commit-time judge fail-closed."
-        ],
-        "must_not": [
-          "Re-embed the corpus during a query or a hook.",
-          "Let a lifecycle command depend on a reachable embedding backend.",
-          "Let a similarity score confer authority on a Proposed, Superseded, Rejected or Deprecated decision.",
-          "Answer from vectors without saying so when the lexical route was used instead.",
-          "Require a running daemon for retrieval to function at all.",
-          "Hand-edit the store, or treat it as an authoring surface.",
-          "Introduce a hosted vector service."
-        ],
-        "exceptions": [
-          "A remote embedding endpoint is permitted when the user has selected one through the settings surface, having been told the latency and privacy consequence. It is never the default and never selected by probing."
-        ],
-        "verification": [
-          "adr-query-embedding-v1: the gate that anchors this decision. It ships in tests/testadrsemanticroute.py, so gate carries the name and binding is true. It covers the three acceptance cases above and the R21 latency bound."
-        ]
+        "must": [],
+        "must_not": [],
+        "exceptions": [],
+        "verification": []
       },
       "scope": {
         "path_globs": []
@@ -1058,7 +982,7 @@
         "supersedes": [
           "ADR-018"
         ],
-        "superseded_by": null
+        "superseded_by": "ADR-036"
       }
     },
     {
@@ -1310,7 +1234,7 @@
       "path": "ADR-025-separate-what-tracked-configuration-may-select-from-what-only-a-machine-may-introduce.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-06",
+      "date": "2026-08-09",
       "decision_summary": "Chosen option: repository-tracked configuration may select among backends an operator has enabled, and may never intr...",
       "topics": [
         "configuration",
@@ -1844,7 +1768,7 @@
       "path": "ADR-034-declare-the-hook-network-property-per-event-rather-than-for-the-hook-set.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-06",
+      "date": "2026-08-09",
       "decision_summary": "Chosen option: declare the property per event, because the difference between the two events that can reach out and t...",
       "topics": [
         "declared contract",
@@ -1952,6 +1876,134 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-036",
+      "title": "Retire the vector layer and run the judge on the host model only",
+      "path": "ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-09",
+      "decision_summary": "Chosen option: retire definitively; host model plus operator escape hatch.",
+      "topics": [
+        "backend selection",
+        "llm judging",
+        "semantic retrieval",
+        "simplification"
+      ],
+      "aliases": [
+        "host-only judge",
+        "KISS simplification",
+        "vector layer retirement"
+      ],
+      "components": [
+        "adr-context",
+        "adr-embed",
+        "adr-judge"
+      ],
+      "symbols": [
+        "ADR_KIT_LLM_CMD",
+        "BACKENDS",
+        "judge.backend"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "bin/adrllm.py resolves one named backend: host.",
+          "The operator escape hatch (ADRKITLLMCMD, --llm-cmd) keeps its existing behaviour and safety checks.",
+          "Without host client or escape hatch, the LLM pass degrades to declarative-only with one warning (ADR-001 floor).",
+          "No hook event declares networkallowed: true (ADR-034).",
+          "Removed configuration keys are refused by name, replacement named."
+        ],
+        "must_not": [
+          "Reintroduce an HTTP backend, embedding call or vector-store read into a shipped path without superseding this ADR.",
+          "Let tracked configuration name a binary, endpoint or credential (ADR-025)."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "TASK-145's registry regression test, recorded here as the gate when it ships; python -m pytest -q green across TASK-144 and TASK-145."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-host-only-judge-v1",
+        "documents_shipped": false,
+        "verified_in": [
+          "tests/test_adr_judge_llm.py"
+        ],
+        "supersedes": [
+          "ADR-017",
+          "ADR-020"
+        ],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-037",
+      "title": "Keep per-ADR judge verdicts in the advisory per-machine guardian state",
+      "path": "ADR-037-keep-per-adr-judge-verdicts-in-the-advisory-per-machine-guardian-state.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-09",
+      "decision_summary": "Chosen option: Option A, because every property the acceptance criteria ask for is a property of state granularity, n...",
+      "topics": [
+        "cadence",
+        "guardian",
+        "judge",
+        "state"
+      ],
+      "aliases": [
+        "interrupted sweep keeps verdicts",
+        "llm_tier.adrs",
+        "per-ADR judged state"
+      ],
+      "components": [
+        "bin/adr-guardian",
+        "skills/guardian/SKILL.md"
+      ],
+      "symbols": [
+        "_compute_due_tiers",
+        "llm_tier.adrs",
+        "stamp llm --adr"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Per-ADR verdicts live in llmtier.adrs in .adr-kit-state.json, per-machine and advisory, under the existing state lock.",
+          "stamp llm --adr requires --verdict and records exactly one ADR without updating llmtier.lastrun and without appending a trend entry.",
+          "A recorded violation keeps the llm tier due, and the nudge names how many are outstanding.",
+          "The sweep skill stamps each ADR as its verdict lands and prints per-ADR progress."
+        ],
+        "must_not": [
+          "Do not write per-ADR judge state into a tracked file from any adr-kit command.",
+          "Do not let a tier-level stamp erase or rewrite the per-ADR map.",
+          "Do not treat a timeout or error as a verdict; only ok and violation stamp."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "bin/adr-guardian (cmdstamp, computeduetiers, formatguardianblock)",
+          "tests/testadrguardian.py, tests/testadrguardianstate.py",
+          "skills/guardian/SKILL.md step 3b"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -1964,6 +2016,12 @@
     {
       "source": "ADR-001",
       "target": "ADR-035",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-001",
+      "target": "ADR-036",
       "type": "related",
       "resolved": true
     },
@@ -2262,6 +2320,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-014",
+      "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-015",
       "target": "ADR-001",
       "type": "related",
@@ -2370,6 +2434,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-017",
+      "target": "ADR-036",
+      "type": "superseded-by",
+      "resolved": true
+    },
+    {
       "source": "ADR-018",
       "target": "ADR-004",
       "type": "related",
@@ -2469,6 +2539,12 @@
       "source": "ADR-020",
       "target": "ADR-018",
       "type": "supersedes",
+      "resolved": true
+    },
+    {
+      "source": "ADR-020",
+      "target": "ADR-036",
+      "type": "superseded-by",
       "resolved": true
     },
     {
@@ -2582,6 +2658,12 @@
     {
       "source": "ADR-025",
       "target": "ADR-034",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-025",
+      "target": "ADR-036",
       "type": "related",
       "resolved": true
     },
@@ -2730,6 +2812,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-034",
+      "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-035",
       "target": "ADR-001",
       "type": "related",
@@ -2744,6 +2832,60 @@
     {
       "source": "ADR-035",
       "target": "ADR-024",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-017",
+      "type": "supersedes",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-020",
+      "type": "supersedes",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-034",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-037",
+      "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-037",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-037",
+      "target": "ADR-036",
       "type": "related",
       "resolved": true
     }

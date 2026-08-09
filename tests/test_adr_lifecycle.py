@@ -234,6 +234,38 @@ def test_supersede_updates_both_files_reciprocally_and_refreshes_index(tmp_path)
     assert "Supersedes ADR-160" in readme
 
 
+def test_one_successor_may_supersede_multiple_predecessors(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    first_path = _write_adr(adr_dir, 160, "First Old Decision", status="Accepted")
+    second_path = _write_adr(adr_dir, 161, "Second Old Decision", status="Accepted")
+    new_path = _write_adr(adr_dir, 164, "Combined Successor", status="Accepted")
+
+    for old in ("160", "161"):
+        result = _run_adr(
+            "supersede",
+            old,
+            "--by",
+            "164",
+            "--adr-dir",
+            str(adr_dir),
+            "--date",
+            "2026-07-06",
+            "--changed-by",
+            "Codex",
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+
+    new_data, _new_body = _frontmatter(new_path)
+    assert new_data["supersedes"] == ["ADR-160", "ADR-161"]
+    for old_path, old_id in ((first_path, "ADR-160"), (second_path, "ADR-161")):
+        old_data, _old_body = _frontmatter(old_path)
+        assert old_data["status"] == "Superseded"
+        assert old_data["superseded_by"] == "ADR-164"
+    check = _index_check(adr_dir)
+    assert check.returncode == 0, check.stderr + check.stdout
+
+
 @pytest.mark.parametrize("command", ["propose", "reject"])
 def test_accepted_adr_rejects_illegal_transitions_without_mutation(tmp_path, command):
     adr_dir = tmp_path / "docs" / "adr"

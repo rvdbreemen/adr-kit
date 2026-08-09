@@ -93,7 +93,7 @@ because there is no shared test infrastructure to decompose into.
 
 | Code document | Role |
 | --- | --- |
-| [`c4-code-tests.md`](c4-code-tests.md) | The complete inventory: the ten-family taxonomy, per-module test counts and notable invariants, the 35 test classes and the invariant each owns, the module-loading layer, the five fixture families plus the external `clients/fixtures/`, the CI job matrix, and the governing-ADR verification. |
+| `c4-code-tests.md` | The complete inventory: the ten-family taxonomy, per-module test counts and notable invariants, the 35 test classes and the invariant each owns, the module-loading layer, the five fixture families plus the external `clients/fixtures/`, the CI job matrix, and the governing-ADR verification. |
 
 ## Interfaces
 
@@ -282,7 +282,7 @@ Everything else the suite imports comes from outside the component, reached by
 `bin/adr_*.py`, `hooks/adr_hook_core.py`, `hooks/adapters/`,
 `hooks/hook_benchmark.py`, `scripts/version_sites.py`,
 `scripts/client_evidence.py` and `clients/installer/*`. That list is enumerated
-in full in [`c4-code-tests.md`](c4-code-tests.md).
+in full in `c4-code-tests.md`.
 
 ## Dependencies
 
@@ -325,7 +325,7 @@ Code-phase cluster slugs it comprises, which are the verified identifiers.
 
 Ranked by consequence. Items 1–3 are new at component level and were verified
 directly against source during this synthesis; the rest are carried from
-[`c4-code-tests.md`](c4-code-tests.md) and corroborated where noted.
+`c4-code-tests.md` and corroborated where noted.
 
 1. **The hook latency reference fixture is a runtime input to a shipped command,
    but lives in a directory the release allowlist excludes.**

@@ -51,21 +51,6 @@ LOCAL_KEYS: Dict[str, Dict[str, Any]] = {
             "committed: a shared signer is a false attribution, not a shortcut."
         ),
     },
-    "judge.openai_base_url": {
-        "type": "string",
-        "description": (
-            "Base URL of an OpenAI-compatible endpoint, e.g. LM Studio's "
-            "http://127.0.0.1:1234/v1. Machine-local by design: an endpoint a "
-            "repository could name is an endpoint a repository could redirect."
-        ),
-    },
-    "judge.openai_api_key": {
-        "type": "string",
-        "description": (
-            "Optional credential for that endpoint. A local runtime usually needs "
-            "none. Never committed, and never printed back."
-        ),
-    },
     "judge.host_client": {
         "type": "string",
         "enum": ["claude-code-cli", "codex-cli", "github-copilot-cli"],
@@ -89,17 +74,13 @@ ENV_OVERRIDES = {
 # that can also supply them. The module docstring has always promised this;
 # until now nothing implemented it, and `adr-settings --all` printed a stored
 # API key back in full.
-SECRET_KEYS = {
-    "judge.openai_api_key": "ADR_KIT_OPENAI_API_KEY",
-}
+SECRET_KEYS = {}
 
 # Keys worth surfacing by default. The schema holds more; these are the ones a
 # user actually turns.
 FEATURED = [
     "judge.llm_enabled",
     "judge.backend",
-    "judge.openrouter_model",
-    "judge.ollama_model",
     "judge.max_diff_bytes",
     "judge.advisory_only",
     "judge.llm_timeout_seconds",
@@ -107,8 +88,6 @@ FEATURED = [
     "context.default_limit",
     "context.min_score",
     "context.strict_index",
-    "embedding.enabled",
-    "embedding.model",
     "guardian.enabled",
     "guardian.drift_stale_days",
     "guardian.llm_stale_days",
@@ -118,7 +97,6 @@ FEATURED = [
     "retirement.threshold_days",
     "lifecycle.signer",
     "judge.host_client",
-    "judge.openai_base_url",
 ]
 
 
@@ -364,25 +342,6 @@ def apply_unset(adr_dir: Path, schema: Dict, key: str) -> List[str]:
     return [f"{key} unset; the code default applies again", f"updated {path}"]
 
 
-def _load_runtime_module():
-    """Import bin/adr_embedding_runtime.py by path, without touching sys.path."""
-    import importlib.machinery
-    import importlib.util
-
-    name = "adr_embedding_runtime"
-    cached = sys.modules.get(name)
-    if cached is not None:
-        return cached
-    loader = importlib.machinery.SourceFileLoader(
-        name, str(Path(__file__).resolve().parent / f"{name}.py")
-    )
-    spec = importlib.util.spec_from_loader(name, loader)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    loader.exec_module(module)
-    return module
-
-
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="adr-settings",
@@ -394,30 +353,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--list", action="store_true", help="list every settable key and exit")
     parser.add_argument("--set", default=None, metavar="KEY=VALUE")
     parser.add_argument("--unset", default=None, metavar="KEY")
-    parser.add_argument(
-        "--check-embedding",
-        action="store_true",
-        help=(
-            "probe for a local embedding runtime and report the routes forward. "
-            "Read-only: installs nothing, changes nothing, and treats a missing "
-            "runtime as a normal outcome."
-        ),
-    )
     args = parser.parse_args(argv)
 
     adr_dir = Path(args.adr_dir)
     schema = load_schema()
 
     try:
-        if args.check_embedding:
-            runtime = _load_runtime_module()
-            report = runtime.assess()
-            if args.format == "json":
-                print(json.dumps(report, indent=2, ensure_ascii=False))
-                return 0
-            for line in runtime.render(report):
-                print(line)
-            return 0
         if args.set and args.unset:
             raise SettingsError("--set and --unset are mutually exclusive")
         if args.list:

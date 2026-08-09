@@ -553,21 +553,17 @@ def test_sibling_directory_is_not_importable_by_the_judge(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# TASK-60: repo-tracked judge.llm_cmd must not be able to choose the binary
+# TASK-60 lineage: repo-tracked judge.llm_cmd must not choose the binary.
 # ---------------------------------------------------------------------------
 #
-# .adr-kit.json is committed, so anyone with commit access authors it. The
-# guard existed but did not implement its own stated threat model:
-#
-#   1. `Path(candidate[0]).stem` discarded the directory before comparing, so
-#      "bin/claude.exe" reduced to "claude" and passed. shutil.which() then
-#      resolves a path carrying a directory component directly -- no PATH
-#      search -- so a repository could ship the binary the judge executes.
-#      The same defect let every "claude.<ext>" through (F10).
-#   2. Only candidate[0] was inspected. Every argument after it was
-#      unvalidated, so ["claude", "-p", "--dangerously-skip-permissions",
-#      "--allowedTools", "Bash"] passed the allowlist and invoked the genuine
-#      CLI with tool permissions disabled, on a prompt built from repo content.
+# .adr-kit.json is committed, so anyone with commit access authors it. TASK-60
+# closed two reproduced bypasses with an argument-vector guard; ADR-036 then
+# removed the key from the schema entirely, so the property is structural now:
+# a config carrying judge.llm_cmd fails validation with the removal named
+# (adr_config.REMOVED_KEYS) and nothing after validation ever reads it. The
+# two original attack vectors stay as end-to-end tests because they pin the
+# property that matters -- the payload never executes -- whatever layer
+# happens to refuse it.
 #
 # Env ADR_KIT_LLM_CMD and CLI --llm-cmd stay unrestricted on purpose: those
 # are operator-controlled, not checked in by whoever last opened a PR.
@@ -659,8 +655,9 @@ def test_repo_shipped_llm_binary_is_refused_and_never_executed(tmp_path):
     assert not marker.exists(), (
         "repo-tracked judge.llm_cmd executed a repository-shipped binary"
     )
-    assert "path separator" in result.stderr, result.stderr[:600]
-    assert result.returncode == 0, result.stderr[:600]
+    assert "llm_cmd" in result.stderr, result.stderr[:600]
+    assert "ADR-036" in result.stderr, result.stderr[:600]
+    assert result.returncode == 2, result.stderr[:600]
 
 
 def test_repo_config_cannot_disable_tool_permissions(tmp_path):
@@ -689,9 +686,9 @@ def test_repo_config_cannot_disable_tool_permissions(tmp_path):
         input=INJECTION_DIFF, capture_output=True, text=True, encoding="utf-8",
         errors="replace", env=_minimal_env(), cwd=str(proj),
     )
-    assert "--dangerously-skip-permissions" in result.stderr, result.stderr[:600]
-    assert "not in the allowed flag set" in result.stderr, result.stderr[:600]
-    assert result.returncode == 0, result.stderr[:600]
+    assert "llm_cmd" in result.stderr, result.stderr[:600]
+    assert "ADR-036" in result.stderr, result.stderr[:600]
+    assert result.returncode == 2, result.stderr[:600]
 
 
 def test_operator_env_llm_cmd_stays_unrestricted(tmp_path):
@@ -724,63 +721,3 @@ def test_operator_env_llm_cmd_stays_unrestricted(tmp_path):
         "env ADR_KIT_LLM_CMD must stay unrestricted: " + result.stderr[:600]
     )
     assert result.returncode == 1, result.stderr[:600]
-
-
-@pytest.mark.parametrize("candidate,needle", [
-    (["bin/claude"], "path separator"),
-    (["bin\\claude.exe"], "path separator"),
-    (["./claude"], "path separator"),
-    (["../claude"], "path separator"),
-    (["/usr/local/bin/claude"], "path separator"),
-    ([r"C:\tools\claude.exe"], "path separator"),
-    (["C:claude"], "drive or stream separator"),
-    (["claude:payload"], "drive or stream separator"),
-    (["claude.exe"], "not in the allowed list"),
-    (["claude.sh"], "not in the allowed list"),
-    (["claude.bat"], "not in the allowed list"),
-    (["claude.py"], "not in the allowed list"),
-    (["curl"], "not in the allowed list"),
-    ([], "empty"),
-    ([""], "empty"),
-    (["claude", "--dangerously-skip-permissions"], "not in the allowed flag set"),
-    (["claude", "-p", "--allowedTools", "Bash"], "not in the allowed flag set"),
-    (["claude", "--settings", "/tmp/evil.json"], "not in the allowed flag set"),
-    (["claude", "--mcp-config", "evil.json"], "not in the allowed flag set"),
-    (["claude", "-p", "--model"], "missing its value"),
-])
-def test_check_repo_llm_cmd_refuses(candidate, needle):
-    """Unit-level truth table for the repo-config guard."""
-    aj = _load_judge_module()
-    reason = aj.check_repo_llm_cmd(candidate)
-    assert reason is not None, f"{candidate!r} was accepted"
-    assert needle in reason, reason
-
-
-@pytest.mark.parametrize("candidate", [
-    ["claude"],
-    ["claude", "-p"],
-    ["claude", "--print"],
-    ["claude", "-p", "--model", "claude-sonnet-4-6"],
-    ["claude", "--model=claude-haiku-4-5", "-p"],
-    ["claude", "-p", "--output-format", "text"],
-    ["claude-code", "-p"],
-])
-def test_check_repo_llm_cmd_accepts_legitimate_vectors(candidate):
-    """The guard must not break the shapes real projects actually commit.
-
-    ["claude", "-p"] is this repository's own docs/adr/.adr-kit.json.
-    """
-    aj = _load_judge_module()
-    assert aj.check_repo_llm_cmd(candidate) is None
-
-
-def test_this_repository_own_config_is_accepted():
-    """Regression against tightening the guard past the shipped config."""
-    aj = _load_judge_module()
-    cfg = json.loads(
-        (REPO_ROOT / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
-    )
-    candidate = cfg.get("judge", {}).get("llm_cmd")
-    if candidate is None:
-        pytest.skip("this repository does not set judge.llm_cmd")
-    assert aj.check_repo_llm_cmd(list(candidate)) is None
