@@ -519,6 +519,27 @@ def main(argv: List[str] | None = None) -> int:
                     print(f"  - {row['adr']}: {row['reason']}")
             if not result["enabled"] and not result["opted_out"]:
                 print("Nothing to change; every ADR already carries a decision.")
+            # The whole-set cost picture, not just this run's delta. On an
+            # upgraded repository the already-enabled ADRs dominate, and every
+            # unscoped one costs an isolated model call per commit (TASK-63),
+            # so the delta alone reads as cost-free when the pass is anything
+            # but: one operator accepted a "0 unbounded" dry-run on a set that
+            # ended at 64 unscoped of 68 judged, at ~20 s per call.
+            summary = result.get("summary") or {}
+            judged = summary.get("judged_after", 0)
+            unbounded = summary.get("unbounded_after", 0)
+            tense = "would judge" if args.dry_run else "judges"
+            print(
+                f"LLM pass after this migration {tense}: {judged} ADR(s), "
+                f"{unbounded} without any path_glob"
+            )
+            if unbounded:
+                print(
+                    "  An unscoped ADR is in scope on EVERY commit, one "
+                    "isolated call each. Narrow them with path_glob rules, or "
+                    "run the LLM pass on a cadence (guardian llm tier) instead "
+                    "of per commit."
+                )
         return 0
 
     if args.plan:

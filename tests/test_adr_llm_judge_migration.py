@@ -273,3 +273,62 @@ def test_migrated_block_still_validates_for_the_judge(tmp_path):
     assert judge.validate_enforcement({"llm_judge_reason": "x"}) != [], (
         "a reason without an explicit false is meaningless and must be flagged"
     )
+
+
+def test_summary_counts_the_whole_set_not_only_the_delta(tmp_path):
+    """TASK-144: the cost picture is the post-migration set, not this run's delta.
+
+    Three already-enabled unscoped ADRs dominate the one this run flips. A
+    delta-only report reads "1 enabled, 0 unbounded", which is how a repository
+    with 58 already-enabled unscoped ADRs got accepted as cost-free.
+    """
+    for i in (1, 2, 3):
+        _write(tmp_path, f"ADR-00{i}-on.md", _adr('{"llm_judge": true}'))
+    _write(
+        tmp_path,
+        "ADR-004-legacy.md",
+        _adr('{"forbid_pattern": [{"pattern": "x", "path_glob": "src/**"}], "llm_judge": false}'),
+    )
+
+    dry = mig.apply(tmp_path / "docs" / "adr", dry_run=True)
+    assert dry["summary"] == {"judged_after": 4, "unbounded_after": 3}
+
+    wet = mig.apply(tmp_path / "docs" / "adr", dry_run=False)
+    assert wet["summary"] == dry["summary"]
+
+    # A reasoned opt-out leaves the judged set, and the totals must follow.
+    after = mig.apply(
+        tmp_path / "docs" / "adr",
+        opt_out_ids=["ADR-004"],
+        opt_out_reason="covered by review",
+        dry_run=True,
+    )
+    assert after["summary"] == {"judged_after": 3, "unbounded_after": 3}
+
+
+def test_cli_prints_the_whole_set_totals(tmp_path):
+    _write(tmp_path, "ADR-001-on.md", _adr('{"llm_judge": true}'))
+    _write(
+        tmp_path,
+        "ADR-002-legacy.md",
+        _adr('{"forbid_pattern": [{"pattern": "x", "path_glob": "src/**"}], "llm_judge": false}'),
+    )
+    result = subprocess.run(
+        [
+            sys.executable, str(MIGRATE), str(tmp_path / "docs" / "adr"),
+            "--enable-llm-judge", "--dry-run",
+        ],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "would judge: 2 ADR(s), 1 without any path_glob" in result.stdout
+    # The JSON shape carries the same totals for tooling.
+    as_json = subprocess.run(
+        [
+            sys.executable, str(MIGRATE), str(tmp_path / "docs" / "adr"),
+            "--enable-llm-judge", "--dry-run", "--format", "json",
+        ],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    payload = json.loads(as_json.stdout)
+    assert payload["summary"] == {"judged_after": 2, "unbounded_after": 1}
