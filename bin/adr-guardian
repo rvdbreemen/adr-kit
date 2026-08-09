@@ -108,6 +108,7 @@ from adr_guardian_queue import (
     build_queue_cache,
     write_queue_cache,
 )
+from adr_catalog import adr_id_from_filename, normalize_adr_id
 from adr_retrieval_health import render_retrieval_health, run_retrieval_health
 
 
@@ -851,6 +852,32 @@ def cmd_stamp(args: argparse.Namespace) -> int:
             "[adr-guardian] ERROR: --verdict only makes sense with --adr.\n"
         )
         return 2
+    if args.adr is not None:
+        # The per-ADR form records exactly one verdict and nothing else. The
+        # tier-level metrics ride the tier stamp; accepting them here and then
+        # returning before the tier writes dropped them silently (exit 0, data
+        # gone). Refuse the combination so the caller learns immediately.
+        conflicting = [
+            flag for flag, value in (
+                ("--suggest", args.suggest), ("--audit", args.audit),
+                ("--coverage", args.coverage), ("--lint", args.lint),
+                ("--violations", args.violations), ("--retire", args.retire),
+                ("--retire-seen", args.retire_seen),
+            ) if value is not None
+        ]
+        if conflicting:
+            sys.stderr.write(
+                f"[adr-guardian] ERROR: {', '.join(conflicting)} are tier-level "
+                f"flags; a per-ADR stamp (--adr) records one verdict only. "
+                f"Stamp the tier separately.\n"
+            )
+            return 2
+    if args.adr is not None and not args.adr.strip():
+        # An empty string is not None, so it passed the check above -- and it
+        # is falsy, so the dispatch below would fall through to the TIER branch
+        # and stamp a completed sweep. Observed before this guard existed.
+        sys.stderr.write("[adr-guardian] ERROR: --adr must name an ADR.\n")
+        return 2
 
     adr_dir = _find_adr_dir()
     if adr_dir is None:
@@ -867,6 +894,37 @@ def cmd_stamp(args: argparse.Namespace) -> int:
 
     now_iso = _now_utc().isoformat()
     total_adrs = _count_adrs(adr_dir) if adr_dir is not None else None
+
+    if args.adr is not None:
+        # Resolve the id against the real ADR set BEFORE any state write. The
+        # pruning step bounds the map to existing ADR files, so an id that does
+        # not resolve (a typo like ADR-999, an unpadded ADR-1) used to be
+        # written and then pruned inside the same transaction: exit 0, verdict
+        # silently lost. A lost "violation" is exactly the false state ADR-037
+        # exists to prevent, so an unresolvable id is refused, loudly.
+        if adr_dir is None:
+            sys.stderr.write(
+                "[adr-guardian] ERROR: --adr needs an ADR directory to "
+                "validate against; none was found from the cwd.\n"
+            )
+            return 2
+        # One id reader for the whole kit (adr_catalog): re-implementing the
+        # parse locally is what allowed the silent-prune mismatch, because a
+        # fourth regex disagreed with the other three on normalization.
+        # normalize_adr_id also zero-pads, so "ADR-1" resolves to ADR-001
+        # instead of being refused over a formatting difference.
+        existing_ids = {
+            catalog_id
+            for f in adr_dir.glob("ADR-*.md")
+            if (catalog_id := adr_id_from_filename(f.name))
+        }
+        adr_id = normalize_adr_id(args.adr)
+        if adr_id is None or adr_id not in existing_ids:
+            sys.stderr.write(
+                f"[adr-guardian] ERROR: {args.adr.strip()!r} does not resolve "
+                f"to any ADR file in {adr_dir}. Nothing was stamped.\n"
+            )
+            return 2
 
     def stamp_state(state):
         if tier == "cheap":
@@ -886,26 +944,20 @@ def cmd_stamp(args: argparse.Namespace) -> int:
                         state["retire_seen"] = seen_list
                 except json.JSONDecodeError:
                     pass
-        elif tier == "llm" and args.adr:
+        elif tier == "llm" and args.adr is not None:
             # ADR-037: incremental per-ADR stamp. Records one verdict the
             # moment it exists so an interrupted sweep keeps what it
             # established. Deliberately does NOT touch llm_tier.last_run (that
             # timestamp means "a completed sweep") and appends no trend entry.
+            # The id was validated against existing_ids above, so the prune
+            # below can only remove entries for files deleted since their stamp.
             llm = dict(state.get("llm_tier") or {})
             adrs = dict(llm.get("adrs") or {})
-            adrs[args.adr.upper()] = {
+            adrs[adr_id] = {
                 "last_run": now_iso,
                 "verdict": args.verdict,
             }
-            if adr_dir is not None:
-                # Prune entries whose ADR file no longer exists, so the map is
-                # bounded by the real ADR set.
-                existing = {
-                    m.group(1).upper()
-                    for f in adr_dir.glob("ADR-*.md")
-                    if (m := re.match(r"(?i)(ADR-\d{1,4})", f.name))
-                }
-                adrs = {k: v for k, v in adrs.items() if k in existing}
+            adrs = {k: v for k, v in adrs.items() if k in existing_ids}
             llm["adrs"] = adrs
             state["llm_tier"] = llm
             return True, None

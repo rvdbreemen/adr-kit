@@ -150,9 +150,36 @@ def test_the_rust_hook_carries_the_same_candidate_phrasing():
     text = (REPO_ROOT / "hooks" / "native" / "adr-hook.rs").read_text(encoding="utf-8")
     for heading in CANDIDATE_HEADINGS:
         assert heading in text, f"Rust hook lost the heading: {heading}"
-    # The Rust source carries the instruction split over a line continuation,
-    # so compare against its unescaped form.
-    rust_joined = text.replace("\\n", "")
-    assert "These are retrieval candidates, not confirmed matches: apply " in text
-    assert "the ones that actually govern this work and ignore the rest." in rust_joined
+    # The Rust source splits the instruction over a `\` line continuation.
+    # Canonicalise it the way rustc does — drop backslash + newline + the next
+    # line's leading whitespace, CRLF or LF — and then demand the WHOLE
+    # instruction. The first version of this test replaced the two-character
+    # sequence backslash+'n' (a no-op against real newlines) and only passed
+    # because a fragment happened to sit unbroken on one source line; a re-wrap
+    # would have failed it spuriously and a real divergence could have hidden.
+    canonical = re.sub(r"\\\r?\n[ \t]*", "", text)
+    assert SELECTION_INSTRUCTION in canonical, (
+        "the Rust host's selection instruction diverged from the Python core"
+    )
     assert "relevant to this prompt" not in text
+
+
+def test_the_selection_instruction_survives_truncation():
+    """TASK-157 finding 4: append-then-slice cut the instruction exactly when
+    the candidate set was biggest. The instruction's length is reserved and the
+    candidates are truncated instead, keeping the total inside the budget."""
+    fat = ["X" * 3000, "Y" * 3000]           # far over MAX_CONTEXT_CHARS together
+    context = core._prompt_candidates_context(fat)
+    assert len(context) <= core.MAX_CONTEXT_CHARS
+    assert context.endswith(core.PROMPT_SELECTION_INSTRUCTION)
+    small = ["one line"]
+    context = core._prompt_candidates_context(small)
+    assert context == "one line\n" + core.PROMPT_SELECTION_INSTRUCTION
+
+
+def test_the_rust_hook_reserves_the_instruction_length_too():
+    """Same parity invariant: the native host must not exceed the budget nor
+    lose the instruction, so its source carries the reserve arithmetic."""
+    text = (REPO_ROOT / "hooks" / "native" / "adr-hook.rs").read_text(encoding="utf-8")
+    assert "saturating_sub(choose.len()" in text
+    assert "is_char_boundary" in text

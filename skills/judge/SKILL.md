@@ -32,19 +32,14 @@ Every value comes back with its provenance (`default`, `project`, `local`, `env`
 To change it, use the kit's own writer — never hand-edit `.adr-kit.json`. The writer refuses an incomplete choice and re-validates what it wrote, so it cannot leave a config the judge then rejects:
 
 ```bash
-# the agent's own CLI, no model flag, no extra credential
+# the agent's own CLI, no model flag, no extra credential (the only backend, ADR-036)
 "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend host --host-client claude-code-cli
-# any model over HTTPS; the key comes from OPENROUTER_API_KEY in the environment
-"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend openrouter --model anthropic/claude-sonnet-4.5
-# a local model; nothing leaves the machine, roughly 3.4s per call on a 12B model
-"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend ollama --model gemma4:12b
 ```
 
 Rules for this step:
 
-- **Never ask for an API key and never write one into a file.** `docs/adr/.adr-kit.json` is committed; a key written there is a published key, and the judge refuses one with an error rather than using it. Tell the user to export `OPENROUTER_API_KEY` in their shell profile.
+- `host` is the only backend (ADR-036 retired openrouter/ollama/openai-compatible; their config keys are refused by name). An operator who needs one run to go elsewhere uses `ADR_KIT_LLM_CMD` or `--llm-cmd` — an environment fact, never repository configuration (ADR-025).
 - `--host-client` is a per-machine fact and goes to the gitignored `docs/adr/.adr-kit.local.json`. Pass the client you are running in; the judge cannot detect it at commit time and will not guess.
-- For `ollama`, offer only tags that `ollama list` actually reports.
 - To switch the pass off entirely: `judge.llm_enabled: false` in `.adr-kit.json`, or `ADR_KIT_NO_LLM=1 git commit ...` for one commit.
 - Be straight about cost when asked: one model call per `llm_judge: true` ADR per commit that touches its scope, linear in the number of opted-in ADRs, and nothing at all while no ADR opts in.
 

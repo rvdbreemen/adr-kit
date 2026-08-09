@@ -568,12 +568,28 @@ fn run() -> Option<String> {
         // selection instruction byte-for-byte; the parity test pins both.
         let choose = "These are retrieval candidates, not confirmed matches: apply \
 the ones that actually govern this work and ignore the rest.";
-        let context = match (governed.is_empty(), advised.is_empty()) {
-            (false, false) => format!("{}\n{}\n{}", governed, advised, choose),
-            (false, true) => format!("{}\n{}", governed, choose),
-            (true, false) => format!("{}\n{}", advised, choose),
+        let mut candidates = match (governed.is_empty(), advised.is_empty()) {
+            (false, false) => format!("{}\n{}", governed, advised),
+            (false, true) => governed,
+            (true, false) => advised,
             (true, true) => return None,
         };
+        // Reserve the instruction's length and truncate the CANDIDATES, so the
+        // instruction always survives and the combined context stays inside
+        // MAX_CONTEXT. Same arithmetic as _prompt_candidates_context on the
+        // Python side; append-then-slice would cut the instruction exactly
+        // when the candidate set was biggest, and no cap at all would let the
+        // two renders together exceed the budget. Truncation backs up to a
+        // char boundary: ADR titles carry multi-byte punctuation.
+        let room = MAX_CONTEXT.saturating_sub(choose.len() + 1);
+        if candidates.len() > room {
+            let mut cut = room;
+            while cut > 0 && !candidates.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            candidates.truncate(cut);
+        }
+        let context = format!("{}\n{}", candidates, choose);
         (context, false)
     } else if event == "PreToolUse" || event == "PostToolUse" {
         let tool = json_string(&payload, "tool_name")
