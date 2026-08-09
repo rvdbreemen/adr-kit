@@ -1,9 +1,10 @@
 ---
 id: TASK-150
 title: 'Plan-exit hook: name undecided decisions when a plan completes (B1, R3)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-09 10:35'
+updated_date: '2026-08-09 12:41'
 labels: []
 dependencies: []
 references:
@@ -25,3 +26,9 @@ Step 5 of docs/plans/kiss-simplification-plan.md - the investment the freed budg
 - [ ] #3 Clients without a plan-exit event have the degradation recorded per R17
 - [ ] #4 python -m pytest -q passes; build-client-adapters.py --check reports changed=0
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+B1's foundation already shipped (plan-exit event on PreToolUse/ExitPlanMode, 1800ms budget, network false, Claude-only with codex/copilot recorded as no-native-event per R17, dedicated test file). This task delivered the missing half of AC1: a deterministic candidate extractor in adr_hook_core.py that names decision-shaped lines from the plan text (a line counts only when a decision verb and an architectural noun meet on it; bounded at five) so the nudge lands on something concrete instead of a generic question. Injection-only, stdlib, no model call. Three new tests pin naming, silence without signals, and the bound. Full suite: 1743 passed, 14 skipped; mirrors regenerated.
+<!-- SECTION:FINAL_SUMMARY:END -->

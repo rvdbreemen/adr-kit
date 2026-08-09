@@ -608,6 +608,41 @@ def _plan_text(envelope: Envelope) -> str:
     return (_bounded_text(raw, MAX_CONTEXT_CHARS) or "").strip()
 
 
+#: Both lists must hit on one line before it counts as a candidate. Verb-only
+#: matches every imperative bullet in any plan; noun-only matches prose that
+#: merely mentions the architecture. Precision is the constraint: a nudge that
+#: names noise teaches the reader to skip the nudge (spec B1: deterministic,
+#: injection-only; the model reading the context does the actual judging).
+_DECISION_VERBS = re.compile(
+    r"(?i)\b(add|adopt|introduce|switch|migrate|replace|choose|pick|drop|"
+    r"remove|rewrite|standardi[sz]e|upgrade|consolidate|split|pin|use)\b"
+)
+_DECISION_NOUNS = re.compile(
+    r"(?i)\b(dependenc\w+|librar\w+|framework|database|storage|cache|queue|"
+    r"protocol|api|interface|contract|schema|auth\w*|encryption|format|"
+    r"service|endpoint|runtime|package|backend|index|pipeline|architecture)\b"
+)
+
+
+def _plan_decision_candidates(plan: str, limit: int = 5) -> list[str]:
+    """Decision-shaped lines in the plan, found deterministically.
+
+    Named so the question below lands on something concrete: "does this plan
+    decide anything?" is easy to wave past, "this line looks like a decision"
+    is not. Bounded because the sixth candidate adds noise, not signal.
+    """
+    found: list[str] = []
+    for raw in plan.splitlines():
+        line = raw.strip().lstrip("-*#0123456789. ").strip()
+        if not line or len(line) > 240:
+            continue
+        if _DECISION_VERBS.search(line) and _DECISION_NOUNS.search(line):
+            found.append(line)
+            if len(found) >= limit:
+                break
+    return found
+
+
 def _plan_decision_prompt(client: str) -> str:
     """Ask the question this moment exists for.
 
@@ -715,11 +750,20 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
             selected = _query(envelope.workspace, plan)
             governing = [item for item in selected if item.get("status") == "Accepted"]
             advisory = [item for item in selected if item.get("status") == "Proposed"]
+            candidates = _plan_decision_candidates(plan)
+            named = (
+                "Decision-shaped lines in this plan - each either falls under "
+                "an ADR above or needs a new one:\n"
+                + "\n".join(f"- {line}" for line in candidates)
+                if candidates
+                else ""
+            )
             parts = [
                 part
                 for part in (
                     _render(governing, "ADRs that govern this plan:"),
                     _render(advisory, "Advisory Proposed ADRs for this plan:"),
+                    named,
                     _plan_decision_prompt(envelope.client),
                 )
                 if part

@@ -1,10 +1,10 @@
 ---
 id: TASK-149
 title: Trim C4-Documentation to the context and component levels
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-09 10:35'
-updated_date: '2026-08-09 12:31'
+updated_date: '2026-08-09 12:32'
 labels: []
 dependencies: []
 references:
@@ -24,3 +24,9 @@ Step 4 of docs/plans/kiss-simplification-plan.md. Independent. C4-Documentation/
 - [ ] #1 c4-code-*.md files are gone; context and component documents remain and their document map no longer references deleted files
 - [ ] #2 No dangling links to C4 files from README.md, docs/ or spec.md
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Deleted the 18 c4-code-*.md files (~10k lines). Context, container and the 7 component documents remain; inline links to code documents de-linked to historical name references; c4-component.md header and document map updated to point at module docstrings. No dangling links remain (grep 0).
+<!-- SECTION:FINAL_SUMMARY:END -->
