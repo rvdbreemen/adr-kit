@@ -1,9 +1,10 @@
 ---
 id: TASK-149
 title: Trim C4-Documentation to the context and component levels
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-09 10:35'
+updated_date: '2026-08-09 12:31'
 labels: []
 dependencies: []
 references:

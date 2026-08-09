@@ -1,7 +1,10 @@
 # adr-kit Components
 
-Seven components, synthesized from the eighteen `c4-code-*.md` cluster documents.
-Every claim below is traceable to a component document; this file adds only the
+Seven components. The eighteen `c4-code-*.md` cluster documents this level was
+synthesized from were retired on 2026-08-09 (KISS simplification plan): they
+were hand-written, no generator or CI kept them honest, and the module
+docstrings carry the code-level detail. A `c4-code-*.md` name below is a
+historical provenance reference, not a live link. This file adds the
 cross-component structure that no single component document can see. It is one
 of four C4 levels — see [Document map](#document-map) at the end of this file
 for how to navigate from here to the code, container and context levels.
@@ -406,7 +409,7 @@ are one hop away.
 
 | Level | Document(s) | What it covers |
 | --- | --- | --- |
-| Code | 18 `c4-code-*.md` cluster documents, linked individually from each component document's own "Code Elements" table above | Function signatures, arguments, module-level dependencies and line-anchored facts for one cluster of files at a time |
+| Code | Retired 2026-08-09 (KISS simplification plan): the module docstrings in `bin/`, `hooks/` and `scripts/` carry the code-level detail | Function signatures, arguments and module-level dependencies, next to the code they describe |
 | Component (this level) | The seven `c4-component-*.md` documents indexed above, synthesized here | Component boundaries, cross-component dependencies, layering and cycles |
 | Container | [c4-container.md](./c4-container.md) | What actually runs: CLI Toolkit, MCP Server, Hook Runtime, Pre-commit Gate, Instruction & Skill Corpus, Client Generation & Release Toolchain, Generated Client Mirrors. Substitutes **distribution** for **deployment** throughout, because this repository ships no deployment artifact of any kind — no Dockerfile, Kubernetes manifest, Terraform file, docker-compose file or serverless function definition exists anywhere in the tree — and deliberately carries no `apis/` directory or OpenAPI specification, because adr-kit exposes no HTTP interface (its three machine-readable contracts are a stdio JSON-RPC tool surface, a native lifecycle-hook event contract, and a set of CLI exit-code contracts). |
 | Context | [c4-context.md](./c4-context.md) | Who uses adr-kit and why, one level above the container boundary: four evidenced personas (maintainer/human decision-maker, coding agent, committing engineer, CI/the automated gate), the system features and user journeys each one drives, and the external systems (git, the host CLI runtime, the public GitHub repository, GitHub Actions, an optional LLM backend, an optional local embedding model, the pre-commit.com framework) adr-kit depends on. |
