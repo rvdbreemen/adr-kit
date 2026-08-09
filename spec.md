@@ -593,7 +593,7 @@ whatever latency that command has.
 
 R2, R3 and R4 are about *moments*. This appendix lists every moment adr-kit
 already attaches to, which ADR function runs there, and why that pairing was
-chosen. It is an inventory of the code as it stands on **2026-08-04**, not a wish
+chosen. It is an inventory of the code as it stands on **2026-08-09**, not a wish
 list; the gaps follow in Appendix B. The date is part of the claim: an inventory
 without one reads as timeless and is the first thing to rot.
 
@@ -614,7 +614,7 @@ outside R21, because it spawns the judge rather than reading a file.
 | `UserPromptSubmit` | 5 s | Query the index for ADRs relevant to the prompt; split into governing (Accepted) and advisory (Proposed) | This is R5's moment: work is about to start and the prompt is the best available statement of intent. |
 | `PreToolUse` | `Edit\|MultiEdit\|Write`, 1 s | ADRs governing *that file path*, plus a "possible durable architecture decision → grill" nudge | The last moment before code changes. ADR-004 calls this the fail-closed floor: an edit-time constraint the agent cannot miss because it arrives with the edit. |
 | `PostToolUse` | same matcher, 1 s | The same ADRs, phrased as a backstop | Catches the case where the pre-edit injection was ignored or the edit went further than announced. |
-| `PreToolUse` | `ExitPlanMode`, 100 ms | Names the decisions the plan implies that have no ADR yet | R3's moment: the plan is the clearest statement of intent the session will ever produce, and it exists before any code does. Asks; never blocks the plan. |
+| `PreToolUse` | `ExitPlanMode`, 1.8 s | Injects the ADRs governing the plan and names its decision-shaped lines deterministically (a line counts when a decision verb meets an architectural noun; bounded at five, TASK-150) | R3's moment: the plan is the clearest statement of intent the session will ever produce, and it exists before any code does. Asks; never blocks the plan. |
 | `PreToolUse` | `Bash` (`gh pr create`), 5 s | Runs `bin/adr-judge` over the branch diff and **denies** the tool call on a violation | The exception to "hooks do not block". A pull request is outward-facing, and by then the commit gate has already been passed or bypassed. This is the one hook that spawns a subprocess and can spend model budget. |
 | `SubagentStart` | 1 s | Passes the parent's ADR context down | A subagent starts with an empty context; without this it works unaware of constraints the parent was given. |
 | `PreCompact` | 1 s | Re-injects the ADR context that compaction is about to drop | Compaction silently discards exactly the standing constraints that were injected earliest. |
@@ -643,11 +643,11 @@ The pre-commit hook runs **four passes, and only the first can block**:
 | `adr-judge` | **yes** | The fail-closed floor. A violation exits non-zero and the commit does not happen. |
 | `adr-index --check` | no | Warns when the generated index is stale. Advisory rather than blocking because it reads the worktree while the commit is the staged snapshot: on a partial commit a block here would refuse correct work. |
 | `adr-grill-signal` | no | Nudges when the staged change looks like it carries a decision worth grilling. |
-| `adr-suggest` | no | The commit-time half of "does this change contain a decision nobody recorded?". Opt-in as of v0.17.0; its exit status is swallowed with `\|\| true`. |
+| `adr-suggest` | no | The commit-time half of "does this change contain a decision nobody recorded?". On by default as of ADR-035 (v0.47.0), off via `suggest.enabled: false` or `ADR_KIT_SUGGEST_DISABLE=1`; its exit status is swallowed with `\|\| true`. |
 
-That last row matters for R2. A commit-time missing-ADR pass does exist; it is
-off by default and asks about one commit rather than the whole branch, which is
-why the pull-request moment is a separate question.
+That last row matters for R2. The commit-time missing-ADR pass runs by default
+since ADR-035, but it asks about one commit rather than the whole branch, which
+is why the pull-request moment is a separate question.
 
 ### A.3 — CI workflows (this repository)
 
@@ -674,20 +674,20 @@ The **enforcement** side is well covered: every write path (edit, commit, PR,
 release) has a gate, and each gate runs the cheapest tool that can answer at that
 moment.
 
-The **authoring** side is thinner, and the honest version of the claim is
-narrower than it first appears. Three moments do raise *should a new ADR exist?*
--- the PreToolUse nudge in injected text, the opt-in `adr-suggest` pass at commit
-time, and `/adr-kit:review`, whose step 4 runs `adr-suggest` over
+The **authoring** side has caught up since this inventory was first taken.
+Four moments now raise *should a new ADR exist?* without anyone asking: the
+PreToolUse nudge in injected text, the plan-exit hook that names the plan's
+decision-shaped lines before any code exists (TASK-150, proposal B1), the
+`adr-suggest` pass that runs on every commit by default (ADR-035), and
+`/adr-kit:review`, whose step 4 runs `adr-suggest` over
 `merge-base(BASE,HEAD)..HEAD` and then requires the model's own vigilance pass.
-That third one *is* the question asked with the whole change in view, and it
-ships on all three clients.
 
-What remains true is that **none of them fires unless someone asks**. The review
-workflow is invoked by hand, the commit-time pass is off by default, and the
-plan-exit hook that was built to close this gap did not fire at all until
-v0.44.1. An unrecorded decision therefore survives by default, which is the
-asymmetry R2 names: a violated decision is caught by four gates, and a missing
-one by none that runs on its own.
+The asymmetry R2 names -- a violated decision is caught by four gates, a
+missing one by fewer -- has therefore narrowed rather than closed: the
+unprompted authoring moments are advisory by design, because a blocking gate
+on "you should write an ADR" teaches people to write empty ADRs to get past
+it. What still fires only on request is the whole-branch view (`/adr-kit:review`
+by hand; proposal B2 would add it as a PR job).
 
 ## Appendix B — Proposals
 
@@ -710,14 +710,11 @@ not blocking: a missing ADR is a judgement call, and a gate that blocks on it wo
 teach people to write empty ADRs to get past it — the same failure mode that
 produced six rule-less Enforcement blocks in this very repository.
 
-**B3. Lint this repository's own ADRs on every PR.**
-`adr-lint-self.yml` lints `examples/`, and `docs/adr` is only linted weekly by the
-guardian and at release time. A broken ADR can therefore live in `main` for six
-days. Adding `adr-lint docs/adr` to the PR path costs a second and closes that
-window. Keep `--strict` for release: the strict gates are authoring-time feedback,
-not merge-time.
+**B3. Lint this repository's own ADRs on every PR. — Delivered** (TASK-113;
+`validate.yml` lints `docs/adr` at pull-request time, per A.3).
 
 **B4. Raise `UserPromptSubmit` to five results, and let the model choose them.**
+(Tracked as TASK-156.)
 `MAX_RESULTS = 3` in `hooks/adr_hook_core.py:24`, and the five come out of a
 deterministic scoring formula. R5 asks for five, chosen by the model from a
 retrieved candidate set. That is a two-part change: widen the candidate set here,
