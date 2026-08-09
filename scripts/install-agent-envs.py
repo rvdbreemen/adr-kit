@@ -45,11 +45,10 @@ from clients.installer.payload import (
     prepare_install_source,
     payload_digest,
     remove_owned_payloads,
-    validate_prepared_hooks,
-    validate_prepared_mcp,
     validate_python as _validate_python,
     validate_source,
 )
+from clients.installer.smoke import validate_prepared_hooks, validate_prepared_mcp
 from clients.installer.planning import build_plan, render_plan
 from clients.installer.transaction import run_transaction
 from clients.installer.updates import record_update_state, update_decision
@@ -57,8 +56,8 @@ SUPPORTED = CLIENT_IDS
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        list(command), capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=120,
+        list(command), stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=120,
     )
 def _display_command(command: Sequence[str], system: str | None = None) -> str:
     return display_command(command, system)

@@ -425,7 +425,7 @@ Codex and Copilot additionally `adr-kit` in `mcp list`.
 `notifications/initialized` → `tools/list`, asserts stderr contains `serving root=<resolved cwd> `,
 and asserts the advertised tool set is **exactly**
 `{adr_context, adr_judge, adr_status, adr_quality, adr_readiness}`
-([`clients/installer/payload.py:335`](../clients/installer/payload.py)). This is the interface where
+([`clients/installer/smoke.py:63`](../clients/installer/smoke.py)). This is the interface where
 the MCP path and the installer path meet, and it is a hard coupling — see notable finding 4.
 
 ---
@@ -507,7 +507,8 @@ flowchart TB
             REG["capabilities.json · workflows.json<br/>exceptions.json + 3 fixtures"]
             DET["detection.py — read-only"]
             PLN["planning.py — frozen InstallPlan"]
-            PAY["payload.py (exactly 400 lines)<br/>validate_source · prepare · smoke-test"]
+            PAY["payload.py (291 lines)<br/>validate_source · digest · prepare"]
+            SMK["smoke.py (133 lines)<br/>MCP + hook smoke probes"]
             NTV["native.py — per-client plugin manager"]
             TX["transaction.py — lock · evidence · rollback"]
         end
@@ -593,8 +594,9 @@ flowchart TB
     DET --> PLN
     PLN --> PAY
     PAY -->|"copy · patch · atomic swap"| FS
-    PAY -->|"initialize + tools/list<br/>exact 5-tool set equality"| SRV
-    PAY -->|"run-hook.cmd session-start<br/>must exit 0"| DISP
+    PAY --> SMK
+    SMK -->|"initialize + tools/list<br/>exact 5-tool set equality"| SRV
+    SMK -->|"run-hook.cmd session-start<br/>must exit 0"| DISP
     PAY -->|"PREPARED_MARKER"| NTV
     TX -->|"apply/validate/rollback"| NTV
     NTV -->|"plugin marketplace / plugin / mcp"| PM
@@ -697,7 +699,7 @@ Ranked by how likely each is to bite a maintainer or an integrator.
    mtime < 24 h. Same fixture, two staleness rules.
 
 4. **The exact five-tool set is asserted by set *equality* in two independent places.**
-   `clients/installer/payload.py:335` and `bin/adr_doctor_probes.py:225-231` each require the
+   `clients/installer/smoke.py:63` and `bin/adr_doctor_probes.py:225-231` each require the
    advertised tools to be exactly `{adr_context, adr_judge, adr_status, adr_quality, adr_readiness}`.
    Adding or renaming any MCP tool anywhere in the repository breaks **every install** and turns the
    deep-doctor `mcp-live` check red until both literals are updated. This is the tightest coupling in
@@ -825,10 +827,13 @@ Ranked by how likely each is to bite a maintainer or an integrator.
     LF-in-index is required for POSIX correctness. **The fix belongs in `.gitattributes`, not in the
     files** — running the generator's write mode "fixes" the check locally and hides the defect.
 
-18. **`payload.py` sits exactly on its ADR-010 line ceiling.** ADR-010 sets support modules at "at
-    most 400 physical lines", `tests/test_release_allowlist.py:70` asserts `<= 400`, and the file is
-    400 lines. One added line fails the suite. It is also the only file under `clients/` named in that
-    budget test; the other six installer modules are unbudgeted.
+18. **`payload.py` sat exactly on its ADR-010 line ceiling, and a one-line bugfix hit it.** ADR-010
+    sets support modules at "at most 400 physical lines" and `tests/test_release_allowlist.py:70`
+    asserts `<= 400`; the file was at 400 exactly. Adding `stdin=subprocess.DEVNULL` to the hook
+    smoke test (TASK-165) failed the suite, so the activation-independent smoke probes moved to
+    `clients/installer/smoke.py`: payload.py is now 291 lines, smoke.py 133, and both are named in
+    the budget test. The other five installer modules remain unbudgeted, so the same trap is still
+    set one module over.
 
 19. **`_copy_public_payload` honours only half the release allowlist.** It uses `include_roots` but
     never consults `forbidden_segments` or `forbidden_globs`; it hard-codes

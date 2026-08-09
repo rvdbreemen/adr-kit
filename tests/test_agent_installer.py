@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import os
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from clients.installer import native
 from clients.installer.contracts import DetectedClient
 from clients.installer.detection import detailed_detection
 from clients.installer.planning import build_plan, render_plan
@@ -256,6 +258,49 @@ def test_claude_marketplace_repoints_on_version_bump(tmp_path):
     assert installer.claude_marketplace_source_matches(current, new_source)
 
 
+def test_installer_subprocesses_never_inherit_console_stdin():
+    """No installer subprocess may inherit the console's stdin.
+
+    ``hooks/adr-hook.py`` reads its payload from stdin, so a call without an
+    explicit ``stdin``/``input`` blocks until an EOF the console never sends,
+    and ``subprocess.run`` then re-enters ``communicate()`` unbounded after its
+    own timeout. Under pytest fd 0 is already closed, so a behavioural test
+    cannot see this; the source is the only place the contract is visible.
+    """
+
+    def closes_stdin(node: ast.Call) -> bool:
+        for keyword in node.keywords:
+            if keyword.arg not in {"stdin", "input"}:
+                continue
+            # ``stdin=None`` is the default, which is exactly the broken form.
+            if isinstance(keyword.value, ast.Constant) and keyword.value.value is None:
+                continue
+            return True
+        return False
+
+    offenders = []
+    sources = sorted((ROOT / "clients" / "installer").glob("*.py"))
+    assert sources, "expected installer sources to scan"
+    # The entrypoint owns the runner every client-CLI mutation flows through,
+    # so the contract is only real if it is scanned along with the package.
+    sources.append(ROOT / "scripts" / "install-agent-envs.py")
+    for source in sources:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", None)
+            if name not in {"run", "Popen", "check_output", "call"}:
+                continue
+            if not closes_stdin(node):
+                offenders.append(f"{source.name}:{node.lineno}")
+
+    assert not offenders, (
+        "installer subprocess calls must pass stdin= or input=; "
+        f"these inherit the console and can block forever: {offenders}"
+    )
+
+
 def test_prepared_source_embeds_runtime_and_passes_real_mcp_smoke(tmp_path):
     version = installer.validate_source(ROOT)
     prepared = installer.prepare_install_source(
@@ -454,6 +499,76 @@ def test_installed_clients_use_update_or_noop_paths(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "plugin update adr-kit@rvdbreemen-adr-kit" in output
     assert "plugin update adr-kit" in output
+
+
+def _locked_copilot_plugin_dir(tmp_path: Path, monkeypatch) -> Path:
+    """Point COPILOT_HOME at a plugin directory whose rename always fails."""
+    monkeypatch.setenv("COPILOT_HOME", str(tmp_path / "copilot home"))
+    plugins = native.copilot_plugin_directory()
+    plugins.mkdir(parents=True)
+    real_rename = Path.rename
+
+    def refuse(self, target):
+        if self == plugins:
+            raise OSError(5, "Access is denied")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", refuse)
+    return plugins
+
+
+def test_replaceability_probe_restores_the_directory_it_renames(tmp_path, monkeypatch):
+    monkeypatch.setenv("COPILOT_HOME", str(tmp_path / "copilot home"))
+    plugins = native.copilot_plugin_directory()
+    (plugins / "adr-kit").mkdir(parents=True)
+
+    assert native.directory_replacement_blocked_by(plugins) is None
+    assert (plugins / "adr-kit").is_dir(), "the probe must put the directory back"
+    assert not list(plugins.parent.glob("*.adr-kit-probe"))
+    # A directory that is not there yet cannot block anything.
+    assert native.directory_replacement_blocked_by(tmp_path / "absent") is None
+
+
+def test_copilot_install_refuses_a_locked_plugin_directory_before_touching_anything(
+    tmp_path, monkeypatch
+):
+    """A locked plugin directory must stop the run before the first mutation.
+
+    Copilot replaces the directory to upgrade, so a rename it cannot perform
+    means the install fails partway and the rollback then dismantles the
+    registration the client was happily using. Refusing up front is the only
+    outcome that leaves the client no worse off.
+    """
+    plugins = _locked_copilot_plugin_dir(tmp_path, monkeypatch)
+    calls = []
+
+    def runner(command):
+        calls.append(command)
+        return completed(command, "")
+
+    copilot = installer.Client("copilot", "/bin/copilot", "GitHub Copilot CLI")
+    with pytest.raises(RuntimeError) as error:
+        native.install_copilot(copilot, tmp_path / "repo", False, runner)
+
+    assert not calls, "no client command may run once the directory is known to be locked"
+    message = str(error.value)
+    assert "VS Code" in message
+    assert "MCP server" in message
+    assert str(plugins) in message
+    assert "Access is denied" in message
+
+
+def test_copilot_dry_run_does_not_probe_the_plugin_directory(tmp_path, monkeypatch):
+    """Dry run reports; it does not rename directories to find things out."""
+    _locked_copilot_plugin_dir(tmp_path, monkeypatch)
+    copilot = installer.Client("copilot", "/bin/copilot", "GitHub Copilot CLI")
+
+    native.install_copilot(
+        copilot,
+        tmp_path / "repo",
+        True,
+        lambda command: completed(command, installer.MARKETPLACES["copilot"]),
+    )
 
 
 def _sync_check(root: Path):
