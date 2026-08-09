@@ -1,21 +1,13 @@
-"""Bounded native, MCP-extension, and local-model doctor probes."""
+"""Bounded native and MCP-extension doctor probes."""
 
 from __future__ import annotations
 
 import json
 import subprocess
-import time
-import urllib.error
-import urllib.request
 import sys
-import os
 from pathlib import Path
 
 from adr_doctor_models import benchmark_extension, check
-from adr_settings import (
-    SettingsError,
-    resolve_settings,
-)
 from clients.installer.detection import detect_clients
 from hooks.hook_benchmark import measure as measure_hooks
 
@@ -55,126 +47,6 @@ def _native_deep(root: Path, name: str, executable: str) -> dict:
         evidence=[{"command": command, "returncode": result.returncode}],
         actions=[{"detail": f"Review or reinstall ADR Kit in {name}."}]
         if status != "healthy" else [],
-    )
-
-
-def classify_model_probe(
-    values: dict,
-    *,
-    candidates: list[tuple[str, str]],
-    reachable: bool,
-    rejection: str | None,
-) -> tuple[str, str, str]:
-    local = values["judgment"]["local"]
-    provider, model = local.get("provider"), local.get("model")
-    if not local["enabled"]:
-        return "disabled", "disabled", "Enable local judgment in settings."
-    if bool(provider) != bool(model):
-        return (
-            "missing-provider-or-model",
-            "degraded",
-            "Set both judgment.local.provider and judgment.local.model.",
-        )
-    if provider and provider != "ollama":
-        return (
-            "missing-provider",
-            "degraded",
-            f"Install/configure supported provider {provider!r}.",
-        )
-    if not reachable:
-        return (
-            "unreachable-backend",
-            "degraded",
-            "Start Ollama or change the configured local provider.",
-        )
-    if provider and (provider, model) not in candidates:
-        return (
-            "nonexistent-model-tag",
-            "degraded",
-            f"Install {model!r} or choose an existing Ollama model.",
-        )
-    if not provider and len(candidates) > 1:
-        return (
-            "ambiguous-discovery",
-            "degraded",
-            "Configure one provider/model explicitly.",
-        )
-    if not candidates:
-        return (
-            "no-models",
-            "degraded",
-            "Install a local Ollama model or disable local judgment.",
-        )
-    if rejection:
-        return (
-            "rejected-probe",
-            "degraded",
-            "Inspect Ollama health and permissions, then rerun --deep.",
-        )
-    return "healthy", "healthy", ""
-
-
-def _ollama_candidates() -> tuple[list[tuple[str, str]], bool, str | None]:
-    request = urllib.request.Request(
-        "http://127.0.0.1:11434/api/tags",
-        headers={"Accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=1.0) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (
-        OSError,
-        UnicodeError,
-        json.JSONDecodeError,
-        urllib.error.URLError,
-    ) as exc:
-        return [], False, str(exc)
-    models = payload.get("models", []) if isinstance(payload, dict) else []
-    names = sorted({
-        item["name"] for item in models
-        if isinstance(item, dict) and isinstance(item.get("name"), str)
-    })
-    return [("ollama", name) for name in names], True, None
-
-
-def _model_deep(values: dict) -> dict:
-    started = time.perf_counter()
-    candidates, reachable, backend_error = _ollama_candidates()
-    local = values["judgment"]["local"]
-    configured = (local.get("provider"), local.get("model"))
-    rejection = None
-    if reachable and all(configured) and configured in candidates and configured[0] == "ollama":
-        request = urllib.request.Request(
-            "http://127.0.0.1:11434/api/show",
-            data=json.dumps({"model": configured[1]}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=2.0) as response:
-                if response.status >= 400:
-                    rejection = f"HTTP {response.status}"
-        except (OSError, urllib.error.URLError) as exc:
-            rejection = str(exc)
-    state, status, action = classify_model_probe(
-        values,
-        candidates=candidates,
-        reachable=reachable,
-        rejection=rejection,
-    )
-    elapsed = (time.perf_counter() - started) * 1000
-    return check(
-        "local-judgment-live", status=status, required=False,
-        summary=f"bounded provider/model identity probe: {state}",
-        evidence=[{
-            "provider": configured[0],
-            "model": configured[1],
-            "candidate_count": len(candidates),
-            "elapsed_ms": round(elapsed, 3),
-            "backend_error": backend_error,
-            "rejection": rejection,
-        }],
-        actions=[{"detail": action}] if action else [],
     )
 
 
@@ -270,31 +142,6 @@ def run_deep_extensions(
         for name, client in detect_clients().items()
     ]
     extensions.append(_mcp_deep(root, plugin_root))
-    try:
-        values = resolve_settings(root, global_path=global_settings)["values"]
-        model = _model_deep(values)
-        extensions.append(model)
-        if not check_only and model["evidence"]:
-            state_path = root / ".adr-kit" / "model-health.json"
-            state_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = state_path.with_suffix(f".{os.getpid()}.tmp")
-            temporary.write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "status": model["status"],
-                        "checked_at": time.time(),
-                        **model["evidence"][0],
-                    },
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            os.replace(temporary, state_path)
-    except SettingsError:
-        pass
     # The harness reads plugin_root/tests/fixtures/hooks/reference-corpus.json,
     # and `tests` is a forbidden segment in the public payload -- so the fixture
     # is absent from EVERY installed payload, not only from a generated client

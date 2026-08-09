@@ -11,7 +11,6 @@ from typing import Any
 from adr_doctor_models import check, client_root, generated_tree_owner
 from adr_settings import (
     SettingsError,
-    local_judgment_state,
     resolve_settings,
 )
 from clients.installer.contracts import CLIENT_IDS
@@ -305,36 +304,6 @@ def _guidance_check(root: Path) -> dict:
     )
 
 
-def _model_fast(values: dict, root: Path) -> dict:
-    state_path = root / ".adr-kit" / "model-health.json"
-    state = {}
-    if state_path.is_file():
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            state = {}
-    judgment = local_judgment_state(values, probed=False)
-    status_map = {
-        "disabled": "disabled",
-        "configured-unverified": "degraded",
-        "unconfigured": "degraded",
-    }
-    status = status_map.get(judgment["status"], "healthy")
-    return check(
-        "local-judgment", status=status, required=False,
-        summary=f"local judgment is {judgment['status']}; fast mode invoked no model",
-        evidence=[
-            {
-                "provider": judgment["provider"],
-                "model": judgment["model"],
-                "cached_status": state.get("status"),
-                "cached_checked_at": state.get("checked_at"),
-            }
-        ],
-        actions=[{"detail": judgment["action"]}] if judgment["action"] else [],
-    )
-
-
 def run_client_checks(
     root: Path,
     plugin_root: Path,
@@ -353,7 +322,6 @@ def run_client_checks(
             "settings", status="healthy",
             summary="global/project settings parsed with known keys",
         ))
-        checks.append(_model_fast(settings, root))
     except SettingsError as exc:
         settings = None
         checks.append(check(

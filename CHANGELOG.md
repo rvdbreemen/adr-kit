@@ -4,6 +4,71 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`adr-audit status|quality|readiness|doctor`** (TASK-147): the health
+  family folds behind the audit entry point. The on-demand surface is two
+  commands - `adr-audit` and `adr-guardian` - while the siblings stay on
+  disk as support modules with their own argument surfaces and exit codes.
+- **Plan-exit names decision-shaped lines** (TASK-150, spec B1): leaving
+  plan mode now injects up to five lines from the plan where a decision
+  verb meets an architectural noun, deterministically and without a model
+  call, so the "does this plan decide anything?" question lands on
+  something concrete.
+- **`/adr-kit:setup` is the one install entry point** (TASK-148, spec R19)
+  with four modes: register (default), `adopt` (`/adr-kit:init`), `hooks`
+  (`/adr-kit:install-hooks`) and `upgrade` (`/adr-kit:upgrade`). The three
+  names remain as mode aliases carrying their procedures.
+
+### Removed
+
+- **The embedding/vector subsystem** (TASK-144, ADR-036): `bin/adr-embed`,
+  the vector store, the embedding runtime detection, the query embedder in
+  the hooks, the vector rerank in `adr-context`, the `--check-embedding`
+  settings probe, the `embedding.*` config section and the R16 setup
+  dialogue. Retrieval is lexical scoring over the generated index plus
+  one-hop graph neighbours; the `user-prompt-submit` hook event is back to
+  `network_allowed: false`.
+- **The HTTP judge backends** (TASK-145, ADR-036): openrouter, ollama and
+  openai-compatible, with their credential env vars, the `judgment.local`
+  installer settings and the ollama doctor probes. `judge.backend` is
+  host-only; operators can still override per run with `ADR_KIT_LLM_CMD` /
+  `--llm-cmd`. A config still naming a retired backend fails validation
+  loudly (fail-closed on invalid config, as before); `resolve_llm_backend`
+  names ADR-036 and the replacement. `bin/adr_llm.py` can no longer open a
+  socket, and the gate `adr-host-only-judge-v1` asserts that over the AST.
+- **Eight retired config keys, refused by name** (TASK-146):
+  `judge.openrouter_model`, `judge.ollama_model`, `judge.openai_model`,
+  `judge.llm_cmd`, `judge.llm_model`, `judge.llm_default`,
+  `suggest.llm_cmd` and `suggest.llm_model` leave the schema. A config
+  carrying one fails validation with the sentence naming what replaced it
+  (`adr_config.REMOVED_KEYS`), instead of a generic "unknown property".
+  The warn-and-ignore machinery behind the keys goes with them.
+- **The eighteen hand-written `c4-code-*.md` documents** (TASK-149,
+  ~10k lines): no generator or CI kept them honest, and the module
+  docstrings carry the code-level detail. The context, container and
+  component levels remain.
+
+### Changed
+
+- **ADR-036 accepted: the vector layer is retired and the judge runs on the
+  host model only.** Spec R6, R6.1 and R16 are tombstoned, R11 keeps only the
+  graph, and R12 reduces to the host backend plus the operator escape hatch
+  (`ADR_KIT_LLM_CMD` / `--llm-cmd`). ADR-017 and ADR-020 are superseded; the
+  chain ADR-014 - ADR-018 - ADR-020 - ADR-036 stays traceable. The removals
+  themselves follow separately (TASK-144, TASK-145, TASK-146); the gate
+  `adr-host-only-judge-v1` is registered as a strict-xfail placeholder until
+  the host-only registry lands.
+- **`bin/adr supersede` accepts one successor for multiple predecessors.**
+  The `supersedes` field was always a list and the lint resolves every entry;
+  the command refused what the data model supports. Each predecessor still
+  gets exactly one successor.
+- **`ADR-INDEX.json` carries a Decision Contract only for governing records.**
+  A Superseded node keeps its identity, links and metadata but an empty
+  contract: authority is joined from status at search time, and the full
+  contract stays in the Markdown record. This keeps the graph inside
+  ADR-014's 2 KiB-per-ADR context budget as the superseded tail grows (the
+  margin had shrunk to 307 bytes).
 
 ## [0.47.0] - 2026-08-07
 

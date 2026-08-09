@@ -44,6 +44,52 @@ RETIRED_KEYS: Dict[str, str] = {
     "$.context.weights.recency": "part of the retired context.weights block",
 }
 
+# Keys that DID something and no longer do (ADR-036). Unlike RETIRED_KEYS,
+# these are refused rather than ignored: a config naming one made a real
+# choice once - a backend, a model, a command - and silently dropping that
+# choice would be the exact drift the kit exists to prevent. Each entry is
+# the sentence "unknown property" cannot say: what replaced the key.
+REMOVED_KEYS: Dict[str, str] = {
+    "$.judge.openrouter_model": (
+        "the openrouter backend was retired by ADR-036; the judge runs on the "
+        "host client's own model. Remove the key; operators can override per "
+        "run with ADR_KIT_LLM_CMD / --llm-cmd."
+    ),
+    "$.judge.ollama_model": (
+        "the ollama backend was retired by ADR-036; the judge runs on the "
+        "host client's own model. Remove the key; operators can override per "
+        "run with ADR_KIT_LLM_CMD / --llm-cmd."
+    ),
+    "$.judge.openai_model": (
+        "the openai-compatible backend was retired by ADR-036; the judge runs "
+        "on the host client's own model. Remove the key; operators can "
+        "override per run with ADR_KIT_LLM_CMD / --llm-cmd."
+    ),
+    "$.judge.llm_cmd": (
+        "ignored since ADR-017 and removed by ADR-036: repository-tracked "
+        "configuration may never supply a command. Remove the key; operators "
+        "use ADR_KIT_LLM_CMD / --llm-cmd."
+    ),
+    "$.judge.llm_model": (
+        "ignored since ADR-017 and removed by ADR-036: the host backend "
+        "passes no model flag, so each CLI resolves the model its own user "
+        "configured. Remove the key."
+    ),
+    "$.judge.llm_default": (
+        "removed by ADR-036; judge.llm_enabled is the per-commit switch. "
+        "Remove the key."
+    ),
+    "$.suggest.llm_cmd": (
+        "ignored since ADR-017 and removed by ADR-036: repository-tracked "
+        "configuration may never supply a command. Remove the key; operators "
+        "use ADR_KIT_LLM_CMD / --llm-cmd."
+    ),
+    "$.suggest.llm_model": (
+        "ignored since ADR-017 and removed by ADR-036: adr-suggest resolves "
+        "the same host backend as the judge. Remove the key."
+    ),
+}
+
 
 def retired_keys_present(config: Any) -> List[str]:
     """Return the dotted paths of retired keys this config still sets.
@@ -160,6 +206,9 @@ def _validate(value: Any, schema: Dict[str, Any], path: str) -> List[str]:
                     issues.extend(_validate(item, child_schema, child_path))
                 continue
             if child_path in RETIRED_KEYS:
+                continue
+            if child_path in REMOVED_KEYS:
+                issues.append(f"{child_path}: {REMOVED_KEYS[child_path]}")
                 continue
             additional = schema.get("additionalProperties", True)
             if additional is False:

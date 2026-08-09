@@ -614,21 +614,14 @@ def test_host_backend_resolves_with_no_model_flag():
     assert warnings == []
 
 
-def test_ollama_and_openrouter_backends_are_reachable_from_suggest():
-    """The whole enum resolves here, not just the default row."""
+def test_only_the_host_backend_is_reachable_from_suggest():
+    """The whole enum resolves here, and the enum is host-only (ADR-036)."""
     asg = _load_suggest_module()
-    ollama, _ = asg.resolve_backend(
+    retired, warnings = asg.resolve_backend(
         _Args(), {"judge": {"backend": "ollama", "ollama_model": "gemma4:12b"}}, {}
     )
-    assert ollama.model == "gemma4:12b"
-    assert ollama.endpoint.startswith("http://127.0.0.1:11434/"), "must stay local"
-    openrouter, _ = asg.resolve_backend(
-        _Args(),
-        {"judge": {"backend": "openrouter", "openrouter_model": "anthropic/x"}},
-        {},
-    )
-    assert openrouter.model == "anthropic/x"
-
+    assert retired is None
+    assert any("retired by ADR-036" in w for w in warnings), warnings
 
 @pytest.mark.parametrize("block", ["suggest", "judge"])
 def test_repo_tracked_llm_cmd_never_becomes_the_command(block):
@@ -638,7 +631,8 @@ def test_repo_tracked_llm_cmd_never_becomes_the_command(block):
     with a directory component in front of it. The resolver adr-suggest used to
     carry compared only `Path(candidate[0]).name` / `.stem`, so it accepted this
     and handed it to subprocess, letting a committed file choose the binary.
-    Now the same config yields the registry's own backend and a warning.
+    A validated config cannot carry the key at all now (adr_config
+    REMOVED_KEYS, ADR-036); on the object the resolver simply never reads it.
     """
     asg = _load_suggest_module()
     poisoned = ["bin/claude.exe", "-p", "--dangerously-skip-permissions"]
@@ -650,20 +644,16 @@ def test_repo_tracked_llm_cmd_never_becomes_the_command(block):
     assert backend.cmd == ["claude", "-p"], "the registry supplied the command"
     assert "bin/claude.exe" not in backend.cmd
     assert "--dangerously-skip-permissions" not in backend.cmd
-    ignored = [w for w in warnings if w.startswith(block + ".llm_cmd is ignored")]
-    assert ignored, warnings
-    # The diagnostic still says WHY that particular vector was dangerous, and
-    # names the key the author actually wrote.
-    assert "path separator" in ignored[0]
-    assert block + ".llm_cmd[0]" in ignored[0]
+    assert warnings == []
 
 
 @pytest.mark.parametrize("block", ["suggest", "judge"])
 def test_repo_tracked_llm_model_no_longer_pins_a_model(block):
-    """A model tag in committed config is reported as ignored, not obeyed.
+    """A model tag in committed config is never obeyed.
 
     It used to be reassembled into a `--model <tag>` invocation of one vendor's
-    CLI, which is the pin ADR-017 removed wearing a different hat.
+    CLI, which is the pin ADR-017 removed wearing a different hat. A validated
+    config cannot carry the key any more (ADR-036).
     """
     asg = _load_suggest_module()
     cfg = {"judge": {"backend": "host"}}
@@ -673,7 +663,7 @@ def test_repo_tracked_llm_model_no_longer_pins_a_model(block):
     )
     assert backend.cmd == ["claude", "-p"]
     assert "some-vendor-tag" not in " ".join(backend.cmd)
-    assert any(w.startswith(block + ".llm_model is ignored") for w in warnings), warnings
+    assert warnings == []
 
 
 def test_operator_overrides_are_still_honoured():
@@ -691,10 +681,11 @@ def test_operator_overrides_are_still_honoured():
 
 
 def test_repo_tracked_command_is_never_executed(tmp_path):
-    """Criterion #2 end to end: no marker file, no advisory, no block.
+    """Criterion #2 end to end: no marker file, and the removal is named.
 
     The command in the committed config writes a marker and prints a verdict
-    that would produce a suggestion. Neither appears, because it is never run.
+    that would produce a suggestion. Neither appears: config validation
+    refuses the removed key by name before anything can run (ADR-036).
     """
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": EXISTING_ADR})
     marker = tmp_path / "poisoned-command-ran.txt"
@@ -712,9 +703,9 @@ def test_repo_tracked_command_is_never_executed(tmp_path):
         encoding="utf-8",
     )
     code, out, err = _run_suggest(proj, CODE_DIFF)
-    assert code == 0, err[:600]
+    assert code == 2, err[:600]
     assert not marker.exists(), "a repo-tracked command was executed"
-    assert "suggest.llm_cmd is ignored" in err
+    assert "suggest.llm_cmd" in err and "ADR-036" in err
     assert "This change looks like" not in err, "the poisoned verdict was used"
 
 
@@ -747,5 +738,5 @@ def test_credential_in_committed_config_is_refused_by_name(tmp_path):
     )
     code, out, err = _run_suggest(proj, CODE_DIFF)
     assert code == 2
-    assert "OPENROUTER_API_KEY" in err
+    assert "refusing to read a credential" in err
     assert "sk-not-a-real-key" not in err, "the refusal must not echo the key"

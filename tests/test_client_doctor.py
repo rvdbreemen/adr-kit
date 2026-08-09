@@ -22,7 +22,7 @@ for value in (str(ROOT), str(BIN), str(ROOT / "scripts")):
 
 from adr_doctor_checks import check_mcp_launcher
 from adr_doctor_models import benchmark_extension
-from adr_doctor_probes import _mcp_deep, classify_model_probe
+from adr_doctor_probes import _mcp_deep
 
 
 def _doctor(
@@ -153,37 +153,3 @@ def test_deep_mcp_probe_accepts_complete_five_tool_contract():
         "adr_readiness",
         "adr_status",
     ]
-
-
-@pytest.mark.parametrize(
-    ("provider", "model", "candidates", "reachable", "rejection", "expected"),
-    [
-        (None, "qwen", [], True, None, "missing-provider-or-model"),
-        ("other", "qwen", [], True, None, "missing-provider"),
-        ("ollama", "qwen", [], False, None, "unreachable-backend"),
-        ("ollama", "missing", [("ollama", "qwen")], True, None, "nonexistent-model-tag"),
-        (None, None, [("ollama", "a"), ("ollama", "b")], True, None, "ambiguous-discovery"),
-        ("ollama", "qwen", [("ollama", "qwen")], True, "HTTP 403", "rejected-probe"),
-    ],
-)
-def test_model_degradations_are_distinct(
-    provider, model, candidates, reachable, rejection, expected
-):
-    values = {
-        "judgment": {
-            "local": {
-                "enabled": True,
-                "provider": provider,
-                "model": model,
-            }
-        }
-    }
-    state, status, action = classify_model_probe(
-        values,
-        candidates=candidates,
-        reachable=reachable,
-        rejection=rejection,
-    )
-    assert state == expected
-    assert status == "degraded"
-    assert action

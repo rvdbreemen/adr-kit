@@ -1,15 +1,15 @@
 ---
 id: "ADR-017"
 title: "Run the LLM Judge by Default on the Host Agent's Own Model"
-status: "Accepted"
-date: "2026-07-30"
+status: "Superseded"
+date: "2026-08-09"
 binding: true
 gate: "adr-judge-backend-registry-v1"
 documents_shipped: false
 verified_in: []
 supersedes:
   - "ADR-001"
-superseded_by: null
+superseded_by: "ADR-036"
 related:
   - "ADR-025"
   - "ADR-034"
@@ -39,7 +39,7 @@ format: "madr"
 
 ## Status
 
-Accepted, 2026-07-30.
+Superseded by ADR-036, 2026-08-09.
 
 ## Status History
 
@@ -74,6 +74,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-035
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-09
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: "Superseded by ADR-036: judge runs on the host model only; the multi-backend registry is retired"
     changed_via: adr-kit lifecycle
 ```
 

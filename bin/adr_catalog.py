@@ -500,7 +500,16 @@ def public_adr_node(record: Dict) -> Dict:
         "components": record["components"],
         "symbols": record["symbols"],
         "context_scope": record["context_scope"],
-        "decision_contract": record["decision_contract"],
+        # A Superseded record stops governing, and authority is joined from
+        # status at search time (ADR-020), so its contract is dead weight in a
+        # graph every agent carries under ADR-014's 2 KiB-per-ADR budget. The
+        # empty shape keeps schema v2 valid; the full contract stays in the
+        # Markdown record, which supersession never deletes.
+        "decision_contract": (
+            {"must": [], "must_not": [], "exceptions": [], "verification": []}
+            if record["status"] == "Superseded"
+            else record["decision_contract"]
+        ),
         "scope": {"path_globs": record["scope"]},
         "metadata": {
             "binding": record["binding"],

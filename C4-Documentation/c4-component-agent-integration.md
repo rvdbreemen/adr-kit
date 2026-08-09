@@ -44,7 +44,7 @@ It solves four problems:
    plan-exit and subagent/compact injection tiers. Every hook process exits 0 — including the one
    exception, where the `pr-create` guard can still deny a `gh pr create` call on Claude Code by
    encoding `permissionDecision: "deny"` in its JSON response rather than by a non-zero exit
-   (ADR-024, ADR-031). See [`c4-code-hooks.md`](c4-code-hooks.md) for the guard's mechanics.
+   (ADR-024, ADR-031). See `c4-code-hooks.md` for the guard's mechanics.
 3. **Same outcome, three clients.** `clients/capabilities.json` declares the seven required outcomes
    and the per-client event mappings; where a client genuinely cannot do something (Copilot has no
    pre-edit hook) the gap is a *registered degradation* with a named fixture, not silence.
@@ -64,7 +64,7 @@ all. Every other mechanism in this component remains advisory and fail-open, and
 structural rather than incidental — [`hooks/adr-hook.py:147-149`](../hooks/adr-hook.py) wraps the
 whole dispatch, including the guard call, in `except BaseException: return 0` (catching
 `KeyboardInterrupt` and `SystemExit` too), with an inline comment recording why. Do not narrow it to
-`except Exception`. See [`c4-code-hooks.md`](c4-code-hooks.md) for `judge_branch()`, `_nudge()` and
+`except Exception`. See `c4-code-hooks.md` for `judge_branch()`, `_nudge()` and
 the guard's own budget accounting.
 
 ### Governing ADRs
@@ -159,10 +159,10 @@ and its decision is release version-consistency across marketplace manifests.
 
 | Code document | Role in this component |
 |---|---|
-| [`c4-code-bin-cli-mcp.md`](c4-code-bin-cli-mcp.md) | The **pull** path: `bin/adr-mcp`, a single-file stdio MCP server wrapping five sibling CLIs as read-only tools. |
-| [`c4-code-hooks.md`](c4-code-hooks.md) | The **push** path: dispatcher, shared normalize/retrieve/evaluate core, three per-client adapters, native Rust host, latency harness. |
-| [`c4-code-agent-surface.md`](c4-code-agent-surface.md) | The **instruction** path: 15 skills, 1 subagent, 3 shared instruction documents, 45 generated prompt stubs. Zero executable code. |
-| [`c4-code-clients-installer.md`](c4-code-clients-installer.md) | The **provisioning** path plus the honesty ledger: the three-client capability/workflow/exception registry and the seven-module desired-state installer library. |
+| `c4-code-bin-cli-mcp.md` | The **pull** path: `bin/adr-mcp`, a single-file stdio MCP server wrapping five sibling CLIs as read-only tools. |
+| `c4-code-hooks.md` | The **push** path: dispatcher, shared normalize/retrieve/evaluate core, three per-client adapters, native Rust host, latency harness. |
+| `c4-code-agent-surface.md` | The **instruction** path: 15 skills, 1 subagent, 3 shared instruction documents, 45 generated prompt stubs. Zero executable code. |
+| `c4-code-clients-installer.md` | The **provisioning** path plus the honesty ledger: the three-client capability/workflow/exception registry and the seven-module desired-state installer library. |
 
 ---
 

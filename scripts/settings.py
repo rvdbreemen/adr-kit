@@ -10,8 +10,6 @@ from pathlib import Path
 
 from adr_settings import (
     SettingsError,
-    discover_ollama_models,
-    local_judgment_state,
     parse_cli_value,
     resolve_settings,
     write_setting,
@@ -23,11 +21,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-root", type=Path, default=Path.cwd())
     parser.add_argument("--global-settings", type=Path)
     parser.add_argument("--format", choices=("human", "json"), default="human")
-    parser.add_argument(
-        "--probe-models",
-        action="store_true",
-        help="Run a bounded local Ollama identity probe; never invokes a model.",
-    )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("show")
     setter = subparsers.add_parser("set")
@@ -47,18 +40,6 @@ def _render_human(payload: dict) -> str:
     for entry in payload["entries"]:
         value = json.dumps(entry["value"], ensure_ascii=False)
         lines.append(f"  {entry['key']} = {value} ({entry['source']})")
-    judgment = payload["local_judgment"]
-    lines.extend(
-        [
-            "Local judgment:",
-            f"  status = {judgment['status']}",
-            f"  active = {str(judgment['active']).lower()}",
-            f"  provider = {judgment['provider'] or '-'}",
-            f"  model = {judgment['model'] or '-'}",
-        ]
-    )
-    if judgment["action"]:
-        lines.append(f"  action = {judgment['action']}")
     return "\n".join(lines)
 
 
@@ -88,15 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"adr-kit:settings: {exc}", file=sys.stderr)
         return 2
 
-    discovered = discover_ollama_models() if args.probe_models else []
-    payload = {
-        **resolved,
-        "local_judgment": local_judgment_state(
-            resolved["values"],
-            discovered=discovered,
-            probed=args.probe_models,
-        ),
-    }
+    payload = dict(resolved)
     if args.format == "json":
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:

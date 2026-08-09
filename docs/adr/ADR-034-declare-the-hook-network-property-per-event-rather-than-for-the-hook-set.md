@@ -16,6 +16,7 @@ related:
   - "ADR-024"
   - "ADR-025"
   - "ADR-031"
+  - "ADR-036"
 topics:
   - "hooks"
   - "declared contract"
@@ -87,6 +88,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: "Maintainer accepted: the pull-request moment can reach a model on a normally installed machine, so the manifest declares that capability per event rather than averaging it away."
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-09
+    status: Accepted
+    changed_by: adr-kit
+    reason: Related to ADR-036
     changed_via: adr-kit lifecycle
 ```
 

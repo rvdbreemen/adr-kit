@@ -428,13 +428,13 @@ def test_a_vague_record_fails_only_when_the_gates_are_asked_for(tmp_path):
 
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
-    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-036-*.md"))[0]
     body = isolated_copy(source.read_text(encoding="utf-8")).replace(
         "## Decision Drivers",
         "## Decision Drivers\n\n"
         "* The OTGW firmware talks to the HVAC unit over the MQTT bridge.\n",
     )
-    (adr_dir / "ADR-020-vague.md").write_text(body, encoding="utf-8")
+    (adr_dir / "ADR-036-vague.md").write_text(body, encoding="utf-8")
 
     def lint(*extra):
         return subprocess.run(
@@ -465,3 +465,30 @@ def test_this_repositorys_own_records_pass_every_gate():
     )
 
     assert result.returncode == 0, result.stdout[-2000:]
+
+
+def test_health_subcommands_dispatch_to_the_family(tmp_path):
+    """`adr-audit status|quality|readiness|doctor` reach the siblings.
+
+    One entry point for everything on demand (TASK-147): the sibling keeps
+    its own argument surface and exit-code contract, so this asserts the
+    dispatch and the passthrough, not the sibling's behaviour.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-audit"), "status",
+         "--adr-dir", str(REPO_ROOT / "docs" / "adr"), "--format", "json"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    assert result.returncode == 0, result.stderr[:400]
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["total"] > 0
+
+    unknown = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-audit"), "status",
+         "--no-such-flag"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    assert unknown.returncode == 2, "the sibling's own parser answers"

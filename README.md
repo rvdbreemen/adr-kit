@@ -328,7 +328,7 @@ Three layers, each with a clear path:
   It can complete an existing Proposed ADR, reconstruct a decision from a PR,
   git range, chat log, or document, and revalidate an older decision. Source
   material is evidence, never acceptance authority.
-- **`bin/adr-readiness`** is the deterministic companion to grilling. It
+- **`adr-audit readiness`** is the deterministic companion to grilling. It
   classifies a record, separates mechanical fixes from human decisions,
   resolves explicit implementation links, and emits stable human, JSON, or
   GitHub output without invoking a model or changing lifecycle state.
@@ -360,10 +360,10 @@ Three layers, each with a clear path:
 - **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart reads only that local 24-hour cache and offers at most three next actions; it never scans or starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
   - **Team mode (v0.22.0+)**: a weekly CI cron sweep maintains a single "ADR guardian audit" tracking issue (created on findings, updated, closed when clean) so the whole team sees ADR health, not just whoever opened a session today. Copy `templates/github-workflows/adr-guardian-audit.yml` into your repo.
   - **Trend history (v0.29.0+)**: every sweep appends to a 52-entry trend log, and the nudge shows the delta: `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`. A KPI with memory, not a snapshot.
-- **Health dashboard (`bin/adr-status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, retrieval probe results, Accepted-binding metadata completeness, and the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
-- **Quality scoring (`bin/adr-quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
+- **Health dashboard (`adr-audit status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, retrieval probe results, Accepted-binding metadata completeness, and the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
+- **Quality scoring (`adr-audit quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
 - **Generated index refresh (`bin/adr-index docs/adr/`)**: atomically rebuilds the sentinel-owned `docs/adr/README.md` block plus `ADR-INDEX.md` and `ADR-INDEX.json`. `--check` exits non-zero when any generated view is missing or stale, or duplicate ADR ids exist. Use `--format graph --adr-dir docs/adr` to inspect the graph without writing.
-- **Local doctor (`bin/adr-doctor`)**: fast mode checks ADR/index state, retrieval probes and metadata completeness, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Probe failures block; metadata completeness is advisory unless configured strict. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
+- **Local doctor (`adr-audit doctor`)**: fast mode checks ADR/index state, retrieval probes and metadata completeness, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Probe failures block; metadata completeness is advisory unless configured strict. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
 - **Lifecycle commands (`bin/adr`, v0.32.0+)**: local `propose`, `accept`, `supersede`, `reject`, and `document` commands update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated README index.
 - **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then verify strict lint, quality, and human readiness. The default `assist` mode reports eligibility without mutating; acceptance requires `--confirm` after the engineer reviews the packet. Existing projects that intentionally require the legacy automatic transition can explicitly configure `lifecycle.auto_accept.mode: "auto"`.
 - **Retirement audit (`/adr-kit:retire`, `bin/adr-retire`)**: ranks Accepted ADRs for retirement using four deterministic signals (status age, technology removal, supersession, policy drift). Read-only; a recommendation always needs a human.
@@ -418,8 +418,8 @@ architect remains part of the decision.
 |---|---|---|---|
 | `/adr [title]` | knowledge / guide | yes | Author or review an ADR: anti-rationalization guards, four gates, supersession workflow. |
 | `/adr-kit:grill [target]` | guided decision interview | yes | Complete a Proposed ADR, reconstruct one from a PR/range/source, or revalidate an existing decision; asks one evidence-backed question at a time. |
-| `/adr-kit:init` | one-time bootstrap | no | Once per project: CLAUDE.md stub, codebase audit to Accepted ADRs, pre-commit hook. |
-| `/adr-kit:setup` | one-time write | no | Lighter alternative: stub plus guide only, no audit, no hook. Idempotent. |
+| `/adr-kit:setup` | one entry point, four modes | no | Register (default): stub plus guide, idempotent. `adopt`: codebase audit to Accepted ADRs plus hooks. `hooks`: the pre-commit gate alone. `upgrade`: refresh copied artifacts. |
+| `/adr-kit:init` | mode alias | no | The `adopt` mode of `/adr-kit:setup`, kept as its own name. |
 | `/adr-kit:context [topic]` | read-only lookup | yes | Load the 3 to 5 most relevant ADRs before implementing; verify lifecycle status in the source ADR. |
 | `/adr-kit:judge` | deliberate check | yes | Interactively review a staged diff against the ADRs, including the LLM pass for `llm_judge: true` ADRs, with three resolution paths per violation. |
 | `/adr-kit:audit` | deliberate check | yes | Are we still on course? Lints the decisions and judges the code in one run, over a diff or the whole codebase. Separate exit codes for an ADR-quality failure and a code violation. Read-only. |
@@ -430,9 +430,9 @@ architect remains part of the decision.
 | `/adr-kit:supersede [ADR-NNN]` | guided write | no | Replace a decision: graph first, Proposed draft, approval-gated status flip, verified chain. |
 | `/adr-kit:retire [path]` | deliberate check | no | Rank Accepted ADRs for retirement on four deterministic signals. Read-only. |
 | `/adr-kit:migrate [path]` | guided rewrite | no | Add invariant metadata or convert between MADR, Nygard, and canonical profiles. Preview, then confirm. |
-| `/adr-kit:settings` | guided write | no | One surface for every knob: shows each setting, its current value, and where that value came from (default, project file, machine-local file, or environment). Also `--check-embedding`. |
-| `/adr-kit:install-hooks` | installer | no | Install or remove the pre-commit hook and the project-scoped guardian hook entry. |
-| `/adr-kit:upgrade` | refresh driver | no | Refresh stale copied artifacts after a plugin update; also the legacy v0.11 to v0.12 migration. |
+| `/adr-kit:settings` | guided write | no | One surface for every knob: shows each setting, its current value, and where that value came from (default, project file, machine-local file, or environment). |
+| `/adr-kit:install-hooks` | mode alias | no | The `hooks` mode of `/adr-kit:setup`: install or remove the pre-commit gate. |
+| `/adr-kit:upgrade` | mode alias | no | The `upgrade` mode of `/adr-kit:setup`: refresh stale copied artifacts; also the legacy v0.11 to v0.12 migration. |
 
 The `Auto-invocable` column reflects the shipped skill metadata. Mutating skills and several deliberate read-only commands set `disable-model-invocation: true`; `judge`, `review`, and `guardian` currently do not. Model invocation does not by itself authorize file mutation, and cost-bearing guardian work still follows its confirmation/configuration rules.
 

@@ -24,8 +24,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from typing import Dict, List, Optional, Tuple
 
 # Which entry point is running, used only as the warning prefix. A plain module
@@ -50,10 +48,7 @@ TOOL = "adr-kit"
 # any configuration file, tracked or not, for a check to have to refuse.
 
 BACKEND_HOST = "host"
-BACKEND_OPENROUTER = "openrouter"
-BACKEND_OLLAMA = "ollama"
-BACKEND_OPENAI_COMPATIBLE = "openai-compatible"
-BACKEND_NAMES = (BACKEND_HOST, BACKEND_OPENROUTER, BACKEND_OLLAMA, BACKEND_OPENAI_COMPATIBLE)
+BACKEND_NAMES = (BACKEND_HOST,)
 DEFAULT_BACKEND = BACKEND_HOST
 
 # Non-interactive entry point of each certified client (ADR-010), verified
@@ -76,27 +71,6 @@ HOST_COMMANDS = {
 # the repository diff, and that is a privacy decision made by accident.
 LOCAL_CONFIG_NAME = ".adr-kit.local.json"
 
-OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
-OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate"
-OLLAMA_EMBED_ENDPOINT = "http://127.0.0.1:11434/api/embeddings"
-
-# An OpenAI-compatible base URL turns one backend into a family: LM Studio, a
-# self-hosted vLLM, a corporate gateway, an Azure deployment. They all speak the
-# chat-completions shape OpenRouter already speaks, so the only thing missing was
-# the ability to point somewhere else.
-#
-# SECURITY, and the reason this is NOT a project setting: ADR-017 holds that
-# repository-tracked configuration may SELECT a backend but never INTRODUCE an
-# endpoint. A base URL read from the committed config would let a cloned repo
-# point the judge at an attacker's server and exfiltrate the diff. It is read
-# from the machine-local file or the environment only, and refused in
-# .adr-kit.json by name.
-OPENAI_BASE_URL_ENV = "ADR_KIT_OPENAI_BASE_URL"
-OPENAI_KEY_ENV = "ADR_KIT_OPENAI_API_KEY"
-LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_OLLAMA_MODEL = "gemma4:12b"
-
 # Config keys that would carry a credential. docs/adr/.adr-kit.json is
 # committed, so a key written there is a published key. The schema already
 # refuses unknown properties, but "unknown property" does not tell an author
@@ -110,35 +84,6 @@ _CREDENTIAL_KEY_RE = re.compile(
     r"(?i)^(.*_)?(api_?key|key|secrets?|token|password|passwd|credentials?"
     r"|bearer|authorization)$"
 )
-
-# Repo-tracked llm_cmd is now IGNORED outright (ADR-017): the backend registry
-# above replaced it, and a registry that must admit `ollama` cannot be
-# expressed as a tightened Claude-CLI allowlist. What survives here is the
-# diagnostic. When a project still carries an llm_cmd, the tool says exactly
-# WHY that particular vector was dangerous rather than emitting a generic
-# "ignored" -- an author who wrote `--dangerously-skip-permissions` into
-# committed config deserves to read that sentence.
-#
-# Env (ADR_KIT_LLM_CMD) and CLI (--llm-cmd) remain unrestricted and remain
-# honoured, because those are operator-controlled, not arbitrarily checked in
-# by collaborators.
-_LLM_CMD_ALLOWLIST = {
-    "claude",
-    "claude-code",
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "claude-haiku-4-5-20251001",
-}
-
-# SEC-HIGH (TASK-60): the argument vector from repo-tracked config is checked
-# too, not just its head. `["claude", "-p", "--dangerously-skip-permissions",
-# "--allowedTools", "Bash"]` passed the old head-only check and invoked the
-# genuine CLI with tool permissions disabled, on a prompt built from repository
-# content. Only flags that cannot grant the model new capabilities are allowed.
-_LLM_CMD_SAFE_FLAGS = frozenset({"-p", "--print"})
-_LLM_CMD_SAFE_VALUE_FLAGS = frozenset({"--model", "--output-format"})
-
 
 def _warn(message: str) -> None:
     print(f"[{TOOL}] WARN: {message}", file=sys.stderr)
@@ -161,120 +106,6 @@ def _split_cmd(cmd_str: str) -> List[str]:
             stripped.append(t)
         return stripped
     return tokens
-
-
-def check_repo_llm_cmd(
-    candidate: List[str], key: str = "judge.llm_cmd"
-) -> Optional[str]:
-    """Return a refusal reason for a repo-tracked llm_cmd, or None if OK.
-
-    The governing rule: repository-tracked config may select among backends the
-    operator has already enabled; it may never introduce a new binary, a new
-    endpoint, or a credential. Env (ADR_KIT_LLM_CMD) and CLI (--llm-cmd) stay
-    unrestricted because those are operator-controlled, not checked in by
-    whoever last opened a pull request.
-
-    SEC-HIGH (TASK-60), two reproduced bypasses this closes:
-
-    1. `Path(candidate[0]).stem` discarded the directory before comparing, so a
-       committed `bin/claude.exe` plus a committed `judge.llm_cmd` naming it
-       passed the allowlist -- and shutil.which() resolves a path carrying a
-       directory component directly, without a PATH search. A repository could
-       ship the binary the judge executes. The stem also made every
-       `claude.<ext>` (claude.sh, claude.bat, claude.py) pass.
-    2. Only candidate[0] was inspected; every argument after it was unvalidated.
-
-    So: no path separator anywhere in the binary token, exact match of the FULL
-    token (no Path() call at all -- taking .name or .stem is the defect), and a
-    safe-flag allowlist over the rest of the vector.
-
-    `key` names the config key in the message, because the same vector can
-    arrive from judge.llm_cmd or suggest.llm_cmd and an author fixing it needs
-    to be told which one they wrote.
-    """
-    if not candidate:
-        return f"{key} is empty"
-    binary = candidate[0]
-    if not binary:
-        return f"{key}[0] is empty"
-    # A literal "/" and "\\" are rejected on every platform, not just the
-    # platform whose os.sep they are: a POSIX runner must still refuse
-    # "bin\\claude", and a Windows runner must still refuse "bin/claude".
-    separators = {os.sep, os.altsep, "/", "\\"}
-    if any(sep and sep in binary for sep in separators):
-        return (
-            f"{key}[0]={binary!r} contains a path separator; "
-            f"repo-tracked config may only name a bare binary resolved from PATH"
-        )
-    if ":" in binary:
-        # "C:claude" is drive-relative and "name:stream" is an NTFS alternate
-        # data stream; neither is a bare PATH lookup.
-        return (
-            f"{key}[0]={binary!r} contains a drive or stream separator; "
-            f"repo-tracked config may only name a bare binary resolved from PATH"
-        )
-    if binary not in _LLM_CMD_ALLOWLIST:
-        return (
-            f"{key}[0]={binary!r} is not in the allowed list "
-            f"{sorted(_LLM_CMD_ALLOWLIST)}"
-        )
-    i = 1
-    while i < len(candidate):
-        arg = candidate[i]
-        head, sep, _value = arg.partition("=")
-        if sep and head in _LLM_CMD_SAFE_VALUE_FLAGS:
-            i += 1
-            continue
-        if arg in _LLM_CMD_SAFE_VALUE_FLAGS:
-            if i + 1 >= len(candidate):
-                return f"{key} flag {arg!r} is missing its value"
-            i += 2
-            continue
-        if arg in _LLM_CMD_SAFE_FLAGS:
-            i += 1
-            continue
-        return (
-            f"{key} argument {arg!r} is not in the allowed flag set "
-            f"{sorted(_LLM_CMD_SAFE_FLAGS | _LLM_CMD_SAFE_VALUE_FLAGS)}"
-        )
-    return None
-
-
-def legacy_command_warnings(cfg_block: Dict, block: str) -> List[str]:
-    """Say that a repo-tracked llm_cmd / llm_model is ignored, and why.
-
-    Both entry points need this and both used to honour these keys, so it lives
-    with the registry rather than in either script: the rule "repository-tracked
-    configuration may never introduce a command" (ADR-017) either holds at every
-    entry point or it holds at none of them.
-
-    Keys are dead as configuration but still present in existing projects, so
-    the message is precise about what replaced them rather than silent.
-    """
-    warnings: List[str] = []
-    raw_cfg_cmd = cfg_block.get("llm_cmd")
-    if raw_cfg_cmd:
-        candidate = (
-            [str(tok) for tok in raw_cfg_cmd]
-            if isinstance(raw_cfg_cmd, list)
-            else _split_cmd(str(raw_cfg_cmd))
-        )
-        detail = check_repo_llm_cmd(candidate, f"{block}.llm_cmd")
-        warnings.append(
-            f"{block}.llm_cmd is ignored: repository-tracked configuration may not "
-            "supply a command or an argument vector (ADR-017). Select a backend "
-            f"with judge.backend ({' | '.join(BACKEND_NAMES)}), or use "
-            "ADR_KIT_LLM_CMD / --llm-cmd for an operator-controlled override."
-            + (f" [{detail}]" if detail else "")
-        )
-    if cfg_block.get("llm_model"):
-        warnings.append(
-            f"{block}.llm_model is ignored: the host backend passes no model flag "
-            "so each CLI resolves the model its own user configured (ADR-017). "
-            "Use judge.openrouter_model or judge.ollama_model to pick a model "
-            "for those backends."
-        )
-    return warnings
 
 
 class LLMBackend:
@@ -303,19 +134,6 @@ class LLMBackend:
         review; adr-suggest has no ADR yet and passes its own label.
         """
         raise NotImplementedError
-
-
-    def embed(self, texts: List[str], model: str, timeout_s: int) -> Optional[List[List[float]]]:
-        """Return one vector per text, or None when this backend cannot embed.
-
-        Optional by design. ADR-018 puts embedding in a build step, so a backend
-        that only generates text is not broken - it simply has nothing to offer
-        here, and the caller falls back to another route rather than failing.
-        """
-        return None
-
-    def embed_unavailable_reason(self) -> Optional[str]:
-        return f"the {self.kind} backend does not expose an embeddings endpoint"
 
 
 class SubprocessBackend(LLMBackend):
@@ -388,286 +206,6 @@ class SubprocessBackend(LLMBackend):
         return result.stdout
 
 
-class HttpBackend(LLMBackend):
-    """Shared urllib plumbing for the two network backends.
-
-    ADR-016's zero-runtime-dependency constraint is binding, so this is
-    urllib.request and nothing else. No vendor SDK enters the dependency set
-    for a feature that posts one JSON document and reads one back.
-    """
-
-    endpoint = ""
-
-    def _post(
-        self, payload: Dict, headers: Dict[str, str], timeout_s: int, adr_id: str
-    ) -> Optional[Dict]:
-        return self._post_to(self.endpoint, payload, headers, timeout_s, adr_id)
-
-    def _post_to(
-        self,
-        endpoint: str,
-        payload: Dict,
-        headers: Dict[str, str],
-        timeout_s: int,
-        adr_id: str,
-    ) -> Optional[Dict]:
-        """POST to an explicit endpoint.
-
-        The judge always posts to `self.endpoint`; embedding posts to a sibling
-        path on the same host. Parameterising the URL keeps one set of failure
-        semantics -- every fault degrades to None -- instead of a second copy
-        that would drift.
-        """
-        body = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            endpoint,
-            data=body,
-            headers={"Content-Type": "application/json", **headers},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout_s) as response:
-                raw = response.read().decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as e:
-            # Status is safe to print; the body may echo the prompt or a key
-            # prefix, so it stays behind ADR_KIT_DEBUG like subprocess stderr.
-            detail = ""
-            if os.environ.get("ADR_KIT_DEBUG"):
-                try:
-                    detail = f": {e.read().decode('utf-8', errors='replace')[:200]!r}"
-                except Exception:  # pragma: no cover - best effort only
-                    detail = ""
-            _warn(
-                f"{self.kind} backend returned HTTP {e.code} on {adr_id}{detail}; "
-                f"skipping LLM pass."
-            )
-            return None
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            _warn(
-                f"{self.kind} backend unreachable on {adr_id} "
-                f"({e.__class__.__name__}); skipping LLM pass."
-            )
-            return None
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            _warn(
-                f"{self.kind} backend returned a non-JSON envelope on {adr_id}; "
-                f"skipping LLM pass."
-            )
-            return None
-        return data if isinstance(data, dict) else None
-
-
-class OpenRouterBackend(HttpBackend):
-    """OpenRouter chat completions, model chosen by the project.
-
-    The key is read from the environment and only from the environment.
-    docs/adr/.adr-kit.json is committed, so a key written there is a published
-    key; see credential_refusal_message for the refusal that says so.
-    """
-
-    kind = BACKEND_OPENROUTER
-    endpoint = OPENROUTER_ENDPOINT
-
-    def __init__(self, model: Optional[str]):
-        self.model = model
-
-    def describe(self) -> str:
-        return f"{self.kind}: {self.model or '<unset>'} via {self.endpoint}"
-
-    def unavailable_reason(self) -> Optional[str]:
-        if not self.model:
-            return (
-                "judge.openrouter_model is unset; set it to a provider/model "
-                "slug (for example 'anthropic/claude-sonnet-4.5')"
-            )
-        if not os.environ.get(OPENROUTER_KEY_ENV):
-            return (
-                f"{OPENROUTER_KEY_ENV} is not set in the environment; export it "
-                f"rather than writing a key into committed configuration"
-            )
-        return None
-
-    def judge(self, prompt: str, timeout_s: int, adr_id: str) -> Optional[str]:
-        data = self._post(
-            {
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"},
-            },
-            {"Authorization": f"Bearer {os.environ.get(OPENROUTER_KEY_ENV, '')}"},
-            timeout_s,
-            adr_id,
-        )
-        if data is None:
-            return None
-        choices = data.get("choices")
-        if not isinstance(choices, list) or not choices:
-            _warn(f"{self.kind} backend returned no choices on {adr_id}.")
-            return None
-        message = choices[0].get("message") if isinstance(choices[0], dict) else None
-        content = message.get("content") if isinstance(message, dict) else None
-        return content if isinstance(content, str) else None
-
-
-class OllamaBackend(HttpBackend):
-    """A local daemon, so nothing leaves the machine.
-
-    Measured at 3378 ms for one judge-shaped prompt against gemma4:12b on the
-    reference machine. That is over ADR-015's two-second deterministic budget
-    and legal under its explicit exemption for LLM passes, but a user choosing
-    this backend is accepting slower commits and the settings surface says so.
-    """
-
-    kind = BACKEND_OLLAMA
-    endpoint = OLLAMA_ENDPOINT
-
-    def __init__(self, model: str):
-        self.model = model
-
-    def describe(self) -> str:
-        return f"{self.kind}: {self.model} via {self.endpoint}"
-
-    def unavailable_reason(self) -> Optional[str]:
-        # Daemon reachability is deliberately NOT probed here: a probe costs a
-        # round trip on every commit and answers a question the first real call
-        # answers anyway, with the same degrade path.
-        if not self.model:
-            return "judge.ollama_model is unset"
-        return None
-
-    def judge(self, prompt: str, timeout_s: int, adr_id: str) -> Optional[str]:
-        data = self._post(
-            {
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "format": "json",
-            },
-            {},
-            timeout_s,
-            adr_id,
-        )
-        if data is None:
-            return None
-        response = data.get("response")
-        return response if isinstance(response, str) else None
-
-
-    def embed(self, texts, model, timeout_s):
-        """Ollama embeds one text per call; there is no batch endpoint."""
-        vectors = []
-        for text in texts:
-            data = self._post_to(
-                OLLAMA_EMBED_ENDPOINT,
-                {"model": model, "prompt": text},
-                {},
-                timeout_s,
-                "embed",
-            )
-            if data is None:
-                return None
-            vector = data.get("embedding")
-            if not isinstance(vector, list) or not vector:
-                return None
-            vectors.append([float(value) for value in vector])
-        return vectors
-
-    def embed_unavailable_reason(self):
-        return None
-
-
-class OpenAICompatibleBackend(HttpBackend):
-    """Any endpoint speaking the OpenAI chat-completions shape.
-
-    LM Studio on its default port, a self-hosted vLLM, a corporate gateway. The
-    request body is the one OpenRouter already uses, so this class exists for
-    one reason: the endpoint is configurable.
-
-    Where that endpoint comes from is the whole security story. It is read from
-    the machine-local config or the environment, never from the committed one.
-    A repository that could name the endpoint could name an attacker's server
-    and the judge would post the diff to it.
-    """
-
-    kind = BACKEND_OPENAI_COMPATIBLE
-
-    def __init__(self, base_url: Optional[str], model: Optional[str], api_key: Optional[str]):
-        self.base_url = (base_url or "").rstrip("/")
-        self.model = model
-        self.api_key = api_key
-        self.endpoint = f"{self.base_url}/chat/completions" if self.base_url else ""
-
-    def describe(self) -> str:
-        return f"{self.kind}: {self.model or '<unset>'} via {self.endpoint or '<no base url>'}"
-
-    def unavailable_reason(self) -> Optional[str]:
-        if not self.base_url:
-            return (
-                f"no base URL configured; set judge.openai_base_url in "
-                f"{LOCAL_CONFIG_NAME} or export {OPENAI_BASE_URL_ENV} "
-                f"(LM Studio's default is {LM_STUDIO_BASE_URL})"
-            )
-        if not self.model:
-            return "judge.openai_model is unset; name the model the endpoint serves"
-        return None
-
-    def judge(self, prompt: str, timeout_s: int, adr_id: str) -> Optional[str]:
-        headers = {}
-        # A local runtime usually needs no key; a gateway usually does. Sending
-        # an empty Authorization header would make a keyless local endpoint
-        # reject a request that should have worked.
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "response_format": {"type": "json_object"},
-        }
-        data = self._post(payload, headers, timeout_s, adr_id)
-        if data is None:
-            return None
-        choices = data.get("choices")
-        if not isinstance(choices, list) or not choices:
-            print(
-                f"[adr-judge] WARN: {self.kind} returned no choices for {adr_id}",
-                file=sys.stderr,
-            )
-            return None
-        content = (choices[0].get("message") or {}).get("content")
-        return content if isinstance(content, str) else None
-    def embed(self, texts, model, timeout_s):
-        if not self.base_url:
-            return None
-        headers = {}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        data = self._post_to(
-            f"{self.base_url}/embeddings",
-            {"model": model, "input": list(texts)},
-            headers,
-            timeout_s,
-            "embed",
-        )
-        if data is None:
-            return None
-        rows = data.get("data")
-        if not isinstance(rows, list) or len(rows) != len(texts):
-            return None
-        vectors = []
-        for row in rows:
-            vector = (row or {}).get("embedding")
-            if not isinstance(vector, list) or not vector:
-                return None
-            vectors.append([float(value) for value in vector])
-        return vectors
-
-    def embed_unavailable_reason(self):
-        return self.unavailable_reason()
-
-
-
 def _host_backend(
     judge_cfg: Dict, local_cfg: Dict, warnings: List[str]
 ) -> Optional[SubprocessBackend]:
@@ -695,47 +233,6 @@ def _host_backend(
     return SubprocessBackend(HOST_COMMANDS[client], source="local", client=client)
 
 
-def _openrouter_backend(
-    judge_cfg: Dict, local_cfg: Dict, warnings: List[str]
-) -> OpenRouterBackend:
-    model = judge_cfg.get("openrouter_model")
-    return OpenRouterBackend(str(model) if model else None)
-
-
-def _ollama_backend(
-    judge_cfg: Dict, local_cfg: Dict, warnings: List[str]
-) -> OllamaBackend:
-    return OllamaBackend(str(judge_cfg.get("ollama_model") or DEFAULT_OLLAMA_MODEL))
-
-
-def _openai_compatible_backend(
-    judge_cfg: Dict, local_cfg: Dict, warnings: List[str]
-) -> OpenAICompatibleBackend:
-    """Endpoint and credential from the machine, model from the project.
-
-    The split is deliberate. WHICH model to judge with is a team decision and
-    belongs in the committed config; WHERE the endpoint lives is a property of
-    this machine, and letting a repository name it would hand a cloned project
-    the ability to redirect the diff.
-    """
-    env = os.environ
-    local_judge = local_cfg.get("judge") or {}
-    base_url = env.get(OPENAI_BASE_URL_ENV) or local_judge.get("openai_base_url")
-    api_key = env.get(OPENAI_KEY_ENV) or local_judge.get("openai_api_key")
-    model = judge_cfg.get("openai_model") or local_judge.get("openai_model")
-    if judge_cfg.get("openai_base_url"):
-        warnings.append(
-            "judge.openai_base_url in the committed config is ignored: an endpoint "
-            "read from a repository could redirect the diff to a server the "
-            f"repository chose. Put it in {LOCAL_CONFIG_NAME} or export "
-            f"{OPENAI_BASE_URL_ENV}."
-        )
-    return OpenAICompatibleBackend(
-        str(base_url) if base_url else None,
-        str(model) if model else None,
-        str(api_key) if api_key else None,
-    )
-
 # THE registry ADR-017 names. A dict rather than an if-chain because the whole
 # security argument rests on config selecting a KEY here and never supplying a
 # value: judge.backend is looked up in this table or refused, so committed
@@ -743,9 +240,6 @@ def _openai_compatible_backend(
 # credential. Every endpoint and every command lives on this side of the line.
 BACKENDS = {
     BACKEND_HOST: _host_backend,
-    BACKEND_OPENROUTER: _openrouter_backend,
-    BACKEND_OLLAMA: _ollama_backend,
-    BACKEND_OPENAI_COMPATIBLE: _openai_compatible_backend,
 }
 
 
@@ -768,9 +262,9 @@ def resolve_llm_backend(
     project talks to, not which tool is asking, and a parallel `suggest.backend`
     would be a second place for the same answer to live.
     """
-    # Repo-tracked command and model keys are dead as configuration (ADR-017)
-    # but still present in old projects. Say so once, precisely.
-    warnings = legacy_command_warnings(judge_cfg, "judge")
+    # Repo-tracked command and model keys are refused at config validation
+    # (adr_config.REMOVED_KEYS, ADR-036), so a validated cfg cannot carry one.
+    warnings: List[str] = []
 
     if cli_cmd:
         return SubprocessBackend(_split_cmd(cli_cmd), source="flag"), warnings
@@ -783,10 +277,21 @@ def resolve_llm_backend(
     name = str(judge_cfg.get("backend", DEFAULT_BACKEND))
     factory = BACKENDS.get(name)
     if factory is None:
-        warnings.append(
-            f"judge.backend={name!r} is not one of {list(BACKEND_NAMES)}; "
-            f"the LLM pass will not run."
-        )
+        if name in ("openrouter", "ollama", "openai-compatible"):
+            # Retired names get the precise sentence, not a generic enum error:
+            # a project that selected one of these made a valid choice once,
+            # and deserves to read what replaced it (ADR-036).
+            warnings.append(
+                f"judge.backend={name!r} was retired by ADR-036: the judge runs "
+                f"on the host client's own model. Remove the key to use the "
+                f"host backend, or use ADR_KIT_LLM_CMD / --llm-cmd for an "
+                f"operator-controlled override. The LLM pass will not run."
+            )
+        else:
+            warnings.append(
+                f"judge.backend={name!r} is not one of {list(BACKEND_NAMES)}; "
+                f"the LLM pass will not run."
+            )
         return None, warnings
     return factory(judge_cfg, local_cfg, warnings), warnings
 
@@ -809,17 +314,19 @@ def find_credential_keys(config: object, path: str = "$") -> List[str]:
 def credential_refusal_message(path, offenders: List[str]) -> str:
     """The sentence a published credential earns, shared by both entry points.
 
-    ADR-017 requires the refusal to name the environment variable, and the
-    message has to be identical wherever it is raised: a user who fixes the
-    file because adr-judge told them to must not meet a differently-worded
-    version of the same problem from adr-suggest a second later.
+    The message has to be identical wherever it is raised: a user who fixes
+    the file because adr-judge told them to must not meet a differently-worded
+    version of the same problem from adr-suggest a second later. No backend
+    needs a credential any more (ADR-036), which makes a key in this file
+    doubly wrong: published, and useless.
     """
     return (
         f"{path}: refusing to read a credential from configuration "
         f"({', '.join(offenders)}). This file is committed, so a key "
-        f"written here is a published key. Delete that key from the file "
-        f"BY HAND and export {OPENROUTER_KEY_ENV} in your environment "
-        f"instead; no adr-kit command can do it for you, because every "
+        f"written here is a published key -- and no adr-kit backend takes "
+        f"one (ADR-036): the judge runs through the host client's own CLI, "
+        f"which carries its own authentication. Delete that key from the "
+        f"file BY HAND; no adr-kit command can do it for you, because every "
         f"entry point (including --set-backend) refuses to load the file "
         f"while the key is in it. Then rotate the key: it is already in "
         f"your git history."

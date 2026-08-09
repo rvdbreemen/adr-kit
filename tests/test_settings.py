@@ -27,7 +27,7 @@ def _entry(resolved: dict, key: str) -> dict:
     return next(item for item in resolved["entries"] if item["key"] == key)
 
 
-def test_defaults_cover_automation_clients_doctor_and_judgment(tmp_path):
+def test_defaults_cover_automation_clients_and_doctor(tmp_path):
     resolved = settings.resolve_settings(
         tmp_path, global_path=tmp_path / "global.json"
     )
@@ -53,12 +53,9 @@ def test_defaults_cover_automation_clients_doctor_and_judgment(tmp_path):
         "auto_repair": True,
         "check_only": False,
     }
-    assert resolved["values"]["judgment"]["cloud"]["enabled"] is False
-    assert resolved["values"]["judgment"]["local"] == {
-        "enabled": True,
-        "provider": None,
-        "model": None,
-    }
+    assert "judgment" not in resolved["values"], (
+        "the local-judgment settings shape was retired by ADR-036"
+    )
 
 
 def test_project_overrides_global_and_sources_are_reported(tmp_path):
@@ -137,44 +134,6 @@ def test_unknown_keys_and_invalid_documents_fail_closed(tmp_path):
         settings.resolve_settings(tmp_path, global_path=global_path)
 
 
-def test_local_judgment_never_guesses_and_only_activates_verified_identity():
-    values = settings.resolve_settings(
-        Path.cwd(), global_path=Path.cwd() / ".missing-global-settings"
-    )["values"]
-
-    assert settings.local_judgment_state(values)["status"] == "unconfigured"
-    assert settings.local_judgment_state(
-        values, discovered=[], probed=True
-    )["status"] == "unavailable"
-    ambiguous = settings.local_judgment_state(
-        values,
-        discovered=[("ollama", "model-a"), ("ollama", "model-b")],
-        probed=True,
-    )
-    assert ambiguous["status"] == "ambiguous"
-    assert ambiguous["active"] is False
-    discovered = settings.local_judgment_state(
-        values, discovered=[("ollama", "model-a")], probed=True
-    )
-    assert discovered["status"] == "healthy-discovered"
-    assert discovered["active"] is True
-    assert discovered["model"] == "model-a"
-    assert discovered["hook_hot_path"] is False
-
-    values["judgment"]["local"].update(
-        {"provider": "ollama", "model": "model-a"}
-    )
-    assert settings.local_judgment_state(values)["status"] == (
-        "configured-unverified"
-    )
-    assert settings.local_judgment_state(
-        values, discovered=[("ollama", "model-b")], probed=True
-    )["status"] == "degraded"
-    assert settings.local_judgment_state(
-        values, discovered=[("ollama", "model-a")], probed=True
-    )["status"] == "healthy"
-
-
 def test_settings_cli_emits_effective_value_and_source(tmp_path):
     command = [
         sys.executable,
@@ -204,4 +163,3 @@ def test_settings_cli_emits_effective_value_and_source(tmp_path):
         "source": "project",
         "value": True,
     }
-    assert payload["local_judgment"]["status"] == "unconfigured"

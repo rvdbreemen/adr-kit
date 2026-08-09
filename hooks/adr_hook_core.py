@@ -470,22 +470,16 @@ def _query(
     query: str,
     *,
     path: str | None = None,
-    embedder: Any = None,
-) -> tuple[list[dict[str, Any]], str]:
-    """Rank the ADRs for this query, and report which route answered.
+) -> list[dict[str, Any]]:
+    """Rank the ADRs for this query, lexically over the generated index.
 
-    `embedder` is a callable the *entrypoint* supplies, never something this
-    module imports. This file must not be able to reach a model or the network
-    -- a test asserts that by walking its imports -- and dependency injection is
-    what lets ADR-020's query-time embedding happen without weakening that.
-
-    The route travels with the results because a silent degradation is the
-    failure this whole path keeps producing: an empty or lexical answer reads
-    exactly like "no ADR was relevant".
+    This file must not be able to reach a model or the network -- a test
+    asserts that by walking its imports (ADR-036 retired the one exception
+    ADR-020 had carved out for query embedding).
     """
     index = _index_path(workspace)
     if index is None:
-        return [], "none"
+        return []
     limit = _configured_limit(workspace)
     try:
         outcome = query_adr_context(
@@ -496,16 +490,14 @@ def _query(
             include_history=False,
             statuses=("Accepted", "Proposed"),
             paths=(path,) if path else (),
-            embedder=embedder,
         )
     except (IndexQueryError, OSError, UnicodeError, ValueError):
-        return [], "none"
-    selected = [
+        return []
+    return [
         item
         for item in outcome["results"]
         if item.get("status") in {"Accepted", "Proposed"}
     ][:limit]
-    return selected, str(outcome.get("route", "lexical"))
 
 
 def _safe_edit_path(envelope: Envelope) -> Path | None:
@@ -616,6 +608,41 @@ def _plan_text(envelope: Envelope) -> str:
     return (_bounded_text(raw, MAX_CONTEXT_CHARS) or "").strip()
 
 
+#: Both lists must hit on one line before it counts as a candidate. Verb-only
+#: matches every imperative bullet in any plan; noun-only matches prose that
+#: merely mentions the architecture. Precision is the constraint: a nudge that
+#: names noise teaches the reader to skip the nudge (spec B1: deterministic,
+#: injection-only; the model reading the context does the actual judging).
+_DECISION_VERBS = re.compile(
+    r"(?i)\b(add|adopt|introduce|switch|migrate|replace|choose|pick|drop|"
+    r"remove|rewrite|standardi[sz]e|upgrade|consolidate|split|pin|use)\b"
+)
+_DECISION_NOUNS = re.compile(
+    r"(?i)\b(dependenc\w+|librar\w+|framework|database|storage|cache|queue|"
+    r"protocol|api|interface|contract|schema|auth\w*|encryption|format|"
+    r"service|endpoint|runtime|package|backend|index|pipeline|architecture)\b"
+)
+
+
+def _plan_decision_candidates(plan: str, limit: int = 5) -> list[str]:
+    """Decision-shaped lines in the plan, found deterministically.
+
+    Named so the question below lands on something concrete: "does this plan
+    decide anything?" is easy to wave past, "this line looks like a decision"
+    is not. Bounded because the sixth candidate adds noise, not signal.
+    """
+    found: list[str] = []
+    for raw in plan.splitlines():
+        line = raw.strip().lstrip("-*#0123456789. ").strip()
+        if not line or len(line) > 240:
+            continue
+        if _DECISION_VERBS.search(line) and _DECISION_NOUNS.search(line):
+            found.append(line)
+            if len(found) >= limit:
+                break
+    return found
+
+
 def _plan_decision_prompt(client: str) -> str:
     """Ask the question this moment exists for.
 
@@ -631,7 +658,7 @@ def _plan_decision_prompt(client: str) -> str:
         "reasoning is still in front of you; afterwards it becomes justification."
     )
 
-def evaluate(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
+def evaluate(envelope: Envelope) -> tuple[str, str]:
     """Refresh a stale index where the budget allows, then render the context.
 
     An agent that writes docs/adr/ADR-NNN.md directly -- the common case in a
@@ -650,7 +677,7 @@ def evaluate(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
     except Exception:  # noqa: BLE001 -- fail-open is this file's contract
         notice = STALE_INDEX_MESSAGE
 
-    context, kind = _evaluate_context(envelope, embedder)
+    context, kind = _evaluate_context(envelope)
     if not notice:
         return context, kind
     if not context:
@@ -658,15 +685,8 @@ def evaluate(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
     return "\n\n".join((notice, context))[:MAX_CONTEXT_CHARS], kind
 
 
-def _evaluate_context(envelope: Envelope, embedder: Any = None) -> tuple[str, str]:
-    """Render the context for this moment.
-
-    `embedder` is supplied by the entrypoint and only for the events whose
-    budget can absorb an embedding round trip. ADR-020 splits them: the 500 ms
-    `session-start` and `user-prompt-submit` events may embed the query, and the
-    100 ms edit-tier events stay on the index-only route because a round trip
-    does not fit 100 ms at any realistic ADR count.
-    """
+def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
+    """Render the context for this moment."""
     compact_event = re.sub(r"[^a-z]", "", envelope.event.lower())
     if compact_event in NOOP_EVENTS:
         return "", "noop"
@@ -704,9 +724,7 @@ def _evaluate_context(envelope: Envelope, embedder: Any = None) -> tuple[str, st
     if not records and envelope.event not in {"PreToolUse", "PostToolUse"}:
         return "", "noop"
     if envelope.event == "UserPromptSubmit":
-        selected, route = _query(
-            envelope.workspace, envelope.prompt or "", embedder=embedder
-        )
+        selected = _query(envelope.workspace, envelope.prompt or "")
         governing = [item for item in selected if item.get("status") == "Accepted"]
         advisory = [item for item in selected if item.get("status") == "Proposed"]
         parts = [
@@ -717,14 +735,6 @@ def _evaluate_context(envelope: Envelope, embedder: Any = None) -> tuple[str, st
             )
             if part
         ]
-        if parts and route == "lexical" and embedder is not None:
-            # The user asked for semantic retrieval and got word overlap. Say so:
-            # the whole point of naming the route is that a degraded answer must
-            # not be mistaken for the good one.
-            parts.append(
-                "(retrieval fell back to lexical ranking; run `adr-embed status` "
-                "to see why)"
-            )
         return ("\n".join(parts)[:MAX_CONTEXT_CHARS], "prompt") if parts else ("", "noop")
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")
@@ -737,14 +747,23 @@ def _evaluate_context(envelope: Envelope, embedder: Any = None) -> tuple[str, st
             plan = _plan_text(envelope)
             if not plan:
                 return "", "noop"
-            selected, route = _query(envelope.workspace, plan)
+            selected = _query(envelope.workspace, plan)
             governing = [item for item in selected if item.get("status") == "Accepted"]
             advisory = [item for item in selected if item.get("status") == "Proposed"]
+            candidates = _plan_decision_candidates(plan)
+            named = (
+                "Decision-shaped lines in this plan - each either falls under "
+                "an ADR above or needs a new one:\n"
+                + "\n".join(f"- {line}" for line in candidates)
+                if candidates
+                else ""
+            )
             parts = [
                 part
                 for part in (
                     _render(governing, "ADRs that govern this plan:"),
                     _render(advisory, "Advisory Proposed ADRs for this plan:"),
+                    named,
                     _plan_decision_prompt(envelope.client),
                 )
                 if part
@@ -766,7 +785,7 @@ def _evaluate_context(envelope: Envelope, embedder: Any = None) -> tuple[str, st
         if path is None:
             return "", "noop"
         relative = path.relative_to(envelope.workspace).as_posix()
-        selected, route = _query(envelope.workspace, relative, path=relative)
+        selected = _query(envelope.workspace, relative, path=relative)
         governing = [item for item in selected if item.get("status") == "Accepted"]
         advisory = [item for item in selected if item.get("status") == "Proposed"]
         heading = (

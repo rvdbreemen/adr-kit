@@ -1,5 +1,5 @@
 ---
-id: TASK-146
+id: TASK-154
 title: 'Guardian: per-ADR judged-state so a partial LLM sweep keeps its verdicts'
 status: To Do
 assignee: []
