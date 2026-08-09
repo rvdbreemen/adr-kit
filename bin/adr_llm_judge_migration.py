@@ -253,6 +253,22 @@ def apply(
     forced = {i.upper() for i in force_enable_ids}
     rows = scan(adr_dir)
     result: Dict = {"enabled": [], "opted_out": [], "unchanged": [], "dry_run": dry_run}
+    # The set the judge will actually evaluate once this migration lands. The
+    # per-row lists above only show what THIS run changes, and that framing has
+    # misled an operator before: a dry-run reading "6 enabled, 0 unbounded" on a
+    # repository that already carried 58 enabled unscoped ADRs looks cost-free,
+    # while the post-migration pass makes one isolated model call per unscoped
+    # ADR on every commit. The totals answer the question the operator is
+    # actually asking: what will judging cost after I accept this?
+    judged_after = 0
+    unbounded_after = 0
+
+    def count_judged(row: Dict) -> None:
+        nonlocal judged_after, unbounded_after
+        judged_after += 1
+        if row["unbounded_scope"]:
+            unbounded_after += 1
+
     for row in rows:
         adr, path = row["adr"], Path(row["path"])
         if (
@@ -286,6 +302,13 @@ def apply(
                     "unbounded_scope": row["unbounded_scope"],
                 }
             )
+            count_judged(row)
             continue
+        if row["state"] == STATE_ENABLED:
+            count_judged(row)
         result["unchanged"].append({"adr": adr, "state": row["state"]})
+    result["summary"] = {
+        "judged_after": judged_after,
+        "unbounded_after": unbounded_after,
+    }
     return result
