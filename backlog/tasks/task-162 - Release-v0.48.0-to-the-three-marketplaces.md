@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-08-09 15:49'
-updated_date: '2026-08-09 16:20'
+updated_date: '2026-08-09 16:37'
 labels:
   - release
 dependencies: []
@@ -26,7 +26,7 @@ Ships 22 commits since v0.47.0: the ADR-036 KISS simplification (vector layer re
 - [x] #3 All five local gates pass
 - [x] #4 PR into main is green and handed to the maintainer
 - [x] #5 Tag pushed, release-publish.yml green, GitHub Release created
-- [ ] #6 Release merged back into dev
+- [x] #6 Release merged back into dev
 - [ ] #7 Local prepared-directory marketplace advanced and the three clients report 0.48.0
 <!-- AC:END -->
 
@@ -46,4 +46,10 @@ Tag v0.48.0 must wait for #90 so the tagged tree carries the corrected README.
 2026-08-09 (3): PR #90 merged by the maintainer at 16:13:47Z (auto-merge again, 12/12 checks). main head 2c59bdc. Tagged origin/main explicitly rather than HEAD, because `git checkout main` had aborted on the modified task-162.md and the following `git pull` fast-forwarded release/v0.48.0 instead - HEAD and origin/main happened to be the same commit, but the tag command should not depend on that. Verified `git rev-parse v0.48.0` == `git rev-parse origin/main` before pushing.
 
 release-publish.yml run 31323399560: completed success (confirmed against the API, not the watch exit). Release https://github.com/rvdbreemen/adr-kit/releases/tag/v0.48.0 is published, draft=false, prerelease=false, body carries the CHANGELOG section including the upgrade step.
+
+2026-08-09 (4): PR #91 merged by the maintainer at 16:25:11Z; dev is 0 behind main. 11 of 12 checks were green at merge time (Python 3.12/Windows still pending), on a tree identical to the one where all 12 passed on #90. The local pytest re-run was stopped as redundant once CI had covered the same tree on six matrix jobs - it was not run to completion.
+
+Step 6 partially done. install-agent-envs.py --clients all: claude 0.48.0 OK, codex 0.48.0 OK, copilot FAILED and is now left with no adr-kit at all (it had a working 0.47.0). Filed as TASK-164 with the diagnosis: a Windows directory handle on ~/.copilot/installed-plugins/rvdbreemen-adr-kit-copilot that no running process could be attributed to, plus the real defect that our rollback dismantled the working install instead of leaving it alone. Acceptance criterion #7 stays unchecked until copilot is back.
+
+Unrelated observation while diagnosing: a Codex agent on this machine repeatedly spawns `bash.exe /c/Tools/Codex/python -m pytest`, a new one roughly every four minutes. Not from this session.
 <!-- SECTION:NOTES:END -->
