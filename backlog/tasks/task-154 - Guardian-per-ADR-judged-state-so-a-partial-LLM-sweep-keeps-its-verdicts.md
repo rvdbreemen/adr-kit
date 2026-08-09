@@ -1,9 +1,11 @@
 ---
 id: TASK-154
 title: 'Guardian: per-ADR judged-state so a partial LLM sweep keeps its verdicts'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-08-09 08:11'
+updated_date: '2026-08-09 14:04'
 labels:
   - enhancement
   - guardian
@@ -21,8 +23,14 @@ The guardian llm tier records one last_run for the whole tier. A 68-ADR sweep at
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Design decision recorded (ADR) on where per-ADR judge state lives: advisory per-machine, tracked, or both
-- [ ] #2 An interrupted LLM sweep keeps the verdicts it reached and re-judges only ADRs without a fresh verdict
-- [ ] #3 A recorded VIOLATION keeps the sweep outcome non-clean until a re-judge clears it
-- [ ] #4 Per-ADR progress is visible while the sweep runs
+- [x] #1 Design decision recorded (ADR) on where per-ADR judge state lives: advisory per-machine, tracked, or both
+- [x] #2 An interrupted LLM sweep keeps the verdicts it reached and re-judges only ADRs without a fresh verdict
+- [x] #3 A recorded VIOLATION keeps the sweep outcome non-clean until a re-judge clears it
+- [x] #4 Per-ADR progress is visible while the sweep runs
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Per-ADR judged-state shipped per ADR-037 (Accepted). llm_tier.adrs in the advisory per-machine .adr-kit-state.json records {last_run, verdict} per ADR; adr-guardian stamp llm --adr ADR-NNN --verdict ok|violation stamps one verdict without touching the tier timestamp or trend, prunes entries for deleted ADR files, and refuses invalid combinations (no verdict, wrong tier) with exit 2 and no state side effect. A recorded violation keeps the llm tier DUE regardless of tier freshness and the nudge names the ids; a re-judge stamping ok clears it (proven end-to-end on a bench repro: fresh tier stamp + violation -> DUE with '1 violation(s) outstanding: ADR-001', re-judge ok -> quiet). Guardian skill step 3b rewritten to a per-ADR loop with resume-awareness (skip fresh ok entries, always re-judge recorded violations, print one line per ADR as its verdict lands); 3c stamps the tier only after a complete sweep. The tracked-state alternative was explicitly rejected in ADR-037 (ADR-025 boundary, spec task-9) and stays a downstream pattern. 6 new tests, guardian suites 45/45, full suite 1754 passed / 12 skipped in 12:52, adapters regenerated --check clean.
+<!-- SECTION:FINAL_SUMMARY:END -->

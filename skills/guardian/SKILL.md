@@ -183,21 +183,44 @@ Read `/tmp/guardian-suggest.json`.
 
 **Response (mix-by-finding-type: Missing ADR):** Passive. List candidates where `needs_adr=true` with `confidence >= medium`. Offer to author selected ones via the `adr-generator` subagent. User picks; never auto-create.
 
-### 3b. Full audit (adr-judge with LLM pass)
+### 3b. Full audit (adr-judge with LLM pass, one ADR at a time)
+
+The audit judges each ADR in an isolated call and stamps its verdict the moment
+it lands (ADR-037). A 68-ADR set at the measured 20-28 s per call runs ~25
+minutes; per-ADR stamping means an interruption keeps every verdict already
+reached, and per-ADR printing means the user can tell a long sweep from a hung
+one.
+
+First, resume-awareness: read `"$ADR_KIT/bin/adr-guardian" state` and collect
+`llm_tier.adrs`. Skip every ADR whose entry is younger than
+`guardian.llm_stale_days` with verdict `ok`. ADRs with a recorded `violation`
+are ALWAYS re-judged: that is how a fix clears them. Tell the user what is being
+skipped: `resuming: 41 of 68 fresh, 26 due, 1 violation to re-check`.
+
+Then loop over the due ADRs. For each:
 
 ```bash
-git diff HEAD~10 HEAD --unified=0 | "$ADR_KIT/bin/adr-judge" \
-    --diff - \
-    --adr-dir docs/adr/ \
-    --repo-root "$(git rev-parse --show-toplevel)" \
-    --snapshot worktree \
-    --llm \
-    --json > /tmp/guardian-audit.json 2>&1
+git diff HEAD~10 HEAD --unified=0 | "$ADR_KIT/bin/adr-judge"     --diff -     --adr-dir docs/adr/     --repo-root "$(git rev-parse --show-toplevel)"     --snapshot worktree     --llm     --dry-run-enforcement ADR-NNN 2>&1
 ```
 
-Read `/tmp/guardian-audit.json`. Same response as Step 2a drift, but covering semantic violations not expressible as regex.
+Exit 0 is `ok`, exit 1 is `violation`; anything else (timeout, ADR not found)
+is NOT a verdict and must not be stamped. Print one line per ADR as it
+completes - id, verdict, elapsed seconds - then stamp immediately:
+
+```bash
+"$ADR_KIT/bin/adr-guardian" stamp llm --adr ADR-NNN --verdict <ok|violation>
+```
+
+Collect the violations for the summary. The sweep outcome is non-clean while
+any ADR carries a recorded `violation` - including ones recorded by an earlier
+sweep that this run did not reach. Same response per finding as Step 2a drift,
+but covering semantic violations not expressible as regex.
 
 ### 3c. Stamp LLM tier
+
+Only when every due ADR reached a verdict in step 3b: stamp the tier. A partial
+sweep skips this - the per-ADR stamps already preserve its work, and stamping
+the tier would claim a completeness the sweep did not deliver (ADR-037).
 
 If the cheap tier did not run in this sweep, read `summary.coverage_pct` from
 `"$ADR_KIT/bin/adr-status" --adr-dir docs/adr/ --format json` and pass it via
