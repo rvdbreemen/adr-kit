@@ -362,3 +362,26 @@ def test_generated_client_tree_is_distinguishable_from_the_payload_root():
     assert models.client_root(ROOT, "codex") == ROOT / "codex"
     assert models.client_root(ROOT / "codex", "codex") == ROOT / "codex"
     assert models.client_root(ROOT / "codex", "copilot") is None
+
+
+def test_copilot_powershell_wrapper_gates_the_native_host():
+    """TASK-160: run-hook.cmd runs the native exe only under
+    ADR_KIT_NATIVE_HOOK=1 (it is not parity-certified, and preferring it
+    silently narrowed governance on Windows), but the generated Copilot
+    PowerShell wrapper preferred it unconditionally — the one client that did.
+    The generated artifact must carry the same opt-in gate."""
+    import json as _json
+    from pathlib import Path as _Path
+    hooks_file = _Path(__file__).resolve().parent.parent / "copilot" / "hooks.json"
+    if not hooks_file.exists():
+        import pytest as _pytest
+        _pytest.skip("generated copilot/hooks.json not present")
+    doc = _json.loads(hooks_file.read_text(encoding="utf-8"))
+    blob = _json.dumps(doc)
+    assert "adr-hook.exe" in blob, "wrapper no longer references the native exe"
+    # Every powershell command that can invoke the exe must test the env gate.
+    for event in doc.values():
+        for entry in (event if isinstance(event, list) else [event]):
+            ps = entry.get("powershell") if isinstance(entry, dict) else None
+            if ps and "adr-hook.exe" in ps:
+                assert "ADR_KIT_NATIVE_HOOK" in ps, ps

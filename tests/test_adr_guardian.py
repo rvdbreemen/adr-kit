@@ -853,3 +853,75 @@ class TestPerAdrStamp:
             assert "ERROR" in err
         # A refused stamp must not have created state as a side effect.
         assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_empty_adr_id_is_refused_not_a_tier_stamp(self, tmp_path):
+        """An empty --adr is not None (passes the pairing check) and falsy
+        (used to fall through to the TIER branch): it stamped a completed
+        sweep. TASK-157 finding 1."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "", "--verdict", "ok",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 2
+        assert "ERROR" in err
+        assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_unresolvable_adr_id_is_refused_not_silently_pruned(self, tmp_path):
+        """A typo (ADR-999) or unpadded id (ADR-1) used to be written and then
+        pruned in the same transaction: exit 0, verdict silently lost
+        TASK-157 finding 2."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=1)   # only ADR-001 exists
+        for bad in ("ADR-999",):
+            rc, _, err = _run(
+                ["stamp", "llm", "--adr", bad, "--verdict", "violation",
+                 "--state-dir", str(adr_dir)],
+                cwd=str(tmp_path),
+            )
+            assert rc == 2, f"{bad}: expected refusal, got rc={rc}"
+            assert bad in err
+        assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_prune_still_removes_entries_for_files_deleted_later(self, tmp_path):
+        """The up-front validation must not defeat the prune: an entry whose
+        ADR file is deleted AFTER its stamp still ages out on the next stamp."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=2)
+        _run(["stamp", "llm", "--adr", "ADR-002", "--verdict", "ok",
+              "--state-dir", str(adr_dir)], cwd=str(tmp_path))
+        (adr_dir / "ADR-002-stub.md").unlink()
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-001", "--verdict", "ok",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert "ADR-002" not in state["llm_tier"]["adrs"]
+        assert "ADR-001" in state["llm_tier"]["adrs"]
+
+    def test_tier_flags_on_a_per_adr_stamp_are_refused(self, tmp_path):
+        """TASK-159: the per-ADR branch returned before the tier writes, so
+        --coverage etc. were accepted and silently dropped."""
+        adr_dir = _make_adr_dir(tmp_path)
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-001", "--verdict", "ok",
+             "--coverage", "80", "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 2
+        assert "--coverage" in err
+        assert not (adr_dir / ".adr-kit-state.json").exists()
+
+    def test_unpadded_id_normalizes_to_the_canonical_form(self, tmp_path):
+        """TASK-161: the shared adr_catalog reader zero-pads, so ADR-1 resolves
+        to the ADR-001 file instead of being refused over formatting."""
+        adr_dir = _make_adr_dir(tmp_path, num_adrs=1)
+        rc, _, err = _run(
+            ["stamp", "llm", "--adr", "ADR-1", "--verdict", "violation",
+             "--state-dir", str(adr_dir)],
+            cwd=str(tmp_path),
+        )
+        assert rc == 0, err
+        state = json.loads((adr_dir / ".adr-kit-state.json").read_text(encoding="utf-8"))
+        assert state["llm_tier"]["adrs"]["ADR-001"]["verdict"] == "violation"

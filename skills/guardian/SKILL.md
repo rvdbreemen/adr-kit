@@ -54,7 +54,11 @@ Run only when cheap tier is due or explicitly requested.
 ### 2a. Drift check (declarative, adr-judge)
 
 ```bash
-git diff HEAD~5 HEAD --unified=0 | "$ADR_KIT/bin/adr-judge" \
+# HEAD~5 does not exist in a repo or shallow clone with fewer than 6 commits;
+# git then fails to stderr and pipes an EMPTY diff, which the judge passes with
+# exit 0 — a drift check that checked nothing. Fall back to the root commit.
+BASE=$(git rev-parse --verify -q HEAD~5 || git rev-list --max-parents=0 HEAD | tail -1)
+git diff "$BASE" HEAD --unified=0 | "$ADR_KIT/bin/adr-judge" \
     --diff - \
     --adr-dir docs/adr/ \
     --repo-root "$(git rev-parse --show-toplevel)" \
@@ -173,7 +177,7 @@ Run only when llm tier is due or explicitly requested (and user has confirmed co
 ### 3a. Missing-ADR detection (adr-suggest)
 
 ```bash
-git diff HEAD~10 HEAD --unified=0 | "$ADR_KIT/bin/adr-suggest" \
+git diff "$BASE" HEAD --unified=0 | "$ADR_KIT/bin/adr-suggest" \
     --diff - \
     --adr-dir docs/adr/ \
     --json > /tmp/guardian-suggest.json 2>&1
@@ -197,14 +201,35 @@ First, resume-awareness: read `"$ADR_KIT/bin/adr-guardian" state` and collect
 are ALWAYS re-judged: that is how a fix clears them. Tell the user what is being
 skipped: `resuming: 41 of 68 fresh, 26 due, 1 violation to re-check`.
 
+Then derive the diff base ONCE, robustly. `HEAD~10` does not exist in a repo or
+shallow clone with fewer than 11 commits; git then fails to stderr and pipes an
+EMPTY diff, the judge exits 0, and the loop below would stamp every due ADR
+`ok` without judging anything — the same false completeness as the degradation
+case. Fall back to the root commit, and abort the sweep (stamping nothing) if
+even that yields nothing:
+
+```bash
+BASE=$(git rev-parse --verify -q HEAD~10 || git rev-list --max-parents=0 HEAD | tail -1)
+```
+
 Then loop over the due ADRs. For each:
 
 ```bash
-git diff HEAD~10 HEAD --unified=0 | "$ADR_KIT/bin/adr-judge"     --diff -     --adr-dir docs/adr/     --repo-root "$(git rev-parse --show-toplevel)"     --snapshot worktree     --llm     --dry-run-enforcement ADR-NNN 2>&1
+git diff "$BASE" HEAD --unified=0 | "$ADR_KIT/bin/adr-judge"     --diff -     --adr-dir docs/adr/     --repo-root "$(git rev-parse --show-toplevel)"     --snapshot worktree     --llm     --dry-run-enforcement ADR-NNN 2>&1
 ```
 
 Exit 0 is `ok`, exit 1 is `violation`; anything else (timeout, ADR not found)
-is NOT a verdict and must not be stamped. Print one line per ADR as it
+is NOT a verdict and must not be stamped.
+
+**Exit 0 alone is not proof the model judged.** The judge degrades to
+declarative-only when no backend is usable (missing host client, retired keys)
+and still exits 0, per its never-block contract — so a sweep with a broken
+backend would stamp every ADR `ok` without a single model call, exactly the
+false completeness ADR-037 forbids. Before mapping exit codes, check the
+captured output for a degradation marker (`DEGRADED to declarative-only`,
+`no LLM backend`, `LLM pass evaluated 0`): if present, stamp NOTHING, abort the
+sweep, and surface the backend problem with the judge's own fix-it line
+(`adr-judge --set-backend ...`). Print one line per ADR as it
 completes - id, verdict, elapsed seconds - then stamp immediately:
 
 ```bash

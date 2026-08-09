@@ -354,6 +354,30 @@ def _configured_limit(workspace: Path) -> int:
 
 # Only these two may write. They carry a 500 ms budget; the edit-tier events
 # carry far less and cannot hold a render at any realistic ADR count (ADR-021).
+# R5: retrieval narrows, the model chooses. Appended after the candidate lists
+# at prompt time; both hosts carry the same text and the parity test pins it.
+PROMPT_SELECTION_INSTRUCTION = (
+    "These are retrieval candidates, not confirmed matches: apply "
+    "the ones that actually govern this work and ignore the rest."
+)
+
+
+def _prompt_candidates_context(parts: "list[str]") -> str:
+    """Join candidate sections and append the selection instruction, in budget.
+
+    The instruction is the one line that must never be lost: without it the
+    candidate list reads as settled relevance again. So its length is reserved
+    up front and the CANDIDATES are truncated to make room — appending first
+    and slicing afterwards cut the instruction precisely when the candidate
+    set was biggest. The native host mirrors this arithmetic.
+    """
+    candidates = "\n".join(parts)
+    room = MAX_CONTEXT_CHARS - len(PROMPT_SELECTION_INSTRUCTION) - 1
+    if len(candidates) > room:
+        candidates = candidates[:room]
+    return candidates + "\n" + PROMPT_SELECTION_INSTRUCTION
+
+
 REFRESHING_EVENTS = {"SessionStart", "UserPromptSubmit"}
 
 STALE_INDEX_MESSAGE = (
@@ -735,17 +759,16 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
             )
             if part
         ]
-        if parts:
-            # R5: retrieval narrows, the model chooses. The old heading asserted
-            # relevance ("relevant to this prompt"), which read as a settled
-            # answer; candidates plus one selection instruction hand the final
-            # relevance call to the session model without spending a model call
-            # in the hook itself (ADR-036).
-            parts.append(
-                "These are retrieval candidates, not confirmed matches: apply "
-                "the ones that actually govern this work and ignore the rest."
-            )
-        return ("\n".join(parts)[:MAX_CONTEXT_CHARS], "prompt") if parts else ("", "noop")
+        if not parts:
+            return "", "noop"
+        # R5: retrieval narrows, the model chooses. The old heading asserted
+        # relevance ("relevant to this prompt"), which read as a settled
+        # answer; candidates plus one selection instruction hand the final
+        # relevance call to the session model without spending a model call
+        # in the hook itself (ADR-036). The instruction's length is reserved
+        # in _prompt_candidates_context: append-then-slice cut it precisely
+        # when the candidate set was biggest.
+        return _prompt_candidates_context(parts), "prompt"
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")
         if envelope.event == "PreToolUse" and tool in PLAN_EXIT_TOOLS:
