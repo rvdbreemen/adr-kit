@@ -301,13 +301,48 @@ _VERDICTS = {
 }
 
 
+# The health family behind this entry point. `adr-audit status` and friends
+# dispatch to the sibling implementations, so a user needs two commands --
+# adr-audit for anything on demand, adr-guardian for the unprompted cadence --
+# instead of six. The siblings stay on disk as support modules because the
+# guardian, the lifecycle gates and the skills spawn them directly; what
+# shrinks is the surface a person has to know, not the capability.
+HEALTH_SUBCOMMANDS = {
+    "status": "adr-status",
+    "quality": "adr-quality",
+    "readiness": "adr-readiness",
+    "doctor": "adr-doctor",
+}
+
+
+def _dispatch_health_subcommand(argv: List[str]) -> Optional[int]:
+    """Run `adr-audit <status|quality|readiness|doctor> ...`, or None.
+
+    A subprocess rather than an import: each sibling owns its argument
+    surface and exit-code contract, and re-parsing them here would be a
+    second copy that drifts.
+    """
+    if not argv or argv[0] not in HEALTH_SUBCOMMANDS:
+        return None
+    sibling = Path(__file__).resolve().with_name(HEALTH_SUBCOMMANDS[argv[0]])
+    result = subprocess.run([sys.executable, str(sibling), *argv[1:]])
+    return result.returncode
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    dispatched = _dispatch_health_subcommand(
+        list(sys.argv[1:] if argv is None else argv)
+    )
+    if dispatched is not None:
+        return dispatched
     parser = argparse.ArgumentParser(
         prog="adr-audit",
         description="Lint the decisions and judge the code in one command.",
         epilog=(
             "Exit codes: 0 clean, 1 code violation, 3 ADR-quality failure, "
-            "4 both, 2 the audit could not run."
+            "4 both, 2 the audit could not run. Subcommands: "
+            "`adr-audit status|quality|readiness|doctor` dispatch to the "
+            "health family with each tool's own arguments and exit codes."
         ),
     )
     parser.add_argument("--adr-dir", default="docs/adr")

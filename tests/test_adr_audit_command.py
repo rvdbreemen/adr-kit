@@ -465,3 +465,30 @@ def test_this_repositorys_own_records_pass_every_gate():
     )
 
     assert result.returncode == 0, result.stdout[-2000:]
+
+
+def test_health_subcommands_dispatch_to_the_family(tmp_path):
+    """`adr-audit status|quality|readiness|doctor` reach the siblings.
+
+    One entry point for everything on demand (TASK-147): the sibling keeps
+    its own argument surface and exit-code contract, so this asserts the
+    dispatch and the passthrough, not the sibling's behaviour.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-audit"), "status",
+         "--adr-dir", str(REPO_ROOT / "docs" / "adr"), "--format", "json"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    assert result.returncode == 0, result.stderr[:400]
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["total"] > 0
+
+    unknown = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "adr-audit"), "status",
+         "--no-such-flag"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    assert unknown.returncode == 2, "the sibling's own parser answers"

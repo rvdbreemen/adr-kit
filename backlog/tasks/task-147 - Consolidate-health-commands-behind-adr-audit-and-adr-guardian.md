@@ -1,9 +1,10 @@
 ---
 id: TASK-147
 title: Consolidate health commands behind adr-audit and adr-guardian
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-09 10:34'
+updated_date: '2026-08-09 12:46'
 labels: []
 dependencies: []
 references:
@@ -24,3 +25,9 @@ Step 4 of docs/plans/kiss-simplification-plan.md. Independent of the removal tas
 - [ ] #2 R15 exit behaviour still distinguishes bad records from violating code
 - [ ] #3 python -m pytest -q passes; build-client-adapters.py --check reports changed=0
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+adr-audit gained health subcommands (status, quality, readiness, doctor) dispatching to the sibling implementations via subprocess so each keeps its own argument surface and exit-code contract; R15's own exit codes (0/1/3/4/2) untouched. README's user surface now names adr-audit <sub> for the four; adr-audit and adr-guardian are the two entry points a person needs. The siblings stay on disk as support modules because the guardian, the lifecycle gates and the skills spawn them directly - capability preserved, surface shrunk. Dispatch test added. Full suite: 1744 passed, 14 skipped; adapters changed=0.
+<!-- SECTION:FINAL_SUMMARY:END -->
