@@ -4,7 +4,44 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.48.0] - 2026-08-09
+
+This release simplifies what adr-kit is: retrieval is lexical plus graph, the
+judge runs on the CLI you are already signed in to, and the health commands sit
+behind two entry points. It also makes the periodic LLM sweep survivable, and
+stops several ways the tooling could report work it had not done.
+
+**Upgrade step.** A `docs/adr/.adr-kit.json` carrying any of the eight retired
+keys now FAILS validation by name instead of being ignored with a warning:
+`judge.openrouter_model`, `judge.ollama_model`, `judge.openai_model`,
+`judge.llm_cmd`, `judge.llm_model`, `judge.llm_default`, `suggest.llm_cmd`,
+`suggest.llm_model`. Delete them and select the backend with
+`bin/adr-judge --set-backend host --host-client <your client>`. An operator who
+needs one run to go elsewhere uses `ADR_KIT_LLM_CMD` or `--llm-cmd`, which is an
+environment fact and never repository configuration (ADR-025).
+
 ### Added
+
+- **Per-ADR judge verdicts in the guardian** (TASK-154, ADR-037): `llm_tier`
+  gains an `adrs` map recording, per ADR, when it was last judged and what the
+  verdict was. `adr-guardian stamp llm --adr ADR-NNN --verdict ok|violation`
+  records one verdict the moment it exists, so a 25-minute sweep that is
+  interrupted keeps everything it established, an ADR that times out stays due
+  while its neighbours stay fresh, and a newly added ADR is judged on the next
+  sweep instead of inheriting someone else's interval. A recorded `violation`
+  keeps the llm tier due regardless of tier freshness, and the SessionStart
+  nudge names the outstanding ids, until a re-judge stamps that ADR `ok`.
+- **The guardian sweep reports per ADR while it runs** (TASK-154): step 3b
+  judges one ADR per isolated call and prints its verdict as it lands, with
+  resume-awareness that skips ADRs already fresh. A long sweep is now
+  distinguishable from a hung one.
+- **Whole-set cost picture in `adr-migrate --enable-llm-judge`** (TASK-152):
+  the result carries `summary.judged_after` and `summary.unbounded_after`, and
+  the CLI prints both. The per-row list only showed this run's delta, which read
+  as cost-free on a repository where the already-enabled ADRs dominate: one
+  operator accepted a "0 unbounded" dry-run on a set that ended at 64 unscoped
+  of 68 judged, roughly 20 seconds of blocking each, on every commit.
 
 - **`adr-audit status|quality|readiness|doctor`** (TASK-147): the health
   family folds behind the audit entry point. The on-demand surface is two
@@ -69,6 +106,52 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   contract stays in the Markdown record. This keeps the graph inside
   ADR-014's 2 KiB-per-ADR context budget as the superseded tail grows (the
   margin had shrunk to 307 bytes).
+- **The prompt-time injection presents candidates instead of asserting
+  relevance** (TASK-156, spec R5). The headings become "Accepted ADR candidates
+  for this prompt (retrieval-ranked)" and "Proposed ADR candidates for this
+  prompt (advisory)", followed by one instruction telling the session model to
+  apply what actually governs the work and ignore the rest. Retrieval narrows;
+  the model chooses. The plan-exit and pre-edit injections keep their assertive
+  headings, because at edit time "these decisions govern this file" is a
+  statement of fact rather than a retrieval guess.
+- **The upgrade skill finishes the judge setup** (TASK-153). It leads with the
+  whole-set cost totals, walks `--set-backend` when no usable backend is
+  recorded, and puts the per-commit cost in front of the user before it is paid:
+  one isolated model call per unscoped ADR, on every commit. When that is
+  prohibitive it offers `judge.llm_enabled: false` with the guardian llm tier
+  (`guardian.llm_stale_days`) as the documented cadence, and records the choice.
+- **The init and judge skills match ADR-036** (TASK-158). Both offered the
+  retired backends and issued `--set-backend openrouter|ollama|openai-compatible`
+  commands that argparse now refuses, which broke guided setup mid-flow.
+
+### Fixed
+
+- **A per-ADR stamp can no longer lose a verdict silently** (TASK-157). An empty
+  `--adr` passed the pairing check and then failed a truthiness dispatch,
+  stamping the whole tier as a completed sweep; an id that did not resolve to an
+  ADR file (a typo, an unpadded `ADR-1`) was written and pruned inside the same
+  transaction, exiting 0 with the verdict gone. Both are refused with exit 2
+  before any state is written, and `ADR-1` now normalises to `ADR-001` through
+  the kit's shared id reader rather than being rejected over formatting.
+- **A sweep can no longer report work it did not do** (TASK-157, TASK-159).
+  `adr-judge` exits 0 when its LLM pass degrades to declarative-only, and also
+  when handed an empty diff, so the sweep stamped `ok` for every ADR when the
+  backend was broken or when `git diff HEAD~10 HEAD` failed in a repository with
+  fewer than eleven commits. The sweep now aborts on a degradation marker and
+  derives its diff base with a root-commit fallback. A per-ADR stamp also
+  refuses tier-level flags (`--suggest`, `--audit`, `--coverage` and siblings)
+  instead of accepting and dropping them.
+- **The prompt-time selection instruction survives a large candidate set**
+  (TASK-157). The Python host appended the instruction and then truncated to the
+  context budget, cutting the instruction precisely when the candidate list was
+  biggest; the native host truncated each section but never the combined
+  context, exceeding the budget instead. Both now reserve the instruction's
+  length and truncate the candidates.
+- **Windows Copilot no longer runs the uncertified native host by default**
+  (TASK-160). `run-hook.cmd` gates the native exe behind `ADR_KIT_NATIVE_HOOK=1`
+  because preferring it silently narrowed governance on Windows; the generated
+  Copilot PowerShell wrapper preferred it unconditionally. It is now gated the
+  same way.
 
 ## [0.47.0] - 2026-08-07
 
@@ -2393,7 +2476,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.47.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.44.1...v0.45.0
