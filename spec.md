@@ -21,7 +21,7 @@ Three consequences follow, and every requirement below serves one of them.
 **A decision is context, not paperwork.** The reason to write an ADR down is that
 the next agent — or the next person — will otherwise re-decide it, differently, in
 a file nobody is looking at. The record exists to be *read back* at the moment work
-happens, which is why retrieval (R5, R6) and injection (R2, R3, R4) matter as much
+happens, which is why retrieval (R5) and injection (R2, R3, R4) matter as much
 as authoring.
 
 **Changing course is allowed; changing it by accident is not.** When a new choice is
@@ -144,61 +144,31 @@ At the start of a new chat, and again when a prompt or an agent begins work, a h
 looks at the repository it is in and runs an ADR query, returning the **top 5 ADRs**
 relevant to that prompt or to the code changes about to be made.
 
-**The LLM itself picks the five.** The vector database of R6 supplies the
-candidate set — that part is deterministic machinery — but the final selection of
-which five ADRs are relevant to this prompt is a model judgement, not a scoring
-formula. Retrieval narrows; the model chooses.
+**The LLM itself picks the five.** The generated index and the graph of R7 and
+R11 supply the candidate set — lexical scoring over frontmatter metadata
+(topics, aliases, symbols, components) plus one-hop related neighbours; that
+part is deterministic machinery — but the final selection of which five ADRs
+are relevant to this prompt is a model judgement, not a scoring formula.
+Retrieval narrows; the model chooses.
 
 This is the division of labour R11 asks for, applied to one case: deterministic
-where determinism is cheap and correct (embedding, candidate recall, metadata
-filtering such as status and supersession), model judgement where the question is
+where determinism is cheap and correct (candidate recall, metadata filtering
+such as status and supersession), model judgement where the question is
 genuinely about meaning ("is this decision relevant to what the user just asked?").
 
 ## R6 — A vector database over the ADRs
 
-The ADRs are embedded into a vector database so the right ADR is found fast — not
-only by tag, theme or keyword, but by **semantic proximity**.
+**Retired 2026-08-09 by ADR-036.** The vector layer never ran in this
+repository, and the shipped rerank could not close the zero-token-overlap miss
+this requirement existed for: it reordered candidates lexical ranking had
+already found. Retrieval is lexical scoring over the generated index plus
+one-hop graph neighbours (R5, R7, R11), with the session model making the
+final selection (R5). Re-entry, should the need ever return, is a future ADR
+superseding ADR-036 on its own evidence.
 
 ### R6.1 — The corpus is built ahead of time; the query is embedded when it is asked
 
-The ADR corpus is embedded in an explicit build step, alongside index
-generation. The query and hook paths read that store rather than rebuilding it,
-because re-embedding every ADR on every prompt would blow R21 by orders of
-magnitude and would burn a model call on text that has not changed.
-
-Embedding the *query itself* is a different act and it is allowed, in a query
-step and in a hook. Semantic retrieval is a comparison between two vectors; a
-path that may not produce the second one cannot do semantic retrieval at all,
-and would silently degrade to the lexical ranking it was meant to improve on.
-The query is one short string and one small vector, so the cost is bounded in a
-way that rebuilding the corpus is not.
-
-What that costs is stated rather than discovered: the hot path now depends on an
-embedding backend being reachable. Three properties keep it honest. It stays
-inside R21's ceiling, measured, with the backend's own timeout well under it. It
-fails soft — an unreachable, slow or erroring backend falls back to lexical
-ranking and says which route answered, rather than failing the hook or blocking
-the prompt. And the backend is the local runtime of R16 by default, so the
-common case is offline and key-free; a remote endpoint is a choice the user
-makes, with a latency and privacy consequence they were told about first.
-
-The store is derived, so it must be able to say when it is wrong. Each entry
-records the embedding model identity, the vector dimension, and a content hash
-of the ADR it came from. A mismatch of any of the three marks the store stale,
-and a stale or missing store falls back to lexical ranking and says so — rather
-than failing, or answering quietly from vectors that no longer describe the
-decision.
-
-The store is machine-local and untracked by default, because it is derived and
-specific to one embedding model. A team that wants byte-identical retrieval on
-every machine may commit it through the settings surface of R13.
-
-The embedding backend is the judge backend of R12 — one registry, one setting.
-Changing it changes the embedding model, which marks the whole store stale and
-forces a rebuild; recording the model identity is what makes that visible
-instead of silent. Note also that no coding-client CLI exposes an embeddings
-endpoint today, so R12's client-first preference is the stated intent and in
-practice degrades to the local runtime until one appears.
+**Retired 2026-08-09 with R6, by ADR-036.**
 
 ## R7 — Precise cross-references, always-current index
 
@@ -334,26 +304,36 @@ dropped is exactly the context a later reader needs.
 An ADR is never removed. It is superseded.
 
 - A superseded ADR stops governing, but does not disappear.
-- The supersession relationship is carried as metadata in **both the index and the
-  vector database**, so the chain is always traceable.
+- The supersession relationship is carried as metadata in **the index**, so the
+  chain is always traceable.
 
-## R11 — Graph and embeddings as first-class machinery
+## R11 — Graph techniques as first-class machinery
 
-Graph techniques and embedding vectors improve findability, analysis speed and the
-*determinism* of the whole system. They must be used to their full extent.
+Graph techniques improve findability, analysis speed and the *determinism* of
+the whole system. They must be used to their full extent.
 
 Preference order: **deterministic techniques first, LLM where genuinely needed.**
 
-## R12 — LLM routing: client first, but never client-only
+The embeddings half of this requirement ("graph and embeddings") was retired
+2026-08-09 by ADR-036, together with R6.
 
-The coding client's own LLM is the preferred backend, but the ability to use other
-models must be built in **from the start**, not retrofitted:
+## R12 — LLM routing: the host client's model
 
-- local runtimes: **Ollama** and **LM Studio**
-- external API endpoints: **OpenRouter** and comparable services
+The judge and every other model-calling entry point run on the **coding
+client's own LLM**, through the client CLI the installer recorded at install
+time (`claude -p`, `codex exec`, `copilot -p`), with no model flag, so each
+CLI resolves the model its own user configured.
 
-The choice is offered during setup and can be changed later through the settings
-command.
+One escape hatch exists, for the operator only: `ADR_KIT_LLM_CMD` in the
+environment or `--llm-cmd` on the command line may name a different command.
+It is honoured precisely because it is operator-controlled;
+repository-tracked configuration never reaches it.
+
+Where no client CLI is available (continuous integration, a machine without
+an agent), the LLM pass degrades to declarative-only with one warning - the
+floor ADR-001 established. There are no other backends: the multi-backend
+registry (OpenRouter, Ollama, LM Studio, OpenAI-compatible endpoints) was
+retired 2026-08-09 by ADR-036.
 
 ### R12.1 — Tracked configuration selects; it never introduces
 
@@ -367,13 +347,15 @@ key written into a committed file is a published key. Where a self-hosted or
 local runtime actually lives is a fact about the machine and belongs in the
 gitignored machine-local file, alongside the signer of R8.1. No backend is
 selected by probing which CLIs happen to exist on the machine: which model
-receives the diff is never guessed. The same rule governs the embedding backend
-of R6, because it is the same registry and the same setting.
+receives the diff is never guessed. With R12 reduced to the host backend
+(ADR-036) this rule is structural rather than guarded: committed configuration
+has no network backend left to select, and the escape hatch lives outside the
+repository by construction.
 
 ## R13 — Settings as a first-class surface
 
-Anything adjustable — judge-by-default, which hooks are active, the LLM backend of
-R12 — is adjustable through `/adr-kit:settings`.
+Anything adjustable — judge-by-default, which hooks are active, the host client
+of R12 — is adjustable through `/adr-kit:settings`.
 
 Settings resolve in one order, everywhere: an explicit per-project setting wins,
 then an explicit global default, then a detected safe default. The order is
@@ -433,42 +415,9 @@ track 3 backstop.
 
 ## R16 — Setup detects the local embedding runtime and offers a way forward
 
-Setup and upgrade must find out whether a local embedding runtime is available,
-and act on the answer instead of leaving the user to discover the gap later.
-
-**Detected and present.** If Ollama is reachable and carries an embedding model,
-local embedding is the default and every embedding-backed feature is on. No
-question is asked, because the answer is already yes.
-
-**Detected and absent.** Say so. Explain how to install Ollama, then offer three
-routes rather than one:
-
-1. **Install it now.** Install Ollama locally together with the Qwen embedding
-   model.
-2. **Configure an existing runtime.** The user may already have one on another
-   host, or prefer LM Studio (R12).
-3. **Use a remote endpoint.** OpenRouter or another API endpoint, offered here so
-   the user is never left with no working option.
-
-**Warn before installing, on hardware grounds.** If no GPU is detected, say so
-*before* installing anything, and recommend the remote route instead — an
-embedding model on CPU is slow enough to make the 2 s deterministic-path budget (R21)
-unreachable, which turns a feature into a regression.
-
-### What this requires of the implementation
-
-- Detection is deterministic, local, stdlib-only and fail-soft. It must never
-  block setup, and a missing runtime is a normal outcome, not an error.
-- Installing third-party software is a **consented action**, never silent and
-  never elevated without asking. The user chose route 1 or they did not.
-- The GPU check is a heuristic, and it must present itself as one. Ollama runs on
-  CPU; the warning is about speed, not capability.
-- Model size is part of the offer, not a surprise afterwards. The measured
-  default `qwen3-embedding:4b` is roughly 2.5 GB. State the download size before
-  starting it, and offer `nomic-embed-text` as the explicit English-only
-  fallback where one exists.
-- Whatever is chosen lands in the settings surface (R13), so it can be changed
-  later without re-running setup.
+**Retired 2026-08-09 by ADR-036, together with R6, which it existed to
+provision.** Setup no longer detects an embedding runtime, offers no model
+download, and asks no backend question.
 
 ## R15 — `/adr-kit:audit`: one command that lints and judges
 
@@ -561,10 +510,9 @@ turns a governance gate into a broken commit on someone else's machine. The cost
 of a dependency here is not paid once by adr-kit; it is paid by every project
 that adopts it.
 
-This binds R6 and R11 in particular. The vector layer, the graph and the index
-are hand-rolled over the standard library, and where an external model or
-endpoint is genuinely needed it is reached over a socket rather than through a
-client library. The cost of holding the line is named too: adr-kit hand-maintains
+This binds R11 in particular. The graph and the index are hand-rolled over the
+standard library, and where an external model is genuinely needed it is reached
+through the host client's CLI rather than through a vendor library. The cost of holding the line is named too: adr-kit hand-maintains
 what an SDK would have absorbed, so every protocol or format revision is manual
 work. Development, test and coverage tooling is unaffected; it never reaches a
 shipped artefact.
@@ -636,10 +584,10 @@ ADRs — degradation landing exactly where adoption is supposed to grow.
 
 A budget may not be relaxed to make a failing test pass. Changing one requires
 superseding or amending the decision that fixes it, and that friction is
-intentional. Opt-in LLM passes are exempt, because their latency is network- and
-model-bound rather than ours; the cost of that exemption is stated rather than
-hidden, since a user who selects the local model backend accepts a slower
-commit.
+intentional. Opt-in LLM passes are exempt, because their latency is model-bound
+rather than ours; the cost of that exemption is stated rather than hidden,
+since an operator who routes the judge through the escape hatch of R12 accepts
+whatever latency that command has.
 
 ## Appendix A — Where the kit attaches: hooks and CI, as shipped
 
@@ -780,7 +728,7 @@ Every hook today fires *before* work. Nothing fires after a session concludes, w
 is when the set of decisions actually made is knowable. This is the natural home for
 "you changed X, Y and Z this session; two of those look like decisions". Listed last
 deliberately: it wants a *language* model to exercise judgement in a hook, which is
-a different act from R6.1's query embedding and from `pr-create`'s deterministic
+a different act from `pr-create`'s deterministic
 judge. ADR-019 settled the end-of-session moment as silent. Reopening it belongs in
 an ADR before it belongs in code.
 

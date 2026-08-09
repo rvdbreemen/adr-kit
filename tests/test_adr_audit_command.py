@@ -428,13 +428,13 @@ def test_a_vague_record_fails_only_when_the_gates_are_asked_for(tmp_path):
 
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
-    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-036-*.md"))[0]
     body = isolated_copy(source.read_text(encoding="utf-8")).replace(
         "## Decision Drivers",
         "## Decision Drivers\n\n"
         "* The OTGW firmware talks to the HVAC unit over the MQTT bridge.\n",
     )
-    (adr_dir / "ADR-020-vague.md").write_text(body, encoding="utf-8")
+    (adr_dir / "ADR-036-vague.md").write_text(body, encoding="utf-8")
 
     def lint(*extra):
         return subprocess.run(

@@ -258,7 +258,7 @@ def test_the_alternatives_count_is_no_longer_a_quality_advisory():
 
 
 def _one_option(heading: str) -> str:
-    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-020-*.md"))[0]
+    source = sorted((REPO_ROOT / "docs" / "adr").glob("ADR-036-*.md"))[0]
     body = isolated_copy(source.read_text(encoding="utf-8")).replace(
         "## Considered Options", heading
     )
@@ -270,7 +270,7 @@ def _one_option(heading: str) -> str:
 def _lint(tmp_path: Path, body: str):
     adr_dir = tmp_path / "adr"
     adr_dir.mkdir()
-    (adr_dir / "ADR-020-x.md").write_text(body, encoding="utf-8")
+    (adr_dir / "ADR-036-x.md").write_text(body, encoding="utf-8")
     return subprocess.run(
         [sys.executable, str(REPO_ROOT / "bin" / "adr-lint"), str(adr_dir)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",

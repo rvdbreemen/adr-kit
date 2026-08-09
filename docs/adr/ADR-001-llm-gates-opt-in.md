@@ -11,6 +11,7 @@ supersedes: []
 superseded_by: "ADR-017"
 related:
   - "ADR-035"
+  - "ADR-036"
 topics:
   - "llm judge"
   - "pre-commit"
@@ -48,6 +49,11 @@ status_history:
     status: Superseded
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-035
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-09
+    status: Superseded
+    changed_by: adr-kit
+    reason: Related to ADR-036
     changed_via: adr-kit lifecycle
 ```
 

@@ -81,11 +81,15 @@ Bought complexity that earns its weight. Not in scope for removal:
 
 ## ADR work (step 2)
 
-- Supersede **ADR-018** and **ADR-020** with one new ADR recording the
+- One new ADR (ADR-036) supersedes **ADR-017** and **ADR-020**, recording the
   retirement of the vector layer and the evidence (no store, recall gap not
-  closed by the shipped path, 36-record corpus).
-- Amend or supersede **ADR-017** to host + escape hatch. **ADR-025** (select
-  vs introduce) stands.
+  closed by the shipped path, 36-record corpus). ADR-018 is already
+  superseded by ADR-020, so the chain 014 - 018 - 020 - 036 stays traceable.
+  **ADR-025** (select vs introduce) stands.
+- The generated graph carries a Decision Contract only for governing records:
+  Superseded nodes keep identity, links and metadata but an empty contract,
+  which keeps ADR-INDEX.json inside ADR-014's 2 KiB-per-ADR budget as the
+  superseded tail grows.
 - The reversed work is acknowledged by task id, not erased: TASK-79 (vector
   layer epic), TASK-85 (LM Studio / OpenAI-compatible), TASK-87 (runtime
   detection at setup), TASK-94 (wire semantic retrieval), TASK-107, TASK-109,

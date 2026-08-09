@@ -1628,3 +1628,24 @@ def test_scope_matching_is_per_file_not_per_diff(tmp_path):
 
     assert code == 0
     assert out["llm"]["targets"] == ["ADR-001"]
+
+
+# ===========================================================================
+# Gate adr-host-only-judge-v1 (ADR-036)
+# ===========================================================================
+#
+# Registered as a strict-xfail placeholder at acceptance, exactly how
+# adr-judge-backend-registry-v1 began: ADR-036 is Accepted ahead of the
+# removals TASK-145 owes it. The placeholder asserts the end state - the
+# registry resolves `host` and nothing else - so it xfails while the HTTP
+# backends still exist and becomes an error the moment TASK-145 lands,
+# forcing this marker's replacement with the real conformance suite.
+
+GATE_ADR_HOST_ONLY_JUDGE_V1 = "adr-host-only-judge-v1"
+
+
+@pytest.mark.xfail(strict=True, reason="TASK-145 owes ADR-036 the host-only registry")
+def test_gate_adr_host_only_judge_v1_registry_resolves_host_only():
+    aj = _load_judge_module()
+    assert set(aj.BACKENDS) == {"host"}
+    assert aj.BACKEND_NAMES == ("host",)

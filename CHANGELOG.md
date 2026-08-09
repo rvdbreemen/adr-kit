@@ -4,6 +4,26 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **ADR-036 accepted: the vector layer is retired and the judge runs on the
+  host model only.** Spec R6, R6.1 and R16 are tombstoned, R11 keeps only the
+  graph, and R12 reduces to the host backend plus the operator escape hatch
+  (`ADR_KIT_LLM_CMD` / `--llm-cmd`). ADR-017 and ADR-020 are superseded; the
+  chain ADR-014 - ADR-018 - ADR-020 - ADR-036 stays traceable. The removals
+  themselves follow separately (TASK-144, TASK-145, TASK-146); the gate
+  `adr-host-only-judge-v1` is registered as a strict-xfail placeholder until
+  the host-only registry lands.
+- **`bin/adr supersede` accepts one successor for multiple predecessors.**
+  The `supersedes` field was always a list and the lint resolves every entry;
+  the command refused what the data model supports. Each predecessor still
+  gets exactly one successor.
+- **`ADR-INDEX.json` carries a Decision Contract only for governing records.**
+  A Superseded node keeps its identity, links and metadata but an empty
+  contract: authority is joined from status at search time, and the full
+  contract stays in the Markdown record. This keeps the graph inside
+  ADR-014's 2 KiB-per-ADR context budget as the superseded tail grows (the
+  margin had shrunk to 307 bytes).
 
 ## [0.47.0] - 2026-08-07
 

@@ -13,6 +13,8 @@ verified_in:
   - "hooks/adr_hook_core.py"
 supersedes: []
 superseded_by: "ADR-018"
+related:
+  - "ADR-036"
 topics:
   - "ADR retrieval"
   - "selective context"
@@ -57,6 +59,11 @@ status_history:
     status: Superseded
     changed_by: "User: Robert van den Breemen"
     reason: ADR-018 permits a precomputed embedding store in the read path
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-09
+    status: Superseded
+    changed_by: adr-kit
+    reason: Related to ADR-036
     changed_via: adr-kit lifecycle
 ```
 

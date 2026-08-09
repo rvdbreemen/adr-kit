@@ -1,15 +1,15 @@
 ---
 id: "ADR-020"
 title: "Embed the Query Where the Query Is Asked, and Read Authority From the Index"
-status: "Accepted"
-date: "2026-08-04"
+status: "Superseded"
+date: "2026-08-09"
 binding: true
 gate: "adr-query-embedding-v1"
 documents_shipped: false
 verified_in: []
 supersedes:
   - "ADR-018"
-superseded_by: null
+superseded_by: "ADR-036"
 topics:
   - "retrieval"
   - "embeddings"
@@ -37,7 +37,7 @@ format: "madr"
 
 ## Status
 
-Accepted, 2026-08-04.
+Superseded by ADR-036, 2026-08-09.
 
 ## Status History
 
@@ -57,6 +57,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: "ADR-020 replaces the embedding-moment prohibition and the frozen authority join: the query is embedded where the query is asked, and authority is read from the index."
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-09
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: "Superseded by ADR-036: the vector layer is retired; retrieval is lexical over the index plus the graph"
     changed_via: adr-kit lifecycle
 ```
 

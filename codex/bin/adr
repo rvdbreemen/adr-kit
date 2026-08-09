@@ -1032,11 +1032,11 @@ def command_supersede(args) -> List[str]:
         raise AdrLifecycleError(
             f"{new_id} is itself superseded by {new_data.get('superseded_by')}"
         )
-    existing_targets = set(new_data.get("supersedes", []))
-    if existing_targets - {old_id}:
-        raise AdrLifecycleError(
-            f"{new_id} already supersedes {', '.join(sorted(existing_targets))}"
-        )
+    # A successor may supersede several predecessors: `supersedes` is a list in
+    # the schema, the index and the lint both resolve every entry, and one
+    # decision can legitimately retire more than one record. What stays
+    # exclusive is the other direction, enforced below: each predecessor gets
+    # exactly one successor.
     for candidate in sorted(adr_dir.glob("ADR-*.md")):
         if candidate in {old_path, new_path}:
             continue
