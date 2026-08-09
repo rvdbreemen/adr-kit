@@ -6,7 +6,8 @@ date: "2026-08-09"
 binding: true
 gate: "adr-host-only-judge-v1"
 documents_shipped: false
-verified_in: []
+verified_in:
+  - "tests/test_adr_judge_llm.py"
 supersedes:
   - "ADR-017"
   - "ADR-020"

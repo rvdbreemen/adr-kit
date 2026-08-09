@@ -4,6 +4,24 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- **The embedding/vector subsystem** (TASK-144, ADR-036): `bin/adr-embed`,
+  the vector store, the embedding runtime detection, the query embedder in
+  the hooks, the vector rerank in `adr-context`, the `--check-embedding`
+  settings probe, the `embedding.*` config section and the R16 setup
+  dialogue. Retrieval is lexical scoring over the generated index plus
+  one-hop graph neighbours; the `user-prompt-submit` hook event is back to
+  `network_allowed: false`.
+- **The HTTP judge backends** (TASK-145, ADR-036): openrouter, ollama and
+  openai-compatible, with their credential env vars, the `judgment.local`
+  installer settings and the ollama doctor probes. `judge.backend` is
+  host-only; operators can still override per run with `ADR_KIT_LLM_CMD` /
+  `--llm-cmd`. A config still naming a retired backend fails validation
+  loudly (fail-closed on invalid config, as before); `resolve_llm_backend`
+  names ADR-036 and the replacement. `bin/adr_llm.py` can no longer open a
+  socket, and the gate `adr-host-only-judge-v1` asserts that over the AST.
+
 ### Changed
 
 - **ADR-036 accepted: the vector layer is retired and the judge runs on the

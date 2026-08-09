@@ -614,21 +614,14 @@ def test_host_backend_resolves_with_no_model_flag():
     assert warnings == []
 
 
-def test_ollama_and_openrouter_backends_are_reachable_from_suggest():
-    """The whole enum resolves here, not just the default row."""
+def test_only_the_host_backend_is_reachable_from_suggest():
+    """The whole enum resolves here, and the enum is host-only (ADR-036)."""
     asg = _load_suggest_module()
-    ollama, _ = asg.resolve_backend(
+    retired, warnings = asg.resolve_backend(
         _Args(), {"judge": {"backend": "ollama", "ollama_model": "gemma4:12b"}}, {}
     )
-    assert ollama.model == "gemma4:12b"
-    assert ollama.endpoint.startswith("http://127.0.0.1:11434/"), "must stay local"
-    openrouter, _ = asg.resolve_backend(
-        _Args(),
-        {"judge": {"backend": "openrouter", "openrouter_model": "anthropic/x"}},
-        {},
-    )
-    assert openrouter.model == "anthropic/x"
-
+    assert retired is None
+    assert any("retired by ADR-036" in w for w in warnings), warnings
 
 @pytest.mark.parametrize("block", ["suggest", "judge"])
 def test_repo_tracked_llm_cmd_never_becomes_the_command(block):
@@ -747,5 +740,5 @@ def test_credential_in_committed_config_is_refused_by_name(tmp_path):
     )
     code, out, err = _run_suggest(proj, CODE_DIFF)
     assert code == 2
-    assert "OPENROUTER_API_KEY" in err
+    assert "refusing to read a credential" in err
     assert "sk-not-a-real-key" not in err, "the refusal must not echo the key"

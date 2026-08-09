@@ -1,9 +1,10 @@
 ---
 id: TASK-145
 title: Reduce LLM backends to host plus the operator escape hatch
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-09 10:34'
+updated_date: '2026-08-09 11:59'
 labels: []
 dependencies:
   - TASK-143
@@ -25,3 +26,9 @@ Step 3 of docs/plans/kiss-simplification-plan.md. Requires TASK-143. In bin/adr_
 - [ ] #2 No urllib request path remains in bin/adr_llm.py
 - [ ] #3 python -m pytest -q passes; build-client-adapters.py --check reports changed=0
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bin/adr_llm.py reduced to the host backend plus the operator escape hatch: HttpBackend, OpenRouterBackend, OllamaBackend, OpenAICompatibleBackend, their factories, endpoints and credential env vars removed (826 -> ~480 lines, no urllib import left). Retired backend names get the precise ADR-036 refusal in resolve_llm_backend; committed configs naming one fail schema validation fail-closed (TASK-32.1 policy). adr-judge --set-backend is host-only; --model/--base-url flags gone; retired keys are dropped on write. The judgment.local installer-settings shape, its ollama discovery and the doctor model probes are removed. Schema enum is ['host']. Gate adr-host-only-judge-v1 replaced its strict-xfail placeholder with the real conformance suite: registry host-only, retired-name refusals, degrade-never-block, and an AST walk proving no network-capable import in adr_llm.py. ADR-036 verified_in updated. Full suite: 1767 passed, 15 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->

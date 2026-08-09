@@ -430,7 +430,7 @@ architect remains part of the decision.
 | `/adr-kit:supersede [ADR-NNN]` | guided write | no | Replace a decision: graph first, Proposed draft, approval-gated status flip, verified chain. |
 | `/adr-kit:retire [path]` | deliberate check | no | Rank Accepted ADRs for retirement on four deterministic signals. Read-only. |
 | `/adr-kit:migrate [path]` | guided rewrite | no | Add invariant metadata or convert between MADR, Nygard, and canonical profiles. Preview, then confirm. |
-| `/adr-kit:settings` | guided write | no | One surface for every knob: shows each setting, its current value, and where that value came from (default, project file, machine-local file, or environment). Also `--check-embedding`. |
+| `/adr-kit:settings` | guided write | no | One surface for every knob: shows each setting, its current value, and where that value came from (default, project file, machine-local file, or environment). |
 | `/adr-kit:install-hooks` | installer | no | Install or remove the pre-commit hook and the project-scoped guardian hook entry. |
 | `/adr-kit:upgrade` | refresh driver | no | Refresh stale copied artifacts after a plugin update; also the legacy v0.11 to v0.12 migration. |
 

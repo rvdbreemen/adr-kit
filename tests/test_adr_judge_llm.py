@@ -1040,68 +1040,6 @@ def test_host_backend_produces_a_verdict(monkeypatch):
     assert findings[0]["rule"] == "llm_judge"
 
 
-def test_openrouter_backend_resolves_and_produces_a_verdict(monkeypatch):
-    """Model from config, key from the environment, endpoint from the code."""
-    aj = _load_judge_module()
-    backend, warnings = aj.resolve_llm_backend(
-        {"backend": "openrouter", "openrouter_model": "anthropic/claude-sonnet-4.5"},
-        {}, None, {},
-    )
-    assert isinstance(backend, aj.OpenRouterBackend)
-    assert backend.model == "anthropic/claude-sonnet-4.5"
-    assert warnings == []
-
-    seen = []
-    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
-    monkeypatch.setattr(
-        aj.urllib.request,
-        "urlopen",
-        _fake_urlopen(
-            json.dumps({"choices": [{"message": {"content": BAD_VERDICT}}]}), seen
-        ),
-    )
-    findings = aj.run_llm_batch(ONE_TARGET, "diff", backend, 30)
-    assert [f["adr"] for f in findings] == ["ADR-001"]
-    assert seen[0]["url"] == aj.OPENROUTER_ENDPOINT
-    assert seen[0]["payload"]["model"] == "anthropic/claude-sonnet-4.5"
-    assert seen[0]["headers"]["Authorization"] == "Bearer " + FAKE_KEY
-
-
-def test_ollama_backend_resolves_and_produces_a_verdict(monkeypatch):
-    """Local daemon, stdlib urllib, no vendor SDK anywhere in the path."""
-    aj = _load_judge_module()
-    backend, warnings = aj.resolve_llm_backend(
-        {"backend": "ollama", "ollama_model": "gemma4:12b"}, {}, None, {}
-    )
-    assert isinstance(backend, aj.OllamaBackend)
-    assert backend.model == "gemma4:12b"
-    assert warnings == []
-
-    seen = []
-    monkeypatch.setattr(
-        aj.urllib.request,
-        "urlopen",
-        _fake_urlopen(json.dumps({"response": BAD_VERDICT}), seen),
-    )
-    findings = aj.run_llm_batch(ONE_TARGET, "diff", backend, 30)
-    assert [f["adr"] for f in findings] == ["ADR-001"]
-    assert seen[0]["url"] == aj.OLLAMA_ENDPOINT
-    assert seen[0]["url"].startswith("http://127.0.0.1:11434/"), "must stay local"
-    assert seen[0]["payload"]["stream"] is False
-    assert seen[0]["payload"]["format"] == "json"
-
-
-def test_ollama_default_model_names_a_tag_that_was_verified():
-    """gemma4:12b, not gemma:12b. The original request named a tag that did
-    not exist on the machine; a default pointing at an absent tag fails on
-    first use, which is why ADR-017 records the correction as a verified fact.
-    """
-    aj = _load_judge_module()
-    assert aj.DEFAULT_OLLAMA_MODEL == "gemma4:12b"
-    backend, _ = aj.resolve_llm_backend({"backend": "ollama"}, {}, None, {})
-    assert backend.model == "gemma4:12b"
-
-
 def test_backends_is_the_code_side_registry_the_decision_names():
     """`BACKENDS` maps each enum value to a factory, and nothing else.
 
@@ -1111,7 +1049,7 @@ def test_backends_is_the_code_side_registry_the_decision_names():
     value: every command and every endpoint is on the code side of that line.
     """
     aj = _load_judge_module()
-    assert set(aj.BACKENDS) == {"host", "openrouter", "ollama", "openai-compatible"}
+    assert set(aj.BACKENDS) == {"host"}
     assert all(callable(factory) for factory in aj.BACKENDS.values())
     assert aj.BACKEND_NAMES == tuple(aj.BACKENDS)
     # An unknown key is refused outright, not coerced into a default backend.
@@ -1125,7 +1063,7 @@ def test_backends_is_the_code_side_registry_the_decision_names():
 
 def test_backend_enum_and_default_match_the_decision():
     aj = _load_judge_module()
-    assert aj.BACKEND_NAMES == ("host", "openrouter", "ollama", "openai-compatible")
+    assert aj.BACKEND_NAMES == ("host",)
     assert aj.DEFAULT_BACKEND == "host"
     judge = CONFIG_SCHEMA["properties"]["judge"]["properties"]
     # The enum and the code registry are one contract; assert they agree
@@ -1171,62 +1109,9 @@ def test_host_backend_degrades_when_no_client_was_recorded():
     assert attestation["degraded"] is True
 
 
-def test_openrouter_degrades_without_a_key_and_names_the_variable(monkeypatch):
+def test_the_host_backend_degrades_on_unparseable_output(monkeypatch):
+    """Nothing usable means None, never a pass."""
     aj = _load_judge_module()
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    backend, _ = aj.resolve_llm_backend(
-        {"backend": "openrouter", "openrouter_model": "a/b"}, {}, None, {}
-    )
-    assert "OPENROUTER_API_KEY" in backend.unavailable_reason()
-    assert aj.run_llm_batch(ONE_TARGET, "diff", backend, 30) is None
-
-
-def test_openrouter_degrades_without_a_model(monkeypatch):
-    aj = _load_judge_module()
-    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
-    backend, _ = aj.resolve_llm_backend({"backend": "openrouter"}, {}, None, {})
-    assert "judge.openrouter_model" in backend.unavailable_reason()
-    assert aj.run_llm_batch(ONE_TARGET, "diff", backend, 30) is None
-
-
-def test_openrouter_degrades_on_an_http_error(monkeypatch):
-    """A 500 from the vendor is tooling drift, not an architectural violation."""
-    aj = _load_judge_module()
-    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
-    monkeypatch.setattr(
-        aj.urllib.request,
-        "urlopen",
-        _raising_urlopen(
-            aj.urllib.error.HTTPError(
-                aj.OPENROUTER_ENDPOINT, 500, "Server Error", {}, None
-            )
-        ),
-    )
-    backend, _ = aj.resolve_llm_backend(
-        {"backend": "openrouter", "openrouter_model": "a/b"}, {}, None, {}
-    )
-    assert aj.run_llm_batch(ONE_TARGET, "diff", backend, 30) is None
-
-
-def test_ollama_degrades_when_the_daemon_is_unreachable(monkeypatch):
-    aj = _load_judge_module()
-    monkeypatch.setattr(
-        aj.urllib.request,
-        "urlopen",
-        _raising_urlopen(aj.urllib.error.URLError("connection refused")),
-    )
-    backend, _ = aj.resolve_llm_backend(
-        {"backend": "ollama", "ollama_model": "gemma4:12b"}, {}, None, {}
-    )
-    attestation = {"evaluated": [], "degraded": False, "degraded_reason": None}
-    assert aj.run_llm_batch(ONE_TARGET, "diff", backend, 30, attestation) is None
-    assert attestation["degraded"] is True
-
-
-def test_every_backend_degrades_on_unparseable_output(monkeypatch):
-    """Three transports, one taxonomy: nothing usable means None, never a pass."""
-    aj = _load_judge_module()
-    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
 
     class _R:
         returncode = 0
@@ -1240,40 +1125,34 @@ def test_every_backend_degrades_on_unparseable_output(monkeypatch):
     )
     assert aj.run_llm_batch(ONE_TARGET, "diff", host, 30) is None
 
-    monkeypatch.setattr(
-        aj.urllib.request,
-        "urlopen",
-        _fake_urlopen(json.dumps({"choices": [{"message": {"content": "nope"}}]})),
-    )
-    router, _ = aj.resolve_llm_backend(
-        {"backend": "openrouter", "openrouter_model": "a/b"}, {}, None, {}
-    )
-    assert aj.run_llm_batch(ONE_TARGET, "diff", router, 30) is None
-
-    monkeypatch.setattr(
-        aj.urllib.request, "urlopen", _fake_urlopen(json.dumps({"response": "nope"}))
-    )
-    local, _ = aj.resolve_llm_backend(
-        {"backend": "ollama", "ollama_model": "gemma4:12b"}, {}, None, {}
-    )
-    assert aj.run_llm_batch(ONE_TARGET, "diff", local, 30) is None
-
-
 def test_an_unavailable_backend_does_not_block_the_commit(tmp_path):
     """The contract is both halves: None from the pass AND exit 0 from the run.
 
-    Driven end to end through the real process with the openrouter backend and
-    no key in the environment, so nothing contacts the network and nothing
-    depends on a local daemon being up.
+    Driven end to end through the real process with the host backend and no
+    recorded client, so nothing can spawn and the pass has nothing to run on.
     """
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
-    _write_config(proj, {"judge": {"backend": "openrouter", "openrouter_model": "a/b"}})
+    _write_config(proj, {"judge": {"backend": "host"}})
     result = _run_judge_env(proj, _clean_env(), "--json")
     assert result.returncode == 0, result.stderr[:600]
     payload = json.loads(result.stdout)
     assert payload["llm"]["degraded"] is True
-    assert payload["llm"]["backend"] == "openrouter"
-    assert "OPENROUTER_API_KEY" in result.stderr
+    assert "no client was recorded" in result.stderr
+
+
+def test_a_retired_backend_in_committed_config_fails_validation(tmp_path):
+    """A config naming a backend ADR-036 retired is an invalid config.
+
+    Fail-closed is the standing policy for invalid judge configuration
+    (TASK-32.1): exit 2 and a schema error naming the field, not a silent
+    degrade that would let the gate pass on a config nobody migrated. The
+    named, what-replaced-it refusal lands with TASK-146.
+    """
+    proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
+    _write_config(proj, {"judge": {"backend": "openrouter", "openrouter_model": "a/b"}})
+    result = _run_judge_env(proj, _clean_env(), "--json")
+    assert result.returncode == 2, result.stdout[:400]
+    assert "judge.backend" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -1380,7 +1259,7 @@ def test_a_committed_endpoint_is_refused_by_validation(tmp_path):
     """No bespoke check to hang this on - the schema is the whole defence."""
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
     _write_config(proj, {
-        "judge": {"backend": "ollama", "ollama_endpoint": "http://evil.invalid/api"}
+        "judge": {"backend": "host", "ollama_endpoint": "http://evil.invalid/api"}
     })
     result = _run_judge_env(proj, _clean_env())
     assert result.returncode == 2, result.stdout[:400]
@@ -1392,16 +1271,17 @@ def test_a_committed_endpoint_is_refused_by_validation(tmp_path):
     "openrouter_api_key", "api_key", "apiKey", "token", "secret", "password",
 ])
 def test_a_committed_credential_is_refused_by_name(tmp_path, key):
-    """Refused with an error naming the environment variable, and never used.
+    """Refused with the shared sentence, and never used.
 
-    ADR-017 Must Not: a key present in .adr-kit.json must not be used; it is
-    refused with an error naming the environment variable to use instead.
+    ADR-017's Must Not survives ADR-036 unchanged: a key present in
+    .adr-kit.json must not be used. The refusal now also says that no backend
+    takes a credential at all.
     """
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
-    _write_config(proj, {"judge": {"backend": "openrouter", key: "sk-leaked-secret"}})
+    _write_config(proj, {"judge": {"backend": "host", key: "sk-leaked-secret"}})
     result = _run_judge_env(proj, _clean_env())
     assert result.returncode == 2, result.stdout[:400]
-    assert "OPENROUTER_API_KEY" in result.stderr
+    assert "refusing to read a credential" in result.stderr
     assert key in result.stderr
     assert "sk-leaked-secret" not in result.stderr, "the refusal must not echo the key"
 
@@ -1457,31 +1337,16 @@ def test_set_backend_refuses_an_incomplete_choice(tmp_path):
     """A settings command that writes a config the judge then degrades on is
     worse than no command: it reports success and then produces silence."""
     proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
-    for args, needle in [
-        (("--set-backend", "host"), "--host-client"),
-        (("--set-backend", "openrouter"), "--model"),
-        (("--set-backend", "ollama"), "--model"),
-    ]:
-        result = _run_judge_cli(proj, *args)
+    result = _run_judge_cli(proj, "--set-backend", "host")
+    assert result.returncode == 2, result.stdout[:400]
+    assert "--host-client" in result.stderr
+    # Retired backend names fail at the argument parser: the enum is the
+    # registry, and the registry is host-only (ADR-036).
+    for retired in ("openrouter", "ollama", "openai-compatible"):
+        result = _run_judge_cli(proj, "--set-backend", retired)
         assert result.returncode == 2, result.stdout[:400]
-        assert needle in result.stderr
     assert not (proj / "docs" / "adr" / ".adr-kit.json").exists(), (
         "a refused choice must not leave a half-written config"
-    )
-
-
-def test_set_backend_never_stores_a_key_and_says_where_it_belongs(tmp_path):
-    aj = _load_judge_module()
-    proj = _make_project(tmp_path, {"ADR-001-eventual.md": LLM_JUDGE_ADR})
-    result = _run_judge_cli(
-        proj, "--set-backend", "openrouter", "--model", "anthropic/claude-sonnet-4.5"
-    )
-    assert result.returncode == 0, result.stderr[:600]
-    written = (proj / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
-    assert "OPENROUTER_API_KEY" not in written
-    assert aj.find_credential_keys(json.loads(written)) == []
-    assert "OPENROUTER_API_KEY" in result.stderr, (
-        "the user must be told where the key goes instead"
     )
 
 
@@ -1495,7 +1360,9 @@ def test_set_backend_drops_the_retired_keys(tmp_path):
             "advisory_only": True,
         }
     })
-    result = _run_judge_cli(proj, "--set-backend", "ollama", "--model", "gemma4:12b")
+    result = _run_judge_cli(
+        proj, "--set-backend", "host", "--host-client", "claude-code-cli"
+    )
     assert result.returncode == 0, result.stderr[:600]
     config = json.loads(
         (proj / "docs" / "adr" / ".adr-kit.json").read_text(encoding="utf-8")
@@ -1503,7 +1370,7 @@ def test_set_backend_drops_the_retired_keys(tmp_path):
     assert "llm_cmd" not in config["judge"]
     assert "llm_model" not in config["judge"]
     assert config["judge"]["advisory_only"] is True, "unrelated settings survive"
-    assert config["judge"]["ollama_model"] == "gemma4:12b"
+    assert config["judge"]["backend"] == "host"
 
 
 # ---------------------------------------------------------------------------
@@ -1634,18 +1501,61 @@ def test_scope_matching_is_per_file_not_per_diff(tmp_path):
 # Gate adr-host-only-judge-v1 (ADR-036)
 # ===========================================================================
 #
-# Registered as a strict-xfail placeholder at acceptance, exactly how
-# adr-judge-backend-registry-v1 began: ADR-036 is Accepted ahead of the
-# removals TASK-145 owes it. The placeholder asserts the end state - the
-# registry resolves `host` and nothing else - so it xfails while the HTTP
-# backends still exist and becomes an error the moment TASK-145 lands,
-# forcing this marker's replacement with the real conformance suite.
+# ADR-036 retired the vector layer and every network backend. Everything from
+# here down IS the gate: it began as a strict-xfail placeholder registered at
+# acceptance, and TASK-145's removal turned it into this conformance suite.
+# Per the ADR's Decision Contract the gate is satisfied when a test proves:
+#
+#   1. the registry resolves `host` and nothing else;
+#   2. the operator escape hatch (ADR_KIT_LLM_CMD / --llm-cmd) still works
+#      and still outranks the registry (asserted by
+#      test_operator_overrides_still_outrank_the_registry above);
+#   3. a missing host client degrades to declarative-only and never blocks
+#      (test_an_unavailable_backend_does_not_block_the_commit above);
+#   4. no network transport exists in the shared registry module at all.
 
 GATE_ADR_HOST_ONLY_JUDGE_V1 = "adr-host-only-judge-v1"
 
 
-@pytest.mark.xfail(strict=True, reason="TASK-145 owes ADR-036 the host-only registry")
 def test_gate_adr_host_only_judge_v1_registry_resolves_host_only():
     aj = _load_judge_module()
     assert set(aj.BACKENDS) == {"host"}
     assert aj.BACKEND_NAMES == ("host",)
+    assert aj.DEFAULT_BACKEND == "host"
+    judge = CONFIG_SCHEMA["properties"]["judge"]["properties"]
+    assert judge["backend"]["enum"] == ["host"]
+
+
+def test_gate_adr_host_only_judge_v1_retired_names_get_the_precise_refusal():
+    """A backend that was once a valid choice deserves the sentence naming
+    what replaced it, not a generic enum error (defense in depth: committed
+    config is already refused by schema validation before reaching this)."""
+    aj = _load_judge_module()
+    for retired in ("openrouter", "ollama", "openai-compatible"):
+        backend, warnings = aj.resolve_llm_backend(
+            {"backend": retired}, {"judge": {"host_client": "codex-cli"}}, None, {}
+        )
+        assert backend is None
+        assert any("retired by ADR-036" in w for w in warnings), warnings
+
+
+def test_gate_adr_host_only_judge_v1_no_network_transport_in_the_registry():
+    """`bin/adr_llm.py` must not be able to open a socket: no urllib, no
+    http.client, no socket import anywhere in the module (ADR-036 Must Not).
+
+    Walked over the AST rather than grepped, so a commented-out import or a
+    mention in a docstring cannot fail it and a nested import cannot hide.
+    """
+    import ast as _ast
+
+    source = (REPO_ROOT / "bin" / "adr_llm.py").read_text(encoding="utf-8")
+    forbidden = {"urllib", "http", "socket", "requests"}
+    for node in _ast.walk(_ast.parse(source)):
+        if isinstance(node, _ast.Import):
+            names = {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, _ast.ImportFrom):
+            names = {(node.module or "").split(".")[0]}
+        else:
+            continue
+        overlap = names & forbidden
+        assert not overlap, f"network-capable import in adr_llm.py: {overlap}"

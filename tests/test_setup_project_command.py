@@ -163,23 +163,20 @@ def test_the_claude_skills_no_longer_hand_write_an_older_layout(skill):
         )
 
 
-@pytest.mark.parametrize(
-    "skill_path",
-    [
+def test_no_client_setup_path_mentions_the_embedding_runtime():
+    """spec R16 was retired by ADR-036: setup asks no backend question.
+
+    Inverted from the test that enforced R16 on all three clients, so the
+    dialogue cannot quietly return through one mirror.
+    """
+    for skill_path in [
         REPO_ROOT / "skills" / "setup" / "SKILL.md",
         REPO_ROOT / "codex" / "skills" / "setup" / "SKILL.md",
         REPO_ROOT / "copilot" / "skills" / "setup" / "SKILL.md",
-    ],
-    ids=["claude", "codex", "copilot"],
-)
-def test_every_client_setup_path_asks_about_the_embedding_runtime(skill_path):
-    """spec R16: setup must find out, and act on the answer.
-
-    It reached two callers, both Claude skills, while the mirrored
-    `bin/adr-settings` carried the flag on every client. On two of three clients
-    setup never asked, so the user met the gap when retrieval quietly fell back.
-    """
-    assert "--check-embedding" in skill_path.read_text(encoding="utf-8")
+    ]:
+        text = skill_path.read_text(encoding="utf-8")
+        assert "--check-embedding" not in text, skill_path
+        assert "embedding runtime" not in text, skill_path
 
 
 # ---------------------------------------------------------------------------

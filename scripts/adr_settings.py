@@ -27,14 +27,6 @@ DEFAULTS: dict[str, Any] = {
         "codex": {"enabled": None},
         "copilot": {"enabled": None},
     },
-    "judgment": {
-        "local": {
-            "enabled": True,
-            "provider": None,
-            "model": None,
-        },
-        "cloud": {"enabled": False},
-    },
     "doctor": {
         "auto_repair": True,
         "check_only": False,
@@ -196,8 +188,6 @@ def _validate_value(key: str, value: Any) -> None:
     boolean_keys = {
         "pre_commit.enabled",
         "update.offline",
-        "judgment.local.enabled",
-        "judgment.cloud.enabled",
         "doctor.auto_repair",
         "doctor.check_only",
     }
@@ -224,8 +214,6 @@ def _validate_value(key: str, value: Any) -> None:
             raise SettingsError("update.frequency_hours must be an integer >= 1")
     if key in {
         "update.pinned_version",
-        "judgment.local.provider",
-        "judgment.local.model",
     } and value is not None:
         if not isinstance(value, str) or not value.strip():
             raise SettingsError(f"{key} must be a non-empty string or null")
@@ -249,104 +237,3 @@ def _atomic_json_write(path: Path, value: dict[str, Any]) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
-
-
-def discover_ollama_models(
-    *,
-    endpoint: str = "http://127.0.0.1:11434/api/tags",
-    timeout: float = 0.25,
-) -> list[tuple[str, str]]:
-    request = urllib.request.Request(endpoint, headers={"Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (
-        OSError,
-        UnicodeError,
-        json.JSONDecodeError,
-        urllib.error.URLError,
-    ):
-        return []
-    models = payload.get("models", []) if isinstance(payload, dict) else []
-    names = sorted(
-        {
-            item.get("name")
-            for item in models
-            if isinstance(item, dict) and isinstance(item.get("name"), str)
-        }
-    )
-    return [("ollama", name) for name in names]
-
-
-def local_judgment_state(
-    values: dict[str, Any],
-    *,
-    discovered: Iterable[tuple[str, str]] = (),
-    probed: bool = False,
-) -> dict[str, Any]:
-    local = values["judgment"]["local"]
-    enabled = bool(local["enabled"])
-    configured = (local.get("provider"), local.get("model"))
-    candidates = sorted(set(discovered))
-
-    if not enabled:
-        return _judgment_result("disabled", False, *configured, "Enable local judgment in settings.")
-    if all(configured):
-        if not probed:
-            return _judgment_result(
-                "configured-unverified",
-                False,
-                *configured,
-                "Run settings with --probe-models or adr-doctor --deep.",
-            )
-        if configured in candidates:
-            return _judgment_result("healthy", True, *configured, None)
-        return _judgment_result(
-            "degraded",
-            False,
-            *configured,
-            "Configured provider/model was not found; choose an installed model.",
-        )
-    if not probed:
-        return _judgment_result(
-            "unconfigured",
-            False,
-            None,
-            None,
-            "Configure provider/model or run bounded local discovery.",
-        )
-    if len(candidates) == 1:
-        provider, model = candidates[0]
-        return _judgment_result("healthy-discovered", True, provider, model, None)
-    if not candidates:
-        return _judgment_result(
-            "unavailable",
-            False,
-            None,
-            None,
-            "No compatible local provider/model was found.",
-        )
-    return _judgment_result(
-        "ambiguous",
-        False,
-        None,
-        None,
-        "Multiple local models were found; configure one explicitly.",
-    )
-
-
-def _judgment_result(
-    status: str,
-    active: bool,
-    provider: str | None,
-    model: str | None,
-    action: str | None,
-) -> dict[str, Any]:
-    return {
-        "status": status,
-        "active": active,
-        "provider": provider,
-        "model": model,
-        "action": action,
-        "hook_hot_path": False,
-    }

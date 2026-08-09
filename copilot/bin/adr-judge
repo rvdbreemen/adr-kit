@@ -15,13 +15,13 @@ on every commit when invoked from the pre-commit hook:
      plus the diff, and must return a JSON verdict object
      {ADR-NNN: {verdict: OK | VIOLATION, reason: ...}} keyed to that ADR.
 
-     No model is pinned. `host` (the default) runs the non-interactive entry
-     point of whichever client CLI the installer recorded, with no model flag,
-     so the user's own configured model answers; `openrouter` and `ollama` are
-     stdlib-urllib HTTP backends the user may select instead. Every failure --
-     missing binary, unreachable daemon, absent key, non-zero status,
-     unparseable output -- degrades to declarative-only with a warning, so
-     tooling drift never blocks a legitimate commit (ADR-001, retained).
+     No model is pinned. `host` (the only backend, ADR-036) runs the
+     non-interactive entry point of whichever client CLI the installer
+     recorded, with no model flag, so the user's own configured model answers.
+     Operators may override with ADR_KIT_LLM_CMD / --llm-cmd. Every failure --
+     missing binary, non-zero status, unparseable output -- degrades to
+     declarative-only with a warning, so tooling drift never blocks a
+     legitimate commit (ADR-001, retained).
 
      SEC-HIGH (TASK-63): the pass used to batch every llm_judge ADR into one
      call sharing one prompt and one verdict object. A second Accepted ADR
@@ -49,7 +49,6 @@ Usage:
   adr-judge --config <path>                # override .adr-kit.json location
   adr-judge --show-config                  # effective judge settings + provenance
   adr-judge --set-backend host --host-client claude-code-cli
-  adr-judge --set-backend ollama --model gemma4:12b
 """
 
 from __future__ import annotations
@@ -147,21 +146,12 @@ DEFAULT_LLM_TIMEOUT_S = 120
 # tests reach through this module, and they are the same stdlib module objects
 # adr_llm holds.
 shutil = _adr_llm.shutil
-urllib = _adr_llm.urllib
 
 BACKEND_HOST = _adr_llm.BACKEND_HOST
-BACKEND_OPENROUTER = _adr_llm.BACKEND_OPENROUTER
-BACKEND_OLLAMA = _adr_llm.BACKEND_OLLAMA
-BACKEND_OPENAI_COMPATIBLE = _adr_llm.BACKEND_OPENAI_COMPATIBLE
-LM_STUDIO_BASE_URL = _adr_llm.LM_STUDIO_BASE_URL
 BACKEND_NAMES = _adr_llm.BACKEND_NAMES
 DEFAULT_BACKEND = _adr_llm.DEFAULT_BACKEND
 HOST_COMMANDS = _adr_llm.HOST_COMMANDS
 LOCAL_CONFIG_NAME = _adr_llm.LOCAL_CONFIG_NAME
-OPENROUTER_ENDPOINT = _adr_llm.OPENROUTER_ENDPOINT
-OPENROUTER_KEY_ENV = _adr_llm.OPENROUTER_KEY_ENV
-OLLAMA_ENDPOINT = _adr_llm.OLLAMA_ENDPOINT
-DEFAULT_OLLAMA_MODEL = _adr_llm.DEFAULT_OLLAMA_MODEL
 
 _CREDENTIAL_KEY_RE = _adr_llm._CREDENTIAL_KEY_RE
 _LLM_CMD_ALLOWLIST = _adr_llm._LLM_CMD_ALLOWLIST
@@ -170,9 +160,6 @@ _LLM_CMD_SAFE_VALUE_FLAGS = _adr_llm._LLM_CMD_SAFE_VALUE_FLAGS
 
 LLMBackend = _adr_llm.LLMBackend
 SubprocessBackend = _adr_llm.SubprocessBackend
-HttpBackend = _adr_llm.HttpBackend
-OpenRouterBackend = _adr_llm.OpenRouterBackend
-OllamaBackend = _adr_llm.OllamaBackend
 BACKENDS = _adr_llm.BACKENDS
 
 check_repo_llm_cmd = _adr_llm.check_repo_llm_cmd
@@ -2006,16 +1993,6 @@ def build_config_report(
             "local" if host_client else "unset",
         ),
         _entry(
-            "judge.openrouter_model",
-            judge_cfg.get("openrouter_model"),
-            "project" if "openrouter_model" in judge_cfg else "unset",
-        ),
-        _entry(
-            "judge.ollama_model",
-            judge_cfg.get("ollama_model", DEFAULT_OLLAMA_MODEL),
-            "project" if "ollama_model" in judge_cfg else "default",
-        ),
-        _entry(
             "judge.llm_timeout_seconds",
             int(judge_cfg.get("llm_timeout_seconds", DEFAULT_LLM_TIMEOUT_S)),
             "project" if "llm_timeout_seconds" in judge_cfg else "default",
@@ -2024,11 +2001,6 @@ def build_config_report(
             "judge.advisory_only",
             bool(judge_cfg.get("advisory_only", False)),
             "project" if "advisory_only" in judge_cfg else "default",
-        ),
-        _entry(
-            f"{OPENROUTER_KEY_ENV} present",
-            bool(env.get(OPENROUTER_KEY_ENV)),
-            "env",
         ),
     ]
     unavailable = backend.unavailable_reason() if backend else "no backend resolved"
@@ -2071,7 +2043,6 @@ def render_config_report(report: Dict) -> str:
 
 def apply_backend_setting(
     config_path: Path, adr_dir: Path, backend: str, host_client: Optional[str],
-    model: Optional[str], base_url: Optional[str] = None,
 ) -> int:
     """Write one backend choice into config, then prove the judge accepts it.
 
@@ -2089,40 +2060,6 @@ def apply_backend_setting(
             file=sys.stderr,
         )
         return 2
-    if backend == BACKEND_OPENROUTER and not model:
-        print(
-            f"[adr-judge] ERROR: --set-backend openrouter requires --model "
-            f"(a provider/model slug, for example 'anthropic/claude-sonnet-4.5'). "
-            f"There is no default: adr-kit does not pick a vendor's model for "
-            f"you.",
-            file=sys.stderr,
-        )
-        return 2
-    if backend == BACKEND_OLLAMA and not model:
-        print(
-            f"[adr-judge] ERROR: --set-backend ollama requires --model "
-            f"(a local tag as shown by `ollama list`, for example "
-            f"'{DEFAULT_OLLAMA_MODEL}').",
-            file=sys.stderr,
-        )
-        return 2
-    if backend == BACKEND_OPENAI_COMPATIBLE and not (base_url and model):
-        missing = []
-        if not base_url:
-            missing.append("--base-url")
-        if not model:
-            missing.append("--model")
-        print(
-            f"[adr-judge] ERROR: --set-backend openai-compatible requires "
-            f"{' and '.join(missing)}. Without both, the judge has an endpoint "
-            f"it cannot reach or a model it cannot name, and degrades to "
-            f"declarative-only at commit time -- silently, because degradation "
-            f"is the correct behaviour once the config is written. "
-            f"LM Studio's default base URL is {LM_STUDIO_BASE_URL}.",
-            file=sys.stderr,
-        )
-        return 2
-
     # main() has already parsed and validated this file, so an unreadable one
     # exits before reaching here. The strict re-read is still not the fail-open
     # reader used elsewhere: everywhere else a broken config degrading to
@@ -2152,26 +2089,17 @@ def apply_backend_setting(
         judge_block = {}
     judge_block["backend"] = backend
     judge_block.setdefault("llm_enabled", True)
-    if backend == BACKEND_OPENROUTER:
-        judge_block["openrouter_model"] = model
-    if backend == BACKEND_OLLAMA:
-        judge_block["ollama_model"] = model
-    if backend == BACKEND_OPENAI_COMPATIBLE:
-        # Which model judges is a team decision and belongs in the tracked file;
-        # where the endpoint lives is a fact about this machine and does not.
-        judge_block["openai_model"] = model
     # The dead configuration surface goes with the change rather than sitting
-    # in the file emitting a warning on every commit (ADR-017).
-    for retired in ("llm_cmd", "llm_model"):
+    # in the file emitting a warning on every commit (ADR-017; the network
+    # backend keys joined the retired set under ADR-036).
+    for retired in (
+        "llm_cmd", "llm_model", "openrouter_model", "ollama_model", "openai_model",
+    ):
         judge_block.pop(retired, None)
     document["judge"] = judge_block
     _atomic_write_json(config_path, document)
 
-    local_path = None
-    if backend == BACKEND_HOST:
-        local_path = write_local_host_client(adr_dir, host_client or "")
-    if backend == BACKEND_OPENAI_COMPATIBLE:
-        local_path = write_local_judge_value(adr_dir, "openai_base_url", base_url or "")
+    local_path = write_local_host_client(adr_dir, host_client or "")
 
     try:
         load_config(config_path)
@@ -2185,13 +2113,6 @@ def apply_backend_setting(
     print(f"[adr-judge] judge.backend = {backend} written to {config_path}")
     if local_path is not None:
         print(f"[adr-judge] judge.host_client = {host_client} written to {local_path}")
-    if backend == BACKEND_OPENROUTER and not os.environ.get(OPENROUTER_KEY_ENV):
-        print(
-            f"[adr-judge] NOTE: {OPENROUTER_KEY_ENV} is not set in this "
-            f"environment. Export it in your shell profile; do not write it "
-            f"into {config_path.name}, which is committed.",
-            file=sys.stderr,
-        )
     return 0
 
 
@@ -2465,8 +2386,8 @@ def main() -> int:
         choices=BACKEND_NAMES,
         default=None,
         help="Write judge.backend into .adr-kit.json and exit. 'host' also "
-        "needs --host-client; 'openrouter' and 'ollama' need --model. The "
-        "written config is re-validated before the command reports success.",
+        "needs --host-client. The written config is re-validated before the "
+        "command reports success.",
     )
     p.add_argument(
         "--host-client",
@@ -2475,21 +2396,6 @@ def main() -> int:
         help="With --set-backend host: which client CLI the judge should call. "
         "Recorded in the gitignored " + LOCAL_CONFIG_NAME + " because it is a "
         "per-machine fact, not a project decision.",
-    )
-    p.add_argument(
-        "--base-url",
-        default=None,
-        help="With --set-backend openai-compatible: the endpoint's OpenAI "
-        "compatible base URL, for example " + LM_STUDIO_BASE_URL + " for LM "
-        "Studio. Recorded in the gitignored " + LOCAL_CONFIG_NAME + ": where a "
-        "runtime lives is a fact about this machine, and a tracked file may "
-        "select a backend but never introduce an endpoint.",
-    )
-    p.add_argument(
-        "--model",
-        default=None,
-        help="With --set-backend openrouter|ollama: the model to judge with. "
-        "A provider/model slug for OpenRouter, a local tag for Ollama.",
     )
     p.add_argument(
         "--llm-timeout",
@@ -2604,7 +2510,6 @@ def main() -> int:
         if args.set_backend:
             return apply_backend_setting(
                 config_path, adr_dir, args.set_backend, args.host_client,
-                args.model, args.base_url,
             )
 
         if args.show_config:

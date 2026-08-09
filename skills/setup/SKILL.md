@@ -84,52 +84,7 @@ If `pwd` lacks all of `CLAUDE.md`, `.git/`, and a recognisable project manifest 
 - `/adr-kit:upgrade` — migrate v0.11 → v0.12 footprint without re-auditing.
 - `/adr-kit:install-hooks` — install the pre-commit hook independently.
 
-## Step 4c — Embedding runtime: detect, then offer
-
-ADR-018 permits a precomputed embedding store, and spec R16 asks setup to find
-out whether this machine can build one rather than letting the user discover the
-gap when retrieval quietly falls back.
-
-```bash
-python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --check-embedding
-```
-
-Read-only: it installs nothing and changes nothing. Three outcomes.
-
-- **`ready`** — a runtime with an embedding model is present. Say so and move on;
-  there is no question to ask when the answer is already yes.
-- **`runtime-without-model`** — offer the pull, with the download size stated
-  *before* it starts. 4.7 GB is a decision, not a detail.
-- **`absent`** — report it as the normal outcome it is (retrieval keeps working
-  on lexical ranking) and offer the three routes: install, point at a runtime you
-  already run, or use a remote endpoint.
-
-**Before offering to install, read the GPU line.** Without acceleration the
-recommended route is the remote one, and the reason belongs in the sentence: an
-embedding model on CPU cannot meet the 2 s hook budget, which turns the feature
-into a regression nobody sees. The check is a heuristic and says so; Ollama runs
-on CPU either way. This is advice about speed, not a capability gate.
-
-Installing third-party software happens only on explicit consent, never with
-silent elevation, and declining must leave a working installation.
-
-**Record the model the user consented to, then build once.** A 4.7 GB download
-that nothing writes down is a wasted download: `adr-embed build` falls back to
-its own default, and under ADR-018 a model-identity mismatch marks the store
-stale, so retrieval quietly stays on lexical ranking. Immediately after a
-successful pull:
-
-```bash
-python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set embedding.model=<model>
-python3 "$ADR_KIT/bin/adr-embed" build --adr-dir docs/adr
-```
-
-The model name goes in the committed config because which model embeds a team's
-ADRs is a team decision; where the runtime serving it lives does not. The build
-is an explicit step by design — nothing embeds because a prompt was submitted —
-and it is re-run when the ADRs change, which `adr-embed status` reports.
-
-## Step 4d — The signer: propose, never assume
+## Step 4c — The signer: propose, never assume
 
 Every lifecycle command writes a Status History entry naming who decided, and it
 refuses to sign on the user's behalf. That refusal is right, and it should not be

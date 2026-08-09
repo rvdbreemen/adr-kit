@@ -16,7 +16,7 @@ The model is resolved through the SAME backend registry as bin/adr-judge
 (bin/adr_llm.py, ADR-017) — there is no pinned model and no default vendor:
   precedence:  --llm-cmd  >  ADR_KIT_LLM_CMD env  >  judge.backend
   judge.backend: host (default; the client CLI the installer recorded, with no
-                 model flag) | openrouter | ollama
+                 model flag; the only backend, ADR-036)
 
 Repository-tracked `suggest.llm_cmd` / `judge.llm_cmd` / `*.llm_model` are read
 only to warn that they are ignored (TASK-72): docs/adr/.adr-kit.json is

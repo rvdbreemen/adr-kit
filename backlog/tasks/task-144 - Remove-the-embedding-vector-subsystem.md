@@ -1,9 +1,10 @@
 ---
 id: TASK-144
 title: Remove the embedding/vector subsystem
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-09 10:34'
+updated_date: '2026-08-09 11:59'
 labels: []
 dependencies:
   - TASK-143
@@ -25,3 +26,9 @@ Step 3 of docs/plans/kiss-simplification-plan.md. Requires the records from TASK
 - [ ] #2 hooks/manifest.json declares network_allowed: false for user-prompt-submit
 - [ ] #3 python -m pytest -q passes; build-client-adapters.py --check reports changed=0
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Removed: bin/adr-embed, bin/adr_vector_store.py, bin/adr_embedding_runtime.py, hooks/adr_embed_query.py, the vector rerank and route field in bin/adr_query.py, EMBEDDING_EVENTS and the embedder threading in hooks/adr-hook.py and adr_hook_core.py, the --check-embedding settings probe, the embedding.* schema section, the R16 dialogue in the setup and upgrade skills and clients/workflows.json, packaging entries, the vector perf budget, and tests test_adr_embedding_runtime/vector_store_contract/semantic_route. hooks/manifest.json declares network_allowed:false for user-prompt-submit again; test_adr_pr_guard asserts the absence so the reach cannot quietly return. grep for embed over bin/ and hooks/ returns only historical text. Full suite: 1767 passed, 15 skipped; adapters changed=0.
+<!-- SECTION:FINAL_SUMMARY:END -->

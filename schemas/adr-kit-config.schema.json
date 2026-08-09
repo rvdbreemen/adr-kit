@@ -131,13 +131,10 @@
         "backend": {
           "type": "string",
           "enum": [
-            "host",
-            "openrouter",
-            "ollama",
-            "openai-compatible"
+            "host"
           ],
           "default": "host",
-          "description": "Which model the LLM judge asks for a verdict. 'host' (default) calls the non-interactive entry point of the client CLI recorded at install time (claude -p, codex exec, or copilot -p) and passes NO model flag, so each CLI resolves the model its own user configured and no credential is needed beyond the agent you are already signed in to. 'openrouter' posts to the OpenRouter completions endpoint using judge.openrouter_model and the OPENROUTER_API_KEY environment variable. 'ollama' posts to a local daemon at http://127.0.0.1:11434 using judge.ollama_model, so nothing leaves the machine -- at roughly 3.4 seconds per call on a 12B model, which is slower than a hosted one. Every value degrades to declarative-only and never blocks a commit when its backend is unavailable. Endpoints are code-side and cannot be set here. The openai-compatible backend reaches any endpoint speaking the OpenAI chat-completions shape (LM Studio, a self-hosted vLLM, a gateway); its base URL is machine-local by design and is ignored if written here."
+          "description": "Which backend answers the LLM pass. 'host' (the only value, ADR-036): the coding client's own CLI, recorded at install time, no model flag. Operators may override per run with ADR_KIT_LLM_CMD / --llm-cmd."
         },
         "openrouter_model": {
           "type": "string",
@@ -385,7 +382,7 @@
               "type": "number",
               "minimum": 0,
               "maximum": 1,
-              "description": "Minimum quality score (0.0–1.0) required before auto-accept proceeds. Overridden by --quality-threshold on the command line. Default 0.70.",
+              "description": "Minimum quality score (0.0\u20131.0) required before auto-accept proceeds. Overridden by --quality-threshold on the command line. Default 0.70.",
               "default": 0.7
             }
           }
@@ -422,25 +419,8 @@
         },
         "llm_autorun": {
           "type": "boolean",
-          "description": "When false (default), the /adr-kit:guardian skill always asks the user to confirm cost before running the LLM tier (adr-suggest + full audit). Set true only if you want the LLM tier to run without an interactive confirmation — consistent with ADR-001's opt-in posture, this defaults to false. The cheap tier (drift + retire + lint) is always free and unaffected by this flag.",
+          "description": "When false (default), the /adr-kit:guardian skill always asks the user to confirm cost before running the LLM tier (adr-suggest + full audit). Set true only if you want the LLM tier to run without an interactive confirmation \u2014 consistent with ADR-001's opt-in posture, this defaults to false. The cheap tier (drift + retire + lint) is always free and unaffected by this flag.",
           "default": false
-        }
-      }
-    },
-    "embedding": {
-      "type": "object",
-      "description": "Configuration for the precomputed ADR vector store (bin/adr-embed, ADR-018). The store is built by an explicit `adr-embed build` step and read by the query and hook paths. A model identity recorded in the store that no longer matches this setting marks the store stale, which is why the model a user consented to download has to be written down rather than passed on one command line and forgotten.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "When false, retrieval never reads the vector store and stays on lexical ranking, even if a store is present. Default true: a missing store already degrades to lexical, so this exists to turn the layer off deliberately rather than by deleting files.",
-          "default": true
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The embedding model `adr-embed build` uses by default. The measured default is `qwen3-embedding:4b`; `nomic-embed-text` remains an explicit English-only fallback. Written by setup after a consented download. Which model embeds a team's ADRs is a project decision, so it belongs in this tracked file; where the runtime serving it lives does not."
         }
       }
     }
