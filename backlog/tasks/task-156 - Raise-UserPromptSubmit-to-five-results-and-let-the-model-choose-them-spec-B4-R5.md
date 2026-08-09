@@ -3,9 +3,11 @@ id: TASK-156
 title: >-
   Raise UserPromptSubmit to five results and let the model choose them (spec B4,
   R5)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-08-09 13:22'
+updated_date: '2026-08-09 14:10'
 labels: []
 dependencies: []
 references:
@@ -25,3 +27,9 @@ The second half of R5: MAX_RESULTS = 3 in hooks/adr_hook_core.py and the selecti
 - [ ] #1 UserPromptSubmit injects up to five candidates and instructs the model to select what applies
 - [ ] #2 Injection stays inside inject.max_tokens and the event budget; python -m pytest -q passes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Premise partially stale: the widen-to-five half landed earlier via cd992f3 (DEFAULT_MAX_RESULTS = 5, config-honouring). What remains is the phrasing half of B4/R5: the UserPromptSubmit headings assert relevance ('Governing Accepted ADRs relevant to this prompt') instead of presenting a retrieval-ranked candidate set for the session model to select from. Scope of this change: the UserPromptSubmit branch only; the plan-exit injection has its own contract (TASK-150, B1).
+<!-- SECTION:NOTES:END -->
