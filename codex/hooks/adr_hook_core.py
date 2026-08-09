@@ -730,11 +730,21 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
         parts = [
             part
             for part in (
-                _render(governing, "Governing Accepted ADRs relevant to this prompt:"),
-                _render(advisory, "Advisory Proposed ADRs relevant to this prompt:"),
+                _render(governing, "Accepted ADR candidates for this prompt (retrieval-ranked):"),
+                _render(advisory, "Proposed ADR candidates for this prompt (advisory):"),
             )
             if part
         ]
+        if parts:
+            # R5: retrieval narrows, the model chooses. The old heading asserted
+            # relevance ("relevant to this prompt"), which read as a settled
+            # answer; candidates plus one selection instruction hand the final
+            # relevance call to the session model without spending a model call
+            # in the hook itself (ADR-036).
+            parts.append(
+                "These are retrieval candidates, not confirmed matches: apply "
+                "the ones that actually govern this work and ignore the rest."
+            )
         return ("\n".join(parts)[:MAX_CONTEXT_CHARS], "prompt") if parts else ("", "noop")
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")

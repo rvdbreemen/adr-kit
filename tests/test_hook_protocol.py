@@ -133,9 +133,12 @@ def test_prompt_ranking_is_deterministic_bounded_and_source_linked(tmp_path):
     assert first == second
     assert first[1] == "prompt"
     assert "ADR-001" in first[0]
-    assert "Governing Accepted" in first[0]
+    # R5: the prompt injection presents retrieval candidates and asks the model
+    # to select, rather than asserting relevance on its behalf (TASK-156).
+    assert "Accepted ADR candidates for this prompt" in first[0]
     assert "ADR-003" in first[0]
-    assert "Advisory Proposed" in first[0]
+    assert "Proposed ADR candidates for this prompt" in first[0]
+    assert "retrieval candidates, not confirmed matches" in first[0]
     assert "source: docs/adr/ADR-001-hooks.md" in first[0]
     assert len(first[0]) <= MAX_CONTEXT_CHARS
 
@@ -345,7 +348,14 @@ def test_native_host_matches_session_prompt_and_edit_outcomes(tmp_path):
         )
         if event == "SessionStart":
             assert "ADR-002" not in native_context
-        if event in {"UserPromptSubmit", "PreToolUse"}:
+        # The two events word their headings differently: prompt time presents
+        # candidates for the model to choose from (R5/TASK-156), edit time
+        # states which decisions govern the file being touched.
+        if event == "UserPromptSubmit":
+            assert "Accepted ADR candidates for this prompt" in native_context
+            assert "Proposed ADR candidates for this prompt" in native_context
+            assert "retrieval candidates, not confirmed matches" in native_context
+        if event == "PreToolUse":
             assert "Governing Accepted" in native_context
             assert "Advisory Proposed" in native_context
 

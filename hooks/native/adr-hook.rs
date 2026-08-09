@@ -562,12 +562,16 @@ fn run() -> Option<String> {
             .filter(|record| record.status == "Accepted").cloned().collect();
         let advisory: Vec<Record> = selected.iter()
             .filter(|record| record.status == "Proposed").cloned().collect();
-        let governed = render(&governing, "Governing Accepted ADRs relevant to this prompt:");
-        let advised = render(&advisory, "Advisory Proposed ADRs relevant to this prompt:");
+        let governed = render(&governing, "Accepted ADR candidates for this prompt (retrieval-ranked):");
+        let advised = render(&advisory, "Proposed ADR candidates for this prompt (advisory):");
+        // R5: retrieval narrows, the model chooses. Mirrors the Python core's
+        // selection instruction byte-for-byte; the parity test pins both.
+        let choose = "These are retrieval candidates, not confirmed matches: apply \
+the ones that actually govern this work and ignore the rest.";
         let context = match (governed.is_empty(), advised.is_empty()) {
-            (false, false) => format!("{}\n{}", governed, advised),
-            (false, true) => governed,
-            (true, false) => advised,
+            (false, false) => format!("{}\n{}\n{}", governed, advised, choose),
+            (false, true) => format!("{}\n{}", governed, choose),
+            (true, false) => format!("{}\n{}", advised, choose),
             (true, true) => return None,
         };
         (context, false)
