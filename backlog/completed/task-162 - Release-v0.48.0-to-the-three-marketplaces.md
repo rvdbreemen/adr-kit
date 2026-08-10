@@ -1,11 +1,11 @@
 ---
 id: TASK-162
 title: Release v0.48.0 to the three marketplaces
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-08-09 15:49'
-updated_date: '2026-08-09 20:09'
+updated_date: '2026-08-10 21:03'
 labels:
   - release
 dependencies: []
@@ -65,3 +65,13 @@ Criterion #7 closed 2026-08-09 22:07. Copilot is back at 0.48.0 after the VS Cod
 Also worth correcting from the note above: the repeating pytest processes on this machine were blamed on 'a Codex agent'. During TASK-165 I found four such runs hanging for over an hour and, with the user's approval, killed them; more kept appearing with `-p no:cacheprovider`, which is not a flag this session uses. They invalidated two full suite runs before I isolated my own with a dedicated --basetemp. Whatever spawns them, they are still running on this machine.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+v0.48.0 released: https://github.com/rvdbreemen/adr-kit/releases/tag/v0.48.0
+
+All seven acceptance criteria are met. Criterion 7 was the last one open and closed on 2026-08-09 once copilot was back at 0.48.0; the diagnosis of why it failed is in TASK-164, and the reason the installer misreported it afterwards is in TASK-166. Both of those shipped in v0.49.0 and v0.50.0 respectively.
+
+Closed retroactively on 2026-08-10: the task stayed In Progress after its last criterion was ticked. Nothing was outstanding.
+<!-- SECTION:FINAL_SUMMARY:END -->
