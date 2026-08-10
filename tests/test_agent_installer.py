@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from clients.installer import native
+from clients.installer import judge_backend, native
 from clients.installer.contracts import DetectedClient
 from clients.installer.detection import detailed_detection
 from clients.installer.planning import build_plan, render_plan
@@ -499,6 +499,91 @@ def test_installed_clients_use_update_or_noop_paths(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "plugin update adr-kit@rvdbreemen-adr-kit" in output
     assert "plugin update adr-kit" in output
+
+
+def _judge_project(tmp_path: Path) -> Path:
+    project = tmp_path / "consumer project"
+    (project / "docs" / "adr").mkdir(parents=True)
+    return project
+
+
+def test_single_client_install_records_the_judge_host_client(tmp_path, capsys):
+    """ADR-036: the host client is recorded at install time, not asked for later.
+
+    A `git commit` is client-agnostic, so this is the only moment the client is
+    known. An install that skips it leaves judge.backend resolving to nothing
+    and every commit degrading to declarative-only in silence (TASK-169).
+    """
+    project = _judge_project(tmp_path)
+
+    recorded = judge_backend.record_host_client(
+        ROOT, project, ["copilot"], runner=installer._run
+    )
+
+    assert recorded == "github-copilot-cli"
+    local = json.loads(
+        (project / "docs" / "adr" / ".adr-kit.local.json").read_text(encoding="utf-8")
+    )
+    assert local["judge"]["host_client"] == "github-copilot-cli"
+    # The tracked config is the operator's to write, never the installer's.
+    assert not (project / "docs" / "adr" / ".adr-kit.json").exists()
+
+
+def test_multi_client_install_refuses_to_pick_a_vendor(tmp_path, capsys):
+    """Choosing between clients would decide which vendor sees the diff."""
+    project = _judge_project(tmp_path)
+    calls = []
+
+    def runner(command):
+        calls.append(command)
+        return completed(command, "")
+
+    recorded = judge_backend.record_host_client(
+        ROOT, project, ["claude", "codex", "copilot"], runner=runner
+    )
+
+    assert recorded is None
+    assert not calls
+    assert not (project / "docs" / "adr" / ".adr-kit.local.json").exists()
+    output = capsys.readouterr().out
+    assert "--record-host-client claude-code-cli" in output
+    assert "--record-host-client codex-cli" in output
+    assert "--record-host-client github-copilot-cli" in output
+
+
+def test_recorded_host_client_is_never_overwritten(tmp_path):
+    """An operator's recorded choice outranks anything an install infers."""
+    project = _judge_project(tmp_path)
+    local = project / "docs" / "adr" / ".adr-kit.local.json"
+    local.write_text(json.dumps({"judge": {"host_client": "codex-cli"}}), encoding="utf-8")
+    calls = []
+
+    recorded = judge_backend.record_host_client(
+        ROOT, project, ["claude"], runner=lambda command: calls.append(command)
+    )
+
+    assert recorded is None
+    assert not calls
+    assert json.loads(local.read_text(encoding="utf-8"))["judge"]["host_client"] == "codex-cli"
+
+
+def test_a_single_client_install_leaves_a_resolvable_judge_backend(tmp_path):
+    """The end-to-end property TASK-169 was about: the LLM pass is not off.
+
+    Asserted through the judge's own resolver rather than the file, because the
+    file is only evidence; what matters is that adr-judge finds a backend.
+    """
+    project = _judge_project(tmp_path)
+    judge_backend.record_host_client(ROOT, project, ["claude"], runner=installer._run)
+
+    probe = subprocess.run(
+        [sys.executable, str(ROOT / "bin" / "adr-judge"), "--adr-dir",
+         str(project / "docs" / "adr"), "--show-config"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, cwd=ROOT, timeout=120,
+    )
+    assert probe.returncode == 0, probe.stderr
+    assert "claude-code-cli" in probe.stdout
+    assert "no client was recorded" not in probe.stdout + probe.stderr
 
 
 def _locked_copilot_plugin_dir(tmp_path: Path, monkeypatch) -> Path:

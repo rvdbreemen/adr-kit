@@ -53,5 +53,12 @@ def test_warm_generation_performs_zero_writes_within_hard_timeout(tmp_path):
         elapsed.append((time.perf_counter() - started) * 1000)
         assert drift == []
         assert stats.files_written == stats.bytes_written == 0
-    assert statistics.median(elapsed) <= 150
+    # ADR-015 layer 2: a live smoke test guards the hard ceiling with a factor
+    # two of margin "to absorb CI variance". This asserted the p50 *budget*
+    # (150 ms) against a wall clock instead, leaving 33% of headroom over the
+    # committed p50 of 112.6 ms - so a busy machine failed the suite while the
+    # generator was provably correct, the zero-write assertions in the loop
+    # above having all held. The p50 precision belongs to the committed
+    # evidence checked by the test above, which is machine-independent.
+    assert statistics.median(elapsed) <= 500
     assert max(elapsed) <= 1000

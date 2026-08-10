@@ -48,6 +48,7 @@ from clients.installer.payload import (
     validate_python as _validate_python,
     validate_source,
 )
+from clients.installer.judge_backend import record_host_client
 from clients.installer.smoke import validate_prepared_hooks, validate_prepared_mcp
 from clients.installer.planning import build_plan, render_plan
 from clients.installer.transaction import run_transaction
@@ -270,6 +271,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         skip_validation=args.skip_validation,
     )
     report_migration_plan(source, project_root)
+    record_host_client(
+        source, project_root, installed, runner=_run, dry_run=args.dry_run
+    )
     if installed:
         for name in installed:
             record_update_state(
