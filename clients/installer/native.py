@@ -336,6 +336,25 @@ def install_copilot(
 INSTALLERS = {"claude": install_claude, "codex": install_codex, "copilot": install_copilot}
 
 
+def restore_previous_install(
+    name: str, client: Client, source: Path, runner: Runner,
+    *, had_plugin: bool, marker_name: str,
+) -> None:
+    """Put the client back, then prove it is back (TASK-164).
+
+    Reinstalling and reporting success without checking is how copilot was left
+    with nothing twice. `had_plugin` comes from the client's own registration
+    (TASK-166): a client with nothing to lose is not failed for still having
+    nothing.
+    """
+    previous = source.with_name(source.name + ".old")
+    if previous.is_dir():
+        marker = json.loads((previous / marker_name).read_text(encoding="utf-8"))
+        INSTALLERS[name](client, previous, False, runner, desired_version=marker.get("version"))
+    if had_plugin:
+        validate_install(name, client, runner)
+
+
 def validate_install(name: str, client: Client, runner: Runner) -> None:
     result = runner(
         [client.executable, "plugin", "list", "--json"]

@@ -8,7 +8,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Mapping, Callable, Sequence
 
 ROOT = Path(__file__).resolve().parent.parent
 for import_root in (ROOT, ROOT / "scripts"):
@@ -34,6 +34,7 @@ from clients.installer.native import (
     install_codex,
     install_copilot,
     marketplace_source_matches,
+    restore_previous_install,
     uninstall_client,
     validate_install as _validate_install,
 )
@@ -49,6 +50,7 @@ from clients.installer.payload import (
     validate_source,
 )
 from clients.installer.judge_backend import record_host_client
+from clients.installer.registrations import read_installed_versions
 from clients.installer.smoke import validate_prepared_hooks, validate_prepared_mcp
 from clients.installer.planning import build_plan, render_plan
 from clients.installer.transaction import run_transaction
@@ -118,6 +120,7 @@ def install_selected_clients(
     dry_run: bool,
     skip_validation: bool,
     runner: Runner = _run,
+    installed_versions: Mapping[str, str | None] | None = None,
 ) -> tuple[list[str], list[tuple[str, str]]]:
     installed, failures = [], []
     for name in selected:
@@ -133,13 +136,10 @@ def install_selected_clients(
                     validate_install(name, detected[name], runner)
 
             def rollback() -> None:
-                previous = source.with_name(source.name + ".old")
-                if not previous.is_dir():
-                    return
-                marker = json.loads((previous / PREPARED_MARKER).read_text(encoding="utf-8"))
-                INSTALLERS[name](
-                    detected[name], previous, False, runner,
-                    desired_version=marker.get("version"),
+                restore_previous_install(
+                    name, detected[name], source, runner,
+                    had_plugin=(installed_versions or {}).get(name) is not None,
+                    marker_name=PREPARED_MARKER,
                 )
 
             if dry_run:
@@ -195,7 +195,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(f"local payload {version} does not match pinned version {pinned!r}")
     install_root = args.install_root.expanduser().resolve() if args.install_root else default_install_root()
     detailed = detailed_detection(
-        detected, install_root=install_root, effective_settings=resolved["values"]
+        detected,
+        install_root=install_root,
+        effective_settings=resolved["values"],
+        installed_versions=read_installed_versions(detected, runner=_run),
     )
     identity = {
         "version": version,
@@ -269,6 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     installed, failures = install_selected_clients(
         selected, detected, prepared, version=version, dry_run=args.dry_run,
         skip_validation=args.skip_validation,
+        installed_versions={n: c.installed_version for n, c in detailed.items()},
     )
     report_migration_plan(source, project_root)
     record_host_client(

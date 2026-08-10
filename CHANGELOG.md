@@ -6,6 +6,64 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 
 
+
+## [0.50.0] - 2026-08-10
+
+This release is about telling you the truth. Three of its five fixes are cases
+where the tooling reported something it had never checked: an installer that
+announced a version it never asked the client for, a failed install that named
+only half of what went wrong, and a judge that threw away findings it had
+already made. No configuration changes and no upgrade step.
+
+### Added
+
+- **The README "What's new" table is gated against dead links** (TASK-163): no
+  row may link an ADR that stopped governing without saying so in that row
+  (`retired in X.Y.Z` or `superseded by ADR-NNN`). This is deliberately not a
+  "the newest release must have a row" gate: most releases have no row by
+  design, so that rule would have to be defeated on five of the last seven and
+  would train people to ignore it. The property gated is the one that actually
+  broke: in 0.48.0 the table still advertised a subsystem that release deleted,
+  and it was found by hand after the merge.
+
+### Fixed
+
+- **A failed install no longer reports half the story** (TASK-164):
+  `run_transaction` collected the rollback outcome and then discarded it,
+  because it re-raised the original error untouched whenever that error was a
+  `RuntimeError` - which every failing client command is. So an install whose
+  rollback also failed reported only why the install failed, and the operator
+  never learned their working registration had been taken down. It now reports
+  both errors and says plainly that the client may have less than before, with
+  the command to check. The rollback also verifies that the client is actually
+  back before the run claims success.
+- **The installer stops reporting a version it never read from the client**
+  (TASK-166): `installed_version` came from a single marketplace marker shared
+  by all three clients, so a client with no plugin at all was still announced
+  as installed at the payload's version - and that value also feeds the
+  breaking-migration gate. Each client's own registration is now read directly.
+  In the same code, marketplace roots were ranked as strings, so `0.48.0.old`
+  outranked the live `0.48.0` and a future `0.9.0` would have outranked
+  `0.48.0`; they are now ranked by parsed version, and `.old` and `.tmp`
+  backups never outrank their live counterpart.
+- **One unusable LLM verdict no longer discards the others** (TASK-170,
+  [ADR-038](docs/adr/ADR-038-cost-an-unusable-llm-verdict-to-that-adr-alone-not-the-whole-pass.md)):
+  a single call that could not be parsed threw away every verdict already
+  established, so a violation the model had found was reported as `OK`. The
+  pass now keeps what it established and marks itself degraded, naming the
+  ADRs that got no verdict. Two consequences worth knowing: a commit can now
+  fail on a degraded pass, which previously could not happen, and an
+  unresponsive CLI now costs one timeout per in-scope ADR rather than stopping
+  at the first - `ADR_KIT_NO_LLM=1` remains the per-commit escape.
+- **Two more subprocesses that start a third-party CLI close stdin**
+  (TASK-167): the deep-doctor probe and the client-event probe. Noted honestly:
+  the stdin block named in that task reproduced at none of its three sites, and
+  `scripts/project_setup.py` is closed with evidence and unchanged because it
+  spawns `git` with no shim and no grandchild. The two that did change did so
+  for a different, measured defect - behind a `.CMD` shim a declared `timeout=`
+  is not a bound, 2.03s against 8.18s. Restoring that bound is tracked
+  separately and is not in this release.
+
 ## [0.49.0] - 2026-08-09
 
 This release makes the installer safe to run on Windows. Two failures found
@@ -2556,7 +2614,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.49.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.46.0...v0.47.0

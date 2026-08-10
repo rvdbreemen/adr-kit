@@ -22,7 +22,8 @@ for value in (str(ROOT), str(BIN), str(ROOT / "scripts")):
 
 from adr_doctor_checks import check_mcp_launcher
 from adr_doctor_models import benchmark_extension
-from adr_doctor_probes import _mcp_deep
+import adr_doctor_probes
+from adr_doctor_probes import _mcp_deep, _native_deep
 
 
 def _doctor(
@@ -50,6 +51,34 @@ def _doctor(
         timeout=60,
         env=env,
     )
+
+
+def test_deep_native_probe_closes_stdin(tmp_path, monkeypatch):
+    """`adr doctor --deep` starts three third-party CLIs; none may hold stdin.
+
+    On Windows `copilot` resolves to a .CMD shim, so the declared `timeout=10`
+    is not a bound: subprocess.run's TimeoutExpired handler re-enters
+    communicate() unbounded and its kill reaches only cmd.exe, not the node
+    grandchild. A descendant waiting on an inherited console stdin would make
+    that wait permanent. Asserted here rather than in the source-level guard
+    because this is the call the doctor actually makes (TASK-167).
+    """
+    recorded = {}
+
+    def recorder(values, **kwargs):
+        recorded["values"] = values
+        recorded.update(kwargs)
+        return subprocess.CompletedProcess(
+            values, 0, "adr-kit@rvdbreemen-adr-kit-copilot", ""
+        )
+
+    monkeypatch.setattr(adr_doctor_probes.subprocess, "run", recorder)
+    result = _native_deep(tmp_path, "copilot", "C:/fake/copilot.CMD")
+
+    assert recorded["stdin"] is subprocess.DEVNULL
+    assert recorded["capture_output"] is True
+    assert recorded["timeout"] == 10
+    assert result["status"] == "healthy"
 
 
 def test_removed_cache_launcher_is_stale_and_reports_exact_owned_path(tmp_path):

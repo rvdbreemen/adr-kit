@@ -13,8 +13,17 @@ from hooks.hook_benchmark import measure as measure_hooks
 
 
 def _command(values: list[str], *, cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
+    # DEVNULL rather than the console, because `timeout=` is not a bound here.
+    # On Windows `copilot` resolves to a .CMD shim, so the child is cmd.exe with
+    # a node grandchild; subprocess.run's own TimeoutExpired handler then
+    # re-enters communicate() with no bound, and kill() is TerminateProcess on
+    # the shim alone. Measured: a 2s timeout returned after 8.18s behind a shim
+    # against 2.03s without one. Closing stdin does not restore the bound, but
+    # it removes the one thing that would make the wait permanent instead of
+    # merely long.
     return subprocess.run(
         values, cwd=str(cwd), capture_output=True, text=True,
+        stdin=subprocess.DEVNULL,
         encoding="utf-8", errors="replace", timeout=timeout,
     )
 
