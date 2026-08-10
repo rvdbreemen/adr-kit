@@ -1,9 +1,10 @@
 ---
 id: TASK-171
 title: Declared timeouts are not bounds when a client CLI resolves to a shim
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-10 17:01'
+updated_date: '2026-08-10 21:54'
 labels:
   - bug
   - windows
@@ -16,6 +17,15 @@ references:
   - scripts/install-agent-envs.py
   - >-
     docs/adr/ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md
+modified_files:
+  - clients/installer/bounded.py
+  - clients/installer/smoke.py
+  - scripts/install-agent-envs.py
+  - bin/adr_doctor_probes.py
+  - scripts/client_generation_model.py
+  - tests/test_bounded_runs.py
+  - tests/test_client_doctor.py
+  - tests/test_release_allowlist.py
 priority: medium
 ordinal: 15000
 ---
@@ -61,8 +71,35 @@ Worth weighing when implementing: a bounded runner that creates the child in a W
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A declared timeout on a call that starts a third-party CLI is either a real bound, or ADR-010 and the module docstrings stop claiming it is
-- [ ] #2 The chosen approach is demonstrated against the reproduction in this task: a shim parent with a grandchild that outlives the kill
-- [ ] #3 clients/installer/smoke.py, bin/adr_doctor_probes.py and scripts/install-agent-envs.py all follow whichever rule is chosen
-- [ ] #4 Regression coverage pins the behaviour without requiring an 8-second sleep in the suite
+- [x] #1 A declared timeout on a call that starts a third-party CLI is either a real bound, or ADR-010 and the module docstrings stop claiming it is
+- [x] #2 The chosen approach is demonstrated against the reproduction in this task: a shim parent with a grandchild that outlives the kill
+- [x] #3 clients/installer/smoke.py, bin/adr_doctor_probes.py and scripts/install-agent-envs.py all follow whichever rule is chosen
+- [x] #4 Regression coverage pins the behaviour without requiring an 8-second sleep in the suite
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The claim was made true rather than softened. ADR-010 needed no change.
+
+`clients/installer/bounded.py` kills the whole process tree on timeout - `taskkill /T /F` on Windows, `killpg` elsewhere with the child in its own session - and bounds the drain that follows, so `TimeoutExpired` is the only way out. All three sites that start a client CLI or a packaged runtime use it: `clients/installer/smoke.py` (the hook smoke test, cmd.exe with a Python grandchild), `scripts/install-agent-envs.py` `_run` (every client-CLI mutation), and `bin/adr_doctor_probes.py` `_command` (deep doctor). One implementation, so bounded.py joined RUNTIME_SUPPORT_FILES and ships into the generated codex/ and copilot/ trees.
+
+**Measured against the reproduction this task recorded**, not an approximation of it - `cmd.exe /d /c` on a `.cmd` that starts a Python grandchild, `timeout=1`:
+
+```
+subprocess.run   returned after 25.22s | grandchild ran to its own end
+run_bounded      returned after  1.65s | tree gone
+```
+
+The second column matters as much as the first: returning quickly while leaking a grandchild would not be a fix. A separate probe counted surviving processes by command line and found none after run_bounded.
+
+Two measurements were discarded along the way rather than interpreted. One filtered on a marker that lived in the script file instead of the command line; the other counted its own PowerShell query. Both reported "0", which reads as success.
+
+**Two call sites keep plain `subprocess.run` deliberately**, recorded so the enumeration is not silently partial: `smoke.py` `_validate_mcp_process` and `adr_doctor_probes.py`'s MCP probe both start `sys.executable` directly with `input=` piped. No shim, no grandchild, so the timeout binds - the same reasoning that cleared `project_setup.py` in TASK-167. They also use `input=`, which `run_bounded` deliberately does not offer.
+
+**Coverage** (criterion 4, without an 8-second sleep): `tests/test_bounded_runs.py`, 4 tests in 5.7s. A 3-second grandchild against a 1-second timeout is the smallest gap that separates bounded from unbounded. One test pins the defect itself - plain `subprocess.run` must still take the full grandchild lifetime on Windows - so the fix cannot be quietly reverted, and it fails loudly with a pointer to bounded.py if CPython ever changes this.
+
+Two things the review turned up and fixed: the first test used a Python parent rather than a real `.cmd` shim, which is not the mechanism under test; and `_kill_tree` could leave through an unexpected exception if `taskkill` failed to start, in a function whose whole purpose is removing unpredictability.
+
+Full suite: 1786 passed, 12 skipped, 0 failed. An earlier run reported 59 failures; all five affected files pass in isolation (79 passed) and none touched bounded, the installer or the doctor - it was contention from nine concurrent python processes, the same artefact seen twice before this evening.
+<!-- SECTION:FINAL_SUMMARY:END -->
