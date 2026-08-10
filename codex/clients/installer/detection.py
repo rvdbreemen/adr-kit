@@ -27,6 +27,7 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 def run_version(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(command),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
