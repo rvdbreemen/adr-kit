@@ -44,13 +44,17 @@ worse off than before the run. No configuration changes and no upgrade step.
   operator's decision (ADR-025). `bin/adr-judge --record-host-client <id>` is
   the new machine-local writer this uses.
 
-  Expect commits to take longer once this lands, because the LLM pass now
-  actually runs: on this repository the pre-commit judge went from about a
-  second to roughly twenty, which exceeds the default
-  `judge.pre_commit_timeout_ms` of 5000 and says so in a warning. That is the
-  gate doing the work it was configured to do rather than a regression, but it
-  is a visible change. `judge.llm_enabled: false` in `docs/adr/.adr-kit.json`
-  turns the LLM half off while keeping the declarative gate.
+  Expect commits to take much longer once this lands, because the LLM pass now
+  actually runs. It costs one isolated model call per ADR whose scope the diff
+  touches, so the cost scales with your ADR set and with the breadth of the
+  change: on this repository a commit touching six in-scope ADRs took 126
+  seconds, against a `judge.pre_commit_timeout_ms` default of 5000 that the
+  hook then warns about. That is the gate doing the work it was configured to
+  do rather than a regression, but it is the most visible change in this
+  release. Three ways out, in increasing order of bluntness:
+  `ADR_KIT_NO_LLM=1` for one commit, `judge.llm_enabled: false` in
+  `docs/adr/.adr-kit.json` to keep only the declarative gate, or narrowing
+  which ADRs opt into `llm_judge`.
 - **`adr-judge-precommit --help` no longer runs a full judge** (TASK-169): the
   wrapper takes no arguments and passed everything through, so asking for help
   judged the staged diff instead. That looked harmless only because no LLM
