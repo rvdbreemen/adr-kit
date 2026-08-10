@@ -25,6 +25,12 @@ Three properties, each of which is the point rather than a detail:
 * **It costs one model call.** Deliberately one short prompt: the probe is
   evidence gathering, and evidence that is expensive to collect is evidence
   nobody collects.
+* **It closes the client's stdin.** The prompt arrives through `-p` and stdout
+  is captured, so anything a client asked interactively would be invisible on
+  this end and unanswerable from the console that started the probe. Closing
+  stdin turns that into an immediate EOF instead of a wait no `timeout=` can
+  end: on Windows a client installed through npm is a `.CMD` shim, and a
+  timeout kills the shim while the grandchild holds the pipe open.
 """
 
 from __future__ import annotations
@@ -61,6 +67,7 @@ def _version(binary: str) -> str | None:
     try:
         result = subprocess.run(
             [binary, "--version"], capture_output=True, text=True,
+            stdin=subprocess.DEVNULL,
             encoding="utf-8", errors="replace", timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
@@ -84,6 +91,7 @@ def _observe_events(binary: str, timeout: int) -> tuple[list[str], str | None]:
                  "--output-format=stream-json", "--include-hook-events",
                  "--verbose", "--allowedTools", "Read"],
                 cwd=root, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL,
                 encoding="utf-8", errors="replace", timeout=timeout,
             )
         except subprocess.TimeoutExpired:

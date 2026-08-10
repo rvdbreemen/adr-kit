@@ -106,6 +106,14 @@ at once.
   version (`grep -nE "adr-judge@v[0-9]|rev: v[0-9]|adr-kit/.*@v[0-9]" README.md`); the
   release badge is automatic and historical "introduced in vN" markers stay. Update
   any feature/usage section that this release changes.
+- **README "What's new"**: not every release gets a row - the table covers
+  releases that change what ADR Kit does - so there is no gate demanding one, and
+  adding a row is your judgement. What *is* enforced (TASK-163,
+  `tests/test_documentation_contracts.py`) is that no row keeps pointing at a
+  decision that stopped governing: if this release supersedes or retires an ADR
+  that an older row links, say so in that row ("retired in X.Y.Z" or "superseded
+  by ADR-NNN") or drop the link. The prose review above is still yours; only the
+  stale-link property is mechanical.
 
 ### 2. Verify locally (the same gates CI runs)
 

@@ -12,13 +12,129 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 if str(REPO_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
+# The authority model is shared, never re-stated: validate.yml runs this file in
+# a targeted job that does not include tests/test_adr_query.py, so the path
+# insert has to live here rather than being inherited.
+if str(REPO_ROOT / "bin") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "bin"))
 
+from adr_query import HISTORICAL_STATUSES  # noqa: E402
 from client_generation_model import WORKFLOW_IDS  # noqa: E402
 
 ADR_TEMPLATE = REPO_ROOT / "templates" / "adr-template.md"
 AGENT_INSTALL = REPO_ROOT / "INSTALL-AGENT.md"
 README = REPO_ROOT / "README.md"
 PROJECT_GUIDE = REPO_ROOT / "templates" / "adr-kit-guide.md"
+
+
+# --- README "What's new" contract (TASK-163) --------------------------------
+#
+# The table documents the releases that change what ADR Kit does, so most
+# releases deliberately have no row: 0.43, 0.45, 0.46, 0.47 and 0.49 have none.
+# A "the newest CHANGELOG version must appear here" gate would have to be
+# defeated on five of the last seven releases, which is ADR-009's failure mode -
+# a gate maintainers learn to discount rather than obey.
+#
+# What is mechanical, and what actually went wrong, is a row that keeps pointing
+# a reader at a decision that stopped governing. ADR-018 became Superseded when
+# ADR-020 landed in 0.45.0; the 0.44.0 row kept linking it through three
+# releases and was still doing so when 0.48.0 deleted the subsystem. It was
+# caught by hand after the merge, by no gate at all.
+
+# Any one of these anywhere in the row clears it. Both are satisfiable without a
+# successor decision, because a retirement does not always have one.
+RETIREMENT_MARKERS = (
+    re.compile(r"\bretired in \d+\.\d+\.\d+\b", re.IGNORECASE),
+    re.compile(r"\bsuperseded by ADR-\d{3,4}\b", re.IGNORECASE),
+)
+WHATS_NEW_ROW = re.compile(r"^\| \*\*([^*]+)\*\*\s*\|")
+ADR_REFERENCE = re.compile(r"\bADR-\d{3,4}\b")
+ADR_STATUS = re.compile(r"^status:\s*\"?([A-Za-z]+)\"?", re.MULTILINE)
+
+
+def _whats_new_rows(readme_text: str) -> list[tuple[str, str]]:
+    """Return (version label, row text) for every row of the table."""
+    section = re.search(
+        r"^## What's new\b(.*?)^## ", readme_text, re.MULTILINE | re.DOTALL
+    )
+    assert section, "README has no '## What's new' section; this gate reads nothing"
+    rows = []
+    for line in section.group(1).splitlines():
+        match = WHATS_NEW_ROW.match(line)
+        if match:
+            rows.append((match.group(1), line))
+    return rows
+
+
+def _adr_status_by_id() -> dict[str, str]:
+    statuses = {}
+    for path in (REPO_ROOT / "docs" / "adr").glob("ADR-*.md"):
+        match = ADR_STATUS.search(path.read_text(encoding="utf-8"))
+        if match:
+            statuses[path.name.split("-")[0] + "-" + path.name.split("-")[1]] = match.group(1)
+    return statuses
+
+
+def stale_adr_links(readme_text: str, status_by_id: dict[str, str]) -> list[tuple[str, str, str]]:
+    """Rows linking an ADR that stopped governing, without saying so."""
+    findings = []
+    for version, line in _whats_new_rows(readme_text):
+        if any(marker.search(line) for marker in RETIREMENT_MARKERS):
+            continue
+        for adr_id in dict.fromkeys(ADR_REFERENCE.findall(line)):
+            status = status_by_id.get(adr_id, "Unknown")
+            if status in HISTORICAL_STATUSES:
+                findings.append((version, adr_id, status))
+    return findings
+
+
+def test_whats_new_table_never_points_at_a_retired_decision():
+    """A row may cite a superseded ADR only if the row says it is superseded.
+
+    Not "the newest release must have a row": most releases deliberately have
+    none, and a gate that has to be defeated routinely is one nobody reads.
+    """
+    readme_text = README.read_text(encoding="utf-8")
+    rows = _whats_new_rows(readme_text)
+    assert len(rows) >= 8, f"expected the full table, parsed {len(rows)} rows"
+
+    stale = stale_adr_links(readme_text, _adr_status_by_id())
+    assert not stale, (
+        "README 'What's new' rows link decisions that no longer govern; either "
+        "say so in the row (\"retired in X.Y.Z\", \"superseded by ADR-NNN\") or "
+        f"drop the link: {stale}"
+    )
+
+
+def test_whats_new_gate_fires_on_a_retired_link_and_stays_quiet_when_marked():
+    link = "([ADR-018](docs/adr/ADR-018-x.md))"
+    statuses = {"ADR-018": "Superseded", "ADR-036": "Accepted", "ADR-050": "Amended"}
+
+    unmarked = f"## What's new\n\n| **0.44.0** | a vector layer {link} | why |\n\n## Next\n"
+    assert stale_adr_links(unmarked, statuses) == [("0.44.0", "ADR-018", "Superseded")]
+
+    for marker in ("retired in 0.48.0", "superseded by ADR-036"):
+        marked = f"## What's new\n\n| **0.44.0** | a vector layer {link}, {marker} | why |\n\n## Next\n"
+        assert stale_adr_links(marked, statuses) == [], marker
+
+    governing = f"## What's new\n\n| **0.48.0** | lexical ([ADR-036](docs/adr/x.md)) | why |\n\n## Next\n"
+    assert stale_adr_links(governing, statuses) == []
+
+    # Amended is historical in bin/adr_query.py, which adr-context also honours.
+    amended = "## What's new\n\n| **0.51.0** | thing ([ADR-050](docs/adr/x.md)) | why |\n\n## Next\n"
+    assert stale_adr_links(amended, statuses) == [("0.51.0", "ADR-050", "Amended")]
+
+
+def test_whats_new_links_resolve_to_files_that_still_ship():
+    readme_text = README.read_text(encoding="utf-8")
+    checked, missing = [], []
+    for _version, line in _whats_new_rows(readme_text):
+        for target in re.findall(r"\]\((docs/[^)#]+)\)", line):
+            checked.append(target)
+            if not (REPO_ROOT / target).is_file():
+                missing.append(target)
+    assert len(checked) >= 12, f"expected the table's links, found {len(checked)}"
+    assert not missing, f"README 'What's new' links point at files that are gone: {missing}"
 
 
 def test_public_json_examples_are_machine_parseable():

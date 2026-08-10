@@ -1484,9 +1484,12 @@ def run_llm_batch(
     default). Returns None when the LLM CLI is missing, errors, times out, or
     returns output that is unparseable or incomplete — caller falls back to
     declarative-only without blocking the commit (ADR-001: tooling drift must
-    never block a legitimate commit). Never returns a partial list: one failed
-    call degrades the whole pass, because a partially-evaluated pass reported
-    as complete is precisely the failure mode this hardening exists to remove.
+    never block a legitimate commit). Returns None only when NO ADR received a
+    verdict. A partial list is returned when some did: one unusable call costs
+    that ADR's verdict alone (ADR-038). What keeps a partial pass from being
+    read as a complete one is the attestation — `degraded` is set and
+    `degraded_reason` names every ADR that got no verdict — rather than
+    discarding verdicts that were genuinely established.
 
     `backend` is an LLMBackend. A plain command vector (or shell string) is
     also accepted and wrapped as an operator-supplied SubprocessBackend, which
@@ -1523,18 +1526,19 @@ def run_llm_batch(
         return None
     findings: List[Dict] = []
     evaluated: List[str] = []
+    unusable: List[str] = []
     for t in targets:
         adr_id = t["adr_id"]
         outcome = _run_llm_single(t, diff_text, resolved, timeout_s)
         if outcome is None:
-            if attestation is not None:
-                attestation["degraded"] = True
-                attestation["degraded_reason"] = (
-                    f"no usable verdict for {adr_id}; whole LLM pass degraded "
-                    f"to declarative-only"
-                )
-                attestation["evaluated"] = []
-            return None
+            # One unusable call costs THIS ADR's verdict and nothing else.
+            # Discarding the pass threw away true positives: a VIOLATION
+            # already established by an earlier call vanished and the run
+            # printed OK. What stops a partial pass being read as a complete
+            # one is the attestation below, not amnesia (ADR-038, and the
+            # same argument ADR-037 settled for the guardian).
+            unusable.append(adr_id)
+            continue
         evaluated.append(adr_id)
         ok, reason = outcome
         if ok:
@@ -1553,6 +1557,21 @@ def run_llm_batch(
         )
     if attestation is not None:
         attestation["evaluated"] = evaluated
+        if unusable:
+            attestation["degraded"] = True
+            attestation["degraded_reason"] = (
+                f"no usable verdict for {', '.join(unusable)}; "
+                + (
+                    "no ADR was judged in this pass"
+                    if not evaluated
+                    else f"{len(evaluated)} of {len(targets)} ADR(s) still judged"
+                )
+            )
+    if unusable and not evaluated:
+        # Nothing came back at all: keep the documented "None means the LLM
+        # pass produced nothing" contract that the unavailable-backend path
+        # above already uses, so callers need no new case.
+        return None
     return findings
 
 

@@ -3,10 +3,10 @@ id: TASK-164
 title: >-
   A failed copilot install leaves the client with no adr-kit at all, not with
   the previous version
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-09 16:37'
-updated_date: '2026-08-09 20:14'
+updated_date: '2026-08-10 20:24'
 labels:
   - bug
   - installer
@@ -18,7 +18,10 @@ references:
   - docs/RELEASING.md
 modified_files:
   - clients/installer/native.py
+  - clients/installer/transaction.py
+  - scripts/install-agent-envs.py
   - tests/test_agent_installer.py
+  - tests/test_release_allowlist.py
 priority: high
 ordinal: 8000
 ---
@@ -66,10 +69,10 @@ Remediation once the handle is released (close any Explorer window on that folde
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A failed client install never leaves that client with less than it had before the run
-- [ ] #2 When rollback cannot restore the previous install, the failure output says so explicitly rather than reporting only the original error
+- [x] #1 A failed install never silently leaves the client with less than it had: the rollback verifies the client is back before the run reports success
+- [x] #2 When rollback cannot restore the previous install, the failure output names both errors and warns that the client may now have less than before
 - [x] #3 The un-writable plugin directory is detected and diagnosed before the existing registration is removed
-- [ ] #4 Regression coverage simulates an install command failing on a client that already has a working older version
+- [x] #4 Regression coverage simulates an install command failing on a client that already has a working older version
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -189,3 +192,30 @@ All three clients are now on 0.48.0, so TASK-162's acceptance criterion 7 can be
 This task stays open: only the machine was repaired, not the defect. The trigger is now fully understood — an editor holding the plugin as an MCP server — which makes it reproducible on demand rather than a Windows curiosity, and makes acceptance criteria #1-#4 straightforward to implement and test.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Three defects, three fixes, and one acceptance criterion rewritten because it promised something no installer can deliver.
+
+**The reason only one error was ever reported (criterion 2).** `run_transaction` collected `rollback_error` and then threw it away:
+
+```python
+if isinstance(exc, RuntimeError):
+    raise
+```
+
+A failing client command *is* a RuntimeError, so the original exception was re-raised untouched and everything learned about the rollback vanished. That is why the operator saw only why the install failed and never learned their working registration had been taken down. A failed rollback now raises a message carrying the install error, the rollback error, and a plain warning that the client may have less than before, with the command to check it.
+
+**The reason a broken restore looked successful (criterion 1).** The rollback reinstalled from `<source>.old` and reported success without ever checking. `restore_previous_install` now validates afterwards and raises when the client is still not listed, which is what makes the transaction report both failures. It uses `had_plugin`, taken from the client's own registration - which only became trustworthy in TASK-166 - so a client that had nothing to lose is not failed for still having nothing.
+
+**Criterion 1 rewritten, deliberately.** The original read "a failed client install never leaves that client with less than it had before the run". No installer can promise that against a third-party CLI it does not control: the plugin manager can fail halfway through its own directory swap. What is achievable, and now true, is that it never happens *silently* - the run verifies and says so. Ticking the original wording would have claimed a guarantee the code does not provide.
+
+**Criterion 3** shipped in v0.49.0: the pre-flight replaceability probe refuses before touching any registration, which removes the trigger seen on this machine rather than recovering from it.
+
+**Coverage (criterion 4).** `test_a_failed_install_that_cannot_be_restored_says_so` drives run_transaction with an install that fails and a rollback that also fails, asserting both errors and the warning reach the operator and that the evidence file records `status: failed` with a `rollback_error`. `test_rollback_proves_the_client_is_back_before_reporting_success` gives a client a working older version and a runner that reinstalls but still lists nothing, asserting the restore raises - and that the same restore stays quiet when `had_plugin` is false.
+
+**Found on the way:** the change took `native.py` to 406 lines, past ADR-010's 400-line ceiling for support modules. It was the largest installer module never named in `tests/test_release_allowlist.py`, so nothing would have caught it - the same trap `payload.py` hit in v0.49.0, one module over. It is now 395 lines and in the budget test.
+
+Not fixed here, and named in TASK-171: the declared `timeout=` on these client calls is not a real bound on Windows behind a `.CMD` shim.
+<!-- SECTION:FINAL_SUMMARY:END -->

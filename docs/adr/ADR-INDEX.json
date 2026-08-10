@@ -2004,6 +2004,63 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-038",
+      "title": "Cost an unusable LLM verdict to that ADR alone, not the whole pass",
+      "path": "ADR-038-cost-an-unusable-llm-verdict-to-that-adr-alone-not-the-whole-pass.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-10",
+      "decision_summary": "Chosen option: keep every established verdict and mark the pass degraded, because it preserves evidence without ever...",
+      "topics": [
+        "attestation",
+        "llm judging",
+        "partial results"
+      ],
+      "aliases": [
+        "partial LLM pass",
+        "per-ADR verdict granularity"
+      ],
+      "components": [
+        "adr-judge"
+      ],
+      "symbols": [
+        "degraded",
+        "evaluated",
+        "run_llm_batch"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "A verdict established for one ADR survives another ADR's unusable call.",
+          "degraded: true means THIS PASS IS NOT COMPLETE. It no longer implies that nothing was judged: evaluated may be non-empty and the run may exit 1.",
+          "degradedreason names every ADR that received no verdict."
+        ],
+        "must_not": [
+          "Report a partial pass without setting degraded.",
+          "Retry an unusable call inside the pass."
+        ],
+        "exceptions": [
+          "When no ADR receives a verdict, the pass returns None exactly as before, so callers keep one meaning for \"the LLM pass produced nothing\"."
+        ],
+        "verification": [
+          "tests/testadrjudgellm.py"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [
+          "tests/test_adr_judge_llm.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2886,6 +2943,24 @@
     {
       "source": "ADR-037",
       "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-038",
+      "target": "ADR-001",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-038",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-038",
+      "target": "ADR-037",
       "type": "related",
       "resolved": true
     }
