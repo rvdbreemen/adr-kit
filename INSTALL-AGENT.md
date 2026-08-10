@@ -135,6 +135,14 @@ Python interpreter running the installer. On macOS and Linux it also restores
 executable modes for packaged Unix entry points. Re-running with the same
 release and interpreter is idempotent.
 
+For Copilot the installer also checks, before touching any registration, that
+the plugin directory can be replaced at all. If it cannot, the run stops with a
+diagnosis and changes nothing. The usual cause is an editor that has the ADR Kit
+plugin loaded as an MCP server and holds the directory open; closing that editor
+window releases it, while killing the server process alone does not, because the
+editor restarts it within seconds. Do not work around this by deleting the
+plugin directory: report the diagnosis and let the operator close the editor.
+
 Release archives also record those Unix executable modes for manual installs;
 the prepared path restores them defensively and remains preferred because it
 also resolves `python` versus `python3` deterministically.

@@ -2394,6 +2394,15 @@ def main() -> int:
         "per-machine fact, not a project decision.",
     )
     p.add_argument(
+        "--record-host-client",
+        choices=sorted(HOST_COMMANDS),
+        default=None,
+        help="Record the host client in the gitignored " + LOCAL_CONFIG_NAME
+        + " and exit, without touching the tracked .adr-kit.json. This is what "
+        "the installer calls: the client is a per-machine fact, and an install "
+        "must not write a committed file on the operator's behalf.",
+    )
+    p.add_argument(
         "--llm-timeout",
         type=int,
         default=None,
@@ -2505,6 +2514,14 @@ def main() -> int:
             return apply_backend_setting(
                 config_path, adr_dir, args.set_backend, args.host_client,
             )
+
+        if args.record_host_client:
+            path = write_local_host_client(adr_dir, args.record_host_client)
+            print(
+                f"[adr-judge] judge.host_client = {args.record_host_client} "
+                f"written to {path}"
+            )
+            return 0
 
         if args.show_config:
             report = build_config_report(

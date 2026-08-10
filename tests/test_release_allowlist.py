@@ -85,6 +85,8 @@ def test_task_40_python_modules_stay_within_adr_010_line_budgets():
         "scripts/client_generation_state.py",
         "scripts/project_setup.py",
         "clients/installer/payload.py",
+        "clients/installer/smoke.py",
+        "clients/installer/judge_backend.py",
     )
     for relative in entrypoints:
         lines = (ROOT / relative).read_text(encoding="utf-8").splitlines()

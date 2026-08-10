@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import platform
 import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 from .contracts import CLIENT_IDS, SPECS
 from .detection import Client
@@ -247,9 +248,61 @@ def install_codex(
             invoke([client.executable, "plugin", "add", plugin_id, "--json"], dry_run=dry_run, runner=runner)
 
 
+def copilot_plugin_directory(env: Mapping[str, str] | None = None) -> Path:
+    values = os.environ if env is None else env
+    home = values.get("COPILOT_HOME")
+    root = Path(home) if home else Path.home() / ".copilot"
+    return root / "installed-plugins" / MARKETPLACES["copilot"]
+
+
+def directory_replacement_blocked_by(path: Path) -> str | None:
+    """Return why `path` cannot be replaced, or None when it can.
+
+    Copilot upgrades a plugin by replacing its directory, so a directory that
+    cannot be renamed cannot be upgraded. Two syscalls before anything is
+    touched buy a great deal: without this probe the install fails halfway and
+    the rollback takes the client's working registration down with it.
+    """
+    if not path.is_dir():
+        return None
+    probe = path.with_name(path.name + ".adr-kit-probe")
+    try:
+        path.rename(probe)
+    except OSError as exc:
+        return str(exc)
+    try:
+        probe.rename(path)
+    except OSError as exc:  # pragma: no cover - the lock would have to appear mid-probe
+        raise RuntimeError(
+            f"probe could not restore {path}; it is now at {probe} and must be renamed back by hand"
+        ) from exc
+    return None
+
+
+_LOCKED_PLUGIN_DIRECTORY = """copilot's plugin directory cannot be replaced, so this install would fail
+  partway through and leave copilot with less than it has now. Nothing was changed.
+
+    directory: {path}
+    reason:    {reason}
+
+  An editor holding the ADR Kit plugin keeps this directory open. VS Code is the
+  usual cause: it runs the plugin as an MCP server and keeps handles on the
+  plugin directory, which blocks the rename copilot needs. Closing the editor
+  window for this project releases them; killing the server process alone does
+  not, because the editor restarts it within seconds.
+
+  Close the editor, then run this command again."""
+
+
 def install_copilot(
     client: Client, source: Path, dry_run: bool, runner: Runner, desired_version: str | None = None
 ) -> None:
+    if not dry_run:
+        blocked = directory_replacement_blocked_by(copilot_plugin_directory())
+        if blocked:
+            raise RuntimeError(
+                _LOCKED_PLUGIN_DIRECTORY.format(path=copilot_plugin_directory(), reason=blocked)
+            )
     marketplaces = runner([client.executable, "plugin", "marketplace", "list"])
     require_success(marketplaces, "Copilot marketplace listing")
     listing = marketplaces.stdout + marketplaces.stderr
