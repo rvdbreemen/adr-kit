@@ -418,6 +418,8 @@ def _make_recording_claude(tmp_path: Path, table: dict):
       dict            -> emitted as {"<id>": <dict>}
       "OMIT"          -> emitted as a verdict under a DIFFERENT id
       "RAW:<text>"    -> emitted verbatim
+      "EXIT:<n>"      -> exits <n> without writing stdout, which is how a real
+                         CLI fails; adr_llm funnels that to None (ADR-038)
 
     An id absent from the table falls back to table["*"], default OK.
     Returns (script_path, capture_dir).
@@ -438,6 +440,8 @@ def _make_recording_claude(tmp_path: Path, table: dict):
         "m = re.search(r'(?m)^(ADR-\\d+) ', data)\n"
         "key = m.group(1) if m else 'ADR-000'\n"
         "entry = table.get(key, table.get('*', {'verdict': 'OK'}))\n"
+        "if isinstance(entry, str) and entry.startswith('EXIT:'):\n"
+        "    sys.exit(int(entry[5:]))\n"
         "if entry == 'OMIT':\n"
         "    out = json.dumps({'ADR-999': {'verdict': 'OK'}})\n"
         "elif isinstance(entry, str) and entry.startswith('RAW:'):\n"
@@ -805,9 +809,8 @@ def test_spawn_failure_degrades_instead_of_raising(monkeypatch):
     assert attestation["evaluated"] == []
 
 
-def test_one_failed_call_discards_the_whole_pass(monkeypatch):
-    """Never a partial list: a pass reported as complete but half-evaluated is
-    exactly the failure mode this hardening exists to remove."""
+def _judge_module_with_responses(monkeypatch, responses):
+    """Drive run_llm_batch with one canned CLI response per call."""
     aj = _load_judge_module()
     calls = {"n": 0}
 
@@ -818,13 +821,51 @@ def test_one_failed_call_discards_the_whole_pass(monkeypatch):
             self.stderr = ""
 
     def fake_run(*_args, **_kwargs):
+        stdout = responses[min(calls["n"], len(responses) - 1)]
         calls["n"] += 1
-        if calls["n"] == 1:
-            return _R(json.dumps({"ADR-001": {"verdict": "VIOLATION", "reason": "x"}}))
-        return _R("not json at all")
+        return _R(stdout)
 
     monkeypatch.setattr(aj.subprocess, "run", fake_run)
     monkeypatch.setattr(aj.shutil, "which", lambda _b: "/somewhere/claude")
+    return aj
+
+
+def test_one_failed_call_costs_only_that_adrs_verdict(monkeypatch):
+    """ADR-038: an unusable call must not discard verdicts already established.
+
+    The previous behaviour returned None here, so a VIOLATION the model had
+    genuinely found vanished and the run printed OK. What keeps a partial pass
+    from being read as complete is the attestation, not throwing the evidence
+    away.
+    """
+    aj = _judge_module_with_responses(
+        monkeypatch,
+        [
+            json.dumps({"ADR-001": {"verdict": "VIOLATION", "reason": "x"}}),
+            "not json at all",
+        ],
+    )
+    attestation = {"evaluated": [], "degraded": False, "degraded_reason": None}
+    result = aj.run_llm_batch(
+        [
+            {"adr_id": "ADR-001", "title": "t", "decision": "d"},
+            {"adr_id": "ADR-002", "title": "t", "decision": "d"},
+        ],
+        "diff",
+        ["claude", "-p"],
+        30,
+        attestation=attestation,
+    )
+    assert [f["adr"] for f in result] == ["ADR-001"], "the established violation survives"
+    assert attestation["evaluated"] == ["ADR-001"]
+    assert attestation["degraded"] is True
+    assert "ADR-002" in attestation["degraded_reason"]
+    assert "1 of 2" in attestation["degraded_reason"]
+
+
+def test_a_pass_where_no_adr_answers_still_degrades_to_none(monkeypatch):
+    """ADR-038 keeps one meaning for "the LLM pass produced nothing"."""
+    aj = _judge_module_with_responses(monkeypatch, ["not json at all"])
     attestation = {"evaluated": [], "degraded": False, "degraded_reason": None}
     result = aj.run_llm_batch(
         [
@@ -838,6 +879,8 @@ def test_one_failed_call_discards_the_whole_pass(monkeypatch):
     )
     assert result is None
     assert attestation["evaluated"] == []
+    assert attestation["degraded"] is True
+    assert "no ADR was judged" in attestation["degraded_reason"]
 
 
 def test_text_mode_reports_skips_and_degradation(tmp_path):

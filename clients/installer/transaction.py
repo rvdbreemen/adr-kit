@@ -83,11 +83,23 @@ def run_transaction(
             _atomic_json(evidence, payload)
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
+            if rollback_error is not None:
+                # The operator needs BOTH facts. Re-raising the original error
+                # untouched is what hid the second half of TASK-164: a failed
+                # install whose rollback also failed reported only why the
+                # install failed, so nobody learned the client had been left
+                # with less than it started with.
+                raise RuntimeError(
+                    f"{client} activation failed AND could not be rolled back.\n"
+                    f"  install error : {exc}\n"
+                    f"  rollback error: {rollback_error}\n"
+                    f"  {client} may now have less than it had before this run. "
+                    f"Verify with `{client} plugin list` before retrying."
+                ) from exc
             if isinstance(exc, RuntimeError):
                 raise
             raise RuntimeError(
-                f"{client} activation failed; rollback "
-                f"{'completed' if rollback_error is None else 'failed'}: {exc}"
+                f"{client} activation failed; rollback completed: {exc}"
             ) from exc
         _atomic_json(
             evidence,

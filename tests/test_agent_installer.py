@@ -17,7 +17,7 @@ import pytest
 
 from clients.installer import judge_backend, native
 from clients.installer.contracts import DetectedClient
-from clients.installer.detection import detailed_detection
+from clients.installer.detection import _marker_roots as marker_roots, detailed_detection
 from clients.installer.planning import build_plan, render_plan
 from clients.installer.transaction import client_lock, run_transaction
 from clients.installer.payload import payload_digest, remove_owned_payloads
@@ -258,14 +258,21 @@ def test_claude_marketplace_repoints_on_version_bump(tmp_path):
     assert installer.claude_marketplace_source_matches(current, new_source)
 
 
-def test_installer_subprocesses_never_inherit_console_stdin():
-    """No installer subprocess may inherit the console's stdin.
+def test_agent_cli_subprocesses_never_inherit_console_stdin():
+    """No subprocess that starts an agent CLI or a packaged runtime may
+    inherit the console's stdin.
 
     ``hooks/adr-hook.py`` reads its payload from stdin, so a call without an
     explicit ``stdin``/``input`` blocks until an EOF the console never sends,
     and ``subprocess.run`` then re-enters ``communicate()`` unbounded after its
     own timeout. Under pytest fd 0 is already closed, so a behavioural test
     cannot see this; the source is the only place the contract is visible.
+
+    The six scanned files are the exhaustive set for that promise, established
+    by an AST sweep of every Python file in the repository plus the
+    extensionless entrypoints under ``bin/``: every other stdin-less call
+    spawns ``git``, ``gh`` or ``sys.executable`` running an in-repo script,
+    none of which reads stdin or resolves through a shim (TASK-167).
     """
 
     def closes_stdin(node: ast.Call) -> bool:
@@ -284,6 +291,12 @@ def test_installer_subprocesses_never_inherit_console_stdin():
     # The entrypoint owns the runner every client-CLI mutation flows through,
     # so the contract is only real if it is scanned along with the package.
     sources.append(ROOT / "scripts" / "install-agent-envs.py")
+    # The deep-doctor probe and the client-event probe start the same three
+    # third-party CLIs. Named explicitly rather than globbed: bin/ is mirrored
+    # into codex/bin/ and copilot/bin/, and a glob would scan the generated
+    # copies and report the same defect three times.
+    sources.append(ROOT / "bin" / "adr_doctor_probes.py")
+    sources.append(ROOT / "scripts" / "probe-client-events.py")
     for source in sources:
         tree = ast.parse(source.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -293,7 +306,7 @@ def test_installer_subprocesses_never_inherit_console_stdin():
             if name not in {"run", "Popen", "check_output", "call"}:
                 continue
             if not closes_stdin(node):
-                offenders.append(f"{source.name}:{node.lineno}")
+                offenders.append(f"{source.relative_to(ROOT).as_posix()}:{node.lineno}")
 
     assert not offenders, (
         "installer subprocess calls must pass stdin= or input=; "
@@ -499,6 +512,192 @@ def test_installed_clients_use_update_or_noop_paths(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "plugin update adr-kit@rvdbreemen-adr-kit" in output
     assert "plugin update adr-kit" in output
+
+
+def test_a_failed_install_that_cannot_be_restored_says_so(tmp_path):
+    """TASK-164: the run must report BOTH failures, not just the first.
+
+    Observed twice on 2026-08-09: the install failed, the rollback hit the same
+    obstacle and also failed, and the reported error named only the install.
+    The operator had no way to learn their working registration had been taken
+    down. run_transaction re-raised a RuntimeError untouched, which discarded
+    the rollback outcome it had just collected.
+    """
+    def apply():
+        raise RuntimeError("command failed (1): copilot plugin install adr-kit")
+
+    def rollback():
+        raise RuntimeError("validation failed: ADR Kit plugin not listed")
+
+    with pytest.raises(RuntimeError) as error:
+        run_transaction(
+            "copilot",
+            state_root=tmp_path / "state",
+            apply=apply,
+            validate=lambda: None,
+            rollback=rollback,
+        )
+    message = str(error.value)
+    assert "could not be rolled back" in message
+    assert "copilot plugin install adr-kit" in message, "the install error survives"
+    assert "ADR Kit plugin not listed" in message, "the rollback error is reported too"
+    assert "may now have less than it had before this run" in message
+
+    evidence = json.loads(
+        (tmp_path / "state" / "evidence" / "copilot-last-transaction.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert evidence["status"] == "failed"
+    assert evidence["rollback_error"]
+
+
+def test_rollback_proves_the_client_is_back_before_reporting_success(tmp_path):
+    """A restore that reports success without checking is how the client is lost.
+
+    The client here had a working older version, so a rollback that leaves it
+    unlisted must raise rather than let the transaction claim `rolled-back`.
+    """
+    source = tmp_path / "marketplaces" / "0.49.0"
+    previous = tmp_path / "marketplaces" / "0.49.0.old"
+    for directory, version in ((source, "0.49.0"), (previous, "0.48.0")):
+        directory.mkdir(parents=True)
+        (directory / installer.PREPARED_MARKER).write_text(
+            json.dumps({"version": version}), encoding="utf-8"
+        )
+    client = installer.Client("copilot", "/bin/copilot", "GitHub Copilot CLI 1.0.70")
+
+    # The reinstall runs, but the client still lists nothing afterwards.
+    def runner(command):
+        if "list" in command:
+            return completed(command, "No plugins installed")
+        return completed(command, "")
+
+    with pytest.raises(RuntimeError, match="validation failed"):
+        native.restore_previous_install(
+            "copilot", client, source, runner,
+            had_plugin=True, marker_name=installer.PREPARED_MARKER,
+        )
+
+    # A client that had nothing to lose is not failed for still having nothing.
+    native.restore_previous_install(
+        "copilot", client, source, runner,
+        had_plugin=False, marker_name=installer.PREPARED_MARKER,
+    )
+
+
+def _marker_root(base: Path, name: str, version: str) -> Path:
+    directory = base / name
+    directory.mkdir(parents=True)
+    (directory / installer.PREPARED_MARKER).write_text(
+        json.dumps({"version": version}), encoding="utf-8"
+    )
+    return directory
+
+
+def test_live_marketplace_root_outranks_its_backup_and_a_lower_version(tmp_path):
+    """Rank by parsed version, never by string order (TASK-166).
+
+    Lexicographically "0.48.0.old" sorts after "0.48.0" and "0.9.0" after
+    "0.48.0", so a backup spoke for the install and a future 0.9.x would have
+    outranked 0.48.x. Both markers of a version carry the same version string,
+    so only the directory name can break that tie.
+    """
+    base = tmp_path / "marketplaces"
+    for name, version in (
+        ("0.9.0", "0.9.0"),
+        ("0.48.0", "0.48.0"),
+        ("0.48.0.old", "0.48.0"),
+        ("0.48.0.tmp", "0.48.0"),
+    ):
+        _marker_root(base, name, version)
+
+    ranked = [path.name for path, _ in marker_roots(base)]
+    assert ranked[-1] == "0.48.0", f"the live root must win, got {ranked}"
+    assert ranked.index("0.48.0.old") < ranked.index("0.48.0")
+    assert ranked.index("0.48.0.tmp") < ranked.index("0.48.0.old")
+    assert ranked.index("0.9.0") < ranked.index("0.48.0")
+
+
+def test_detection_reports_the_version_each_client_reports_for_itself(tmp_path):
+    """A client with no plugin must read `detected`, not the marketplace's version.
+
+    Deriving installed_version from the shared marker announced all three
+    clients as installed at the payload's version even when a client had
+    nothing - which is what happened to copilot after its failed install.
+    """
+    base = tmp_path / "marketplaces"
+    _marker_root(base, "0.49.0", "0.49.0")
+    clients = {
+        name: installer.Client(name, f"/bin/{name}", "test")
+        for name in installer.SUPPORTED
+    }
+    settings = {"clients": {name: {"enabled": True} for name in installer.SUPPORTED}}
+
+    detailed = detailed_detection(
+        clients,
+        install_root=base,
+        effective_settings=settings,
+        env={},
+        installed_versions={"claude": "0.49.0", "codex": None, "copilot": None},
+    )
+    assert detailed["claude"].installed_version == "0.49.0"
+    assert detailed["codex"].installed_version is None
+    assert detailed["copilot"].installed_version is None
+
+    plan = render_plan(build_plan(
+        detailed,
+        source=tmp_path / "source",
+        version="0.49.0",
+        source_sha256="0" * 64,
+        effective_settings=settings,
+        requested=tuple(installer.SUPPORTED),
+    ))
+    assert "copilot: SELECTED; detected ->" in plan, plan
+
+
+def test_each_client_registration_reader_uses_that_client_only(tmp_path, monkeypatch):
+    """claude reads JSON, copilot reads JSONC, codex has to be asked."""
+    from clients.installer import registrations
+
+    claude_home = tmp_path / "claude home"
+    (claude_home / "plugins").mkdir(parents=True)
+    (claude_home / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {"adr-kit@rvdbreemen-adr-kit": [
+            {"scope": "user", "version": "0.49.0"}
+        ]}}),
+        encoding="utf-8",
+    )
+    copilot_home = tmp_path / "copilot home"
+    copilot_home.mkdir()
+    # Copilot's real file opens with banner comments; json.loads rejects those.
+    (copilot_home / "config.json").write_text(
+        "// User settings belong in settings.json.\n"
+        "// This file is managed automatically.\n"
+        + json.dumps({"installedPlugins": [{"name": "adr-kit", "version": "0.49.0"}]}),
+        encoding="utf-8",
+    )
+    env = {"CLAUDE_CONFIG_DIR": str(claude_home), "COPILOT_HOME": str(copilot_home)}
+
+    assert registrations.claude_installed_version(env) == "0.49.0"
+    assert registrations.copilot_installed_version(env) == "0.49.0"
+
+    codex = installer.Client("codex", "/bin/codex", "test")
+    # Codex's real shape: {"installed": [{"pluginId": ..., "version": ...}]}.
+    listing = completed(
+        ["codex"],
+        json.dumps({"installed": [
+            {"pluginId": "documents@openai-primary-runtime", "version": "26.805.11740"},
+            {"pluginId": "adr-kit@rvdbreemen-adr-kit-codex", "version": "0.49.0"},
+        ]}),
+    )
+    assert registrations.codex_installed_version(codex, lambda _c: listing) == "0.49.0"
+
+    # Nothing installed anywhere reads as unknown, never as the payload version.
+    empty = {"CLAUDE_CONFIG_DIR": str(tmp_path / "absent"), "COPILOT_HOME": str(tmp_path / "absent")}
+    assert registrations.claude_installed_version(empty) is None
+    assert registrations.copilot_installed_version(empty) is None
+    assert registrations.codex_installed_version(codex, lambda _c: completed(["codex"], "", "", 1)) is None
 
 
 def _judge_project(tmp_path: Path) -> Path:
@@ -815,11 +1014,20 @@ def test_detailed_detection_is_read_only_and_reports_overrides(tmp_path):
         install_root=install_root,
         effective_settings=_effective_settings(),
         env={"CODEX_HOME": "C:/custom codex"},
+        installed_versions={"codex": "0.35.0"},
     )
     after = sorted(str(path) for path in tmp_path.rglob("*"))
     assert before == after
     assert detected["codex"].config_override == "C:/custom codex"
+    # The version comes from what the client reports, never from the marker:
+    # passing nothing must read as unknown rather than as the payload's version.
     assert detected["codex"].installed_version == "0.35.0"
+    assert detailed_detection(
+        clients,
+        install_root=install_root,
+        effective_settings=_effective_settings(),
+        env={},
+    )["codex"].installed_version is None
     assert detected["codex"].duplicate_roots == (str(old.resolve()),)
 
 

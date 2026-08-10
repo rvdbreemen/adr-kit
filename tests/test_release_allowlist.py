@@ -87,6 +87,10 @@ def test_task_40_python_modules_stay_within_adr_010_line_budgets():
         "clients/installer/payload.py",
         "clients/installer/smoke.py",
         "clients/installer/judge_backend.py",
+        "clients/installer/registrations.py",
+        # Budgeted from v0.50.0: it was the largest unbudgeted installer module
+        # and TASK-164 pushed it to 406 lines before anything noticed.
+        "clients/installer/native.py",
     )
     for relative in entrypoints:
         lines = (ROOT / relative).read_text(encoding="utf-8").splitlines()

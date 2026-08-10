@@ -43,3 +43,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-035 | Proposed | - | Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied... |
 | ADR-036 | Accepted | - | Chosen option: retire definitively; host model plus operator escape hatch. |
 | ADR-037 | Accepted | - | Chosen option: Option A, because every property the acceptance criteria ask for is a property of state granularity, n... |
+| ADR-038 | Accepted | - | Chosen option: keep every established verdict and mark the pass degraded, because it preserves evidence without ever... |
