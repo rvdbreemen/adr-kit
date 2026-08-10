@@ -9,6 +9,7 @@ from pathlib import Path
 
 from adr_doctor_models import benchmark_extension, check
 from clients.installer.detection import detect_clients
+from clients.installer.bounded import run_bounded
 from hooks.hook_benchmark import measure as measure_hooks
 
 
@@ -21,7 +22,7 @@ def _command(values: list[str], *, cwd: Path, timeout: float) -> subprocess.Comp
     # against 2.03s without one. Closing stdin does not restore the bound, but
     # it removes the one thing that would make the wait permanent instead of
     # merely long.
-    return subprocess.run(
+    return run_bounded(
         values, cwd=str(cwd), capture_output=True, text=True,
         stdin=subprocess.DEVNULL,
         encoding="utf-8", errors="replace", timeout=timeout,
