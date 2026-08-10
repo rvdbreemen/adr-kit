@@ -5,6 +5,86 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+
+## [0.49.0] - 2026-08-09
+
+This release makes the installer safe to run on Windows. Two failures found
+while installing v0.48.0 are fixed: one where the installer stopped responding
+with no error at all, and one where a failed copilot install left the client
+worse off than before the run. No configuration changes and no upgrade step.
+
+### Added
+
+- **The copilot install refuses a plugin directory it cannot replace**
+  (TASK-164): `install_copilot` now renames the plugin directory aside and back
+  before it touches any registration. If that rename fails, the run stops with a
+  diagnosis instead of proceeding into a mutation it cannot finish. The message
+  names the cause rather than the symptom: an editor running the ADR Kit plugin
+  as an MCP server holds the directory open, VS Code being the usual one, and
+  killing the server process alone does not help because the editor restarts it
+  within seconds. Closing the editor window does. A dry run reports rather than
+  probes, because a reporting mode should not rename directories to learn
+  things.
+
+### Fixed
+
+- **The installer now records the judge host client, so the LLM pass is on
+  after an install** (TASK-169): ADR-036 states that `judge.backend` resolves to
+  the host client's CLI "recorded at install time", and ADR-017 before it said
+  the installer writes it. No installer ever did. Anyone who installed without
+  walking through the interactive `/adr-kit:init` got `judge.backend = host`
+  with no client recorded, and every commit degraded to declarative-only behind
+  two warnings; this repository had been running that way itself. A run that
+  installs exactly one client now records it in the gitignored
+  `docs/adr/.adr-kit.local.json` and says so. A run installing several clients
+  records nothing and prints the command per client instead: choosing would
+  decide which vendor receives your repository diff, and ADR-017 refused that
+  for good reason. An already recorded client is never overwritten, and the
+  tracked `.adr-kit.json` is never touched - selecting a backend stays the
+  operator's decision (ADR-025). `bin/adr-judge --record-host-client <id>` is
+  the new machine-local writer this uses.
+
+  Expect commits to take much longer once this lands, because the LLM pass now
+  actually runs. It costs one isolated model call per ADR whose scope the diff
+  touches, so the cost scales with your ADR set and with the breadth of the
+  change: on this repository a commit touching six in-scope ADRs took 126
+  seconds, against a `judge.pre_commit_timeout_ms` default of 5000 that the
+  hook then warns about. That is the gate doing the work it was configured to
+  do rather than a regression, but it is the most visible change in this
+  release. Three ways out, in increasing order of bluntness:
+  `ADR_KIT_NO_LLM=1` for one commit, `judge.llm_enabled: false` in
+  `docs/adr/.adr-kit.json` to keep only the declarative gate, or narrowing
+  which ADRs opt into `llm_judge`.
+- **`adr-judge-precommit --help` no longer runs a full judge** (TASK-169): the
+  wrapper takes no arguments and passed everything through, so asking for help
+  judged the staged diff instead. That looked harmless only because no LLM
+  backend was configured; with one recorded it spawns a host CLI per ADR and
+  takes tens of seconds. It now prints its usage and exits, and the `git diff`
+  it runs closes stdin like every other installer-path subprocess.
+- **The installer no longer hangs at the packaged Claude hook smoke test**
+  (TASK-165): run from an interactive console, `scripts/install-agent-envs.py`
+  stopped responding after `Prepared MCP runtimes: PASS` and stayed there until
+  interrupted. The hook was started without a closed stdin, so it inherited the
+  console and blocked reading a payload that would never arrive. The 30-second
+  timeout did not save it, because CPython's `subprocess.run` re-enters
+  `communicate()` without a bound from its own timeout handler while the
+  grandchildren of `cmd.exe` keep the output pipe open. Every subprocess on the
+  installer path now closes stdin explicitly, and a source-level guard fails the
+  suite if one of them stops doing so.
+- **A failed copilot install no longer dismantles the working registration**
+  (TASK-164): when the plugin install failed, the rollback removed the
+  marketplace registration and then could not restore it, so a client that had a
+  working older version ended the run with nothing. The pre-flight probe above
+  removes the common trigger. What the rollback should say when it cannot
+  restore is tracked separately and is not changed here.
+
+### Changed
+
+- **`clients/installer/payload.py` split along the seam its docstring already
+  named**: the activation-independent smoke probes that exercise a prepared
+  payload moved to `clients/installer/smoke.py`. Internal reorganisation with no
+  behaviour change; both modules are now covered by the ADR-010 line budget.
+
 ## [0.48.0] - 2026-08-09
 
 This release simplifies what adr-kit is: retrieval is lexical plus graph, the
@@ -2476,7 +2556,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.49.0...HEAD
+[0.49.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.45.0...v0.46.0

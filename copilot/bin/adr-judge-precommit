@@ -43,9 +43,19 @@ if not _ADR_JUDGE.exists():
 
 
 def main() -> int:
+    # Answer --help without judging anything. The wrapper takes no arguments,
+    # so it used to run a full judge for `--help` and merely look fast while no
+    # LLM backend was configured; with one recorded (TASK-169) the same call
+    # spawns a host CLI per ADR and takes tens of seconds. A help flag must
+    # never do the work it is asking about.
+    if any(argument in {"-h", "--help"} for argument in sys.argv[1:]):
+        print(__doc__.strip())
+        return 0
+
     # Step 1: capture the staged diff.
     diff_proc = subprocess.run(
         ["git", "diff", "--cached", "--unified=0"],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
     )
     if diff_proc.returncode != 0:

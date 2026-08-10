@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-08-09 15:49'
-updated_date: '2026-08-09 16:37'
+updated_date: '2026-08-09 20:09'
 labels:
   - release
 dependencies: []
@@ -27,7 +27,7 @@ Ships 22 commits since v0.47.0: the ADR-036 KISS simplification (vector layer re
 - [x] #4 PR into main is green and handed to the maintainer
 - [x] #5 Tag pushed, release-publish.yml green, GitHub Release created
 - [x] #6 Release merged back into dev
-- [ ] #7 Local prepared-directory marketplace advanced and the three clients report 0.48.0
+- [x] #7 Local prepared-directory marketplace advanced and the three clients report 0.48.0
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,3 +53,15 @@ Step 6 partially done. install-agent-envs.py --clients all: claude 0.48.0 OK, co
 
 Unrelated observation while diagnosing: a Codex agent on this machine repeatedly spawns `bash.exe /c/Tools/Codex/python -m pytest`, a new one roughly every four minutes. Not from this session.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude Opus 5
+created: 2026-08-09 20:09
+---
+Criterion #7 closed 2026-08-09 22:07. Copilot is back at 0.48.0 after the VS Code window holding the plugin directory was closed; see TASK-164 comments #2-#5 for the diagnosis and the restore. Verified per client, independently of the installer's own reporting (which TASK-166 shows is derived from a shared marketplace marker rather than the client): claude `installed_plugins.json` -> adr-kit@rvdbreemen-adr-kit 0.48.0; codex `config.toml` -> marketplace source ...\marketplaces\0.48.0, plugin enabled; copilot `plugin list` -> adr-kit@rvdbreemen-adr-kit-copilot v0.48.0.
+
+Also worth correcting from the note above: the repeating pytest processes on this machine were blamed on 'a Codex agent'. During TASK-165 I found four such runs hanging for over an hour and, with the user's approval, killed them; more kept appearing with `-p no:cacheprovider`, which is not a flag this session uses. They invalidated two full suite runs before I isolated my own with a dedicated --basetemp. Whatever spawns them, they are still running on this machine.
+---
+<!-- COMMENTS:END -->
