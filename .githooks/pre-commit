@@ -248,7 +248,12 @@ _T0=$(_ms_now)
 # below -- including the violation report -- would never run and the commit
 # would be blocked with no explanation at all.
 set +e
-ADR_OUT=$(git diff --cached --unified=0 | ADR_KIT_NO_LLM="${_NO_LLM_OVERRIDE:-0}" "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --repo-root "$ROOT" --snapshot staged $_LLM_FLAG 2>&1)
+# The lock override forces the LLM pass off; otherwise the operator's own
+# ADR_KIT_NO_LLM stands. Hard-coding 0 as the fallback silently discarded the
+# opt-out this hook advertises in its own header and in its slow-commit
+# warning, which matters now that a configured backend makes that pass cost
+# one model call per in-scope ADR.
+ADR_OUT=$(git diff --cached --unified=0 | ADR_KIT_NO_LLM="${_NO_LLM_OVERRIDE:-${ADR_KIT_NO_LLM:-0}}" "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --repo-root "$ROOT" --snapshot staged $_LLM_FLAG 2>&1)
 ADR_EXIT=$?
 set -e
 _T1=$(_ms_now)
