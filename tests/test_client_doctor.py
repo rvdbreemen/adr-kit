@@ -65,14 +65,14 @@ def test_deep_native_probe_closes_stdin(tmp_path, monkeypatch):
     """
     recorded = {}
 
-    def recorder(values, **kwargs):
+    def recorder(values, **kwargs):  # run_bounded's signature, same shape
         recorded["values"] = values
         recorded.update(kwargs)
         return subprocess.CompletedProcess(
             values, 0, "adr-kit@rvdbreemen-adr-kit-copilot", ""
         )
 
-    monkeypatch.setattr(adr_doctor_probes.subprocess, "run", recorder)
+    monkeypatch.setattr(adr_doctor_probes, "run_bounded", recorder)
     result = _native_deep(tmp_path, "copilot", "C:/fake/copilot.CMD")
 
     assert recorded["stdin"] is subprocess.DEVNULL

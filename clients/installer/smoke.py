@@ -15,6 +15,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from .bounded import run_bounded
+
 
 def _validate_mcp_process(
     command: list[str], *, working_directory: Path, environment: dict[str, str] | None = None
@@ -112,11 +114,12 @@ def validate_prepared_hooks(source: Path) -> None:
     env = dict(os.environ)
     env["CLAUDE_PLUGIN_ROOT"] = str(source)
     try:
-        result = subprocess.run(
-            # The hook reads a payload from stdin. Without an explicit closed
-            # stdin it inherits the installer's console and blocks until EOF,
-            # which never arrives; the 30s timeout then re-enters communicate()
-            # without a bound and the installer stalls with no error at all.
+        # The hook reads a payload from stdin, so stdin must be closed or it
+        # waits for an EOF the console never sends. run_bounded rather than
+        # subprocess.run because the wrapper is cmd.exe with a Python
+        # grandchild: a plain timeout kills the shim and then waits unbounded
+        # for the child that still holds the pipe (TASK-171).
+        result = run_bounded(
             command, cwd=str(working), env=env, capture_output=True, text=True,
             stdin=subprocess.DEVNULL,
             encoding="utf-8", errors="replace", timeout=30,

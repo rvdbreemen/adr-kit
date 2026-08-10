@@ -72,6 +72,9 @@ HOOK_RUNTIME_FILES = (
 RUNTIME_SUPPORT_FILES = (
     "clients/__init__.py",
     "clients/installer/__init__.py",
+    # Mirrored because bin/adr_doctor_probes.py imports it, and bin/ ships into
+    # every generated tree. Stdlib-only, like every other file in this list.
+    "clients/installer/bounded.py",
     "clients/installer/contracts.py",
     "clients/installer/detection.py",
     "hooks/__init__.py",
