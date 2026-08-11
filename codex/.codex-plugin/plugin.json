@@ -1,6 +1,6 @@
 {
   "name": "adr-kit",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "description": "Native ADR governance for Codex: decision authoring, deterministic checks, lifecycle workflows, and a key-free MCP server.",
   "author": {
     "name": "Robert van den Breemen",

@@ -7,6 +7,34 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 
 
+
+## [0.51.0] - 2026-08-11
+
+One fix, on every path that starts a client CLI: a timeout you declare is now a
+timeout you get. No configuration changes and no upgrade step.
+
+### Fixed
+
+- **A declared timeout is now a real upper bound** (TASK-171): `subprocess.run`
+  stops bounding anything the moment a descendant outlives the direct child.
+  Its own timeout handler kills that child and then drains the pipes with no
+  bound at all, and on Windows the kill is `TerminateProcess` on a single
+  handle. Behind a `.CMD` shim - which is what a client CLI installed through
+  npm is - the grandchild survives, keeps the output pipe open, and the call
+  returns whenever that grandchild happens to finish. Measured against exactly
+  that shape, `cmd.exe` on a `.cmd` starting a Python grandchild with
+  `timeout=1`: the old path returned after 25.22 seconds, the new one after
+  1.65 with the process tree cleaned up.
+
+  Three paths spawn through the new runner: the packaged Claude hook smoke
+  test during an install, the runner behind every client-CLI mutation, and the
+  deep-doctor native probe. So `adr doctor --deep` and
+  `install-agent-envs.py` can no longer sit for minutes on a client that
+  stopped answering; they stop when they said they would.
+
+  ADR-010 already described these calls as bounded. That claim was made true
+  rather than softened, so no decision record changed.
+
 ## [0.50.0] - 2026-08-10
 
 This release is about telling you the truth. Three of its five fixes are cases
@@ -2614,7 +2642,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.50.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.51.0...HEAD
+[0.51.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.47.0...v0.48.0
