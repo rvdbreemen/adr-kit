@@ -3,10 +3,10 @@ id: TASK-169
 title: >-
   The installer never records judge.host_client, so the LLM judge is dead by
   default
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-09 20:38'
-updated_date: '2026-08-09 20:47'
+updated_date: '2026-08-10 21:03'
 labels:
   - bug
   - installer
@@ -65,7 +65,7 @@ Note for whoever picks this up: check whether ADR-036's Enforcement block should
 - [x] #1 Installing with scripts/install-agent-envs.py for a single named client records judge.host_client in the project's gitignored docs/adr/.adr-kit.local.json, without an interactive step
 - [x] #2 The multi-client case has a decided, documented rule and does not silently pick a winner
 - [x] #3 An existing recorded host_client is never overwritten without the operator asking for it
-- [ ] #4 Regression coverage asserts that a single-client install leaves a resolvable judge backend, so this drift cannot return unnoticed
+- [x] #4 Regression coverage asserts that a single-client install leaves a resolvable judge backend, so this drift cannot return unnoticed
 - [x] #5 docs/adr/.adr-kit.local.json in this repository records a host client and commits stop degrading to declarative-only
 <!-- AC:END -->
 
@@ -87,3 +87,19 @@ and `lifecycle.signer` survived the merge into the local file untouched.
 
 Criterion #4's regression asserts the property rather than the file: it records a client into a temporary project, then runs the real `bin/adr-judge --show-config` against it and requires a resolved backend with no 'no client was recorded' warning. Three more tests cover the multi-client refusal (no subprocess runs, all three commands printed), the no-overwrite rule, and that the tracked config is never created.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped in v0.49.0. The installer now records the judge host client, so the LLM pass is on after an install instead of silently off.
+
+ADR-036 states that `judge.backend` resolves to the host client's CLI "recorded at install time" and ADR-017 said the installer writes it. No installer ever did - drift between a binding ADR and the code, in the repository that dogfoods the kit. Anyone who installed without walking through the interactive `/adr-kit:init` got `judge.backend = host` with no client recorded, and every commit degraded to declarative-only behind two warnings.
+
+The ambiguous case is answered by refusing to answer it, which is what ADR-017's own reasoning required: a run installing exactly one client records it; a run installing several records nothing and prints the command per client, because choosing would decide which vendor receives the repository diff. An already recorded client is never overwritten.
+
+The tracked `.adr-kit.json` is never touched. `--set-backend host` writes there, but since ADR-036 left exactly one backend, recording the machine-local client is sufficient for it to resolve - so `bin/adr-judge` gained `--record-host-client <id>`, writing only the gitignored local file through the existing writer.
+
+Criterion 4 was implemented at the time and is verified now: `test_a_single_client_install_leaves_a_resolvable_judge_backend` records a client into a temporary project, runs the real `bin/adr-judge --show-config` against it, and requires a resolved backend with no "no client was recorded" warning. It asserts the property rather than the file, so the drift cannot return unnoticed. Three sibling tests cover the multi-client refusal, the no-overwrite rule, and that the tracked config is never created. 3 passed.
+
+The task sat In Progress after the release only because the tick was never set; nothing was outstanding.
+<!-- SECTION:FINAL_SUMMARY:END -->

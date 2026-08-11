@@ -49,6 +49,7 @@ from clients.installer.payload import (
     validate_python as _validate_python,
     validate_source,
 )
+from clients.installer.bounded import run_bounded
 from clients.installer.judge_backend import record_host_client
 from clients.installer.registrations import read_installed_versions
 from clients.installer.smoke import validate_prepared_hooks, validate_prepared_mcp
@@ -58,7 +59,8 @@ from clients.installer.updates import record_update_state, update_decision
 SUPPORTED = CLIENT_IDS
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    # Bounded: a client CLI is often a .CMD shim (TASK-171).
+    return run_bounded(
         list(command), stdin=subprocess.DEVNULL, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=120,
     )
