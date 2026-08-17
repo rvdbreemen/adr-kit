@@ -307,8 +307,18 @@ configured:
 }
 ```
 
-For another project, point OpenCode at a reviewed checkout until the npm package
-is published:
+For another project, use the published package for v0.52.0:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.0"]
+}
+```
+
+Future versions are staged through the documented npm workflow and require a
+maintainer approval before they become public. Until a future version is
+approved, point OpenCode at a reviewed checkout:
 
 ```json
 {

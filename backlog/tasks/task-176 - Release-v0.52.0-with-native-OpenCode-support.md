@@ -4,7 +4,7 @@ title: Release v0.52.0 with native OpenCode support
 status: Done
 assignee: []
 created_date: '2026-08-16 21:53'
-updated_date: '2026-08-17 05:57'
+updated_date: '2026-08-17 06:14'
 labels:
   - release
   - opencode
@@ -39,7 +39,7 @@ Release the accepted native OpenCode integration as v0.52.0. Update the README, 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Final validation passed on 2026-08-17: version gate passed for 0.52.0; generated adapters changed=0; strict ADR lint passed for 39 ADRs; ADR index unchanged; full C4-Documentation and release-document Markdownlint passed with 0 errors; focused OpenCode/version tests passed 26; deterministic judge checked 19 ADRs with 0 violations and 0 advisories; full isolated suite passed 1795 with 13 skipped; dependency-hidden suite passed 1792 with 16 skipped. Commit 4aaefde was pushed to origin/release/v0.52.0. Release PR #102 is open at https://github.com/rvdbreemen/adr-kit/pull/102 targeting main. Maintainer merge/tag actions, the follow-up sync to dev, and separate npm publication remain.
+Release completed on 2026-08-17: PR #102 merged into main at d6442b03f8bc2157c3639a56f4ce13fdd4bf5e52; tag v0.52.0 points to that merge commit; release-publish workflow run 32000229247 passed all gates and created https://github.com/rvdbreemen/adr-kit/releases/tag/v0.52.0. The main-to-dev sync branch is pushed and PR #103 is open at https://github.com/rvdbreemen/adr-kit/pull/103; its current CI checks are all green. npm publication remains separate and has not been performed.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -54,10 +54,15 @@ created: 2026-08-17 05:57
 ---
 Opened release PR #102: https://github.com/rvdbreemen/adr-kit/pull/102. The requested commit, push, and PR preparation are complete; protected-branch merge and tagging remain.
 ---
+
+created: 2026-08-17 06:14
+---
+Release publication verified: tag v0.52.0, workflow 32000229247, and GitHub Release are complete. Sync PR #103 is green and awaiting maintainer merge; npm remains a separate unpublished operation.
+---
 <!-- COMMENTS:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Prepared and published the v0.52.0 release branch with native OpenCode support. The branch is pushed and PR #102 is open; protected main merge, v0.52.0 tagging, dev synchronization, and optional npm publication remain maintainer follow-up actions.
+Released v0.52.0 with native OpenCode support. PR #102 was merged, tag v0.52.0 was pushed, the GitHub Release was created successfully, and the documented sync PR #103 is open to bring the release back into dev.
 <!-- SECTION:FINAL_SUMMARY:END -->
