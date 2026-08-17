@@ -18,7 +18,7 @@ repository and its root `opencode.json` loads the local package:
 }
 ```
 
-For another project, use the npm package when it is published:
+For another project, use the public npm package:
 
 ```json
 {
@@ -27,9 +27,10 @@ For another project, use the npm package when it is published:
 }
 ```
 
-The v0.52.0 repository release includes the package source, but the current
-release workflow does not publish it to npm. Until that separate publication
-happens, point OpenCode at a reviewed checkout:
+Version `0.52.0` is published. Future versions are staged by
+`.github/workflows/publish-opencode-npm.yml` and become available after a
+maintainer approves the staged package with npm 2FA. If a future version has
+not yet been approved, point OpenCode at a reviewed checkout:
 
 ```json
 {

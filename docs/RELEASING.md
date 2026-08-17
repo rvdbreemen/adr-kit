@@ -12,7 +12,9 @@ those clients resolves its plugin marketplace directly from the public
 `rvdbreemen/adr-kit` repository. OpenCode loads the native package from a
 repository checkout or, when separately published, from npm. Publishing a
 repository version means: land version-consistent manifests on the public repo,
-tag it, and cut a GitHub Release. The current workflow does not publish npm.
+tag it, and cut a GitHub Release. The tag-triggered workflow does not publish
+npm directly; the separate OpenCode workflow stages npm packages for maintainer
+approval.
 
 | Client | Marketplace manifest (in repo) | Marketplace id | Plugin manifest | Plugin source |
 |---|---|---|---|---|
@@ -212,7 +214,45 @@ Pushing the tag triggers **`.github/workflows/release-publish.yml`** (the releas
 flow), which re-runs every gate above and creates the GitHub Release from the
 CHANGELOG section. If any version site disagrees, the workflow fails before the
 Release is cut. The workflow validates the OpenCode package version but does not
-publish npm.
+stage or publish npm.
+
+### 3a. Stage the OpenCode package for npm
+
+The first package publication is a deliberate manual bootstrap. npm Trusted
+Publishers and staged publishing require the package to exist first. That
+bootstrap was completed for `@rvdbreemen/adr-kit-opencode@0.52.0` with local
+2FA. It has no OIDC provenance; future versions use the staged workflow.
+
+Before the first automated staging run, configure the package's Trusted Publisher
+on npmjs.com with these exact values:
+
+| npm setting | Value |
+|---|---|
+| Provider | GitHub Actions |
+| Organization or user | `rvdbreemen` |
+| Repository | `adr-kit` |
+| Workflow filename | `publish-opencode-npm.yml` |
+| Environment name | empty; npm performs the final approval |
+| Allowed action | `npm stage publish` |
+
+The workflow pins npm `11.17.0`, which satisfies the staged-publishing requirement
+of npm `11.15.0` or newer. The relationship can also be configured locally after
+signing in and enabling 2FA:
+
+```bash
+npm trust github @rvdbreemen/adr-kit-opencode --repo rvdbreemen/adr-kit --file publish-opencode-npm.yml --allow-stage-publish
+```
+
+Run **Actions -> Stage OpenCode package for npm -> Run workflow** and enter an
+existing release tag such as `v0.53.0`. The workflow checks the exact tag,
+version sites, generated adapters, ADR index, focused OpenCode tests, and the
+package tarball. It refuses a version already present on npm, then stages the
+package through OIDC without an npm token.
+
+The final manual step is on npm: open **Staged Packages**, inspect the staged
+tarball, and approve it with 2FA. The approval publishes the package and allows
+npm to publish the provenance requested during the OIDC staging operation. If the
+staged package is rejected, it never becomes publicly available.
 
 ### 4. Merge the release back into `dev`
 
@@ -285,12 +325,14 @@ claude plugin list ; codex plugin list ; copilot plugin list   # each must show 
 If one lags, re-run the installer for that client alone
 (`python scripts/install-agent-envs.py --clients copilot`). Tracked as TASK-51.
 
-## Why there is no fully-automated "publish to marketplace" job
+## Why npm is staged rather than tag-automatic
 
 The public repo *is* the marketplace, so the tag + Release in step 3 is the
-publication for git-source users. The only remaining action, step 6, mutates
-per-user client installs on a specific machine and therefore stays a documented
-local command rather than a CI job.
+publication for git-source users. npm uses a separate manually dispatched
+workflow because a maintainer must review the staged tarball and approve it
+with 2FA. The other remaining action, step 6, mutates per-user client installs
+on a specific machine and therefore stays a documented local command rather
+than a CI job.
 
 ## Release flow summary
 
@@ -298,7 +340,8 @@ local command rather than a CI job.
 |---|---|
 | `/release-adr-kit` (`.claude/commands/release-adr-kit.md`) | Repo-level command that drives this runbook locally end to end |
 | `scripts/check-release-version.py` | Fails unless all declared version sites, including the OpenCode package, equal the tag |
-| `.github/workflows/release-publish.yml` | Tag-triggered gate + GitHub Release (the release flow) |
+| `.github/workflows/release-publish.yml` | Tag-triggered gate + GitHub Release (the repository release flow) |
+| `.github/workflows/publish-opencode-npm.yml` | Manual tag selection, release preflight, OIDC staging, and npm approval handoff |
 | `.github/workflows/release-candidate.yml` | Optional three-client native certification |
 | `scripts/check-branch-sync.py` | Fails when `dev` is missing release commits from `main` |
 | `.github/workflows/branch-sync-check.yml` | Daily guard that the merge-back in step 4 actually happened |

@@ -34,8 +34,8 @@ installations require no migration or configuration change.
   native adapter.
 - **Repository release metadata** now includes the OpenCode package and public
   artifact allowlist. The tag and GitHub Release publish the repository source;
-  npm publication is a separate operation and is not performed by the current
-  release workflow.
+  v0.52.0 is also published to npm. Future npm versions use the separate staged
+  workflow and maintainer approval.
 
 ### Fixed
 
@@ -46,9 +46,9 @@ installations require no migration or configuration change.
 ### Upgrade Notes
 
 - Existing Claude Code, Codex, and Copilot CLI installations upgrade normally.
-- OpenCode users can load the repository-local plugin immediately from a
-  reviewed checkout. The package is not currently available from npm; use the
-  checkout form documented in `docs/clients/opencode.md` until it is published.
+- OpenCode users can install `@rvdbreemen/adr-kit-opencode@0.52.0` from npm or
+  load the repository-local plugin from a reviewed checkout. Future package
+  versions become available after the staged npm workflow and maintainer approval.
 - OpenCode Desktop `1.18.18` migration errors such as `no such column: name`
   remain an upstream OpenCode issue and are not fixed by this ADR Kit release.
 

@@ -1,0 +1,197 @@
+name: Stage OpenCode package for npm
+
+# Future npm releases are intentionally manual at the final npm step. The
+# workflow validates a tagged release, stages it through npm Trusted Publishing,
+# and leaves the maintainer to review and approve the staged package with 2FA.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to stage, for example v0.53.0
+        required: true
+        type: string
+
+concurrency:
+  group: npm-stage-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PACKAGE_NAME: "@rvdbreemen/adr-kit-opencode"
+  NPM_REGISTRY: https://registry.npmjs.org
+
+jobs:
+  preflight:
+    name: Validate npm package before staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate release tag input
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$RELEASE_TAG' is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+      - name: Check out the exact release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node and npm
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          package-manager-cache: false
+
+      - name: Use staged-publishing-capable npm
+        run: npm install --global npm@11.17.0
+
+      # Do not use setup-node's registry-url here: its empty auth-token
+      # placeholder can prevent npm from starting the OIDC exchange.
+      - name: Configure the npm registry without credentials
+        run: npm config set registry https://registry.npmjs.org/
+
+      - name: Set up Bun for the native plugin smoke test
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Normalize npm package metadata
+        run: npm pkg fix
+
+      - name: Verify tag, package, and runtime versions
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          TAG_COMMIT="$(git rev-list -n 1 "$RELEASE_TAG")"
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          EXPECTED_PACKAGE_NAME="@rvdbreemen/adr-kit-opencode"
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+
+          [[ "$TAG_COMMIT" = "$HEAD_COMMIT" ]] || {
+            echo "::error::The checkout is not the exact commit referenced by $RELEASE_TAG"
+            exit 1
+          }
+          [[ "$PACKAGE_NAME" = "$EXPECTED_PACKAGE_NAME" ]] || {
+            echo "::error::Unexpected npm package name: $PACKAGE_NAME"
+            exit 1
+          }
+          [[ "$PACKAGE_VERSION" = "$VERSION" ]] || {
+            echo "::error::package.json version $PACKAGE_VERSION does not match $RELEASE_TAG"
+            exit 1
+          }
+
+          echo "Tag: $RELEASE_TAG ($TAG_COMMIT)"
+          echo "Package: $PACKAGE_NAME@$PACKAGE_VERSION"
+          node --version
+          npm --version
+          bun --version
+
+      - name: Check release version sites
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python scripts/check-release-version.py --expect "$RELEASE_TAG"
+
+      - name: Check generated client adapters
+        run: python scripts/build-client-adapters.py --check
+
+      - name: Lint ADRs strictly
+        run: python bin/adr-lint --strict docs/adr
+
+      - name: Check ADR index freshness
+        run: python bin/adr-index --check docs/adr
+
+      - name: Install test dependency
+        run: python -m pip install --quiet pytest
+
+      - name: Run focused OpenCode tests
+        run: python -m pytest -q tests/test_opencode_package.py tests/test_opencode_plugin.py
+
+      - name: Refuse an already published version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          set +e
+          LOOKUP="$(npm view "$PACKAGE_NAME@$VERSION" version --registry "$NPM_REGISTRY" 2>&1)"
+          STATUS=$?
+          set -e
+
+          if [[ "$STATUS" -eq 0 ]]; then
+            echo "::error::$PACKAGE_NAME@$VERSION is already published"
+            exit 1
+          fi
+          if ! grep -Eqi 'E404|404 Not Found|not found' <<< "$LOOKUP"; then
+            echo "::error::Could not prove that $PACKAGE_NAME@$VERSION is absent"
+            echo "$LOOKUP"
+            exit 1
+          fi
+          echo "$PACKAGE_NAME@$VERSION is not published yet."
+
+      - name: Inspect the npm tarball
+        run: npm publish --dry-run --access public
+
+  stage:
+    name: Stage package for maintainer approval
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Node and npm
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          package-manager-cache: false
+
+      - name: Use staged-publishing-capable npm
+        run: npm install --global npm@11.17.0
+
+      - name: Configure the npm registry without credentials
+        run: npm config set registry https://registry.npmjs.org/
+
+      - name: Normalize npm package metadata
+        run: npm pkg fix
+
+      - name: Stage package through npm Trusted Publishing
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: npm stage publish --access public
+
+      - name: Publish approval instructions
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          {
+            echo "### npm package staged"
+            echo
+            echo "Review the staged package at https://www.npmjs.com/staged-packages"
+            echo "Approve it with npm 2FA before it becomes publicly available."
+            echo "Release tag: $RELEASE_TAG"
+          } >> "$GITHUB_STEP_SUMMARY"
