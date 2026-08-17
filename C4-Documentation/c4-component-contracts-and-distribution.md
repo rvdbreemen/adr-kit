@@ -301,9 +301,9 @@ parentheses are provisional.
   `release-publish.yml` (`contents: write`).
 - **The three marketplaces** — Claude Code, Codex CLI and GitHub Copilot CLI plugin managers consume
   the published payloads; their manifests are the version sites this component writes.
-- **OpenCode host / npm when separately published** — OpenCode loads the root TypeScript package from
-  a reviewed checkout or an npm package; the current GitHub release workflow validates but does not
-  publish npm.
+- **OpenCode host / npm package** — OpenCode loads the root TypeScript package from a reviewed
+  checkout or the published npm package; the tag release workflow validates the package and the
+  separate staged workflow hands npm publication to a maintainer for final 2FA approval.
 - **Filesystem and OS** — `os.replace` atomic rename everywhere, `O_CREAT|O_EXCL` locking,
   `fsync`, POSIX file modes (`expected_mode` in `executables.json`), the system temp directory for
   the generator warm-state cache, and platform-specific plugin cache globbing
