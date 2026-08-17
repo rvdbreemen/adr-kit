@@ -1,10 +1,10 @@
 ---
 id: TASK-177
 title: Automate OpenCode npm publication with trusted publishing
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-17 20:35'
-updated_date: '2026-08-17 21:20'
+updated_date: '2026-08-17 22:00'
 labels:
   - release
   - opencode
@@ -35,11 +35,11 @@ Add a manually dispatched GitHub Actions workflow that stages the native OpenCod
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The one-time bootstrap for @rvdbreemen/adr-kit-opencode@0.52.0 is documented and remains a deliberate manual action.
-- [ ] #2 The workflow validates the selected release tag, package version, release surfaces, generated adapters, ADR index, focused package tests, and npm dry-run before staging.
-- [ ] #3 The publish job uses npm Trusted Publishing with id-token: write and allow-stage-publish, with no long-lived npm token or GitHub environment approval.
-- [ ] #4 The workflow stages a public package version, generates trusted-publishing provenance when approved, and refuses already-published versions.
-- [ ] #5 Release documentation explains npm Trusted Publisher configuration, staged-package review, 2FA approval, and future manual dispatch.
+- [x] #1 The one-time bootstrap for @rvdbreemen/adr-kit-opencode@0.52.0 is documented and remains a deliberate manual action.
+- [x] #2 The workflow validates the selected release tag, package version, release surfaces, generated adapters, ADR index, focused package tests, and npm dry-run before staging.
+- [x] #3 The publish job uses npm Trusted Publishing with id-token: write and allow-stage-publish, with no long-lived npm token or GitHub environment approval.
+- [x] #4 The workflow stages a public package version, generates trusted-publishing provenance when approved, and refuses already-published versions.
+- [x] #5 Release documentation explains npm Trusted Publisher configuration, staged-package review, 2FA approval, and future manual dispatch.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -63,3 +63,9 @@ A read-only npm trust list check was attempted, but npm required browser authent
 
 Full pytest run on 2026-08-17 reached 1104 passed and 4 skipped, then failed in the pre-existing live Copilot installer test because the real %USERPROFILE%\\.copilot\\installed-plugins\\rvdbreemen-adr-kit-copilot directory was locked (WinError 5) by an editor. The focused OpenCode tests and all workflow/documentation checks remain green.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged PR #106 into main at a40eaeb. Added the manually dispatched npm staged-publishing workflow, pinned npm 11.17.0 for OIDC-compatible staging, documented the v0.52.0 bootstrap and one-time Trusted Publisher setup, and updated OpenCode distribution documentation. All required GitHub checks passed. The npm Trusted Publisher relationship remains an intentional one-time maintainer configuration after merge.
+<!-- SECTION:FINAL_SUMMARY:END -->
