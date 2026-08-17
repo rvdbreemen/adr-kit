@@ -25,7 +25,8 @@ while the agent works, the governing decision is delivered *before* a file is
 edited, every commit is checked against declarative rules with `file:line`
 citations, and a guardian watches for decisions that have drifted out of date.
 One toolkit covers the whole lifecycle (capture, enforce, maintain, retire)
-across Claude Code, OpenAI Codex, and the standalone GitHub Copilot CLI.
+across Claude Code, OpenAI Codex, the standalone GitHub Copilot CLI, and
+OpenCode.
 
 **For the agent, it removes the guessing.** Instead of reading every ADR, or
 none, it queries a generated index and gets a ranked, explained shortlist for
@@ -47,7 +48,6 @@ service, no API key on any default path. LLM passes exist, are opt-in, cost
 nothing until you enable them, and never run in a hook hot path.
 
 <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/c99f81eb-6424-4463-8c1d-4aa8a017aa61" />
-
 
 > **Pre-1.0**: functional and in daily use, but conventions may still evolve before v1.0.0. Pin a tag if you need stability across upgrades.
 >
@@ -100,8 +100,9 @@ patch releases, is in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | What landed | Why it matters |
 | --- | --- | --- |
+| **0.52.0** | Native [OpenCode](docs/clients/opencode.md) support through a separate TypeScript plugin, backed by the shared deterministic engines and MCP server ([ADR-039](docs/adr/ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md)). The certified Claude Code, Codex, and Copilot CLI registry and release gate remain unchanged. | OpenCode gets its documented native configuration, skills, commands, context, compaction, edit, shell, and MCP integration without weakening the existing certification boundary. |
 | **0.48.0** | Retrieval is lexical scoring over the generated index plus one-hop graph neighbours, and the LLM judge runs on the CLI you are already signed in to ([ADR-036](docs/adr/ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md)): the vector subsystem, `bin/adr-embed` and the openrouter/ollama/openai backends are gone, and eight retired config keys now fail validation by name. The guardian records a verdict per ADR and prints it as the sweep lands ([ADR-037](docs/adr/ADR-037-keep-per-adr-judge-verdicts-in-the-advisory-per-machine-guardian-state.md)). | Two subsystems were carrying their own credentials, install paths and failure modes to answer questions the index already answers. A sweep is also long enough to be interrupted, so a per-sweep timestamp discarded everything it had established; per-ADR verdicts keep it. |
-| **0.44.0** | `/adr-kit:audit` answers "are we still on course?" by linting the decisions and judging the code in one run, over a diff or the whole codebase ([the init scanner is now `bin/adr-discover`](#command-reference)). A local precomputed vector layer for retrieval ([ADR-018](docs/adr/ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md), retired in 0.48.0 by ADR-036), `adr relate` writing a cross-reference on both sides at once, `adr answer` keeping a grilling question with its answer, a configurable signer, `/adr-kit:settings`, and a pre-PR branch guard. | A clean judge over vague ADRs proves nothing, and a sharp ADR set nobody checks the code against is documentation rather than governance. Whole-codebase mode reaches files no recent diff touched, which is where a rule added after the code was written has never applied. |
+| **0.44.0** | `/adr-kit:audit` answers "are we still on course?" by linting the decisions and judging the code in one run, over a diff or the whole codebase (the init scanner is now `bin/adr-discover`). A local precomputed vector layer for retrieval ([ADR-018](docs/adr/ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md), retired in 0.48.0 by ADR-036), `adr relate` writing a cross-reference on both sides at once, `adr answer` keeping a grilling question with its answer, a configurable signer, `/adr-kit:settings`, and a pre-PR branch guard. | A clean judge over vague ADRs proves nothing, and a sharp ADR set nobody checks the code against is documentation rather than governance. Whole-codebase mode reaches files no recent diff touched, which is where a rule added after the code was written has never applied. |
 | **0.40.0** | [Index-first selective context](docs/selective-context.md): `ADR-INDEX.json` schema v2 is the local query database for the CLI, MCP, hooks, status, doctor, and guardian. ADRs can carry retrieval metadata (topics, aliases, components, symbols, scope) and a compact `Must` / `Must Not` / `Exceptions` / `Verification` Decision Contract. Project retrieval probes report expected inclusions and exclusions. | Retrieval stops scaling with the size of your ADR set, and every match explains itself. Lifecycle context is now authority-aware: Accepted governs, Proposed is advisory, historical is opt-in. |
 | **0.39.0** | [`packaging/version-sites.json`](packaging/version-sites.json) declares every version-bearing file; `scripts/bump-version.py X.Y.Z` writes them all in one command ([ADR-013](docs/adr/ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md)). | Releasing 0.38.0 took nine hand-edits over four discovery rounds. It is now one command plus a `--check` drift gate. |
 | **0.38.0** | [docs/RELEASING.md](docs/RELEASING.md) as the enforced runbook for all three marketplaces, a version-consistency gate, a tag-triggered publish workflow, and the repo-level `/release-adr-kit` command ([ADR-012](docs/adr/ADR-012-release-to-the-three-coding-agent-marketplaces-from-the-public-repository.md)). | One tag now publishes Claude Code, Codex, and Copilot consistently instead of drifting apart. |
@@ -129,16 +130,18 @@ ADRs are the established answer: short markdown files in your repo that record t
 
 And because decisions age, a periodic guardian flags drift between code and decisions, retirement candidates, and decisions that were made but never recorded.
 
-### One engine, three clients
+### One engine, three certified CLIs plus OpenCode
 
 ADR Kit ships separate integration payloads for Claude Code CLI, OpenAI Codex
 CLI, and the standalone GitHub Copilot CLI. All three carry the same 15
 workflows, the same deterministic engines, the same key-free five-tool MCP
-server, and English skill metadata; only the native event surface differs, and
-the generated [client support matrix](docs/client-support.md) states exactly
-which lifecycle events each client supports and which were certified natively
-versus covered by simulated contract tests. Per-client detail lives in
-[docs/clients/](docs/clients/).
+server, and English skill metadata; only the native event surface differs. A
+separate native OpenCode plugin uses the same engines and adds OpenCode-native
+config, skills, commands, hooks, compaction context, and MCP registration. The
+generated [client support matrix](docs/client-support.md) remains the
+three-client certification view; OpenCode evidence and boundaries live in
+[docs/clients/opencode.md](docs/clients/opencode.md). Per-client detail lives
+in [docs/clients/](docs/clients/).
 
 Lifecycle behavior is quiet-by-default: routine successful hooks print
 nothing, relevant ADR context still reaches the agent, and actionable warnings
@@ -174,8 +177,8 @@ rewrites an ADR.
 
 ### Register ADR Kit in a project
 
-Preview and apply the shared three-client project guidance separately from
-native plugin registration:
+Preview and apply the shared project guidance separately from native plugin
+registration. This is also the enforcement setup for OpenCode projects:
 
 ```bash
 python scripts/setup-project.py --project-root /path/to/project --dry-run
@@ -286,6 +289,49 @@ In `copilot mcp get adr-kit`, the executable argument must be
 project. Start a new Copilot session or run `/mcp reload` in the current one.
 Agents should use these native update commands instead of editing the installed
 `.mcp.json` or replacing `${PLUGIN_ROOT}` with a machine-specific path.
+
+### OpenCode
+
+OpenCode is supported through a separate native plugin package. It uses the
+same deterministic Python engines and five-tool MCP server as the certified
+clients, while adding OpenCode-native configuration, skills, commands, context,
+compaction, edit, shell, and session hooks.
+
+From the ADR Kit checkout, the repository-local `opencode.json` is already
+configured:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["./"]
+}
+```
+
+For another project, point OpenCode at a reviewed checkout until the npm package
+is published:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    ["/absolute/path/to/adr-kit", {"python": "/absolute/path/to/python"}]
+  ]
+}
+```
+
+The plugin adds only missing configuration entries and preserves user-owned
+skills, instructions, commands, references, and MCP servers. It delegates hook
+work to `hooks/adr-hook.py`; normal context is advisory and fail-open. The
+deterministic pre-commit and CI judge remain the enforcement floor:
+
+```bash
+python scripts/setup-project.py --project-root /path/to/project
+```
+
+OpenCode is intentionally outside `clients/capabilities.json`, the generated
+three-client support matrix, and the three-client native certification gate.
+See [OpenCode support](docs/clients/opencode.md) for options, manual MCP
+registration, and the tested support boundary.
 
 ### Portable Agent Skills and MCP clients
 
@@ -608,7 +654,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.51.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.52.0
         with:
           adr-dir: docs/adr/
 ```
@@ -622,7 +668,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.51.0
+    rev: v0.52.0
     hooks:
       - id: adr-judge
 ```
@@ -715,8 +761,8 @@ The lint consistency gate fails duplicates at merge time with both files named, 
 **Is this an Anthropic product?**
 
 No. It is an independent open-source toolkit under the MIT license, with
-first-class integrations for Claude Code, OpenAI Codex, and GitHub Copilot
-CLI.
+first-class integrations for Claude Code, OpenAI Codex, GitHub Copilot CLI, and
+OpenCode.
 
 ## Comparison
 
@@ -733,7 +779,7 @@ A plain ADR template gives you a markdown file with sections to fill in. What `a
 | Enforcement | absent | declarative rules vs every commit and PR, key-free; opt-in LLM judge |
 | Aging | absent | guardian (drift, missing, stale), retirement audit, trend history, coverage KPI |
 | Team workflows | absent | CI sweeps with tracking issue, collision-safe numbering, audited overrides, guided supersession |
-| Tool integration | none | Claude Code, OpenAI Codex, and GitHub Copilot CLI integrations plus a 5-tool MCP server |
+| Tool integration | none | Claude Code, OpenAI Codex, GitHub Copilot CLI, and OpenCode integrations plus a 5-tool MCP server |
 
 If your team is happy with a plain template and the discipline lives in your culture, you do not need this. If you want the discipline to survive contact with an AI agent at 2 a.m., this is what `adr-kit` is for.
 
@@ -748,6 +794,9 @@ adr-kit/
 ├── clients/           # canonical workflow/capability registry the client payloads generate from
 ├── codex/             # generated Codex plugin: 15 skills, hooks, MCP, packaged engines
 ├── copilot/           # generated Copilot CLI plugin: 15 skills, hooks, MCP, engines
+├── opencode/          # native OpenCode TypeScript adapter over shared engines
+├── package.json       # npm-style OpenCode plugin metadata
+├── opencode.json      # repository-local OpenCode plugin registration
 ├── prompts/           # per-client generated prompt payloads
 ├── scripts/           # installer, project setup, settings, adapter generator, release tooling
 ├── packaging/         # version-site registry, dependency and executable manifests

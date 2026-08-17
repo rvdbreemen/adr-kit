@@ -1,5 +1,5 @@
 ---
-description: Release adr-kit to the Claude Code, Codex and Copilot marketplaces (drives docs/RELEASING.md)
+description: Release adr-kit to the certified CLI marketplaces and OpenCode package (drives docs/RELEASING.md)
 argument-hint: "[version, e.g. 0.38.0]"
 ---
 
@@ -7,10 +7,11 @@ You are running the adr-kit release for version **$ARGUMENTS** (if empty, ask wh
 version to release, or read the intended version from `.claude-plugin/plugin.json`).
 
 The authoritative runbook is `docs/RELEASING.md` and the decision behind it is
-ADR-012. The three coding-agent marketplaces (Claude Code, Codex, GitHub Copilot)
-all resolve adr-kit from the public repository, so a release must be version-
-consistent across every publish surface before it ships. Follow these steps in
-order. Stop and report if any step fails.
+ADR-012. The three certified coding-agent marketplaces (Claude Code, Codex,
+GitHub Copilot) and the OpenCode package resolve adr-kit from the public
+repository, so a release must be version-consistent across every publish
+surface before it ships. Follow these steps in order. Stop and report if any
+step fails.
 
 ## 1. Create a task and a branch
 
@@ -27,8 +28,9 @@ order. Stop and report if any step fails.
   ```
 
   `bump-version.py` is the only place a version is typed. It writes the CHANGELOG
-  heading, the three plugin manifests, the two versioned marketplace manifests, the
-  template version stamps and the README version pins, all from
+  heading, the three certified plugin manifests, the OpenCode package, the two
+  versioned marketplace manifests, the template version stamps and the README
+  version pins, all from
   `packaging/version-sites.json`. Never hand-edit a version, and never hand-edit the
   generated adapters. If some file still carries an old version, declare it in the
   registry instead of patching it by hand, so the writer, the gate, the generator and
@@ -58,6 +60,13 @@ python scripts/build-client-adapters.py --check
 python bin/adr-lint --strict docs/adr
 python bin/adr-index --check docs/adr
 python -m pytest -q
+```
+
+When OpenCode package or API behavior changed, also run the focused OpenCode
+smoke on a machine with Bun:
+
+```bash
+python -m pytest -q tests/test_opencode_package.py tests/test_opencode_plugin.py
 ```
 
 Do not proceed while any gate fails.
@@ -104,7 +113,8 @@ python scripts/check-branch-sync.py
 ```
 
 Resolve conflicts by treating `main` as authoritative for anything a release
-touches (version sites, generated `codex/` and `copilot/` adapters, manifests),
+touches (version sites, generated `codex/` and `copilot/` adapters, manifests,
+and the OpenCode package),
 and in `CHANGELOG.md` keep `dev`'s `[Unreleased]` entries above `main`'s
 published sections. Re-run the step 3 gates on the merge result, then open a PR
 into `dev`.

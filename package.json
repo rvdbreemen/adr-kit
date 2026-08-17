@@ -1,0 +1,41 @@
+{
+  "name": "@rvdbreemen/adr-kit-opencode",
+  "version": "0.52.0",
+  "description": "Native OpenCode plugin for ADR Kit, backed by the shared deterministic Python engines.",
+  "type": "module",
+  "main": "./opencode/plugin.ts",
+  "license": "MIT",
+  "repository": "https://github.com/rvdbreemen/adr-kit.git",
+  "homepage": "https://github.com/rvdbreemen/adr-kit",
+  "keywords": [
+    "opencode",
+    "adr",
+    "architecture-decision-records",
+    "agent-plugin",
+    "mcp"
+  ],
+  "engines": {
+    "opencode": ">=1.18.0"
+  },
+  "files": [
+    "opencode/plugin.ts",
+    "bin/adr",
+    "bin/adr-*",
+    "bin/*.py",
+    "bin/bump-version",
+    "hooks/__init__.py",
+    "hooks/adr-hook.py",
+    "hooks/adr_hook_core.py",
+    "hooks/adr_pr_guard.py",
+    "hooks/adapters/*.py",
+    "skills",
+    "instructions",
+    "schemas",
+    "scripts/*.py",
+    "templates",
+    "clients/workflows.json",
+    ".claude-plugin/plugin.json",
+    "LICENSE",
+    "README.md"
+  ]
+}

@@ -458,7 +458,7 @@ Named concretely, because "uses" is not an interface description:
 |---|---|
 | [`bin/adr-mcp`](../bin/adr-mcp) | **Subprocess** via `sys.executable` (the generic `run_cli` wrapper, `cmd = [sys.executable, str(BIN_DIR / script)] + args` at `bin/adr-mcp:353`) to `adr-context --format json --adr-dir …` (args built in `tool_adr_context` at `bin/adr-mcp:451`), re-exposed as the MCP tool `adr_context` over newline-delimited JSON-RPC 2.0 on stdio. It validates `min_score` ∈ [0,1] before passing it through. `adr-suggest` is **deliberately not exposed** (`bin/adr-mcp:41`, re-anchored from a stale `:23`) — the MCP surface is key-free by construction. |
 | [`bin/adr`](../bin/adr) | **Subprocess** to `adr-index` inside its snapshot/rollback lifecycle transaction. `_commit_lifecycle_changes` (`bin/adr:387-414`, re-anchored from a stale `:228-236`, which pointed at an unrelated `history_entry` helper) snapshots first (`:392`), runs `adr-index` via `run_index`'s own `subprocess.run` (`:376-384`), and restores the snapshot on any exception (`:404-405`). The snapshot covers `ADR-INDEX.md`, `ADR-INDEX.json` and `README.md`, so a failed index regeneration rolls the whole transition back. |
-| [`templates/githooks/pre-commit`](../templates/githooks/pre-commit) | **Pipes `git diff --cached` on stdin** into `adr-suggest` (`:322`, re-anchored from a stale `:246`, which pointed at an unrelated comment about the judge call's `set -e`), swallowing the status (`|| true`) so the advisory can never block a commit. |
+| [`templates/githooks/pre-commit`](../templates/githooks/pre-commit) | **Pipes `git diff --cached` on stdin** into `adr-suggest` (`:322`, re-anchored from a stale `:246`, which pointed at an unrelated comment about the judge call's `set -e`), swallowing the status (`\|\| true`) so the advisory can never block a commit. |
 | [`hooks/adr_hook_core.py`](../hooks/adr_hook_core.py), [`hooks/native/adr-hook.rs`](../hooks/native/adr-hook.rs) | **Read `docs/adr/ADR-INDEX.json` as a file** — no call into this component. Both read at *looser* strictness than `adr_query.load_index_graph`: no schema-version check, no staleness check, a 2 MiB cap, `[]` on any problem. Consequence: a stale or schema-v1 graph is rejected by the CLI and silently accepted by both hook readers. |
 | GitHub Actions | **Subprocess** `python bin/adr-index --check docs/adr` as a freshness gate (`adr-index-check.yml:24`, `release-candidate.yml:50`, `release-publish.yml:74`, `validate.yml:151`). |
 | `skills/{context,related,supersede,review,judge,adr}`, `agents/adr-generator.md`, `clients/workflows.json:158` (`adr-related` invocation inside the `"related"` workflow block; re-anchored from a stale `:142`, which pointed at an unrelated `"migrate"` block) | **Documented subprocess invocation by path** in agent-facing prose. |
@@ -504,7 +504,10 @@ identified by the code-level document that describes it.
 - **`git`** — *not invoked by this component.* The pre-commit hook produces the diff and
   pipes it in; no script here calls `git`.
 - **Claude Code / Codex / Copilot CLI hosts** — consume the `hookSpecificOutput` envelope
-  from `adr-watch`'s hook modes and the `@`-imported `ADR-INDEX.md`.
+  from `adr-watch`'s hook modes and the `@`-imported `ADR-INDEX.md`. OpenCode consumes
+  the same retrieval engine through `opencode/plugin.ts`, which stores prompt context
+  for its system-transform and compaction callbacks rather than using this component's
+  certified hook envelope.
 - **GitHub Actions** — runs `adr-index --check` as a freshness gate and `ajv` validation
   of `ADR-INDEX.json` against its schema.
 - **Environment variables read**: `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, `COPILOT_CLI`
@@ -525,7 +528,7 @@ identified by the code-level document that describes it.
 flowchart TB
     subgraph ext["External systems"]
         llmbackend["LLM backend: host/openrouter/ollama<br/>via adr_llm.py (ADR-017), adr-suggest only"]
-        hosts["Agent CLI hosts<br/>Claude Code / Codex / Copilot"]
+        hosts["Agent hosts<br/>Claude Code / Codex / Copilot / OpenCode"]
         gha["GitHub Actions<br/>adr-index --check + ajv"]
         fs[("Filesystem<br/>docs/adr/")]
     end
