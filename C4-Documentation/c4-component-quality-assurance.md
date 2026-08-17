@@ -4,8 +4,8 @@
 
 - **Name**: Quality Assurance (`quality-assurance`)
 - **Description**: The single pytest suite plus the fixture, corpus and
-  certification-evidence families that sit around it — 71 modules, 806 test
-  functions collecting as 903 tests, 19,906 lines, larger than `bin/` itself. It
+  certification-evidence families that sit around it — the current checkout
+  collects 1,808 tests, larger than `bin/` itself. It
   is dominated by black-box subprocess tests that invoke the extensionless
   `bin/adr-*` CLIs and assert on their JSON contracts and exit codes,
   supplemented by white-box tests that load those same scripts through
@@ -39,7 +39,8 @@ It carries three distinct jobs that are usually separate concerns:
 
 1. **Behavioural certification.** Every one of the 23 `bin/` commands, the hook
    runtime (Python and native Rust hosts), the MCP stdio server, the installer
-   transaction model and the client generator are driven end to end and pinned
+   transaction model, the client generator, and the native OpenCode package
+   contract are driven end to end and pinned
    at their observable surface: exit code, JSON shape, stdout/stderr split, and
    whether the tree was mutated. The convention is uniform across every tool —
    `0` clean/advisory/fail-open, `1` a real finding, `2` usage or infrastructure
@@ -84,6 +85,7 @@ mode is a red CI leg rather than a broken user workflow.
 | **Frozen real-world corpus** | 169 ADRs / 1,946,079 bytes from `rvdbreemen/OTGW-firmware`, sha256-pinned per file in `manifest.json`, with `.gitattributes` `-text` so Windows checkouts cannot rewrite the hashed bytes. Every corpus test re-computes the hashes afterwards; migration writes only into `tmp_path` copies. |
 | **Windows-first honest skips** | Platform behaviour is `skipif`-guarded, never branched: `sys.platform == "win32"` for exec bits, `os.name == "nt"` for the polyglot wrapper, `NATIVE.is_file()` for the native hook host, and a *usability* probe rather than mere presence for bash (Windows ships a `bash.exe` stub that exists but cannot run). |
 | **Release-artefact test modules** | Six test modules are named in CI's file-existence check and are therefore shipped-release artefacts in their own right: deleting or renaming one fails CI before pytest runs. |
+| **Native OpenCode package contract** | `test_opencode_package.py` validates the root package entrypoint, public-artifact allowlist, shared version registry, canonical skills, and explicit exclusion from the certified three-client registry. `test_opencode_plugin.py` runs the callback/config smoke with Bun when available and skips honestly when Bun is absent. |
 
 ## Code Elements
 
@@ -109,7 +111,7 @@ the repository — including one that a shipped runtime command actually reads.
 importable — and declares `slow` as the only marker.
 
 ```bash
-python -m pytest                                  # 903 tests, including the 4 slow ones
+python -m pytest                                  # 1,808 tests currently collected, including slow tests
 python -m pytest -m "not slow"                    # excludes the 4 wall-clock tests
 python -m pytest tests/test_adr_lint.py -q        # per-module
 ADR_KIT_RUN_PERF=1 python -m pytest tests/test_adr_query.py
@@ -124,6 +126,13 @@ ADR_KIT_RUN_PERF=1 python -m pytest tests/test_adr_query.py
 | --- | --- | --- | --- |
 | `validate` | `ubuntu-latest` | `3.11` | a hand-picked 10-module packaging subset (`validate.yml:153`): `test_agent_installer`, `test_adr_mcp`, `test_bump_version`, `test_python_check`, `test_documentation_contracts`, `test_packaging_contract`, `test_client_adapter_generation`, `test_client_generator_performance`, `test_release_allowlist`, `test_client_certification` |
 | `python-compatibility` | `ubuntu-latest`, `macos-latest`, `windows-latest` | `3.10`, `3.12` (6 legs, `fail-fast: false`) | `python -m pytest -q` (`validate.yml:187`) — the complete suite |
+
+The release runbook adds a focused native OpenCode smoke when package or API
+behaviour changes:
+`python -m pytest -q tests/test_opencode_package.py tests/test_opencode_plugin.py`.
+The package test is stdlib-only; the plugin test is Bun-gated and skips when Bun
+is unavailable. Neither test adds OpenCode to the three-client certification
+matrix.
 
 The same workflow's *"Verify required files exist"* step (`validate.yml:98-103`)
 lists six test modules as required release artefacts:
@@ -159,6 +168,7 @@ enforces uniformly, not a per-tool detail.
 | `adr-index --format graph` | `{$schema, schema_version: 2, adrs: [...], relationships: [...]}`, sorted, `resolved: false` for dangling edges, and **no `generated_at`** so two runs are byte-identical |
 | `adr-status --format json` | `{summary, adrs, retirement_candidates, retrieval}`; additive-only — pre-existing summary keys asserted untouched |
 | `adr-readiness --format json` | `{schema_version: 1, evaluated_on, summary, adrs, advisories}` |
+| OpenCode package documents | `package.json`, `opencode.json`, `.npmignore`, and `opencode/plugin.ts` are checked for a self-contained native entrypoint, shared version, public allowlist, and callback delegation; the package must not enter the certified three-client registry |
 | Schema documents | `schemas/client-capabilities.schema.json` asserted directly: `const: 1`, `additionalProperties: false`, `minItems == maxItems == 3`, plus a negative scan proving six deferred client names appear nowhere |
 
 ### 5. JSON-RPC 2.0 / MCP stdio session driver
@@ -319,6 +329,7 @@ Code-phase cluster slugs it comprises, which are the verified identifiers.
 | **GitHub Actions** | The runner matrix, `pip install pytest`, and the `$GITHUB_STEP_SUMMARY` / `$GITHUB_OUTPUT` sinks that `test_adr_readiness_ci.py` simulates |
 | **PyPI** | `pytest` only, installed by CI. `packaging/dependencies.json` declares `runtime: []`, `development: ["pytest"]`, and `tests/certification/simulated-pass.json` records `development_in_runtime: false` — two tests assert exactly that, so the dependency is self-declaring |
 | **CI neighbours, not imported** | `jq`, Node 20 + `ajv-cli` + `ajv-formats`, `markdownlint-cli2` run in `validate.yml` steps around pytest. `jsonschema` is pip-installed only in `adr-lint-self.yml` |
+| **Bun / OpenCode** | Bun runs the native OpenCode plugin smoke harness when installed. The package contract remains testable without Bun; absence of Bun is an explicit focused-test skip, not a claim of certification. |
 | **Deliberately absent: the `claude` CLI and any network** | **No test in the suite invokes `claude`, makes a network call, or requires an API key.** Every LLM path is driven by a generated fake Python script passed via `--llm-cmd`. `test_adr_guardian_state.py` additionally asserts at string level that neither the self-dogfood nor the downstream-template `adr-guardian-audit.yml` runs an LLM or references any secret beyond `github.token` |
 
 ## Notable findings carried forward
@@ -498,6 +509,7 @@ as enforcement over this component:
 | ADR-008 | `tests/test_packaging_contract.py` |
 | ADR-009 | `tests/test_adr_lint_clarity.py` |
 | ADR-010 | `tests/test_client_capabilities_schema.py` (and the ≤ 300 / ≤ 400 line budgets that `test_release_allowlist.py` asserts) |
+| ADR-039 | `tests/test_opencode_package.py` and `tests/test_opencode_plugin.py` provide focused evidence for the separate native OpenCode package; neither test changes the certified three-client gate |
 | ADR-014 | `tests/test_adr_query.py`, `tests/test_adr_retrieval_health.py` |
 
 ADR-004 is referenced by name inside `test_adr_status_coverage.py` and
@@ -511,9 +523,9 @@ applies.
 flowchart TB
     subgraph QA["Quality Assurance (quality-assurance)"]
         direction TB
-        subgraph SUITE["pytest suite — 71 modules / 903 tests"]
+        subgraph SUITE["pytest suite — 1,808 collected tests"]
             LOAD["module-loading layer<br/>SourceFileLoader · spec_from_file_location<br/>runpy.run_path · sys.path.insert<br/><i>duplicated in 45 modules — no conftest.py</i>"]
-            BEHAV["behavioural certification<br/>CLIs · hooks · MCP · installer · generator"]
+            BEHAV["behavioural certification<br/>CLIs · hooks · MCP · installer · generator · OpenCode package"]
             ARTE["artefact-contract tests<br/>README · workflows · SKILL.md · schemas · templates"]
             PERF["performance budgets<br/>two-layer: structural + live smoke"]
             FAKE["fake <i>claude</i> via --llm-cmd<br/><b>no network, no API key, ever</b>"]
@@ -539,6 +551,7 @@ flowchart TB
         CONTR["Contract layer<br/><small>schemas-templates</small>"]
         AGENT["Agent surface<br/><small>agent-surface</small>"]
         DIST["Generated distributions<br/><small>generated-distributions</small>"]
+        OPC["Native OpenCode package<br/><small>opencode/plugin.ts · package.json</small>"]
     end
 
     subgraph EXT["external systems"]
@@ -547,6 +560,7 @@ flowchart TB
         SH[("bash / sh · cmd.exe")]
         GHA[("GitHub Actions<br/>validate.yml · 2 jobs")]
         PYPI[("PyPI — pytest only")]
+        BUN[("Bun / OpenCode runtime")]
     end
 
     LOAD --> BEHAV & PERF
@@ -565,10 +579,12 @@ flowchart TB
     BEHAV -->|"import clients.installer.*"| INST
     BEHAV -->|"import / module load scripts/*"| REL
     BEHAV -->|"JSON-RPC 2.0 over stdio"| CLIS
+    BEHAV -->|"static contract + Bun smoke"| OPC
 
     ARTE -->|"file read + content assertion"| CONTR
     ARTE -->|"prose assertion on SKILL.md"| AGENT
     ARTE -->|"byte compare + one-SHA256 check"| DIST
+    ARTE -->|"package and callback assertions"| OPC
     ARTE -->|"substring assertion on *.yml"| REL
 
     PERF -->|"cold-process wall clock"| CLIS
@@ -581,6 +597,7 @@ flowchart TB
     GHA -->|"python -m pytest -q<br/>3.10 &amp; 3.12 x ubuntu/macos/windows"| SUITE
     GHA -->|"10-module packaging subset · 3.11"| SUITE
     PYPI --> SUITE
+    BUN --> OPC
     GIT --> BEHAV
     FS --> BEHAV
     SH --> BEHAV

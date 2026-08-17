@@ -4,9 +4,53 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-08-16
 
+This release adds native OpenCode support without changing the certified
+Claude Code, Codex, and GitHub Copilot CLI boundary. Existing certified-client
+installations require no migration or configuration change.
 
+### Added
 
+- **Native OpenCode plugin** (ADR-039): the repository now carries
+  `@rvdbreemen/adr-kit-opencode`, a TypeScript adapter that registers the
+  canonical ADR Kit skills, instructions, ADR references, workflow commands,
+  and the local five-tool MCP server through OpenCode's plugin API.
+- **OpenCode lifecycle integration**: prompt retrieval, bounded system-context
+  injection, compaction carry-forward, edit and post-edit backstops, shell and
+  pull-request checks, environment setup, and session cleanup all delegate to
+  the shared Python hook and CLI engines rather than reimplementing governance.
+- **OpenCode documentation and release contracts**: README installation
+  guidance, `docs/clients/opencode.md`, C4 architecture documentation, focused
+  package/plugin tests, and the shared version registry now describe the new
+  support surface.
+
+### Changed
+
+- **OpenCode remains a separate native surface**: it is deliberately absent
+  from `clients/capabilities.json`, the generated three-client support matrix,
+  the three-client installer/certification evidence, and the certified release
+  gate. This keeps equal certified outcomes distinct from a client-specific
+  native adapter.
+- **Repository release metadata** now includes the OpenCode package and public
+  artifact allowlist. The tag and GitHub Release publish the repository source;
+  npm publication is a separate operation and is not performed by the current
+  release workflow.
+
+### Fixed
+
+- **Support documentation no longer implies that OpenCode is certified as one
+  of the three native CLI clients.** The README, release runbook, and C4 model
+  now describe the package and its boundary explicitly.
+
+### Upgrade Notes
+
+- Existing Claude Code, Codex, and Copilot CLI installations upgrade normally.
+- OpenCode users can load the repository-local plugin immediately from a
+  reviewed checkout. The package is not currently available from npm; use the
+  checkout form documented in `docs/clients/opencode.md` until it is published.
+- OpenCode Desktop `1.18.18` migration errors such as `no such column: name`
+  remain an upstream OpenCode issue and are not fixed by this ADR Kit release.
 
 ## [0.51.0] - 2026-08-11
 
@@ -458,7 +502,6 @@ environment fact and never repository configuration (ADR-025).
   New budgets are measured p95 x 1.5, rounded up to 50 ms, with the hard timeout
   at twice that and capped by ADR-015's ceiling. All seven stay well under it.
 
-
 - **`judge.llm_timeout_seconds` now describes the loop that actually runs.** The
   schema called it the timeout for "one batch call". Per-ADR isolation replaced
   batching, so it bounds each call in a loop: a project with N ADRs marked
@@ -481,7 +524,6 @@ environment fact and never repository configuration (ADR-025).
   reports the rename rather than the original creation. Small, and the signal is
   about the *order* subsystems appeared — a rename does not reorder anything.
 
-
 - **`judge.pre_commit_timeout_ms` finally does something.** The installed
   pre-commit hook compared its elapsed time against a literal `5000`, so setting
   the key changed nothing -- the same shape as the `JUDGE_TIMEOUT_S = 120` defect
@@ -500,7 +542,6 @@ environment fact and never repository configuration (ADR-025).
   from a hang. The default is now 30 s -- ADR-001 measured a local suggest call
   at 5-10 s -- and the pre-commit hook derives the bound from the same budget its
   own warning uses, with a 10 s floor.
-
 
 - **The hook benchmark measured six of eight events and reported a pass.**
   `plan-exit` and `pr-create` are registered as `pre-tool-use` with a matcher, so
@@ -1023,7 +1064,6 @@ of four governing ADRs on an edit. If you installed v0.44.0, upgrade.
   machine-local file, or a derived git identity -- because "why is this the
   name?" is the question that surface exists to answer.
 
-
 ## [0.44.0] - 2026-08-03
 
 ### Breaking changes
@@ -1313,6 +1353,7 @@ repository-tracked configuration choose the binary the judge executes, and
 `docs/adr/.adr-kit.json` is authored by anyone with commit access.
 
 ### Added
+
 - **The LLM judge runs by default, on your own agent's model.** `judge.backend`
   is an enum -- `host` (default), `openrouter`, `ollama` -- resolving to a
   code-side command table. The `host` backend uses the CLI of the agent adr-kit
@@ -1326,7 +1367,6 @@ repository-tracked configuration choose the binary the judge executes, and
   supersedes ADR-001.
 - **`bin/adr-suggest` shares that same registry** (`bin/adr_llm.py`), so both
   entry points resolve a model the same way and neither carries a default command.
-
 
 - **The MCP server speaks both protocol eras.** Revision `2026-07-28` made the
   Model Context Protocol stateless and removed the `initialize` handshake.
@@ -2642,7 +2682,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.51.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.48.0...v0.49.0

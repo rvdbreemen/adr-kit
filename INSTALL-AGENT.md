@@ -75,6 +75,11 @@ home-directory name as an installed CLI.
 If no native client is detected, continue with the MCP, Agent Skills, or direct
 CLI fallback below.
 
+OpenCode is configuration-based rather than discovered by the three-client
+installer. If `opencode` is present, configure the native plugin separately as
+described in [docs/clients/opencode.md](docs/clients/opencode.md); do not add it
+to the installer client list.
+
 ## 2. Preview the install
 
 ```bash
@@ -120,6 +125,11 @@ The installer uses separate native payloads:
 | Claude Code | repository root `.claude-plugin/`, `skills/`, `agents/` | `/adr-kit:context`, `/adr-kit:init` |
 | OpenAI Codex | `codex/` | `$adr-kit:context`, `$adr-kit:init` |
 | GitHub Copilot CLI | `copilot/` | namespaced ADR Kit skills |
+
+OpenCode uses the repository-root `opencode.json` and `package.json` plugin
+entrypoint, or an explicit package entry in the target project's `opencode.json`.
+It is a separate native package and is not part of the three-client installer
+or certification registry.
 
 Do not point Codex or Copilot at the Claude plugin cache.
 
@@ -206,6 +216,8 @@ Run the native `init` workflow once in the project:
 - Claude Code: `/adr-kit:init`
 - OpenAI Codex: `$adr-kit:init`
 - GitHub Copilot CLI: invoke the installed ADR Kit `init` skill
+- OpenCode: invoke `/adr-kit-init` or the `init` skill exposed by the native
+  plugin
 
 Initialization adds managed project guidance, audits existing architectural
 decisions, proposes initial ADRs for review, and installs the deterministic

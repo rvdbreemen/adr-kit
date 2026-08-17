@@ -3,19 +3,20 @@
 ## Overview
 
 - **Name**: Agent and Client Integration (`agent-integration`)
-- **Description**: Every path by which an LLM agent or CLI client reaches the adr-kit engine. Four
+- **Description**: Every path by which an LLM agent or CLI client reaches the adr-kit engine. Five
   distinct mechanisms, deliberately separate: a hand-rolled **MCP stdio server** the agent calls on
   purpose; a **lifecycle-hook runtime** that pushes ADR context into the session unasked; an
   **instruction layer** of skills, prompts and one subagent that tells the agent which deterministic
-  CLI to run and when; and a **capability registry plus desired-state installer** that makes the
-  first three exist on a machine and records honestly what each client cannot do.
+  CLI to run and when; a **capability registry plus desired-state installer** that makes the three
+  certified clients exist on a machine and records honestly what each cannot do; and a separate
+  **native OpenCode plugin** that maps OpenCode callbacks to the shared runtime.
 - **Type**: Integration and distribution layer — an MCP service, a hook runtime, a declarative
   registry, an installer library, and a prose instruction corpus. It owns no ADR semantics; every
   path here terminates in a `bin/` CLI.
-- **Technology**: Python 3.10+ (stdlib only; zero third-party runtime packages), Rust (one committed
-  `windows-x64` native hook host, `std` only, opt-in via `ADR_KIT_NATIVE_HOOK=1` since ADR-029), one
-  polyglot `cmd.exe`/POSIX-`sh` script, JSON-RPC 2.0 over stdio, JSON file contracts, and 64 Markdown +
-  1 YAML files of model-facing prose.
+- **Technology**: Python 3.10+ (stdlib only; zero third-party runtime packages), TypeScript executed by
+  Bun/OpenCode for the native adapter, Rust (one committed `windows-x64` native hook host, `std` only,
+  opt-in via `ADR_KIT_NATIVE_HOOK=1` since ADR-029), one polyglot `cmd.exe`/POSIX-`sh` script, JSON-RPC
+  2.0 over stdio, JSON file contracts, and Markdown/YAML model-facing prose.
 
 ### One-sentence shape per path
 
@@ -25,15 +26,17 @@
 | Hooks | push | `client event -> run-hook.cmd -> Python host (native opt-in) -> ADR-INDEX.json -> one JSON line` |
 | Skills / prompts | instruct | `slash command -> SKILL.md prose -> agent runs bin/<cli> with the documented flags` |
 | Installer | provision | `detect -> plan -> prepare per-user payload -> smoke-test -> native plugin manager under a lock` |
+| Native OpenCode plugin | adapt | `OpenCode callback -> opencode/plugin.ts -> bounded shared hook/MCP subprocess` |
 
 ---
 
 ## Purpose
 
 adr-kit's decision semantics live in `bin/` and its libraries. This component exists so that three
-CLI coding agents with genuinely different hook models, plugin managers and output formats all reach
-those same semantics — and so that an agent about to edit a file already has the governing Accepted
-ADRs in its context rather than having to think to ask.
+certified CLI coding agents with genuinely different hook models, plugin managers and output formats,
+plus OpenCode's separate native plugin surface, all reach those same semantics — and so that an agent
+about to edit a file already has the governing Accepted ADRs in its context rather than having to think
+to ask.
 
 It solves four problems:
 
@@ -45,9 +48,11 @@ It solves four problems:
    exception, where the `pr-create` guard can still deny a `gh pr create` call on Claude Code by
    encoding `permissionDecision: "deny"` in its JSON response rather than by a non-zero exit
    (ADR-024, ADR-031). See `c4-code-hooks.md` for the guard's mechanics.
-3. **Same outcome, three clients.** `clients/capabilities.json` declares the seven required outcomes
-   and the per-client event mappings; where a client genuinely cannot do something (Copilot has no
-   pre-edit hook) the gap is a *registered degradation* with a named fixture, not silence.
+3. **Same certified outcome, separate native surfaces.** `clients/capabilities.json` declares the
+    seven required outcomes and the per-client event mappings for Claude Code, Codex, and Copilot;
+    where a certified client genuinely cannot do something (Copilot has no pre-edit hook) the gap is a
+    *registered degradation* with a named fixture, not silence. OpenCode is governed by ADR-039 and
+    uses its own native plugin contract without entering that registry.
 4. **Instructions that make deterministic tooling fire at the right moment.** The 15 skills carry the
    reasoning — the four verification gates, the nine anti-rationalisation guards, the immutability
    rule — that no CLI flag can encode.
@@ -82,6 +87,7 @@ Everything else is prose governance.
 | **ADR-016** — serve both MCP protocol eras from one hand-rolled stdio server | **Mechanically enforced, six ways** — the most of any ADR in this component. Two `forbid_pattern`/`forbid_import` rules (no verbatim `protocolVersion` echo; stdlib-only imports) plus four `require_pattern` rules (`MODERN_PROTOCOL_VERSIONS`, `server/discover` in the server files, `server/discover` again in `tests/test_adr_mcp.py`, `UNSUPPORTED_PROTOCOL_VERSION`), each globbed across `{bin,codex/bin,copilot/bin}/adr-mcp`. The `require_pattern` rules were added 2026-07-31 (TASK-58.5), after Acceptance — see notable finding on the resolution. | The dual-era dispatch: `initialize`/`ping` on the legacy handshake surface (2024-11-05 .. 2025-11-25), `server/discover` on the modern surface (2026-07-28), `tools/list`/`tools/call` served on both with different result stamping. Era is a pure function of one frame — no per-connection lock. |
 | **ADR-011** — deterministic readiness, human-gated grilling | **Mechanically enforced, twice.** `require_pattern "adr_readiness"` with `path_glob: bin/adr-mcp` ("MCP must expose deterministic readiness without lifecycle mutation") and `require_pattern "grill"` with `path_glob: clients/workflows.json`. | The `adr_readiness` tool must stay present and read-only; the `grill` workflow must stay in the catalog. |
 | **ADR-010** — certify three native CLI clients through one outcome contract | **Enforced on the schema, not the data.** Both `require_pattern` rules glob `schemas/client-capabilities.schema.json`. | The closed three-client roster, the seven required outcomes, the documented-degradation rule, the 300/400-line module budgets, "equal outcomes not identical event names". |
+| **ADR-039** — add a native OpenCode plugin without expanding the certified CLI gate | Prose-governing; focused package/plugin tests provide the local evidence. | The root `opencode/plugin.ts` remains a thin native adapter over the shared Python engines; it preserves existing user configuration, uses bounded fail-open hooks for normal context, and stays outside `clients/capabilities.json`, the generated support matrix, and three-client certification. |
 | **ADR-004** — layered ADR context injection | Prose-governing. Enforcement block present but empty. | The five injection tiers the hooks implement (session, prompt, edit, plan-exit, subagent/compact), the `PreToolUse` `Edit\|MultiEdit\|Write` matcher, bounded injected content, and the single fail-closed pre-commit floor. Names the MCP `adr_context` tool as the key-free exposure of the task tier. |
 | **ADR-014** — generated ADR graph as the selective-context query engine | Component-level claim, no `path_glob` here. `binding: true`, gate `index-first-retrieval`; `verified_in` names `hooks/adr_hook_core.py`, `components[]` includes `adr-mcp`. | Hook and query hot paths stay local, deterministic, bounded, stdlib-first, model-free, key-free. No service, database, embedding model or LLM in the hook path. |
 | **ADR-015** — two-second deterministic latency budget as a fixture contract | Prose-governing the hook half only; its `path_glob` is `tests/fixtures/cli/latency-corpus.json`. | Every deterministic CLI *or hook* path keeps p50/p95/hard budgets in a committed fixture with measured evidence. The hook corpus (`tests/fixtures/hooks/reference-corpus.json`, method `adr-kit-hook-latency-v1`) satisfies this; **`bin/adr-mcp` has no entry in either corpus**. Its 2000 ms ceiling is the one this component mechanically enforces outside `adr-judge` — see ADR-031 below. |
@@ -153,6 +159,16 @@ and its decision is release version-consistency across marketplace manifests.
 | CRLF-stable content hashing | `payload_digest` normalizes `\r\n` to `\n` before hashing and hook wrappers are written with `newline="\n"`, so a Windows and a Unix checkout of the same release produce the same digest. |
 | Declared degradations with fixtures | Three entries in `clients/exceptions.json`, each bound to a fixture whose `exception_id` must match; a degradation cannot be claimed in prose without a committed fixture behind it. |
 
+### Native OpenCode adapter
+
+| Feature | Description |
+|---|---|
+| Additive config registration | `opencode/plugin.ts` appends only missing canonical skill paths, instructions, the `adr-decisions` reference, `adr-kit-*` commands, and the local `adr-kit` MCP server. User-owned entries remain authoritative. |
+| Native callback surface | `chat.message`, `experimental.chat.system.transform`, `experimental.session.compacting`, `tool.definition`, `tool.execute.before`, `tool.execute.after`, `shell.env`, `event`, and `dispose` provide the OpenCode-native integration points. |
+| Shared governance runtime | The adapter invokes `hooks/adr-hook.py`, `bin/adr-mcp`, and `clients/workflows.json`; it does not reimplement ADR parsing, retrieval, judging, or lifecycle semantics in TypeScript. |
+| Bounded fail-open behaviour | Bun child processes use bounded timeouts. Normal context and edit failures remain advisory; only an explicit shared pull-request denial can reject the corresponding OpenCode shell call. |
+| Separate evidence boundary | `tests/test_opencode_package.py` checks package and release contracts; `tests/test_opencode_plugin.py` runs the Bun smoke. Neither adds OpenCode to the certified capability registry or native evidence bundle. |
+
 ---
 
 ## Code Elements
@@ -163,6 +179,7 @@ and its decision is release version-consistency across marketplace manifests.
 | `c4-code-hooks.md` | The **push** path: dispatcher, shared normalize/retrieve/evaluate core, three per-client adapters, native Rust host, latency harness. |
 | `c4-code-agent-surface.md` | The **instruction** path: 15 skills, 1 subagent, 3 shared instruction documents, 45 generated prompt stubs. Zero executable code. |
 | `c4-code-clients-installer.md` | The **provisioning** path plus the honesty ledger: the three-client capability/workflow/exception registry and the seven-module desired-state installer library. |
+| `opencode/plugin.ts` | The **native OpenCode path**: additive configuration registration, bounded callback delegation to the shared hook runtime, session-local context, and explicit shell-denial propagation. |
 
 ---
 
@@ -218,6 +235,10 @@ tool failure* — bad argument type, non-zero CLI exit, missing ADR directory, t
 Three near-identical files, differing only in how the plugin root is expressed. `validate_manifests`
 ([`scripts/client_generation_artifacts.py:137-142`](../scripts/client_generation_artifacts.py))
 requires `mcpServers["adr-kit"]` in all three.
+
+These are the three certified-client manifests. OpenCode does not add a fourth
+static `.mcp.json`; `opencode/plugin.ts` synthesizes an additive local MCP
+entry during its `config` callback and preserves an existing `adr-kit` entry.
 
 | File | `command` | `args` | `cwd` |
 |---|---|---|---|
@@ -277,7 +298,28 @@ native binary with **no `ADR_KIT_NATIVE_HOOK` check at all** — the one client 
 now-opt-in native host would still run unconditionally if a `windows-x64/adr-hook.exe` happened to be
 present.
 
-### 4. Hook dispatcher and host CLIs
+### 4. Native OpenCode plugin — TypeScript callback contract
+
+The OpenCode adapter is not another generated hook manifest. It is loaded from
+the repository root through `opencode.json` and returns OpenCode's plugin
+callbacks from `opencode/plugin.ts`:
+
+| Callback | Runtime contract |
+|---|---|
+| `config` | Additive registration of canonical skills, instructions, ADR references, workflow commands, and the local `adr-kit` MCP server. |
+| `chat.message` | Bounded `Bun.spawn` call to `hooks/adr-hook.py` with the prompt as `UserPromptSubmit`; stores context per OpenCode session. |
+| `experimental.chat.system.transform` | Adds static ADR instructions and the stored bounded context exactly once. |
+| `experimental.session.compacting` | Carries stored ADR context and the pre-commit/CI enforcement-floor reminder forward. |
+| `tool.definition` | Adds a non-blocking reminder to query the ADR Kit MCP server before write tools. |
+| `tool.execute.before` / `tool.execute.after` | Delegates edit and shell/pull-request checks to the shared Hook Runtime; explicit shared denial becomes an OpenCode error for the shell call. |
+| `shell.env`, `event`, `dispose` | Exposes `ADR_KIT_ROOT`, tracks session creation/deletion, and clears session-local state. |
+
+Normal context and edit hooks fail open on timeout, malformed output, or a
+missing runtime. The adapter uses the shared Python engines for governance and
+does not claim the certified clients' installer, doctor, rollback, or native
+evidence guarantees.
+
+### 5. Hook dispatcher and host CLIs
 
 ```
 run-hook.cmd <event> [client]        # POSITIONAL, event first; client defaults to claude-code-cli
@@ -292,7 +334,7 @@ exit non-zero, because argparse rejects it outside the `try`. The native host si
 instead. Neither host supports `--flag=value`. Unknown extra flags are tolerated
 (`parse_known_args`).
 
-### 5. Hook stdin/stdout JSON contract
+### 6. Hook stdin/stdout JSON contract
 
 **In**: one JSON object, ≤ 65,536 bytes. Aliased key families: event
 (`hook_event_name`/`hookEventName`/`event`), workspace (`cwd`/`workspace`/`workspace_root`), tool name
@@ -329,7 +371,7 @@ reading `permissionDecision: "deny"` out of the JSON body, not a non-zero exit. 
 the enforcement mechanism, on this event or any other. See `c4-code-hooks.md`'s "Exit-code convention"
 section for the same distinction stated once, in detail.
 
-### 6. Guardian SessionStart entry — the second, independent injection producer
+### 7. Guardian SessionStart entry — the second, independent injection producer
 
 [`templates/cc-settings/guardian-hook-entry.json`](../templates/cc-settings/guardian-hook-entry.json)
 is a JSON snippet installed under `hooks.SessionStart[0].hooks[]` in a project's
@@ -344,7 +386,7 @@ receive two independently-produced `SessionStart` context blocks: the plugin hoo
 declares `"_remove_marker": "adr-guardian-session-start"` as its uninstall handle — for which a
 repo-wide grep finds **no reader** outside the generated mirrors.
 
-### 7. Skill, prompt and subagent invocation
+### 8. Skill, prompt and subagent invocation
 
 | Client | Invocation template | Skill mode | Skill root |
 |---|---|---|---|
@@ -359,6 +401,11 @@ Fifteen workflow ids, identical across all three: `adr`, `context`, `grill`, `gu
 --revalidate ADR-NNN | --all-proposed`; `guardian` accepts `cheap|llm|all`; `install-hooks` accepts
 only `--uninstall`).
 
+OpenCode consumes the same canonical `skills/` tree and workflow registry
+through its native plugin callback. It exposes the workflows as
+`adr-kit-<workflow>` OpenCode commands rather than claiming the certified
+clients' slash-command or generated-skill contracts.
+
 **Subagent**: `agents/adr-generator.md`, reached by the name `adr-generator` through the Claude Code
 `Task` tool. Six skills declare `Task` and may delegate: `guardian`, `init`, `judge`, `review`,
 `supersede`, `upgrade`.
@@ -368,7 +415,7 @@ agent to run — `bin/adr accept ADR-NNN`, `bin/adr-context --format json --limi
 `bin/adr-judge --snapshot staged --llm --json`, `bin/adr-guardian stamp cheap --violations N …`,
 `bin/adr-readiness --format json`, `bin/adr-migrate --plan docs/adr/`, and so on.
 
-### 8. Capability registry — JSON file contracts
+### 9. Capability registry — JSON file contracts
 
 | File | Contract |
 |---|---|
@@ -379,7 +426,7 @@ agent to run — `bin/adr accept ADR-NNN`, `bin/adr-context --format json --limi
 The seven required outcomes: `workflow-discovery`, `task-context`, `edit-governance`, `mcp`,
 `pre-commit`, `lifecycle`, `doctor`.
 
-### 9. Installer library — Python import surface (no CLI of its own)
+### 10. Installer library — Python import surface (no CLI of its own)
 
 `from clients.installer import CLIENT_IDS, SPECS, ClientSpec, DetectedClient, ClientPlan,
 InstallPlan, ClientResult` — contract types only; `__all__` re-exports **no functions**, so every real
@@ -399,7 +446,7 @@ detected. Inside the library, every failure raises `RuntimeError` with a human-r
 `detect_client` raises `ValueError` only for an unknown client id; an absent client is `None`, not an
 exception.
 
-### 10. Installer state and evidence — JSON file contracts
+### 11. Installer state and evidence — JSON file contracts
 
 | Artefact | Shape |
 |---|---|
@@ -408,7 +455,7 @@ exception.
 | `<state_root>/updates/<client>.json` | `{schema_version: 1, client, version, trigger, last_check_epoch}` |
 | Install plan (`--plan --format json`) | `{schema_version: 1, adr_kit: {version, source, source_sha256}, settings: {…}, clients: [ClientPlan…], requires_confirmation: bool}` |
 
-### 11. Native plugin-manager protocol — subprocess, three different output shapes
+### 12. Native plugin-manager protocol — subprocess, three different output shapes
 
 | Client | Marketplace listing | Plugin listing | Version change |
 |---|---|---|---|
@@ -419,7 +466,7 @@ exception.
 Post-activation gate `validate_install` requires `adr-kit@<marketplace>` in `plugin list`, and for
 Codex and Copilot additionally `adr-kit` in `mcp list`.
 
-### 12. MCP handshake as an install gate
+### 13. MCP handshake as an install gate
 
 `_validate_mcp_process` speaks MCP over stdio (protocol `2025-06-18`): `initialize` →
 `notifications/initialized` → `tools/list`, asserts stderr contains `serving root=<resolved cwd> `,
@@ -447,13 +494,15 @@ the MCP path and the installer path meet, and it is a hard coupling — see nota
 | `schemas-templates` | `schemas/client-capabilities.schema.json` validates the registry (and carries ADR-010's enforcement). `templates/cc-settings/guardian-hook-entry.json` and `templates/githooks/pre-commit` are the project-side copy-out artefacts. |
 | `packaging-ci` | Owns the generator (`scripts/build-client-adapters.py` → `client_generation*.py`) that renders skills, prompts and every `hooks.json` from this component's registries, and owns the real install entry point `scripts/install-agent-envs.py` plus the project-side `scripts/project_setup.py`. |
 | `generated-distributions` | `codex/` and `copilot/` are **generated** downstream projections, not hand-synced copies: `bin` is one of the four `COPY_ROOTS` (`scripts/client_generation_model.py:31`, consumed at `client_generation.py:145`), so `codex/bin/adr-mcp` and `copilot/bin/adr-mcp` are written by `scripts/build-client-adapters.py` and drift-checked by `--check` in three CI workflows. `codex/hooks/` and `copilot/hooks/` carry the 8 `HOOK_RUNTIME_FILES`; `codex/skills/` and `copilot/skills/` are the thin generated corpora. Edit `bin/`, then re-run the generator — never edit a mirror. |
-| `tests` | Protocol, parity, latency and contract certification: `test_adr_mcp.py` (24 subprocess-driven tests), `test_hook_protocol.py`, `test_hook_performance.py` (also the ADR-031 ceiling gate), `test_adr_hook_index_refresh.py` (ADR-021 gate), `test_pr_suggest_nudge.py` (ADR-024 gate), `test_adr_hook_dispatch_matrix.py` (ADR-029 gate), `test_agent_installer.py`, `test_client_adapter_generation.py`, `test_client_capabilities_schema.py`. |
+| `opencode/plugin.ts` | Native OpenCode adapter over the shared Hook Runtime, MCP Server, canonical skills, and workflow registry. It is loaded from the repository root and is not copied into `codex/` or `copilot/`. |
+| `tests` | Protocol, parity, latency and contract certification: `test_adr_mcp.py` (24 subprocess-driven tests), `test_hook_protocol.py`, `test_hook_performance.py` (also the ADR-031 ceiling gate), `test_adr_hook_index_refresh.py` (ADR-021 gate), `test_pr_suggest_nudge.py` (ADR-024 gate), `test_adr_hook_dispatch_matrix.py` (ADR-029 gate), `test_agent_installer.py`, `test_client_adapter_generation.py`, `test_client_capabilities_schema.py`, plus the separate `test_opencode_package.py` and Bun-gated `test_opencode_plugin.py` smoke tests. |
 
 ### External systems
 
 | System | How reached | Note |
 |---|---|---|
 | `claude`, `codex`, `copilot` CLIs | `subprocess` — `--version`, `plugin marketplace list/add/remove`, `plugin list/install/update/uninstall`, `mcp list` | Three different output shapes; Copilot has none and is matched by substring |
+| OpenCode + Bun | OpenCode loads `opencode/plugin.ts`; Bun runs the focused plugin smoke harness | Native package callbacks are tested separately; no OpenCode CLI installer or three-client certification claim is made |
 | Target Python interpreter | `-c` probe by `validate_python`; embedded as the patched MCP `command`; `sys.executable` for every MCP tool subprocess | Minimum 3.10 |
 | `cmd.exe` / POSIX `sh` / PowerShell | Both halves of `run-hook.cmd`; `cmd.exe /d /c` or `sh` for the hook smoke test; PowerShell for Copilot's own hook branch | |
 | `where` / `command -v` / `shutil.which` | Interpreter and client discovery | |
@@ -472,10 +521,11 @@ the MCP path and the installer path meet, and it is a hard coupling — see nota
 
 ```mermaid
 flowchart TB
-    subgraph AGENTS["Agent CLI clients (ADR-010: closed roster of three)"]
+    subgraph AGENTS["Certified agent CLI clients (ADR-010: closed roster of three)"]
         CC["Claude Code CLI"]
         CX["Codex CLI"]
         CP["GitHub Copilot CLI"]
+        OC["OpenCode host<br/>separate native surface (ADR-039)"]
     end
 
     subgraph AI["agent-integration"]
@@ -512,6 +562,11 @@ flowchart TB
             NTV["native.py — per-client plugin manager"]
             TX["transaction.py — lock · evidence · rollback"]
         end
+
+        subgraph OPC["native OpenCode plugin — host-loaded adapter"]
+            OPT["opencode/plugin.ts<br/>config · callbacks · session state"]
+            OPCFG["opencode.json + package.json<br/>repository package source"]
+        end
     end
 
     subgraph ENGINE["Deterministic engine (other components)"]
@@ -530,7 +585,8 @@ flowchart TB
     end
 
     subgraph EXT["External"]
-        PM["native plugin managers<br/>claude / codex / copilot"]
+        PM["certified native plugin managers<br/>claude / codex / copilot"]
+        OPM["OpenCode plugin API<br/>Bun / TypeScript host"]
         FS[("per-user data root<br/>adr-kit/marketplaces/&lt;version&gt;")]
         GIT["git · gh"]
         GEN["packaging-ci<br/>build-client-adapters.py<br/>install-agent-envs.py"]
@@ -539,6 +595,11 @@ flowchart TB
     CC -->|"/adr-kit:{workflow}"| SK
     CX -->|"$adr-kit:{workflow}"| PR
     CP -->|"adr-kit:{workflow}"| PR
+    OC -->|"native plugin load"| OPT
+    OPCFG -.->|"configures"| OPT
+    OPT -->|"canonical skills + commands"| SK
+    OPT -->|"local MCP"| SRV
+    OPT -->|"bounded shared hooks"| PYH
     SK -->|"Task tool, by name"| AG
     INS -.->|"names adr-generator,<br/>but no agents/ dir in either mirror"| AG
 
@@ -601,6 +662,7 @@ flowchart TB
     TX -->|"apply/validate/rollback"| NTV
     NTV -->|"plugin marketplace / plugin / mcp"| PM
     DET -.->|"--version"| PM
+    OPM -->|"loads"| OPT
 
     SK -.-> GIT
 ```

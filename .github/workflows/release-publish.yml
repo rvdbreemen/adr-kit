@@ -1,13 +1,16 @@
 name: ADR Kit release publish
 
-# Publishes a tagged adr-kit version to the three coding-agent marketplaces.
+# Publishes a tagged adr-kit version to the three certified coding-agent
+# marketplaces and the repository-native OpenCode package source.
 #
-# All three marketplaces (Claude Code, Codex, GitHub Copilot) resolve adr-kit
-# directly from this public repository, so "publishing" is: land version-consistent
-# manifests on the public repo and cut a tag + GitHub Release. This workflow is the
-# gate that proves the tagged commit is coherent across every publish surface before
-# the Release is created. It does NOT mutate any maintainer machine: the per-user
-# prepared-directory marketplace is advanced locally with
+# The three certified marketplaces (Claude Code, Codex, GitHub Copilot) resolve
+# adr-kit directly from this public repository. OpenCode loads the package source
+# from the repository or a separately published npm package. For this repository,
+# "publishing" is: land version-consistent manifests on the public repo and cut a
+# tag + GitHub Release. This workflow is the gate that proves the tagged commit is
+# coherent across every declared source surface before the Release is created. It
+# does NOT mutate any maintainer machine: the per-user prepared-directory
+# marketplace is advanced locally with
 # `python scripts/install-agent-envs.py --clients all` (see docs/RELEASING.md).
 
 on:
@@ -53,10 +56,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Gate 1 - every publish surface (3 plugin.json, 2 marketplace.json,
-      # CHANGELOG) must equal the tag version. This is the check that would have
-      # caught the 0.37.0 marketplace lag.
-      - name: Version consistency across all three client marketplaces
+      # Gate 1 - every declared publish/source surface (3 certified plugin.json,
+      # OpenCode package.json, 2 marketplace.json, CHANGELOG) must equal the tag
+      # version. This is the check that would have caught the 0.37.0 marketplace lag.
+      - name: Version consistency across certified clients and OpenCode
         run: python scripts/check-release-version.py --expect "${{ steps.tag.outputs.tag }}"
 
       # Gate 2 - the generated client adapters must not have drifted from source.

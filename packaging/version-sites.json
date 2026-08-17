@@ -27,6 +27,12 @@
       "label": "Copilot plugin manifest"
     },
     {
+      "path": "package.json",
+      "kind": "regex",
+      "pattern": "(\\\"version\\\": \\\")(\\d+\\.\\d+\\.\\d+)(\\\")",
+      "label": "OpenCode npm package"
+    },
+    {
       "path": ".claude-plugin/marketplace.json",
       "kind": "json",
       "pointer": "/plugins/0/version",

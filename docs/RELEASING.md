@@ -1,21 +1,25 @@
 # Releasing adr-kit to the coding-agent marketplaces
 
-adr-kit ships as a plugin to three coding agents: **Claude Code**, **Codex**, and
-**GitHub Copilot CLI**. This document is the authoritative release runbook and
-explains the distribution model that makes the steps necessary.
+adr-kit ships as a plugin to three certified coding-agent CLIs: **Claude Code**,
+**Codex**, and **GitHub Copilot CLI**, plus a native **OpenCode** package. This
+document is the authoritative release runbook and explains the distribution
+model that makes the steps necessary.
 
-## Distribution model: the public repo IS the marketplace
+## Distribution model: the public repo is the certified marketplace source
 
-There is no external app store. Each agent resolves its plugin marketplace
-directly from the public `rvdbreemen/adr-kit` repository. Publishing a version
-means: land version-consistent manifests on the public repo, tag it, and cut a
-GitHub Release.
+There is no external app store for the three certified CLI integrations. Each of
+those clients resolves its plugin marketplace directly from the public
+`rvdbreemen/adr-kit` repository. OpenCode loads the native package from a
+repository checkout or, when separately published, from npm. Publishing a
+repository version means: land version-consistent manifests on the public repo,
+tag it, and cut a GitHub Release. The current workflow does not publish npm.
 
 | Client | Marketplace manifest (in repo) | Marketplace id | Plugin manifest | Plugin source |
 |---|---|---|---|---|
 | Claude Code | `.claude-plugin/marketplace.json` | `rvdbreemen-adr-kit` | `.claude-plugin/plugin.json` | `./` (repo root) |
 | Codex | `.agents/plugins/marketplace.json` | `rvdbreemen-adr-kit-codex` | `codex/.codex-plugin/plugin.json` | `./codex` |
 | GitHub Copilot | `.github/plugin/marketplace.json` | `rvdbreemen-adr-kit-copilot` | `copilot/plugin.json` | `copilot` |
+| OpenCode | `opencode.json` / `package.json` | repository package source; npm when separately published | `package.json` | repository root |
 
 End users add the marketplace and install the plugin, for example on Claude Code:
 
@@ -29,9 +33,11 @@ verbs against the same public repo.
 
 ### Two consumption paths
 
-1. **Public git source (end users).** The client resolves the manifests from the
-   public repo ref (default branch, or a tag). Once the tagged commit carries the
-   new version, git-source users get it. Nothing else is required for them.
+1. **Public git source (end users).** The three certified clients resolve their
+   manifests from the public repo ref (default branch, or a tag). Once the tagged
+   commit carries the new version, git-source users get it. OpenCode users can
+   point at the tagged repository checkout; npm remains a separate publication
+   path.
 2. **Local prepared directory (maintainer machines, offline installs).**
    `scripts/install-agent-envs.py` builds a versioned prepared marketplace under
    the per-user data directory and re-registers each client CLI against it:
@@ -56,10 +62,11 @@ version-bearing file and how to read and write it. Four tools read that one file
 | `scripts/build-client-adapters.py` | refuse to generate against stale manifests |
 | `tests/test_version_sites.py` | keep the registry and the repo honest |
 
-Currently declared: the CHANGELOG release heading (canonical), the three client
-plugin manifests, the two versioned marketplace manifests, the pre-commit /
-guardian-entry / guide template stamps, and the two README version pins. The git
-tag is compared against them at release time.
+Currently declared: the CHANGELOG release heading (canonical), the three
+certified client plugin manifests, the OpenCode npm package, the two versioned
+marketplace manifests, the pre-commit / guardian-entry / guide template stamps,
+and the two README version pins. The git tag is compared against them at
+release time.
 
 `.agents/plugins/marketplace.json` (Codex) carries no version by design: it points
 at the local `./codex` source whose version lives in the Codex plugin manifest, so
@@ -86,9 +93,10 @@ do the same thing — the one this runbook names could not write the CHANGELOG
 compare-link block, so that block went stale on every release (TASK-139).
 
 It writes the CHANGELOG release heading, the CHANGELOG compare-link block
-(`[Unreleased]` retargeted and a `[X.Y.Z]` link added), the three client plugin
-manifests, the two versioned marketplace manifests, the template version stamps
-and the README version pins, all from the declarative registry in
+(`[Unreleased]` retargeted and a `[X.Y.Z]` link added), the three certified
+client plugin manifests, the OpenCode package version, the two versioned
+marketplace manifests, the template version stamps and the README version pins,
+all from the declarative registry in
 `packaging/version-sites.json`. Before writing anything it checks that the client
 manifests agree on the plugin name and that every marketplace pointer resolves to
 that plugin's entry.
@@ -203,7 +211,8 @@ git push origin vX.Y.Z
 Pushing the tag triggers **`.github/workflows/release-publish.yml`** (the release
 flow), which re-runs every gate above and creates the GitHub Release from the
 CHANGELOG section. If any version site disagrees, the workflow fails before the
-Release is cut.
+Release is cut. The workflow validates the OpenCode package version but does not
+publish npm.
 
 ### 4. Merge the release back into `dev`
 
@@ -246,6 +255,11 @@ candidate SHA against redacted native Windows evidence for all three clients. Ru
 it when the release needs the certified-support artifact; it validates and uploads
 evidence but does not publish.
 
+The OpenCode package has a separate focused smoke contract. It is not included
+in this three-client certification gate; run
+`python -m pytest -q tests/test_opencode_package.py tests/test_opencode_plugin.py`
+on a machine with Bun when OpenCode package or API behavior changes.
+
 ### 6. Publish to maintainer machines (prepared-directory source)
 
 End users on the git source are already served by step 3. Machines on the local
@@ -283,7 +297,7 @@ local command rather than a CI job.
 | Artifact | Purpose |
 |---|---|
 | `/release-adr-kit` (`.claude/commands/release-adr-kit.md`) | Repo-level command that drives this runbook locally end to end |
-| `scripts/check-release-version.py` | Fails unless all six version sites equal the tag |
+| `scripts/check-release-version.py` | Fails unless all declared version sites, including the OpenCode package, equal the tag |
 | `.github/workflows/release-publish.yml` | Tag-triggered gate + GitHub Release (the release flow) |
 | `.github/workflows/release-candidate.yml` | Optional three-client native certification |
 | `scripts/check-branch-sync.py` | Fails when `dev` is missing release commits from `main` |
