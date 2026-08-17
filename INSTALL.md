@@ -6,8 +6,10 @@ long-form reference for manual client commands, portability notes, updates,
 and removal.
 
 ADR Kit has separate native distributions for Claude Code, OpenAI Codex, and
-the standalone GitHub Copilot CLI. They share deterministic Python engines,
-but they do not share manifests, cache paths, or client-specific instructions.
+the standalone GitHub Copilot CLI, plus a native OpenCode plugin package. They
+share deterministic Python engines, but they do not share manifests, cache
+paths, or client-specific instructions. OpenCode is tested separately and does
+not expand the three-client certification gate.
 After installation, follow the
 [ADR Grilling user guide](docs/adr-grilling.md) to create, reconstruct, resume,
 and explicitly finish a decision.
@@ -22,6 +24,9 @@ and explicitly finish a decision.
 - At least one supported CLI on `PATH`: `claude`, `codex`, or standalone
   `copilot`.
 - A cloned ADR Kit checkout when using the automatic installer.
+- OpenCode 1.18 or newer when using the native OpenCode plugin. OpenCode loads
+  the plugin with Bun; no Node or npm dependency is required at runtime by the
+  plugin itself.
 
 No API key is required for installation or the default deterministic tools.
 
@@ -324,6 +329,32 @@ On Windows, a sandboxed caller may have read-only access to the user's normal
 `~/.copilot` directory. For CI or isolated smoke tests, set `COPILOT_HOME` to a
 writable temporary directory. A normal user terminal should use the default
 home.
+
+## OpenCode
+
+The repository root carries an OpenCode config and npm-style plugin entrypoint.
+From this checkout, start OpenCode in the repository and restart it after any
+plugin change. For another project, add the package or a reviewed checkout to
+`opencode.json`; see [OpenCode support](docs/clients/opencode.md) for the exact
+config, options, MCP registration, hook behavior, and CI setup.
+
+The plugin discovers the canonical skills and workflow commands, adds the local
+`adr-kit` MCP server without overwriting an existing entry, injects bounded ADR
+context through OpenCode's system transform, carries context through
+compaction, and calls the shared Python hook runtime around edits. Set
+`ADR_KIT_ROOT` and `ADR_KIT_PYTHON` when the plugin and Python checkout are in
+different locations. Set `ADR_KIT_OPENCODE_MCP=0` to opt out of automatic MCP
+registration.
+
+OpenCode projects still need the client-independent pre-commit and CI floor:
+
+```bash
+python /absolute/path/to/adr-kit/scripts/setup-project.py \
+  --project-root /absolute/path/to/project
+```
+
+Copy the required `templates/github-workflows/` files into the project's
+`.github/workflows/`. The OpenCode plugin does not replace those gates.
 
 ## Portable fallback
 

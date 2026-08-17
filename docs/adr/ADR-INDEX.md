@@ -44,3 +44,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-036 | Accepted | - | Chosen option: retire definitively; host model plus operator escape hatch. |
 | ADR-037 | Accepted | - | Chosen option: Option A, because every property the acceptance criteria ask for is a property of state granularity, n... |
 | ADR-038 | Accepted | - | Chosen option: keep every established verdict and mark the pass degraded, because it preserves evidence without ever... |
+| ADR-039 | Accepted | - | Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi... |

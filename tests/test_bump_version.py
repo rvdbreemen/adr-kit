@@ -42,6 +42,11 @@ BUMP_VERSION = REPO_ROOT / "bin" / "bump-version"
 PLUGIN = {"name": "adr-kit", "version": "0.30.0", "description": "x"}
 CODEX_PLUGIN = {"name": "adr-kit", "version": "0.30.0", "description": "x"}
 COPILOT_PLUGIN = {"name": "adr-kit", "version": "0.30.0", "description": "x"}
+OPENCODE_PACKAGE = {
+    "name": "@rvdbreemen/adr-kit-opencode",
+    "version": "0.30.0",
+    "description": "x",
+}
 MARKETPLACE = {"plugins": [{"name": "adr-kit", "version": "0.30.0"}]}
 CHANGELOG = (
     "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- thing.\n\n"
@@ -112,6 +117,9 @@ def _make_tree(tmp_path: Path) -> Path:
         str(root / "packaging" / "version-sites.json"),
     )
     (root / "README.md").write_text(README, encoding="utf-8")
+    (root / "package.json").write_text(
+        json.dumps(OPENCODE_PACKAGE, indent=2) + "\n", encoding="utf-8"
+    )
     (root / ".claude-plugin" / "plugin.json").write_text(
         json.dumps(PLUGIN, indent=2) + "\n", encoding="utf-8"
     )
@@ -172,6 +180,8 @@ def test_bump_updates_both_client_manifests_and_release_artifacts(tmp_path):
     assert codex_plugin["version"] == "0.31.0"
     copilot_plugin = json.loads((root / "copilot" / "plugin.json").read_text())
     assert copilot_plugin["version"] == "0.31.0"
+    opencode_package = json.loads((root / "package.json").read_text())
+    assert opencode_package["version"] == "0.31.0"
     copilot_marketplace = json.loads(
         (root / ".github" / "plugin" / "marketplace.json").read_text()
     )
@@ -517,6 +527,7 @@ def test_staging_hint_names_every_changed_target(tmp_path):
         "codex/.codex-plugin/plugin.json",
         "copilot/plugin.json",
         ".github/plugin/marketplace.json",
+        "package.json",
         "CHANGELOG.md",
         "templates/githooks/pre-commit",
         "templates/cc-settings/guardian-hook-entry.json",

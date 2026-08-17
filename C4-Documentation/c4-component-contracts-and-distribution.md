@@ -3,19 +3,22 @@
 ## Overview
 
 - **Name**: Contracts, Packaging and Distribution (slug `contracts-and-distribution`)
-- **Description**: The declarative contract layer, the release toolchain that acts on it, and the two
-  per-client payloads it emits. Eleven JSON Schema documents pin the shape of every machine-readable
+- **Description**: The declarative contract layer, the release toolchain that acts on it, the two
+  generated certified-client payloads it emits, and the native OpenCode package source. Eleven JSON
+  Schema documents pin the shape of every machine-readable
   artefact adr-kit produces or consumes; eleven copy-out templates become live files in a consuming
   project; eight `packaging/*.json` registries plus twenty `scripts/*.py` modules turn one repository
-  into three marketplace payloads; ten GitHub Actions workflows gate the result. The `codex/` and
-  `copilot/` trees are the output: 91 tracked files each, of which 88 are a deterministic projection
-  of declared source and 3 are hand-maintained inputs.
+  into three certified marketplace payloads plus a native OpenCode package source; ten GitHub Actions
+  workflows gate the result. The `codex/` and `copilot/` trees are the generated output: 91 tracked
+  files each, of which 88 are a deterministic projection of declared source and 3 are hand-maintained
+  inputs. The OpenCode package remains at the repository root.
 - **Type**: Declarative contract layer + build/release CLI toolchain + generated distribution
   payloads. No long-running process, no service. The only thing here that runs during normal
   operation is `templates/githooks/pre-commit`, once it has been installed into a project.
 - **Technology**: JSON Schema (draft-07 ×4 and 2020-12 ×7 — mixed by design, see findings),
   Python 3.10+ stdlib-only (`from __future__ import annotations` throughout, zero third-party
-  imports across all 20 `scripts/` modules), GitHub Actions YAML with embedded `bash`/`pwsh`,
+  imports across all 20 `scripts/` modules), TypeScript executed by Bun/OpenCode for the native
+  package, GitHub Actions YAML with embedded `bash`/`pwsh`,
   POSIX shell, Markdown, and one committed Windows PE binary (`hooks/bin/windows-x64/adr-hook.exe`,
   248,320 bytes, mirrored into both trees but stored as a single git blob).
 
@@ -30,6 +33,7 @@ A reader will otherwise assume `clients/*.json` lives in this component. It does
 | `instructions/` (3) | **shared** — authored in the agent surface, *mirrored* here as one of the four `COPY_ROOTS` | authored: [`c4-code-agent-surface.md`](./c4-code-agent-surface.md); mirrored: [`c4-code-generated-distributions.md`](./c4-code-generated-distributions.md) |
 | `packaging/` (8), `scripts/` (20), `.github/workflows/` (10) + 2 composite actions | **owned** | [`c4-code-packaging-ci.md`](./c4-code-packaging-ci.md) |
 | `codex/`, `copilot/` (91 tracked files each) | **owned** (88 generated) | [`c4-code-generated-distributions.md`](./c4-code-generated-distributions.md) |
+| `opencode/`, `opencode.json`, `package.json`, `.npmignore` | **owned** native package source | [`docs/clients/opencode.md`](../docs/clients/opencode.md) and ADR-039 |
 | `bin/` — 39 executables and libraries, mirrored verbatim | **consumed** | the seven `c4-code-bin-*.md` documents |
 | `clients/capabilities.json`, `workflows.json`, `exceptions.json`, `clients/fixtures/` | **consumed** as generator inputs | [`c4-code-clients-installer.md`](./c4-code-clients-installer.md) |
 | `hooks/manifest.json` + the 8 `HOOK_RUNTIME_FILES` | **consumed** as generator inputs | [`c4-code-hooks.md`](./c4-code-hooks.md) |
@@ -45,8 +49,9 @@ copy's MCP commands (ADR-006). For that one edge this component is the supplier,
 This is the only component whose job is to make claims about *other* components mechanically
 verifiable. Everything else in adr-kit governs a consuming project's architecture; this component
 governs adr-kit's own claims about itself — that an artefact has the shape it says it has, that every
-publish surface carries the same version, that the three shipped client payloads are a pure function
-of one source tree, and that a release claim is backed by evidence bound to an exact commit.
+publish surface carries the same version, that the three certified client payloads are a pure function
+of one source tree, that the native OpenCode package source is included in the release contract, and
+that a release claim is backed by evidence bound to an exact commit.
 
 It does this through three mechanisms. Each one has a verified hole, and naming the holes alongside
 the mechanisms is the component-level insight:
@@ -54,7 +59,7 @@ the mechanisms is the component-level insight:
 | Mechanism | Verified hole |
 |---|---|
 | **11 JSON Schemas** pin the shape of every machine-readable artefact | Only **4** ever have an instance evaluated by a real schema engine — `ajv` in `validate.yml:39,42,45,48` covers `plugin.json`, `marketplace.json`, `ADR-INDEX.json`, `adr-context-probes.json`. `adr-frontmatter.schema.json` and `doctor-output.schema.json` have **zero** consumers (grep finds only prose and backlog references); `bin/adr_schema.py:23-46` is the operative frontmatter contract. |
-| **One version registry** (`packaging/version-sites.json`) writes 10 sites spanning all three sub-clusters from one declarative table | Three of those sites live in `templates/`, but `bin/adr-guardian` carries only **two** stamp detectors (`_WRAPPER_STAMP_RE` at `:218`, `_wrapper_version` at `:295`). The `<!-- adr-kit-guide vX.Y.Z -->` stamp has no reader. The `templates/github-workflows/` action pin is not a registered site at all. |
+| **One version registry** (`packaging/version-sites.json`) writes every declared version site spanning all three certified-client sub-clusters and the OpenCode package from one declarative table | Three of those sites live in `templates/`, but `bin/adr-guardian` carries only **two** stamp detectors (`_WRAPPER_STAMP_RE` at `:218`, `_wrapper_version` at `:295`). The `<!-- adr-kit-guide vX.Y.Z -->` stamp has no reader. The `templates/github-workflows/` action pin is not a registered site at all. |
 | **The generator** makes both mirrors a byte-deterministic function of declared source; `--check` is gated in three workflows | `--check` exits **1** on a git-clean Windows checkout (13 phantom drift entries, reproduced below). The determinism gate is unrunnable locally on the one platform ADR-010 declares `release-required`. |
 
 The rest of this document is that table, expanded.
@@ -66,8 +71,8 @@ The rest of this document is that table, expanded.
   `.adr-kit.json` (11 blocks, 361 lines, doubling as reference documentation for the config surface),
   retrieval probes, readiness reports, doctor output, three-client capability and certification
   evidence, and the two Claude plugin manifests.
-- **Closed-by-construction client roster.** `client-capabilities.schema.json` encodes the three
-  first-class clients as a `const` array literal, pins `clients` to `minItems/maxItems: 3` with
+- **Closed-by-construction certified client roster.** `client-capabilities.schema.json` encodes the three
+  certified first-class clients as a `const` array literal, pins `clients` to `minItems/maxItems: 3` with
   `minContains/maxContains: 1` per id, requires all seven outcome values per client, and freezes the
   expansion epic as `future_epic: const "TASK-43"`. Adding a fourth client is a schema edit — the
   schema is a release gate, not a description.
@@ -94,12 +99,17 @@ The rest of this document is that table, expanded.
   heterogeneous file formats driven by one declarative table. `bump-version.py` is the only
   sanctioned writer, `check-release-version.py --expect <tag>` is the release gate, and both report
   **every** mismatch rather than aborting on the first.
-- **Three-client certification.** `assemble_native_bundle()` folds three independent per-client
+- **Three-client certification.** `assemble_native_bundle()` folds three independent certified per-client
   Windows observations plus shared inventory, dependency and benchmark facts into one bundle bound to
   a 40–64 hex candidate commit, then validates its own output. `validate()` checks schema version,
   candidate binding, contract-date staleness, canonical client order, per-platform status, cold/warm
   latency budgets `{"cold": (1000, 2000, 5000), "warm": (150, 500, 1000)}` with a 20 % p95 regression
   ceiling and `writes == 0` when warm, and renders `docs/client-support.md`.
+- **Native OpenCode package contract.** `package.json`, `opencode.json`, `.npmignore`, and
+  `opencode/plugin.ts` form a root-level package source. `test_opencode_package.py` checks the package
+  entrypoint, shared release registry, public-artifact allowlist, and explicit exclusion of generated
+  certified-client trees; `test_opencode_plugin.py` exercises the callback surface with Bun when
+  available. These checks are deliberately separate from the three-client certification bundle.
 - **Release-payload allowlisting.** `packaging/public-artifacts.json` (45 `include_roots`, 10
   `forbidden_segments`, 5 `forbidden_globs`) splits this component in half: 14 of the 20
   `scripts/*.py` ship, the 6-module release toolchain does not, and the shipped subset is
@@ -122,10 +132,11 @@ The rest of this document is that table, expanded.
 | [`c4-code-schemas-templates.md`](./c4-code-schemas-templates.md) | The contract layer itself: 11 JSON Schemas defining every artefact shape, plus the 11 copy-out templates — three ADR body profiles, the project guide, the pre-commit wrapper, the Guardian settings entry, two workflow samples, and two non-executable reference validators. A leaf that imports nothing; everything else reaches into it. |
 | [`c4-code-packaging-ci.md`](./c4-code-packaging-ci.md) | The machinery: 8 declarative registries, 20 stdlib-only `scripts/` modules (11 runnable CLIs, 9 import-only libraries), 10 workflows and 2 composite actions. Generates the mirrors, propagates the version, assembles and validates certification evidence, installs into detected CLIs, benchmarks the deterministic paths. |
 | [`c4-code-generated-distributions.md`](./c4-code-generated-distributions.md) | The output: `codex/` and `copilot/`, self-contained installable payloads with no independent implementation. Documents the projection manifest (the five module-level constants that *are* the real source of these trees), the copied-versus-transformed split, and the three hand-maintained input files per mirror. |
+| [`docs/clients/opencode.md`](../docs/clients/opencode.md) | The native OpenCode package contract: root-level `package.json`, `opencode.json`, `.npmignore`, and `opencode/plugin.ts`, with focused static and Bun smoke evidence. |
 
 ## Interfaces
 
-Six structurally different interface kinds. A flat list would blur them, so they are enumerated by
+Eight structurally different interface kinds. A flat list would blur them, so they are enumerated by
 protocol.
 
 ### 1. CLI — the release and setup toolchain
@@ -223,14 +234,15 @@ independently retained evidence commit while refusing a bundle path that escapes
 ### 6. Version-site write protocol
 
 `packaging/version-sites.json` declares 1 `canonical` source (the top `## [x.y.z]` heading in
-`CHANGELOG.md`), 10 sites, and 1 `must_not_carry_version` rule (`.agents/plugins/marketplace.json`).
-The 10 sites span all three sub-clusters of this component plus the mirrors — which is what makes
-the registry the thread that ties them together:
+`CHANGELOG.md`), all version-bearing repository sites, and 1 `must_not_carry_version` rule
+(`.agents/plugins/marketplace.json`). The sites span the three certified-client sub-clusters, the
+OpenCode package, templates, and README pins — which is what makes the registry the thread that ties
+them together:
 
 | `kind` | Sites |
 |---|---|
 | `json` (RFC 6901 pointer subset) | `.claude-plugin/plugin.json`, `codex/.codex-plugin/plugin.json`, `copilot/plugin.json`, `.claude-plugin/marketplace.json`, `.github/plugin/marketplace.json`, `templates/cc-settings/guardian-hook-entry.json` |
-| `regex` | `templates/githooks/pre-commit` (the `ADR_KIT_WRAPPER_VERSION` stamp), `templates/adr-kit-guide.md` |
+| `regex` | `package.json` (the OpenCode package version), `templates/githooks/pre-commit` (the `ADR_KIT_WRAPPER_VERSION` stamp), `templates/adr-kit-guide.md` |
 | `regex_all` | `README.md` ×2 — the composite-action pin and the `rev:` pre-commit pin |
 
 ### 7. Payload-facing interfaces exposed by the generated distributions
@@ -247,6 +259,21 @@ the registry the thread that ties them together:
   `timeoutSec` 1–5.
 - **CLI entrypoints**: all 39 `bin/` commands present and mode-`100755` inside each mirror.
 
+### 8. Native OpenCode package interface
+
+The root package exposes the OpenCode plugin entrypoint through
+`package.json` (`main: "./opencode/plugin.ts"`) and the repository-local
+`opencode.json` (`plugin: ["./"]`). The TypeScript adapter registers canonical
+skills, instructions, ADR references, workflow commands, and the local MCP
+server during `config`, then delegates prompt, context, compaction, edit, and
+shell callbacks to the shared Python Hook Runtime.
+
+This package is a repository source artifact in the current release workflow,
+not an npm publication. `tests/test_opencode_package.py` validates its file
+allowlist and version registry entry; `tests/test_opencode_plugin.py` provides
+the Bun smoke contract. Neither test changes the three-client certification
+schema or evidence bundle.
+
 ## Dependencies
 
 ### Components used
@@ -261,6 +288,7 @@ parentheses are provisional.
 | **Client registry and installer** — [`c4-code-clients-installer.md`](./c4-code-clients-installer.md) | (a) **JSON file read**: `clients/{capabilities,workflows,exceptions}.json` are declared generator inputs validated by `validate_capabilities` / `validate_workflows`; `workflows.json` is the sole source of the 15 rendered skills and 45 rendered prompts. (b) **Import**: `install-agent-envs.py` imports `clients.installer.{contracts,detection,native,payload,planning,transaction,updates}`. (c) **Supplier edge**: the installer copies this component's `codex/`/`copilot/` trees to a per-user data root and patches only that copy (ADR-006). |
 | **Hook integration layer** — [`c4-code-hooks.md`](./c4-code-hooks.md) | (a) **JSON file read**: `hooks/manifest.json` drives `native_hook_config()`, which emits `hooks/hooks.json`, `codex/hooks/hooks.json` and `copilot/hooks.json`. (b) **Verbatim copy, flattened**: the 8 `HOOK_RUNTIME_FILES` become `<client>/hooks/…`, with `.exe`/`.dll` skipping LF normalization. |
 | **Agent-facing surface** — [`c4-code-agent-surface.md`](./c4-code-agent-surface.md) | (a) **Generation**: `render_skill` / `render_prompt` produce the thin `codex/skills/`, `copilot/skills/` and all three `prompts/<client>/` corpora. (b) **Existence check only**: the canonical `skills/` tree is required to exist for Claude (`GenerationError("missing canonical rich skill")`) but its content is never drift-checked. (c) **Verbatim copy**: `instructions/` into both mirrors, with one prepended provenance line on `ADR-guide.md`. |
+| **Native OpenCode plugin** — `opencode/plugin.ts` | **Root package source**: `package.json`, `opencode.json`, and `.npmignore` declare the OpenCode entrypoint and allowlisted payload; the adapter consumes canonical skills, workflows, the Hook Runtime, and MCP Server without entering the generated mirrors. |
 | **Test suite** — [`c4-code-tests.md`](./c4-code-tests.md) | (a) **Subprocess gate**: `validate.yml` runs a hand-picked 10-module packaging subset and a full-suite 3-OS × Python 3.10/3.12 compatibility matrix. (b) **Fixture read**: `tests/certification/simulated-pass.json` is the CI certification input; `tests/fixtures/hooks/reference-corpus.json` backs the hook latency method. (c) **Write**: `refresh-otgw-corpus.py` writes `tests/testsets/otgw-firmware/`. |
 
 ### External systems
@@ -273,6 +301,9 @@ parentheses are provisional.
   `release-publish.yml` (`contents: write`).
 - **The three marketplaces** — Claude Code, Codex CLI and GitHub Copilot CLI plugin managers consume
   the published payloads; their manifests are the version sites this component writes.
+- **OpenCode host / npm when separately published** — OpenCode loads the root TypeScript package from
+  a reviewed checkout or an npm package; the current GitHub release workflow validates but does not
+  publish npm.
 - **Filesystem and OS** — `os.replace` atomic rename everywhere, `O_CREAT|O_EXCL` locking,
   `fsync`, POSIX file modes (`expected_mode` in `executables.json`), the system temp directory for
   the generator warm-state cache, and platform-specific plugin cache globbing
@@ -309,6 +340,7 @@ in `docs/adr/` to produce the first one.
 | ADR | What it constrains here |
 |---|---|
 | **ADR-012** — Release to the three coding-agent marketplaces from the public repository | One identical version across `.claude-plugin/plugin.json`, `codex/.codex-plugin/plugin.json`, `copilot/plugin.json` and both marketplace manifests. Enforced operationally by `validate_manifests` and `check-release-version.py`. |
+| **ADR-039** — Add a Native OpenCode Plugin Without Expanding the Certified CLI Gate | The root `opencode/plugin.ts` package source, `opencode.json`, and `package.json` are versioned and release-visible, but OpenCode is not added to the certified capability schema, generated mirrors, installer, or native evidence bundle. |
 | **ADR-013** — Declare version sites in one registry and bump by writing | Names `packaging/version-sites.json`, `scripts/version_sites.py`, `scripts/bump-version.py` directly. The strongest textual link in the cluster. |
 | **ADR-010** (broader) | One outcome contract across three clients; *"generated artifacts must stay byte-deterministic while clean and unchanged generation remain fast on Windows"*; hooks stay local, bounded, model-free and fail-open; the zero-runtime-dependency baseline holds. `binding: true`, `gate: three-client-release`. Sets the 300/400-line module budgets. |
 | **ADR-006** — Prepare platform-local marketplaces for native installs | Governs `install-agent-envs.py`: build a prepared, version-pinned, per-user payload from a validated source and patch only the copy, never the checkout. |
@@ -339,7 +371,9 @@ flowchart TB
         GIT["git"]
         GH["GitHub Actions<br/>+ gh CLI + Releases API"]
         AJV["Node 20 + ajv-cli"]
-        MKT["3 client marketplaces<br/>Claude / Codex / Copilot"]
+        BUN["Bun / OpenCode runtime"]
+        MKT["3 certified client marketplaces<br/>Claude / Codex / Copilot"]
+        OCP["OpenCode package source<br/>repository or npm"]
     end
 
     subgraph CONSUMED["Consumed from other components"]
@@ -361,6 +395,7 @@ flowchart TB
         INST["scripts/ install + setup<br/>install-agent-envs,<br/>project_setup, adr_settings"]
         CI[".github/workflows/ — 10<br/>+ 2 composite actions"]
         DIST["codex/ + copilot/<br/>91 tracked each<br/>88 generated, 3 inputs"]
+        OC["opencode/<br/>package.json · opencode.json<br/>native package source"]
     end
 
     PROJ["Consuming project<br/>.githooks/pre-commit<br/>.claude/adr-kit-guide.md<br/>docs/adr/ADR-NNN.md"]
@@ -377,7 +412,8 @@ flowchart TB
     GEN -->|"generates executables.json<br/>+ dependencies.json"| REG
 
     REG -->|"version-sites table:<br/>json pointer / regex / regex_all"| VER
-    VER -->|"writes 10 sites incl.<br/>3 manifests in DIST + 3 in TPL"| DIST
+    VER -->|"writes declared sites incl.<br/>certified manifests + OpenCode package"| DIST
+    VER -->|"writes package version"| OC
     VER -->|"writes 3 stamps"| TPL
 
     CERT -->|"reads benchmark + inventory<br/>+ dependency evidence"| REG
@@ -394,7 +430,10 @@ flowchart TB
     SCH -.->|"relative $schema refs —<br/>must ship beside docs/adr"| PROJ
     PROJ -->|"git commit: staged diff<br/>piped to bin/adr-judge"| GIT
     DIST -->|"prepared per-user payload<br/>ADR-006; installer patches<br/>only the copy"| MKT
+    OC -->|"loaded by"| BUN
+    BUN -->|"resolves"| OCP
     GH -->|"tag v* -> release"| MKT
+    GH -->|"publishes repository source"| OCP
 
     style THIS fill:#eef3fb,stroke:#31578f
     style CONSUMED fill:#fdf6e3,stroke:#b58900

@@ -520,6 +520,9 @@ in form only. Tests reach `extract_status`, `compute_summary`, `find_retirement_
   loopback interface.** No outbound network call exists anywhere in these 17 files.
 - **Agent host runtimes** (Claude Code CLI, Codex CLI, GitHub Copilot CLI) — consume
   `adr-guardian check`'s SessionStart envelope and the `[adr-grill]` stderr lines.
+  OpenCode is not probed by this certified native doctor; its separate plugin can
+  consume the shared MCP and hook engines, but ADR-039 does not extend the
+  installer or doctor contract.
 - **No LLM.** No file in this component invokes `claude` or any model. The guardian's "LLM tier"
   is a *cadence label*: the detector says the tier is due, and the in-session model runs
   `adr-suggest` and `adr-judge --llm` itself. `ADR_KIT_LLM`/`ADR_KIT_NO_LLM` are read by the
@@ -604,7 +607,7 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
 
 ### Gating and exit codes
 
-7. **Eight entry points, five exit-code conventions.** Anything scripting this component needs the
+ 1. **Eight entry points, five exit-code conventions.** Anything scripting this component needs the
    distinction: `bin/adr` 0/2; `bin/adr-guardian` **never non-zero** for any subcommand (blanket
    `except Exception: return 0`, so scripting callers of `state`/`artifacts`/`refresh-readiness`
    cannot distinguish failure from success); `bin/adr-status` 0 implicit, 1 only for a missing
@@ -618,12 +621,12 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
    from the caught tuple at `bin/adr-readiness:161`. Because that JSON is the de-facto internal RPC
    of three subprocess consumers, a readiness-schema change surfaces in the default human renderer
    as a traceback instead of the clean exit-2 path.
-8. **`--deep` raises the required bar.** `_mcp_deep` and `_native_deep` build their checks with
+ 2. **`--deep` raises the required bar.** `_mcp_deep` and `_native_deep` build their checks with
    `check()`'s default `required=True`, while their fast-tier counterparts are `required=False`.
    A native CLI whose `plugin list` output lacks `adr-kit` yields `stale` + `required` → exit 1 under
    `--deep` where fast mode exited 0. `trust-pending` is deliberately excluded from
    `FAILURE_STATUSES`, so a trust prompt does not block.
-9. **The fast doctor tier fails on integrations the user never installed — in a canonical root.**
+ 3. **The fast doctor tier fails on integrations the user never installed — in a canonical root.**
    `mcp-launcher` and `hook-package` run for every non-disabled client regardless of whether the CLI
    is present — `detected.get(name)` feeds only the `native-client` check. In a set-up project, a
    missing `codex/.mcp.json` is a `required` `failed` check → exit 1 for a CLI that was never
@@ -633,7 +636,7 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
 
 ### The health check that mutates the tree
 
-10. **A bare `adr-doctor` writes, and on Windows it very likely writes for no reason.**
+ 1. **A bare `adr-doctor` writes, and on Windows it very likely writes for no reason.**
     `bin/adr-doctor:133` forces `args.fix_index = bool(args.fix_index or not args.check)`, so default
     mode regenerates `ADR-INDEX.{md,json}` as a side effect of a health check. Worse,
     `_generated_check` builds its drift result with `status="stale"` and no `required=`, so the
@@ -646,7 +649,7 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
 
 ### Measurement honesty
 
-11. **No ADR Enforcement `path_glob` covers a single file in this component.** Verified by parsing
+ 1. **No ADR Enforcement `path_glob` covers a single file in this component.** Verified by parsing
     every Enforcement block in `docs/adr/`: the globs are
     `schemas/adr-kit-config.schema.json`, `docs/adr/ADR-INDEX.json`, `templates/githooks/pre-commit`,
     `bin/adr-lint`, `schemas/client-capabilities.schema.json`, `clients/workflows.json`,
@@ -654,17 +657,17 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
     component that runs the gates is itself entirely unguarded by the fail-closed floor.** Its
     invariants — read-only readiness, fail-open hooks, no lifecycle mutation over MCP, the 2-second
     budget — are held by the test suite alone. A regression here passes `bin/adr-judge` untouched.
-12. **`age_days` measures time since the last status transition, not authoring age.**
+ 2. **`age_days` measures time since the last status transition, not authoring age.**
     `bin/adr-status:216 parse_adr` never strips frontmatter, so `extract_date` returns the
     frontmatter `date:` field — and `bin/adr:220 mutate_status` rewrites `data["date"]` on **every**
     transition. Both age-based candidate rules ("Proposed for >365 days without acceptance",
     "Accepted >730 days without Enforcement") therefore measure something other than what their
     reason strings claim.
-13. **Staleness rests on filesystem mtime, not git history.** `pointer_changed_after` compares
+ 3. **Staleness rests on filesystem mtime, not git history.** `pointer_changed_after` compares
     `os.path.getmtime` against the acceptance date, so a fresh clone, a checkout or a line-ending
     rewrite can manufacture `accepted_evidence_changed` findings — and because that type is in
     `MATERIAL_DRIFT_TYPES`, it escalates to a full `bin/adr-audit` subprocess.
-14. **Hook-latency evidence is single-host.** `hooks/hook_benchmark.py:155` calls
+ 4. **Hook-latency evidence is single-host.** `hooks/hook_benchmark.py:155` calls
     `host_command(plugin_root, "codex-cli", event)` for every event — a hardcoded host — which
     qualifies any ADR-010 *parity* reading of the reported latency. The doctor further aggregates
     per-event p50/p95/max by **max across events** (worst event wins). This is the same file whose
@@ -673,11 +676,11 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
     `MEASURED_INTERPRETER_FLOOR_MS` (`:60`, 182.6 ms on this machine, 124 ms recorded on the corpus's
     original 2026-07-26 measurement) is a property of the machine the doctor runs on, not of the
     kit — a slower CI runner narrows the margin the recalibrated budgets carry.
-15. **`signal_count` under-reports the payload.** `adr_grill_signal.py:122` computes
+ 5. **`signal_count` under-reports the payload.** `adr_grill_signal.py:122` computes
     `min(3, len(linked) + len(suspected))` while `MAX_SIGNALS` is applied *per list*, so 3 linked +
     3 suspected emits **six** items and still reports `3`. The only test asserts `signal_count <= 3`.
     No production consumer reads the field today.
-16. **The timeout ladder far exceeds every stated budget.** 5 s per git call in `adr-grill-signal`,
+ 6. **The timeout ladder far exceeds every stated budget.** 5 s per git call in `adr-grill-signal`,
     10 s in `adr-readiness`, 30 s for the child in `adr-readiness-ci`, 10 s native / 15 s MCP in the
     doctor. These are ceilings rather than expectations, but all exceed ADR-011's p95 targets and the
     10 s/30 s ones exceed ADR-015's 2 s goal. Of the eight entry points, **only `adr-retire` has a
@@ -685,7 +688,7 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
 
 ### Unenforced contracts and dead surface
 
-17. **`schemas/doctor-output.schema.json` is declared but never validated.** No test, runtime check
+ 1. **`schemas/doctor-output.schema.json` is declared but never validated.** No test, runtime check
     or CI step evaluates `build_report`'s output against it, so producer and schema can drift
     silently. Related: `check()` accepts a `degradations` argument and the schema *requires* the key,
     but no caller anywhere passes it — the array is always `[]`. A dead field in a required contract
@@ -694,7 +697,7 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
     artefact to schema v2. A v1 graph would be consumed silently on the hook path, and because the
     reader never opens ADR Markdown, a stale index simply yields stale advisories. The producer is
     guarded; this consumer is not.
-18. **Dead and unreachable surface, catalogued.** `adr_guardian_queue.load_queue_actions` has no
+ 2. **Dead and unreachable surface, catalogued.** `adr_guardian_queue.load_queue_actions` has no
     production consumer. `--format github` in `bin/adr-readiness` duplicates
     `adr_readiness_ci.render_summary` and **has already diverged** (`_github` emits every ADR and
     omits Evidence lines; `render_summary` skips non-linked non-Proposed items and includes them) —
@@ -706,33 +709,33 @@ also what makes `hook_benchmark.host_command` fall through to `python-fallback` 
     rather than dead: `adr_readiness_ci.py:71` detects the empty state with `if len(lines) == 4`,
     coupling the "No ADR readiness findings." message to the exact four-line header length — adding
     a header line silently suppresses it, in the merge-gate path.
-19. **The lifecycle CLI cannot reach every status its own readers understand.**
+ 3. **The lifecycle CLI cannot reach every status its own readers understand.**
     `LEGAL_TRANSITIONS` has `Deprecated` and `Amended` only as *source* states and there is no
     `deprecate`/`amend` subcommand, yet `adr-status`'s `CANONICAL_STATUSES` recognises both and
     `find_retirement_candidates` treats `deprecated` as high-confidence. Those states can only arrive
     by hand-editing or an external writer.
-20. **`adr-guardian check --adr-dir` only works for one layout.** `bin/adr-guardian:982-983` steers
+ 4. **`adr-guardian check --adr-dir` only works for one layout.** `bin/adr-guardian:982-983` steers
     discovery by mutating `os.environ["CLAUDE_PROJECT_DIR"] = Path(args.adr_dir).resolve().parent.parent`,
     so the flag works only when the ADR directory is exactly `<root>/docs/adr`. Any other layout
     resolves elsewhere, the cwd-guard trips, and `check` exits 0 in silence.
-21. **`detect_policy_mismatch` treats unparseable enforcement as *total* policy mismatch.**
+ 5. **`detect_policy_mismatch` treats unparseable enforcement as *total* policy mismatch.**
     `_enforcement_rules` returns `None` on malformed JSON and the signal becomes the maximum 1.0 —
     not "no enforcement", but "maximally mismatched enforcement".
 
 ### Platform and packaging
 
-22. **Windows hardening is real but uneven.** `adr_guardian_queue.write_queue_cache` retries
+ 1. **Windows hardening is real but uneven.** `adr_guardian_queue.write_queue_cache` retries
     `os.replace` eight times with linear backoff on `PermissionError` (AV/indexer holding the
     destination handle). `_pointer_parts` refuses to read a Windows drive letter as a `path:symbol`
     separator. But `_ensure_utf8_streams()` exists only in `bin/adr-readiness`; in
     `bin/adr-grill-signal` the two `print()` calls sit *outside* the `try/except` that catches
     `UnicodeError`, so a non-ASCII path on a cp1252 console raises rather than degrading to exit 2,
     and `bin/adr-readiness-ci` lacks the guard entirely.
-23. **All 17 files exist as byte-identical mirrors in `codex/bin/` and `copilot/bin/`.** `bin/` is
+ 2. **All 17 files exist as byte-identical mirrors in `codex/bin/` and `copilot/bin/`.** `bin/` is
     the source of truth; the mirrors are generated by `scripts/build-client-adapters.py`. Editing a
     mirror is always wrong, and editing `bin/` without regenerating turns the doctor's own
     `generated-adapters` check `stale`.
-24. **`AdrRecord` is a plain `__slots__` class, not a dataclass** — explicitly to dodge a Python 3.14
+ 3. **`AdrRecord` is a plain `__slots__` class, not a dataclass** — explicitly to dodge a Python 3.14
     `SourceFileLoader` + dataclass interaction when an extensionless file is imported via
     `importlib`. That constraint follows from the extensionless-script convention and applies to all
     of `bin/`, not just this file.

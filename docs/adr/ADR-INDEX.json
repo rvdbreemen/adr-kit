@@ -2061,6 +2061,74 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-039",
+      "title": "Add a Native OpenCode Plugin Without Expanding the Certified CLI Gate",
+      "path": "ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-16",
+      "decision_summary": "Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi...",
+      "topics": [
+        "client compatibility",
+        "lifecycle hooks",
+        "MCP",
+        "native plugin",
+        "OpenCode"
+      ],
+      "aliases": [
+        "fourth client",
+        "OpenCode adapter",
+        "OpenCode plugin"
+      ],
+      "components": [
+        "client release gate",
+        "MCP server",
+        "opencode plugin"
+      ],
+      "symbols": [
+        "clients/capabilities.json",
+        "opencode/plugin.ts",
+        "scripts/build-client-adapters.py"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Keep opencode/ separate from the three-client generated adapter trees.",
+          "Reuse bin/adr-mcp, hooks/adr-hook.py, bin/adr-context, and the existing CI/pre-commit engines rather than implementing a second retrieval or judge.",
+          "Preserve user-owned OpenCode config and make automatic MCP/skill/command registration opt-out capable.",
+          "Keep advisory hook failures fail-open and bound subprocess input, output, and runtime.",
+          "Document OpenCode support separately from the three-client certification matrix, including its evidence and unsupported lifecycle claims."
+        ],
+        "must_not": [
+          "Add opencode to clients/capabilities.json, clients/workflows.json, the three-client installer, or the three-client release certification gate.",
+          "Hand-edit or regenerate codex/ or copilot/ as part of OpenCode support.",
+          "Create a second ADR retrieval, MCP, or declarative enforcement engine in TypeScript.",
+          "Overwrite existing OpenCode MCP entries, instructions, skills, commands, or permissions."
+        ],
+        "exceptions": [
+          "The OpenCode adapter may reuse the Claude-shaped normalized hook envelope internally because the Python hook core is client-neutral and its response is extracted before OpenCode sees it.",
+          "The existing gh pr create guard may deny an OpenCode shell tool call when the shared guard returns permissionDecision: deny; this is enforcement, not advisory edit injection."
+        ],
+        "verification": [
+          "tests/testopencodeplugin.py",
+          "tests/testopencodepackage.py",
+          "python scripts/build-client-adapters.py --check",
+          "python -m pytest -q"
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2961,6 +3029,48 @@
     {
       "source": "ADR-038",
       "target": "ADR-037",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-039",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-039",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-039",
+      "target": "ADR-012",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-039",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-039",
+      "target": "ADR-021",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-039",
+      "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-039",
+      "target": "ADR-034",
       "type": "related",
       "resolved": true
     }

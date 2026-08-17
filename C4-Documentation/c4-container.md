@@ -7,10 +7,13 @@ answer in that shape: verified directly against the working tree, there are
 **zero** Dockerfiles, Kubernetes manifests, Terraform files, docker-compose
 files, or serverless function definitions anywhere in adr-kit (confirmed by
 file search, not assumption). adr-kit is not a deployed service. It is a
-governance toolkit distributed as a **plugin** to three coding-agent
+governance toolkit distributed as **plugins** to three certified coding-agent
 command-line interfaces (CLIs) — Claude Code, Codex, and GitHub Copilot CLI
-(ADR-010) — installed into a plugin cache on someone else's machine and run
-there as short-lived subprocesses and one long-lived stdio process.
+(ADR-010) — plus a separate native OpenCode package (ADR-039). The certified
+plugins are installed into a plugin cache on someone else's machine; OpenCode
+loads the repository package or a separately published npm package. The system
+runs there as short-lived subprocesses, one long-lived stdio process, and a
+host-loaded plugin.
 
 This document therefore substitutes **distribution** for **deployment**
 throughout: instead of "which server runs this container," the question is
@@ -20,13 +23,14 @@ which gate proves the copy a client actually runs still matches the source."
 **On the absence of an `apis/` directory.** This document does **not**
 include an `apis/` directory or any OpenAPI/Swagger specification. OpenAPI
 describes HTTP interfaces, and adr-kit exposes none — there is no HTTP
-server, no REST or GraphQL endpoint, anywhere in the repository. The three
-interfaces this system actually has are process-boundary contracts: a
-stdio JSON-RPC tool surface, a native lifecycle-hook event contract, and a
-set of CLI exit-code contracts. All three are documented below, each
-sourced from the repository artifact that defines it (`bin/adr-mcp`,
-`hooks/manifest.json`, ADR-026 and the CLIs it governs) rather than
-invented to fit an API-documentation template that does not apply here.
+server, no REST or GraphQL endpoint, anywhere in the repository. The four
+interfaces this system actually has are process- or host-boundary contracts: a
+stdio JSON-RPC tool surface, a native lifecycle-hook event contract, a set of
+CLI exit-code contracts, and the host-loaded OpenCode plugin API. All four are
+documented below, each sourced from the repository artifact that defines it
+(`bin/adr-mcp`, `hooks/manifest.json`, ADR-026 and the CLIs it governs, and
+`opencode/plugin.ts`) rather than invented to fit an API-documentation template
+that does not apply here.
 
 ## Containers
 
@@ -35,16 +39,18 @@ invented to fit an API-documentation template that does not apply here.
 | **CLI Toolkit** | 26 extensionless entrypoints in `bin/` (25 excluding `adr-mcp`, which is documented separately below) plus 24 `bin/*.py` support modules — the engine behind every ADR workflow: lint, judge, audit, context, index, status, quality, readiness, retire, doctor, guardian, migrate, renumber, related, settings, watch, suggest, grill-signal, embed. | Short-lived, one-shot subprocesses | Python 3, standard library only (ADR-016's zero-runtime-dependency baseline extends to the whole `bin/` surface) |
 | **MCP Server** | `bin/adr-mcp` (1,093 lines) — a hand-rolled, dual-era Model Context Protocol (MCP) server that wraps five of the CLI Toolkit's tools for direct agent invocation. | Long-lived, persistent stdio process (`for line in sys.stdin:`) | Python 3 standard library, zero runtime dependencies (ADR-016) |
 | **Hook Runtime** | `hooks/` — per-client lifecycle adapters (`hooks/adapters/{claude,codex,copilot}.py`) over a shared core (`hooks/adr_hook_core.py`, `hooks/adr_embed_query.py`, `hooks/adr_pr_guard.py`), dispatched by `hooks/adr-hook.py` and `hooks/run-hook.cmd`, with an opt-in native fallback. | Short-lived subprocess, invoked by the host client on a lifecycle event | Python 3 (canonical path); optional native Rust binary `hooks/bin/windows-x64/adr-hook.exe` (ADR-029 has **Accepted** its retirement — see Distribution, below) |
+| **Native OpenCode Plugin** | `opencode/plugin.ts` plus the root `package.json` and `opencode.json` — an additive OpenCode plugin adapter that discovers the shared runtime, registers skills/instructions/references/commands/MCP, and delegates hook work to the Python Hook Runtime. | Host-loaded plugin inside the OpenCode process; child subprocesses for shared hooks and MCP | TypeScript executed by Bun/OpenCode, Python 3 for the shared engines, stdio JSON-RPC for MCP |
 | **Pre-commit Gate** | `templates/githooks/pre-commit`, installed by `/adr-kit:install-hooks` into a consuming project's own `.githooks/pre-commit` (this repository dogfoods its own copy at `.githooks/pre-commit`). Chains any pre-existing hook, then runs the declarative judge always and the LLM pass on `llm_judge:true` ADRs by default (ADR-017). | Shell script invoked by `git commit`, outside any agent host | Bash (with a `perl` timing fallback for macOS), subprocessing into the CLI Toolkit |
-| **Instruction & Skill Corpus** | `skills/` (17 canonical-rich `SKILL.md` files), `instructions/` (`ADR-guide.md`, `adr.coding.md`, `adr.review.md`), `prompts/claude-code-cli/`, and `agents/adr-generator.md` (the one subagent) — plus their generated counterparts `codex/skills/`, `copilot/skills/`, `prompts/codex-cli/`, `prompts/github-copilot-cli/`. Not executable; content consumed by each client's native skill/prompt discovery. | Declarative content (Markdown + JSON front matter), no runtime process | Markdown, rendered per-workflow by the generation toolchain for the two non-canonical clients |
-| **Client Generation & Release Toolchain** | `scripts/build-client-adapters.py` (and its `client_generation*.py`, `client_certification.py`, `client_evidence.py` support modules), `scripts/install-agent-envs.py`, `scripts/setup-project.py`, `scripts/settings.py`, `scripts/sync-agent-plugins.py`, plus the release-only `scripts/bump-version.py` / `scripts/check-release-version.py` / `scripts/check-branch-sync.py`, reading `packaging/*.json`. Produces the two generated mirrors, enforces version consistency, and drives per-machine installs. | Command-line build/release tooling — some of it distributed to installed clients, some maintainer/CI-only (see Distribution) | Python 3 |
+| **Instruction & Skill Corpus** | `skills/` (17 canonical-rich `SKILL.md` files), `instructions/` (`ADR-guide.md`, `adr.coding.md`, `adr.review.md`), `prompts/claude-code-cli/`, and `agents/adr-generator.md` (the one subagent) — plus their generated counterparts `codex/skills/`, `copilot/skills/`, `prompts/codex-cli/`, `prompts/github-copilot-cli/`. Not executable; content consumed by each client's native skill/prompt discovery, including the OpenCode plugin's additive path registration. | Declarative content (Markdown + JSON front matter), no runtime process | Markdown, rendered per-workflow by the generation toolchain for the two non-canonical certified clients; canonical content is registered directly by OpenCode |
+| **Client Generation & Release Toolchain** | `scripts/build-client-adapters.py` (and its `client_generation*.py`, `client_certification.py`, `client_evidence.py` support modules), `scripts/install-agent-envs.py`, `scripts/setup-project.py`, `scripts/settings.py`, `scripts/sync-agent-plugins.py`, plus the release-only `scripts/bump-version.py` / `scripts/check-release-version.py` / `scripts/check-branch-sync.py`, reading `packaging/*.json`. Produces the two generated certified mirrors, validates the native OpenCode package version, enforces version consistency, and drives per-machine installs. | Command-line build/release tooling — some of it distributed to installed clients, some maintainer/CI-only (see Distribution) | Python 3 |
 | **Generated Client Mirrors** | `codex/` and `copilot/` — deterministic projections of the CLI Toolkit, MCP Server, Hook Runtime and Instruction & Skill Corpus, produced by the Client Generation Toolchain, each carrying its own hand-authored plugin manifest, `.mcp.json` and `hooks.json`. | Generated distribution trees, drift-checked, never hand-edited | Identical technology to the containers they mirror; generation and validation logic in Python |
 
 Claude Code needs no mirror: its plugin source is the repository root itself
 (`./`, per `docs/RELEASING.md`'s marketplace table), so it runs the CLI
 Toolkit, MCP Server, Hook Runtime and Instruction & Skill Corpus directly
-from the canonical tree. Codex and Copilot run the corresponding files
-inside `codex/` and `copilot/`.
+from the canonical tree. OpenCode also loads the repository root, but through
+`opencode/plugin.ts` rather than the certified marketplace contract. Codex and
+Copilot run the corresponding files inside `codex/` and `copilot/`.
 
 ## Purpose
 
@@ -74,6 +80,16 @@ prompt, a tool call, plan exit, pull-request creation, a subagent start, or
 a context compaction). This is the container ADR-004's fail-open context
 tiers describe, and the one place where a strict wall-clock budget is a
 first-class design constraint (see Interfaces, below).
+
+### Native OpenCode Plugin
+
+Loads `opencode/plugin.ts` inside OpenCode and keeps the OpenCode-specific
+surface deliberately thin. At config time it adds only missing skill,
+instruction, ADR-reference, command, and MCP entries. During a session it
+maps OpenCode callbacks to the shared Python Hook Runtime, stores bounded
+session context for system transformation and compaction, and propagates an
+explicit pull-request denial when the shared guard returns one. It owns no ADR
+semantics and does not replace the deterministic pre-commit or CI floor.
 
 ### Pre-commit Gate
 
@@ -145,8 +161,9 @@ the CLI Toolkit; this document describes the current, post-rename state.
 
 ## Interfaces
 
-adr-kit exposes exactly three machine-readable interface contracts. None is
-HTTP.
+adr-kit exposes four machine-readable interface contracts. None is HTTP: the
+fourth is the host-loaded OpenCode plugin API, which is intentionally separate
+from the certified three-client hook manifest.
 
 ### 1. MCP tool surface — `tools/list` on `bin/adr-mcp`
 
@@ -253,6 +270,29 @@ explicitly in `bin/adr-audit`'s module docstring and confirmed by its
 subprocess failure, unreadable JSON, a wrapped command's own exit 2) to
 `EXIT_TOOLING` rather than to a violation code.
 
+### 4. Native OpenCode plugin contract — `opencode/plugin.ts`
+
+**Protocol**: OpenCode's TypeScript/Bun plugin API. The plugin returns the
+documented callback object and never becomes a second ADR engine.
+
+| Callback | Contract |
+| --- | --- |
+| `config` | Adds only missing `skills.paths`, instructions, `adr-decisions` references, `adr-kit-*` commands, and local `adr-kit` MCP configuration. Existing user configuration wins. |
+| `shell.env` | Adds `ADR_KIT_ROOT` when the shared runtime root is known. |
+| `chat.message` | Sends the prompt to the shared `hooks/adr-hook.py` through a bounded subprocess and stores advisory context per session. |
+| `experimental.chat.system.transform` | Adds bounded static ADR instructions and the retrieved session context once. |
+| `experimental.session.compacting` | Carries the current ADR context and enforcement-floor reminder across compaction. |
+| `tool.definition` | Adds an advisory MCP reminder to write-tool descriptions. |
+| `tool.execute.before` / `tool.execute.after` | Delegates edit and shell/pull-request checks to the shared hook runtime; an explicit shared deny may reject a shell call. |
+| `event` / `dispose` | Creates, removes, and clears session-local context state. |
+
+The plugin uses `Bun.spawn` with bounded timeouts and fails open for normal
+context and edit hooks. It can surface the shared pull-request guard's explicit
+deny result, but deterministic pre-commit and CI judging remain the normal
+enforcement floor. Focused evidence lives in
+`tests/test_opencode_package.py` and `tests/test_opencode_plugin.py` and does
+not enter the three-client certification bundle.
+
 ## Dependencies
 
 | Container | Depends on | Mechanism |
@@ -261,9 +301,10 @@ subprocess failure, unreadable JSON, a wrapped command's own exit 2) to
 | CLI Toolkit | `git` CLI | Subprocess (diffs, staged content, refs) |
 | CLI Toolkit | `claude` CLI, OpenRouter, or an Ollama loopback endpoint | Subprocess / loopback HTTP — opt-in LLM judge pass only (ADR-001), never on the hot path |
 | MCP Server | CLI Toolkit (`adr-context`, `adr-judge`, `adr-status`, `adr-quality`, `adr-readiness`) | Subprocess, one call per tool invocation, `PYTHONIOENCODING=utf-8` forced on the child |
-| MCP Server | Agent host (Claude Code, Codex, Copilot) | Long-lived stdio JSON-RPC — the host launches the process via `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json` and keeps the pipe open |
+| MCP Server | Agent host (Claude Code, Codex, Copilot, OpenCode) | Long-lived stdio JSON-RPC — certified hosts launch the process via `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json`; OpenCode synthesizes the local entry through `opencode/plugin.ts` |
 | Hook Runtime | CLI Toolkit (`adr-context`, `adr-judge`, retrieval helpers) | Subprocess and, for `hooks/adr_hook_core.py`, a direct Python import of `query_adr_context` (the one documented exception to "surfaces only subprocess") |
 | Hook Runtime | Agent host | Native lifecycle event dispatch (host calls the hook command synchronously and reads stdout/exit code) |
+| Native OpenCode Plugin | OpenCode host runtime, Bun, Hook Runtime, MCP Server | Host plugin callbacks plus bounded child subprocesses; no independent ADR semantics |
 | Hook Runtime | `.adr-kit-readiness.json` | File read — written by `adr-guardian refresh-readiness`, read by the hook runtime for pull-request-moment context |
 | Pre-commit Gate | CLI Toolkit (`adr-judge`, `adr-suggest`), installed client plugin caches (to resolve the latest `adr-judge`) | Subprocess; git invokes the wrapper synchronously at `pre-commit` time |
 | Instruction & Skill Corpus | none (declarative content) | — (consumed, not calling out) |
@@ -271,6 +312,7 @@ subprocess failure, unreadable JSON, a wrapped command's own exit 2) to
 | Client Generation & Release Toolchain | `git` CLI, GitHub Actions runners | Subprocess / CI job |
 | Generated Client Mirrors | Client Generation & Release Toolchain | Written by, never edited directly — `scripts/build-client-adapters.py --check` is the drift gate that enforces this |
 | Generated Client Mirrors | Codex CLI, GitHub Copilot CLI | Native plugin-manager subprocess (`codex plugin ...` / `copilot plugin ...`) resolving the marketplace manifest that points at `./codex` or `copilot` |
+| Native OpenCode Plugin | `opencode.json` / `package.json` | Root repository package source; npm publication is separate and currently not performed by the release workflow; focused package/plugin smoke tests plus `scripts/check-release-version.py` |
 
 ## Distribution
 
@@ -279,6 +321,7 @@ subprocess failure, unreadable JSON, a wrapped command's own exit 2) to
 | CLI Toolkit | `.claude-plugin/plugin.json` (canonical); `codex/.codex-plugin/plugin.json` and `copilot/plugin.json` for the mirrored copies | Carries no version stamp of its own; version is inherited from whichever co-located plugin manifest ships it (demonstrated by `bin/adr-mcp`'s `server_version()`, which reads the nearest of the three plugin manifests — the same resolution pattern the rest of `bin/` relies on implicitly) | `scripts/build-client-adapters.py --check` (byte-identity of the copied `bin/` files across all three trees) |
 | MCP Server | `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json` (hand-authored-and-validated, per `clients/capabilities.json` `ownership.hand_authored_validated`) | Same three plugin manifests as CLI Toolkit | `scripts/build-client-adapters.py --check`; ADR-016 additionally requires all three shipped `adr-mcp` copies to stay byte-identical |
 | Hook Runtime | `.claude-plugin/plugin.json` (hooks wired via the plugin's own hook registration; `codex/hooks/hooks.json` and `copilot/hooks.json` are the per-client hook registration files, `ownership.hand_authored_validated`) | No dedicated version site; content identity is what's checked, not a version number | `scripts/build-client-adapters.py --check` (the eight `HOOK_RUNTIME_FILES` entries, including `hooks/manifest.json` itself, are copied verbatim — `scripts/client_generation_model.py:35-52`); latency-budget *correctness* (as opposed to drift) is separately gated by ADR-031's `adr-hook-ceiling-v1` |
+| Native OpenCode Plugin | `opencode.json` / `package.json` | `package.json` `/version` plus the shared release registry | `tests/test_opencode_package.py`, focused Bun smoke, and `scripts/check-release-version.py`; not part of generated mirror drift or three-client certification |
 | Pre-commit Gate | None — not marketplace-declared; installed into a *consuming* project's own `.githooks/` by `/adr-kit:install-hooks`, outside any plugin manifest | `templates/githooks/pre-commit` (`ADR_KIT_WRAPPER_VERSION` stamp), `.githooks/pre-commit` (this repository's own dogfooded copy of the same stamp), `templates/cc-settings/guardian-hook-entry.json` (`/_wrapper_version`) | `scripts/build-client-adapters.py --check`, because `templates/` is one of the four verbatim `COPY_ROOTS` |
 | Instruction & Skill Corpus | `.claude-plugin/plugin.json` (skills are plugin content, not separately manifested) | `templates/adr-kit-guide.md` (`<!-- adr-kit-guide vX.Y.Z -->` stamp); `skills/`/`prompts/` themselves carry no per-file stamp — they are regenerated wholesale each release | `scripts/build-client-adapters.py --check`, which also asserts every canonical-rich skill exists before rendering the generated ones (`client_generation.py`: `"missing canonical rich skill: {workflow['id']}"`) |
 | Client Generation & Release Toolchain | Not itself plugin-declared | None directly — it is the thing that enforces the other sites via `packaging/version-sites.json` | `tests/test_version_sites.py` keeps the registry itself honest; **partially distributed**: `packaging/public-artifacts.json` names 11 specific `scripts/*.py` files in its public-archive `include_roots` (`build-client-adapters.py`, `client_generation*.py`, `client_certification.py`, `client_evidence.py`, `install-agent-envs.py`, `project_setup.py`, `settings.py`, `setup-project.py`, `sync-agent-plugins.py`, `benchmark-client-generation.py`, `adr_settings.py`) — these are live probes other containers call (e.g. `clients/capabilities.json` points `disable` at `scripts/settings.py` and `install`/`update`/`rollback`/`remove` at `scripts/install-agent-envs.py`). The release-cutting scripts (`bump-version.py`, `check-release-version.py`, `check-branch-sync.py`) are **not** in that allowlist — maintainer/CI-only, present in the git-source checkout but never resolved as part of any client's plugin source |
@@ -286,8 +329,8 @@ subprocess failure, unreadable JSON, a wrapped command's own exit 2) to
 
 Both consumption paths named in `docs/RELEASING.md` apply across every
 container above: **public git source** (the tagged commit on
-`rvdbreemen/adr-kit`, which every end user's client resolves directly — no
-extra step reaches them once the tag lands), and the **local prepared
+`rvdbreemen/adr-kit`, which the three certified clients resolve directly and
+which OpenCode users can load as a reviewed checkout), and the **local prepared
 directory** (`scripts/install-agent-envs.py`, building a version-pinned copy
 under `%LOCALAPPDATA%\adr-kit\marketplaces\<version>` on Windows,
 `~/Library/Application Support/adr-kit/marketplaces/<version>` on macOS,
@@ -302,10 +345,11 @@ is exactly what left a maintainer machine on v0.36.0 after v0.37.0 shipped to
 
 ```mermaid
 flowchart TB
-    subgraph SRC["Canonical source tree (repo root, Claude Code's own plugin source)"]
+    subgraph SRC["Canonical source tree (repo root, Claude Code and OpenCode package source)"]
         CLI["CLI Toolkit<br/>bin/*.py + 25 CLIs<br/>short-lived subprocesses"]
         MCP["MCP Server<br/>bin/adr-mcp<br/>long-lived stdio JSON-RPC"]
         HOOK["Hook Runtime<br/>hooks/*<br/>native lifecycle events"]
+        OC["Native OpenCode Plugin<br/>opencode/plugin.ts<br/>host-loaded adapter"]
         PC["Pre-commit Gate<br/>templates/githooks/pre-commit<br/>git commit-time"]
         CORPUS["Instruction & Skill Corpus<br/>skills/ · prompts/claude-code-cli<br/>instructions/ · agents/"]
     end
@@ -332,11 +376,14 @@ flowchart TB
     CLAUDE(["Claude Code CLI<br/>marketplace rvdbreemen-adr-kit"])
     CODEX(["Codex CLI<br/>marketplace rvdbreemen-adr-kit-codex"])
     COPILOT(["GitHub Copilot CLI<br/>marketplace rvdbreemen-adr-kit-copilot"])
+    OPENCODE(["OpenCode<br/>repository package or npm"])
 
     CLI -->|verbatim copy: COPY_ROOTS| BUILD
     MCP -->|verbatim copy: HOOK_RUNTIME_FILES| BUILD
     HOOK -->|verbatim copy: HOOK_RUNTIME_FILES| BUILD
     CORPUS -->|render_skill / render_prompt<br/>from clients/workflows.json| BUILD
+    OC -->|delegates to shared runtime| CLI
+    OC -->|launches local MCP| MCP
 
     BUILD -->|generates| CCLI
     BUILD -->|generates| CMCP
@@ -350,13 +397,14 @@ flowchart TB
     BUILD -.->|"--check: drift gate<br/>(fails on any byte mismatch)"| CODEXM
     BUILD -.->|"--check: drift gate"| COPM
 
-    REL -->|writes 11 version sites<br/>packaging/version-sites.json| SRC
+    REL -->|writes declared version sites<br/>packaging/version-sites.json| SRC
     REL -->|writes 2 mirrored manifests| CODEXM
     REL -->|writes 2 mirrored manifests| COPM
 
     CLAUDE -->|"plugin source ./<br/>.claude-plugin/marketplace.json"| SRC
     CODEX -->|"plugin source ./codex<br/>.agents/plugins/marketplace.json"| CODEXM
     COPILOT -->|"plugin source copilot<br/>.github/plugin/marketplace.json"| COPM
+    OPENCODE -->|"plugin source ./<br/>opencode.json + package.json"| OC
 
     PC -.->|subprocess, git commit time| CLI
     HOOK -.->|subprocess + 1 import| CLI
@@ -364,14 +412,14 @@ flowchart TB
 ```
 
 **Reading the diagram.** Solid arrows are the generation pipeline: the
-canonical source tree is copied or rendered into the two mirrors by the
-toolchain, and the toolchain separately stamps every version site across all
-three trees. Dashed arrows are runtime call relationships (subprocess/import)
+canonical source tree is copied or rendered into the two certified mirrors by
+the toolchain, and the toolchain separately stamps every declared version site
+across those mirrors and the OpenCode package. Dashed arrows are runtime call relationships (subprocess/import)
 and the drift-check relationship, kept visually distinct from generation
 because they run at a different time and for a different reason — generation
 happens at release time; `--check` and the runtime calls happen on every
-commit and every agent session, respectively. The three client nodes each
-resolve their own plugin source independently, per the marketplace table in
+commit and every agent session, respectively. The three certified client nodes
+each resolve their own plugin source independently, while OpenCode loads the
+root package through its plugin API, per the marketplace table in
 `docs/RELEASING.md`; nothing routes through a shared server, because there
-is no shared server — each client's plugin cache holds its own complete,
-independently resolved copy of the tree it reads.
+is no shared server — each host resolves the source it reads independently.
