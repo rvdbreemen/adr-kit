@@ -1,11 +1,11 @@
 name: Stage OpenCode package for npm
 
-# Future npm releases are intentionally manual at the final npm step. The
-# workflow validates a tagged release, stages it through npm Trusted Publishing,
-# and leaves the maintainer to review and approve the staged package with 2FA.
+# This reusable workflow validates a tagged release, stages it through npm
+# Trusted Publishing, and leaves the maintainer to review and approve the staged
+# package with 2FA. The canonical caller is release-publish.yml.
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       tag:
         description: Existing release tag to stage, for example v0.53.0
@@ -13,7 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: npm-stage-${{ github.event.inputs.tag }}
+  group: npm-stage-${{ inputs.tag }}
   cancel-in-progress: false
 
 permissions:

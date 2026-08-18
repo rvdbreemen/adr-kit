@@ -4,6 +4,13 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenCode npm publication flow** now runs from the canonical
+  `release-publish.yml` workflow. It stages the package through Trusted
+  Publishing after the GitHub Release, while maintainer 2FA approval remains
+  required before the package becomes public.
+
 ## [0.52.0] - 2026-08-16
 
 This release adds native OpenCode support without changing the certified
@@ -34,8 +41,8 @@ installations require no migration or configuration change.
   native adapter.
 - **Repository release metadata** now includes the OpenCode package and public
   artifact allowlist. The tag and GitHub Release publish the repository source;
-  v0.52.0 is also published to npm. Future npm versions use the separate staged
-  workflow and maintainer approval.
+  v0.52.0 is also published to npm. Future npm versions are staged by the
+  canonical release workflow and require maintainer approval.
 
 ### Fixed
 
