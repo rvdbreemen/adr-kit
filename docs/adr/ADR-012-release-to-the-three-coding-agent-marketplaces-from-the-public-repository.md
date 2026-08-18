@@ -112,15 +112,19 @@ version lives in the Codex plugin manifest) and is therefore not a version site.
 `.github/workflows/release-publish.yml` triggers on a `v*` tag, re-runs the
 version-consistency check, `build-client-adapters.py --check`, `adr-lint --strict`,
 `adr-index --check` and `pytest`, then creates the GitHub Release from the
-CHANGELOG section. The existing `release-candidate.yml` remains the optional
-three-native-client certification (ADR-010).
+CHANGELOG section. It then calls the reusable OpenCode npm workflow, which stages
+the package through Trusted Publishing without making it public; a maintainer's
+2FA approval remains required. The existing `release-candidate.yml` remains the
+optional three-native-client certification (ADR-010), and the npm stage is not
+part of that certification boundary.
 
 ### Automation boundary
 
 The per-machine prepared-directory publish (`install-agent-envs.py --clients all`,
 then restart each client) is a documented local step, not a CI job, because it
-mutates per-user client installs on a specific machine. `docs/RELEASING.md` is the
-authoritative runbook.
+mutates per-user client installs on a specific machine. OpenCode npm staging is
+safe to run in CI, but final npm publication remains human-gated by 2FA.
+`docs/RELEASING.md` is the authoritative runbook.
 
 ### Confirmation
 

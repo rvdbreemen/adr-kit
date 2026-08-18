@@ -316,9 +316,10 @@ For another project, use the published package for v0.52.0:
 }
 ```
 
-Future versions are staged through the documented npm workflow and require a
-maintainer approval before they become public. Until a future version is
-approved, point OpenCode at a reviewed checkout:
+Future versions are staged automatically by the release workflow
+(`.github/workflows/release-publish.yml`) and require maintainer approval before
+they become public. Until a future version is approved, point OpenCode at a
+reviewed checkout:
 
 ```json
 {

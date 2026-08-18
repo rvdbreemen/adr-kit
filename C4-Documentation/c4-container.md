@@ -312,7 +312,7 @@ not enter the three-client certification bundle.
 | Client Generation & Release Toolchain | `git` CLI, GitHub Actions runners | Subprocess / CI job |
 | Generated Client Mirrors | Client Generation & Release Toolchain | Written by, never edited directly — `scripts/build-client-adapters.py --check` is the drift gate that enforces this |
 | Generated Client Mirrors | Codex CLI, GitHub Copilot CLI | Native plugin-manager subprocess (`codex plugin ...` / `copilot plugin ...`) resolving the marketplace manifest that points at `./codex` or `copilot` |
-| Native OpenCode Plugin | `opencode.json` / `package.json` | Root repository package source; npm publication is separate and currently not performed by the release workflow; focused package/plugin smoke tests plus `scripts/check-release-version.py` |
+| Native OpenCode Plugin | `opencode.json` / `package.json` | Root repository package source; `release-publish.yml` stages npm through the reusable OpenCode workflow and leaves final publication to maintainer 2FA; focused package/plugin smoke tests plus `scripts/check-release-version.py` |
 
 ## Distribution
 

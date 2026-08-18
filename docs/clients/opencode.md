@@ -27,10 +27,11 @@ For another project, use the public npm package:
 }
 ```
 
-Version `0.52.0` is published. Future versions are staged by
-`.github/workflows/publish-opencode-npm.yml` and become available after a
-maintainer approves the staged package with npm 2FA. If a future version has
-not yet been approved, point OpenCode at a reviewed checkout:
+Version `0.52.0` is published. Future versions are staged automatically by
+`.github/workflows/release-publish.yml`, which calls the reusable
+`.github/workflows/publish-opencode-npm.yml` workflow. They become available
+after a maintainer approves the staged package with npm 2FA. If a future version
+has not yet been approved, point OpenCode at a reviewed checkout:
 
 ```json
 {

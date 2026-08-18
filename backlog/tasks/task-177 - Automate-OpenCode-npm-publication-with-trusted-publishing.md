@@ -4,7 +4,7 @@ title: Automate OpenCode npm publication with trusted publishing
 status: Done
 assignee: []
 created_date: '2026-08-17 20:35'
-updated_date: '2026-08-17 22:00'
+updated_date: '2026-08-18 05:43'
 labels:
   - release
   - opencode
@@ -62,6 +62,8 @@ Review correction on 2026-08-17: npm staged publishing requires npm 11.15.0 or n
 A read-only npm trust list check was attempted, but npm required browser authentication and 2FA (EOTP); no trusted-publisher relationship was changed or confirmed.
 
 Full pytest run on 2026-08-17 reached 1104 passed and 4 skipped, then failed in the pre-existing live Copilot installer test because the real %USERPROFILE%\\.copilot\\installed-plugins\\rvdbreemen-adr-kit-copilot directory was locked (WinError 5) by an editor. The focused OpenCode tests and all workflow/documentation checks remain green.
+
+Follow-up integration on 2026-08-18: the helper is now workflow_call-only and is invoked by release-publish.yml. The canonical release workflow is the npm Trusted Publisher identity; manual release dispatch remains available through release-publish.yml.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

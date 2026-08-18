@@ -224,10 +224,14 @@ Two composite actions are the CI interface:
   `blocking-count`, `blocking-adrs` (compact JSON array), `advisory-count`, `schema-version`,
   `conclusion` ∈ `{blocked, advisory-or-clean}`.
 
-Ten workflows: eight blocking (`validate.yml`, `release-publish.yml`, `release-candidate.yml`,
-`adr-judge-self.yml`, `adr-readiness.yml`, `adr-index-check.yml`, `adr-lint-self.yml`,
-`branch-sync-check.yml`) and two report-only cron sweeps that always exit 0 and route findings to a
-single tracking issue via `gh` (`adr-guardian-audit.yml`, `adr-retire-audit.yml`).
+Twelve workflow files: nine blocking (`validate.yml`, `release-publish.yml`,
+`publish-opencode-npm.yml`, `release-candidate.yml`, `adr-judge-self.yml`,
+`adr-readiness.yml`, `adr-index-check.yml`, `adr-lint-self.yml`,
+`branch-sync-check.yml`) and three report-only cron sweeps that always exit 0 and
+route findings to a single tracking issue via `gh` (`adr-audit.yml`,
+`adr-guardian-audit.yml`, `adr-retire-audit.yml`). The OpenCode workflow is a
+reusable workflow called by `release-publish.yml`, not an additional release
+trigger.
 `release-candidate.yml` is the only Windows job, using `pwsh` steps, and it sparse-checks out an
 independently retained evidence commit while refusing a bundle path that escapes it.
 
@@ -268,11 +272,11 @@ skills, instructions, ADR references, workflow commands, and the local MCP
 server during `config`, then delegates prompt, context, compaction, edit, and
 shell callbacks to the shared Python Hook Runtime.
 
-This package is a repository source artifact in the current release workflow,
-not an npm publication. `tests/test_opencode_package.py` validates its file
-allowlist and version registry entry; `tests/test_opencode_plugin.py` provides
-the Bun smoke contract. Neither test changes the three-client certification
-schema or evidence bundle.
+This package is a repository source artifact and a staged npm artifact in the
+release workflow. `tests/test_opencode_package.py` validates its file allowlist
+and version registry entry; `tests/test_opencode_plugin.py` provides the Bun
+smoke contract. Neither test changes the three-client certification schema or
+evidence bundle.
 
 ## Dependencies
 
@@ -302,8 +306,9 @@ parentheses are provisional.
 - **The three marketplaces** — Claude Code, Codex CLI and GitHub Copilot CLI plugin managers consume
   the published payloads; their manifests are the version sites this component writes.
 - **OpenCode host / npm package** — OpenCode loads the root TypeScript package from a reviewed
-  checkout or the published npm package; the tag release workflow validates the package and the
-  separate staged workflow hands npm publication to a maintainer for final 2FA approval.
+  checkout or the published npm package; the tag release workflow validates the package, calls the
+  reusable staged workflow through OIDC, and hands npm publication to a maintainer for final 2FA
+  approval.
 - **Filesystem and OS** — `os.replace` atomic rename everywhere, `O_CREAT|O_EXCL` locking,
   `fsync`, POSIX file modes (`expected_mode` in `executables.json`), the system temp directory for
   the generator warm-state cache, and platform-specific plugin cache globbing

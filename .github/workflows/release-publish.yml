@@ -1,7 +1,7 @@
 name: ADR Kit release publish
 
 # Publishes a tagged adr-kit version to the three certified coding-agent
-# marketplaces and the repository-native OpenCode package source.
+# marketplaces and stages the repository-native OpenCode package for npm.
 #
 # The three certified marketplaces (Claude Code, Codex, GitHub Copilot) resolve
 # adr-kit directly from this public repository. OpenCode loads the package source
@@ -9,9 +9,11 @@ name: ADR Kit release publish
 # "publishing" is: land version-consistent manifests on the public repo and cut a
 # tag + GitHub Release. This workflow is the gate that proves the tagged commit is
 # coherent across every declared source surface before the Release is created. It
-# does NOT mutate any maintainer machine: the per-user prepared-directory
-# marketplace is advanced locally with
-# `python scripts/install-agent-envs.py --clients all` (see docs/RELEASING.md).
+# then calls the reusable OpenCode npm workflow to stage the package through OIDC;
+# a maintainer still approves the staged package with npm 2FA. It does NOT mutate
+# any maintainer machine: the per-user prepared-directory marketplace is advanced
+# locally with `python scripts/install-agent-envs.py --clients all` (see
+# docs/RELEASING.md).
 
 on:
   push:
@@ -25,11 +27,13 @@ on:
         type: string
 
 permissions:
-  contents: write   # required to create the GitHub Release
+  contents: write # required to create the GitHub Release
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Resolve tag
         id: tag
@@ -115,3 +119,13 @@ jobs:
           echo "::notice::Public git-source marketplaces now serve ${{ steps.tag.outputs.tag }}."
           echo "::notice::Maintainer machines using the prepared-directory source must run:"
           echo "::notice::  python scripts/install-agent-envs.py --clients all   (then restart each client)"
+
+  stage-opencode-npm:
+    name: Stage OpenCode package for npm
+    needs: publish
+    uses: ./.github/workflows/publish-opencode-npm.yml
+    with:
+      tag: ${{ needs.publish.outputs.tag }}
+    permissions:
+      contents: read
+      id-token: write
