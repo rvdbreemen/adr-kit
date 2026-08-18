@@ -92,8 +92,12 @@ git push origin v$ARGUMENTS
 ```
 
 Pushing the tag triggers `.github/workflows/release-publish.yml`, which re-runs the
-gates and creates the GitHub Release from the CHANGELOG section. Confirm that
-workflow went green before continuing.
+gates, creates the GitHub Release from the CHANGELOG section, and then calls the
+reusable OpenCode npm workflow. It stages the package through OIDC; a maintainer
+must approve the staged package with npm 2FA before it becomes public. Confirm
+that workflow went green before continuing. If the npm Trusted Publisher has not
+been configured, the GitHub Release may already exist while the staging job
+fails; configure it before tagging a release.
 
 **Checkpoint:** tagging + pushing is outward-facing. Confirm with the maintainer
 before pushing the tag unless already authorized.

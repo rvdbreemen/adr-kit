@@ -157,7 +157,9 @@ session, `/release-adr-kit` drives that runbook end to end. The outline:
 7. Tag the validated candidate with the repository's published convention:
    `git tag -a vX.Y.Z -m "..."`, then `git push` and `git push --tags`. The
    tag triggers `.github/workflows/release-publish.yml`, which re-runs the
-   gates and publishes the GitHub Release from the CHANGELOG section.
+   gates, publishes the GitHub Release from the CHANGELOG section, and stages
+   the OpenCode npm package through Trusted Publishing. A maintainer must still
+   approve the staged package with npm 2FA.
 8. Merge the release back into `dev`. Releases land on `main` while work
    continues on `dev`; skipping this drifts `dev` one release at a time until
    it no longer carries the release toolchain it is meant to run.

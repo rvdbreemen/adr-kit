@@ -4,7 +4,7 @@ title: Release v0.52.0 with native OpenCode support
 status: Done
 assignee: []
 created_date: '2026-08-16 21:53'
-updated_date: '2026-08-17 06:14'
+updated_date: '2026-08-18 05:38'
 labels:
   - release
   - opencode
@@ -40,6 +40,8 @@ Release the accepted native OpenCode integration as v0.52.0. Update the README, 
 
 <!-- SECTION:NOTES:BEGIN -->
 Release completed on 2026-08-17: PR #102 merged into main at d6442b03f8bc2157c3639a56f4ce13fdd4bf5e52; tag v0.52.0 points to that merge commit; release-publish workflow run 32000229247 passed all gates and created https://github.com/rvdbreemen/adr-kit/releases/tag/v0.52.0. The main-to-dev sync branch is pushed and PR #103 is open at https://github.com/rvdbreemen/adr-kit/pull/103; its current CI checks are all green. npm publication remains separate and has not been performed.
+
+Correction recorded on 2026-08-18: @rvdbreemen/adr-kit-opencode@0.52.0 was subsequently published to npm manually with 2FA. PR #106 integrated future npm staging into release-publish.yml through OIDC, with final maintainer approval still required.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
