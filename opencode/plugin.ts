@@ -293,10 +293,7 @@ export default async function AdrKitOpenCodePlugin(
       if (options.references !== false && existsSync(join(input.directory, "docs", "adr"))) {
         config.references ||= {}
         if (!config.references["adr-decisions"]) {
-          config.references["adr-decisions"] = {
-            path: join(input.directory, "docs", "adr"),
-            description: "Architecture Decision Records. Read returned Markdown before applying a decision.",
-          }
+          config.references["adr-decisions"] = join(input.directory, "docs", "adr")
         }
       }
 

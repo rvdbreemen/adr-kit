@@ -10,7 +10,7 @@
     {
       "name": "adr-kit",
       "source": "copilot",
-      "version": "0.52.0",
+      "version": "0.52.1",
       "description": "Architecture decision workflows and a key-free MCP server for GitHub Copilot CLI"
     }
   ]
