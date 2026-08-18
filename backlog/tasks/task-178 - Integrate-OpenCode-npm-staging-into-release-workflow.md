@@ -1,10 +1,10 @@
 ---
 id: TASK-178
 title: Integrate OpenCode npm staging into release workflow
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-18 05:34'
-updated_date: '2026-08-18 05:43'
+updated_date: '2026-08-18 05:54'
 labels:
   - release opencode npm automation
 dependencies: []
@@ -36,10 +36,10 @@ Make the canonical release workflow invoke the OpenCode npm staged-publication f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 release-publish.yml calls the OpenCode npm staging workflow after GitHub Release creation for both tag pushes and manual release dispatch.
-- [ ] #2 The reusable npm workflow keeps preflight gates, refuses already-published versions, uses npm Trusted Publishing with npm 11.17.0, and stages a public package without a long-lived token.
-- [ ] #3 Documentation identifies release-publish.yml as the Trusted Publisher workflow and explains the one-time npm setup and final staged-package 2FA approval.
-- [ ] #4 The workflow remains outside the certified three-client capability and native certification gate.
+- [x] #1 release-publish.yml calls the OpenCode npm staging workflow after GitHub Release creation for both tag pushes and manual release dispatch.
+- [x] #2 The reusable npm workflow keeps preflight gates, refuses already-published versions, uses npm Trusted Publishing with npm 11.17.0, and stages a public package without a long-lived token.
+- [x] #3 Documentation identifies release-publish.yml as the Trusted Publisher workflow and explains the one-time npm setup and final staged-package 2FA approval.
+- [x] #4 The workflow remains outside the certified three-client capability and native certification gate.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -59,3 +59,9 @@ Corrected TASK-176 historical release notes to record the later v0.52.0 npm boot
 
 Validation on 2026-08-18: reusable workflow structure parsed successfully; Prettier passed for both workflows; Markdownlint passed with 0 errors across all changed documentation; release-version, adapter, ADR index, strict ADR lint, and branch-sync checks passed; 48 documentation/version/OpenCode tests passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged PR #109 into main at d04c99f. release-publish.yml now calls the reusable OpenCode npm staging workflow after GitHub Release creation for tag pushes and manual dispatch. Trusted Publisher configuration references release-publish.yml, while npm staging remains outside the certified three-client and native certification gates. Documentation and all required checks are green.
+<!-- SECTION:FINAL_SUMMARY:END -->
