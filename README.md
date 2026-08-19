@@ -307,12 +307,12 @@ configured:
 }
 ```
 
-For another project, use the published package for v0.52.1:
+For another project, use the published package for v0.52.2:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.1"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.2"]
 }
 ```
 
@@ -665,7 +665,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.52.1
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.52.2
         with:
           adr-dir: docs/adr/
 ```
@@ -679,7 +679,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.52.1
+    rev: v0.52.2
     hooks:
       - id: adr-judge
 ```
