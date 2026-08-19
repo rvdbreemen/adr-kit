@@ -170,7 +170,7 @@ def test_deep_extension_contract_is_versioned_and_unpopulated_safely():
     }
 
 
-def test_deep_mcp_probe_accepts_complete_five_tool_contract():
+def test_deep_mcp_probe_accepts_complete_seven_tool_contract():
     result = _mcp_deep(ROOT, ROOT)
 
     assert result["status"] == "healthy"
@@ -178,7 +178,9 @@ def test_deep_mcp_probe_accepts_complete_five_tool_contract():
     assert result["evidence"][0]["tools"] == [
         "adr_context",
         "adr_judge",
+        "adr_lint",
         "adr_quality",
         "adr_readiness",
+        "adr_related",
         "adr_status",
     ]

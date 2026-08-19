@@ -26,7 +26,7 @@ the same answer. That is deliberate - the spec forbids relying on prior
 requests over the same connection to establish context. See ADR-016 and
 docs/research/2026-07-29-mcp-2026-07-28-revision.md.
 
-Exposes exactly 5 tools, each a subprocess call into a sibling bin/ script:
+Exposes exactly 7 tools, each a subprocess call into a sibling bin/ script:
 
   adr_context   {query, limit?, paths?, components?, symbols?, topics?,
                  statuses?, authorities?, include_history?, strict_index?}
@@ -37,6 +37,12 @@ Exposes exactly 5 tools, each a subprocess call into a sibling bin/ script:
   adr_quality   {adr_id?}        -> bin/adr-quality --format json per ADR
   adr_readiness {adr_id?, all_proposed?, base?, head?, today?}
                                   -> bin/adr-readiness --format json
+  adr_lint      {strict?}        -> bin/adr-lint --format json
+  adr_related   {adr_id}         -> bin/adr-related --format json
+
+Admission is governed by ADR-040: a CLI joins this surface only when it is
+read-only, deterministic and key-free, agent-query-shaped, and covers an
+agent-guide cycle step no exposed tool already covers.
 
 adr-suggest is intentionally NOT exposed: it is an LLM-only advisory (its
 deterministic part is just a docs-only skip filter), and this server stays
@@ -112,9 +118,10 @@ MODERN_CACHE_SCOPE = "public"
 
 MODERN_INSTRUCTIONS = (
     "adr-kit: read-only Architecture Decision Record tooling. Call tools/list "
-    "for the five deterministic, key-free tools (adr_context, adr_judge, "
-    "adr_status, adr_quality, adr_readiness). Every tool accepts optional "
-    "project_root and adr_dir arguments to select the active workspace."
+    "for the seven deterministic, key-free tools (adr_context, adr_judge, "
+    "adr_status, adr_quality, adr_readiness, adr_lint, adr_related). Every "
+    "tool accepts optional project_root and adr_dir arguments to select the "
+    "active workspace."
 )
 
 # Per-tool subprocess timeout. The wrapped CLIs are regex-only and fast;
@@ -329,6 +336,46 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                 },
                 **WORKSPACE_PROPERTIES,
             },
+        },
+    },
+    {
+        "name": "adr_lint",
+        "description": (
+            "Lint the ADR set against the deterministic verification gates. "
+            "Read-only, key-free. Returns the adr-lint JSON report and exit "
+            "status (0 = clean, 1 = failing findings)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "strict": {
+                    "type": "boolean",
+                    "description": (
+                        "CI governance mode: enable the schema gate and make "
+                        "findings FAIL. False by default."
+                    ),
+                },
+                **WORKSPACE_PROPERTIES,
+            },
+        },
+    },
+    {
+        "name": "adr_related",
+        "description": (
+            "Show the dependency graph (inbound + outbound edges) for one "
+            "ADR: related decisions, supersession links, mentions, and "
+            "dangling references. Read-only, deterministic. Returns JSON."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "adr_id": {
+                    "type": "string",
+                    "description": "ADR identifier such as 'ADR-007', 'adr-7' or '7'.",
+                },
+                **WORKSPACE_PROPERTIES,
+            },
+            "required": ["adr_id"],
         },
     },
 ]
@@ -678,12 +725,57 @@ def tool_adr_readiness(
     return _text_result(_parse_json_or_raw(out))
 
 
+def tool_adr_lint(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict[str, Any]:
+    try:
+        root, adr_dir = _call_paths(arguments, root, adr_dir)
+    except ValueError as exc:
+        return _text_result(f"adr_lint: {exc}", is_error=True)
+    strict = arguments.get("strict", False)
+    if not isinstance(strict, bool):
+        return _text_result("adr_lint: 'strict' must be a boolean", is_error=True)
+    args = ["--format", "json", "--repo-root", str(root)]
+    if strict:
+        args.append("--strict")
+    args.append(str(adr_dir))
+    rc, out, err = run_cli("adr-lint", args, root)
+    if rc == 2:
+        return _text_result(
+            f"adr-lint exited 2 (config/input error): {err.strip() or out.strip()}",
+            is_error=True,
+        )
+    # rc 0 (clean) and rc 1 (failing findings) are both valid lint outcomes.
+    payload = {"exit_code": rc, "verdict": "findings" if rc == 1 else "ok",
+               "result": _parse_json_or_raw(out)}
+    return _text_result(payload)
+
+
+def tool_adr_related(arguments: Dict[str, Any], root: Path, adr_dir: Path) -> Dict[str, Any]:
+    try:
+        root, adr_dir = _call_paths(arguments, root, adr_dir)
+    except ValueError as exc:
+        return _text_result(f"adr_related: {exc}", is_error=True)
+    adr_id = arguments.get("adr_id")
+    if not isinstance(adr_id, str) or not adr_id.strip():
+        return _text_result(
+            "adr_related: 'adr_id' must be a non-empty string", is_error=True
+        )
+    args = ["--format", "json", "--adr-dir", str(adr_dir), adr_id]
+    rc, out, err = run_cli("adr-related", args, root)
+    if rc != 0:
+        return _text_result(
+            f"adr-related exited {rc}: {err.strip() or out.strip()}", is_error=True
+        )
+    return _text_result(_parse_json_or_raw(out))
+
+
 TOOL_HANDLERS = {
     "adr_context": tool_adr_context,
     "adr_judge": tool_adr_judge,
     "adr_status": tool_adr_status,
     "adr_quality": tool_adr_quality,
     "adr_readiness": tool_adr_readiness,
+    "adr_lint": tool_adr_lint,
+    "adr_related": tool_adr_related,
 }
 
 
