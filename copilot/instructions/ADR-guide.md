@@ -25,7 +25,7 @@ deterministic engines, so results are identical.
 | Score ADR quality | `adr_quality` | `bin/adr-quality --format json` | no |
 | Check lifecycle readiness | `adr_readiness` | `bin/adr-readiness --format json` | no |
 | Repository health | `adr_status` | `bin/adr-status --format json` | no |
-| Create / edit / accept ADRs | — (deliberately absent) | `bin/adr new|answer|relate|...` | yes |
+| Create / edit / accept ADRs | — (deliberately absent) | `bin/adr new`, `answer`, `relate`, ... | yes |
 
 The MCP server is read-only by design (ADR-011, ADR-040): no MCP tool can
 create, edit, accept, or index an ADR. Lifecycle mutation always goes through
