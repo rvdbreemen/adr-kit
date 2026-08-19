@@ -434,7 +434,7 @@ Three layers, each with a clear path:
 A deliberately thin MCP server (stdio, newline-delimited JSON-RPC 2.0, Python
 stdlib only, zero dependencies) that exposes the guardrails to Claude Code,
 OpenAI Codex, GitHub Copilot CLI, or another compatible local stdio MCP
-client. Five tools, all key-free:
+client. Seven tools, all key-free:
 
 | Tool | Arguments | Wraps |
 | --- | --- | --- |
@@ -443,6 +443,8 @@ client. Five tools, all key-free:
 | `adr_status` | none | `adr-status --format json` |
 | `adr_quality` | `adr_id?` (string) | `adr-quality --format json` per ADR |
 | `adr_readiness` | `adr_id?`, `all_proposed?`, `changed_paths?`, `source_text?`, `today?` | shared read-only readiness model |
+| `adr_lint` | `strict?` (boolean) | `adr-lint --format json` |
+| `adr_related` | `adr_id` (string) | `adr-related --format json` |
 
 ```bash
 # Claude Code
@@ -462,10 +464,12 @@ For another stdio client, place the following in its MCP configuration:
 }
 ```
 
-Why only five tools? Contrast is the feature: adr-kit ships the smallest
+Why only seven tools? Contrast is the feature: adr-kit ships the smallest
 surface that carries the guardrails and readiness facts, and nothing that needs
-an API key. Grilling itself stays in the client session so an engineer or
-architect remains part of the decision.
+an API key. ADR-040 records the admission criterion — read-only, deterministic
+and key-free, agent-query-shaped, and covering a development-cycle step no
+exposed tool already covers. Grilling itself stays in the client session so an
+engineer or architect remains part of the decision.
 
 ## Slash commands
 
@@ -665,7 +669,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.52.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.53.0
         with:
           adr-dir: docs/adr/
 ```
@@ -679,7 +683,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.52.0
+    rev: v0.53.0
     hooks:
       - id: adr-judge
 ```
