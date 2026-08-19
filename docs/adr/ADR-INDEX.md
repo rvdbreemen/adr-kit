@@ -45,4 +45,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-037 | Accepted | - | Chosen option: Option A, because every property the acceptance criteria ask for is a property of state granularity, n... |
 | ADR-038 | Accepted | - | Chosen option: keep every established verdict and mark the pass degraded, because it preserves evidence without ever... |
 | ADR-039 | Accepted | - | Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi... |
-| ADR-040 | Proposed | - | Chosen option: record an expansion criterion and admit exactly the two cycle tools it selects today, because it compl... |
+| ADR-040 | Accepted | - | Chosen option: record an expansion criterion and admit exactly the two cycle tools it selects today, because it compl... |

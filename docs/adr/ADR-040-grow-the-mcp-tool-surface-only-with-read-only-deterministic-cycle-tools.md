@@ -1,7 +1,7 @@
 ---
 id: "ADR-040"
 title: "Grow the MCP Tool Surface Only With Read-Only Deterministic Cycle Tools"
-status: "Proposed"
+status: "Accepted"
 date: "2026-08-19"
 binding: false
 gate: null
@@ -39,7 +39,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-19.
+Accepted, 2026-08-19.
 
 ## Status History
 
@@ -64,6 +64,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-016
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-19
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted by explicit user decision after readiness check (ready-for-confirmation, quality 0.88).
     changed_via: adr-kit lifecycle
 ```
 

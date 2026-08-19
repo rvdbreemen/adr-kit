@@ -2135,7 +2135,7 @@
       "title": "Grow the MCP Tool Surface Only With Read-Only Deterministic Cycle Tools",
       "path": "ADR-040-grow-the-mcp-tool-surface-only-with-read-only-deterministic-cycle-tools.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-08-19",
       "decision_summary": "Chosen option: record an expansion criterion and admit exactly the two cycle tools it selects today, because it compl...",
       "topics": [
