@@ -1,10 +1,10 @@
 ---
 id: TASK-182
 title: Rewrite the generated agent guide for autonomous adr-kit operation
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-19 20:51'
-updated_date: '2026-08-19 21:20'
+updated_date: '2026-08-19 21:48'
 labels:
   - docs
   - agents
@@ -33,3 +33,9 @@ The generated .adr-kit/ADR-guide.md describes the development cycle (context bef
 <!-- SECTION:NOTES:BEGIN -->
 Canonical source instructions/ADR-guide.md rewritten for autonomous agent operation: tool-surface table (MCP tool vs CLI, mutates yes/no), per-phase steps with expected outcomes and reactions (lint verdicts, judge violations, readiness classification), and an explicit human-gated list (accept, supersede, reject, signer per ADR-011/ADR-027). Deployed copy .adr-kit/ADR-guide.md updated; codex/copilot copies regenerated via build-client-adapters (--check changed=0).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+instructions/ADR-guide.md (canonical source) rewritten for autonomous agent operation: tool-surface table mapping MCP tools to CLI equivalents with mutation flags, per-phase workflow with expected outcomes and agent reactions (lint verdicts, judge violations, readiness classification), and an explicit human-gated list (accept, supersede, reject, signer per ADR-011/ADR-027). Deployed .adr-kit/ADR-guide.md updated; codex/copilot copies regenerated (--check changed=0). Shipped in PR #115.
+<!-- SECTION:FINAL_SUMMARY:END -->
