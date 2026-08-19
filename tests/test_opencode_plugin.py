@@ -101,7 +101,8 @@ const hooks = await mod.default(
 const config = {{
   instructions: ["user-owned.md"],
   mcp: {{ "other-server": {{ type: "local", command: ["other"] }} }},
-  command: {{ "adr-kit-context": {{ template: "user-owned-command" }} }}
+  command: {{ "adr-kit-context": {{ template: "user-owned-command" }} }},
+  references: {{ "user-reference": "docs/context" }}
 }};
 await hooks.config(config);
 const env = {{ env: {{}} }};
@@ -159,7 +160,8 @@ def test_native_plugin_registers_additive_config_and_context_hooks(tmp_path):
     assert any(path.endswith("ADR-guide.md") for path in config["instructions"])
     assert len(config["command"]) == 17
     assert config["command"]["adr-kit-context"]["template"] == "user-owned-command"
-    assert Path(config["references"]["adr-decisions"]["path"]).parts[-2:] == ("docs", "adr")
+    assert config["references"]["user-reference"] == "docs/context"
+    assert Path(config["references"]["adr-decisions"]).parts[-2:] == ("docs", "adr")
 
     assert "chat.message" in result["hookNames"]
     assert "experimental.chat.system.transform" in result["hookNames"]

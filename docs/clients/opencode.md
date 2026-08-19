@@ -23,11 +23,11 @@ For another project, use the public npm package:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.0"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.1"]
 }
 ```
 
-Version `0.52.0` is published. Future versions are staged automatically by
+Version `0.52.1` is published. Future versions are staged automatically by
 `.github/workflows/release-publish.yml`, which calls the reusable
 `.github/workflows/publish-opencode-npm.yml` workflow. They become available
 after a maintainer approves the staged package with npm 2FA. If a future version

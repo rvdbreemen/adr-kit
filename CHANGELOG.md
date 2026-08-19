@@ -4,12 +4,27 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.52.1] - 2026-08-18
+
+### Fixed
+
+- **OpenCode 1.18.18 startup** no longer rejects the ADR reference registered by
+  the native plugin. The plugin now uses the runtime-compatible string path form
+  for `docs/adr`, while preserving existing user-owned references.
+
 ### Changed
 
 - **OpenCode npm publication flow** now runs from the canonical
   `release-publish.yml` workflow. It stages the package through Trusted
   Publishing after the GitHub Release, while maintainer 2FA approval remains
   required before the package becomes public.
+
+### Upgrade Notes
+
+- OpenCode users can install `@rvdbreemen/adr-kit-opencode@0.52.1` after npm
+  staging is approved, or point at a reviewed repository checkout. Restart
+  OpenCode after changing plugin or config files.
 
 ## [0.52.0] - 2026-08-16
 
@@ -2689,7 +2704,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.1...HEAD
+[0.52.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...v0.52.1
 [0.52.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.49.0...v0.50.0
