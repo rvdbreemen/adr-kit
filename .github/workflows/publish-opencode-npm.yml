@@ -220,6 +220,7 @@ jobs:
             headers: {
               Accept: 'application/json',
               Authorization: `Bearer ${oidcBody.value}`,
+              'npm-command': 'stage',
             },
           })
           const exchangeText = await exchangeResponse.text()
