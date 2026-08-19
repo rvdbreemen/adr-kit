@@ -237,7 +237,7 @@ on npmjs.com with these exact values:
 | Environment name | empty; npm performs the final approval |
 | Allowed action | `npm stage publish` |
 
-The reusable staging workflow pins npm `11.17.0`, which satisfies the
+The reusable staging workflow pins npm `11.19.0`, which satisfies the
 staged-publishing requirement of npm `11.15.0` or newer. Configure the
 relationship locally after signing in and enabling 2FA:
 
