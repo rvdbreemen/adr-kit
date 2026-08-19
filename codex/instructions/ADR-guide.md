@@ -5,31 +5,84 @@
 # ADR Kit agent guide
 
 Architecture decisions live in `docs/adr/`. Read the source ADR before treating
-a generated summary as binding.
+a generated summary as binding. This guide is written so an agent can operate
+adr-kit autonomously: every step names the tool to call, what comes back, and
+how to react. Steps marked **human-gated** must never be performed without an
+explicit human decision.
+
+## Tool surface
+
+Every step below is callable two ways. Shell-less clients use the MCP tools;
+clients with a shell may use the CLI directly. Both delegate to the same
+deterministic engines, so results are identical.
+
+| Phase | MCP tool | CLI equivalent | Mutates? |
+| --- | --- | --- | --- |
+| Find governing ADRs | `adr_context` | `bin/adr-context --format json` | no |
+| Follow ADR graph links | `adr_related` | `bin/adr-related --format json` | no |
+| Judge a diff | `adr_judge` | `bin/adr-judge --json` | no |
+| Lint the ADR set | `adr_lint` | `bin/adr-lint --format json` | no |
+| Score ADR quality | `adr_quality` | `bin/adr-quality --format json` | no |
+| Check lifecycle readiness | `adr_readiness` | `bin/adr-readiness --format json` | no |
+| Repository health | `adr_status` | `bin/adr-status --format json` | no |
+| Create / edit / accept ADRs | — (deliberately absent) | `bin/adr new|answer|relate|...` | yes |
+
+The MCP server is read-only by design (ADR-011, ADR-040): no MCP tool can
+create, edit, accept, or index an ADR. Lifecycle mutation always goes through
+the CLI, and acceptance always goes through a human.
 
 ## Before implementation
 
-1. Query the task with `adr-kit:context` or `bin/adr-context`.
-2. Read the returned Accepted ADRs.
-3. If the work introduces or changes a long-lived decision, use `adr-kit:adr`
-   and keep the new record Proposed until a human accepts it.
+1. Query the task with `adr_context` (MCP) or `bin/adr-context`. Pass the task
+   description as `query`; add `paths` for the files you expect to touch.
+2. Read every returned Accepted ADR at the source, and call `adr_related` on
+   each id you rely on to see supersession, related decisions, and dangling
+   links. A superseded ADR is history, not guidance: follow the successor.
+3. If the work introduces or changes a long-lived decision, create a Proposed
+   record with `bin/adr new` (or `adr-kit:adr`) before writing the code.
+   **Human-gated:** the record stays Proposed until a human accepts it; never
+   run `bin/adr accept` on your own initiative.
 
 ## During implementation
 
 - Treat hook-provided ADR context as advisory steering. Hooks fail open.
 - Treat deterministic pre-commit enforcement as the blocking floor.
 - Never rewrite an Accepted ADR. Create a Proposed successor and use the
-  supersession lifecycle.
+  supersession lifecycle (`bin/adr supersede`, human-gated like acceptance).
 - Keep generated indexes and client artifacts deterministic; edit their
   canonical sources instead.
 
 ## Before completion
 
-1. Run strict ADR lint and the relevant focused tests.
-2. Regenerate `docs/adr/ADR-INDEX.md`, `docs/adr/ADR-INDEX.json`, and the
-   generated README block after ADR changes.
-3. Use `adr-kit:judge` or `bin/adr-judge` to check the staged diff.
-4. Record the decision, evidence, and verification in the project task.
+1. Run `adr_lint` with `strict: true` (MCP) or `bin/adr-lint --strict`.
+   React: `verdict: ok` proceeds; `verdict: findings` lists failing files and
+   findings — fix the ADR content, never weaken the gate. Exit 2 is a config
+   error: report it, do not work around it.
+2. After ADR changes, regenerate `docs/adr/ADR-INDEX.md`,
+   `docs/adr/ADR-INDEX.json`, and the generated README block with
+   `bin/adr-index docs/adr` (CLI only; index generation mutates).
+3. Judge the staged diff with `adr_judge` (MCP, pass the unified diff) or
+   `bin/adr-judge`. React: `verdict: ok` proceeds; `verdict: violation` names
+   the ADR and rule per finding — change the code to comply, or propose a
+   successor ADR if the decision itself is wrong. Never commit past a
+   violation.
+4. For a Proposed ADR, check `adr_readiness`. React: `classification` tells
+   you what is missing (open questions, implementation links, quality). Fix
+   what is mechanical; leave acceptance to a human.
+5. Record the decision, evidence, and verification in the project task.
+
+## Human-gated actions
+
+These require an explicit human decision, every time:
+
+- `bin/adr accept` (and `--confirm`): acceptance writes a person's name into
+  an immutable status history (ADR-011, ADR-027).
+- `bin/adr supersede`, `bin/adr reject`: same lifecycle authority.
+- Choosing or changing the lifecycle signer (`bin/adr signer --set`).
+
+Everything else in the tables above is safe for autonomous use: the read-only
+tools always, and the mutating authoring commands (`new`, `answer`, `relate`,
+`adr-index`) when the task itself calls for them.
 
 ## Ownership
 

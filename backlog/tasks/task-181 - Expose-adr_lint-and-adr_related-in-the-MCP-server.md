@@ -1,0 +1,41 @@
+---
+id: TASK-181
+title: Expose adr_lint and adr_related in the MCP server
+status: In Progress
+assignee: []
+created_date: '2026-08-19 20:51'
+updated_date: '2026-08-19 21:20'
+labels:
+  - mcp
+  - adr
+dependencies: []
+references:
+  - bin/adr-mcp
+  - >-
+    docs/adr/ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md
+priority: medium
+type: feature
+ordinal: 25000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Analysis (2026-08-19) mapped the agent development cycle from .adr-kit/ADR-guide.md onto the MCP tool surface of bin/adr-mcp. Two mandatory cycle steps have no MCP equivalent for shell-less clients: "Run strict ADR lint" (before completion) and following ADR graph links after adr_context returns ids. Both bin/adr-lint and bin/adr-related are read-only, deterministic, key-free, and use the shared adr_catalog loader family (ADR-014 single retrieval path). ADR-011 forbids lifecycle mutation over MCP; neither tool mutates. Scope: add adr_lint and adr_related to TOOL_DEFINITIONS/TOOL_HANDLERS in bin/adr-mcp with workspace args (project_root/adr_dir), tests in tests/test_adr_mcp.py, regenerate client adapters. A new ADR records the expansion criterion (read-only + deterministic + key-free + agent-query-shaped + covers an ADR-guide cycle step), which deliberately excludes adr-retire, adr-audit, adr-suggest and all mutating commands.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 New Proposed ADR records the MCP tool-surface expansion criterion and relates to ADR-011, ADR-014, ADR-016
+- [x] #2 adr_lint tool exposed in bin/adr-mcp, delegating to bin/adr-lint with JSON output and workspace args
+- [x] #3 adr_related tool exposed in bin/adr-mcp, delegating to bin/adr-related with JSON output and workspace args
+- [x] #4 Tests added in tests/test_adr_mcp.py cover both tools (list + call, legacy and modern era)
+- [x] #5 python scripts/build-client-adapters.py --check reports changed=0 after regeneration
+- [ ] #6 Full python -m pytest -q passes
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+ADR-040 (Proposed) records the four admission tests; related both ways to ADR-011/014/016. adr_lint + adr_related implemented in bin/adr-mcp with workspace args; golden regression extended to ids 9/10 with path-separator normalisation and masked migration-notice command fields (no machine paths in the repo). 64 MCP tests pass; adapters regenerated, --check changed=0. Full pytest pending.
+<!-- SECTION:NOTES:END -->

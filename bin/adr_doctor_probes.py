@@ -110,6 +110,8 @@ def _mcp_deep(root: Path, plugin_root: Path) -> dict:
                 "adr_status",
                 "adr_quality",
                 "adr_readiness",
+                "adr_lint",
+                "adr_related",
             } == tools
             and called
         )

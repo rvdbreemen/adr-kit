@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "candidate_commit": "simulated-task40",
-  "contract_date": "2026-07-19",
+  "contract_date": "2026-08-19",
   "records": [
     {
       "client": "claude-code-cli",
@@ -10,7 +10,7 @@
       "surface": "cli",
       "os": "windows",
       "candidate_commit": "simulated-task40",
-      "contract_date": "2026-07-19",
+      "contract_date": "2026-08-19",
       "evidence_mode": "simulated",
       "environment_fingerprint": "simulated-windows-claude",
       "required_outcomes": {
@@ -147,7 +147,7 @@
       "surface": "cli",
       "os": "windows",
       "candidate_commit": "simulated-task40",
-      "contract_date": "2026-07-19",
+      "contract_date": "2026-08-19",
       "evidence_mode": "simulated",
       "environment_fingerprint": "simulated-windows-codex",
       "required_outcomes": {
@@ -282,7 +282,7 @@
       "surface": "cli",
       "os": "windows",
       "candidate_commit": "simulated-task40",
-      "contract_date": "2026-07-19",
+      "contract_date": "2026-08-19",
       "evidence_mode": "simulated",
       "environment_fingerprint": "simulated-windows-copilot",
       "required_outcomes": {

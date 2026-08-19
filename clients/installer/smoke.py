@@ -62,7 +62,10 @@ def _validate_mcp_process(
         names = {tool["name"] for tool in responses[2]["result"]["tools"]}
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise RuntimeError("packaged MCP smoke test returned invalid JSON-RPC") from exc
-    expected = {"adr_context", "adr_judge", "adr_status", "adr_quality", "adr_readiness"}
+    expected = {
+        "adr_context", "adr_judge", "adr_status", "adr_quality",
+        "adr_readiness", "adr_lint", "adr_related",
+    }
     if names != expected:
         raise RuntimeError("packaged MCP smoke test returned unexpected tools: " + ", ".join(sorted(names)))
 

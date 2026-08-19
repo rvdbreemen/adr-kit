@@ -10,6 +10,8 @@ verified_in:
   - "tests/test_adr_mcp.py"
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-040"
 topics:
   - "model context protocol"
   - "protocol versioning"
@@ -60,6 +62,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Dual-era surface shipped in TASK-58.1/58.2 and validated against three real clients plus the official mcp 2.0.0 SDK in TASK-58.4; gate adr-mcp-dual-era-v1 is live in the conformance suite
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-19
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-040
     changed_via: adr-kit lifecycle
 ```
 
