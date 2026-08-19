@@ -178,6 +178,71 @@ jobs:
       - name: Normalize npm package metadata
         run: npm pkg fix
 
+      - name: Diagnose npm Trusted Publishing exchange
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const packageName = process.env.PACKAGE_NAME
+          const requestUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL
+          const requestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+
+          if (!requestUrl || !requestToken) {
+            console.error('GitHub did not provide the OIDC request environment to the staging job.')
+            process.exit(1)
+          }
+
+          const oidcUrl = new URL(requestUrl)
+          oidcUrl.searchParams.set('audience', 'npm:registry.npmjs.org')
+          const oidcResponse = await fetch(oidcUrl, {
+            headers: { Authorization: `Bearer ${requestToken}` },
+          })
+          const oidcBody = await oidcResponse.json()
+          if (!oidcResponse.ok || !oidcBody.value) {
+            console.error(`GitHub OIDC token request failed with HTTP ${oidcResponse.status}.`)
+            process.exit(1)
+          }
+
+          const claims = JSON.parse(Buffer.from(oidcBody.value.split('.')[1], 'base64url').toString())
+          console.log(JSON.stringify({
+            audience: claims.aud,
+            repository: claims.repository,
+            workflow_ref: claims.workflow_ref,
+            job_workflow_ref: claims.job_workflow_ref,
+            event_name: claims.event_name,
+            ref: claims.ref,
+            environment: claims.environment ?? null,
+          }, null, 2))
+
+          const exchangeUrl = `https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${encodeURIComponent(packageName)}`
+          const exchangeResponse = await fetch(exchangeUrl, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${oidcBody.value}`,
+            },
+          })
+          const exchangeText = await exchangeResponse.text()
+          let exchangeBody = {}
+          try {
+            exchangeBody = JSON.parse(exchangeText)
+          } catch {
+            // Keep diagnostics safe if npm returns a non-JSON response.
+          }
+          console.log(JSON.stringify({
+            exchange_status: exchangeResponse.status,
+            exchange_ok: exchangeResponse.ok,
+            exchange_code: exchangeBody.code ?? null,
+            exchange_error: exchangeBody.error ?? null,
+            exchange_message: exchangeBody.message ?? null,
+            exchange_detail: exchangeBody.detail ?? null,
+            exchange_returned_token: Boolean(exchangeBody.token),
+          }, null, 2))
+
+          if (!exchangeResponse.ok || !exchangeBody.token) {
+            process.exit(1)
+          }
+          NODE
+
       - name: Stage package through npm Trusted Publishing
         env:
           NPM_CONFIG_PROVENANCE: "true"
