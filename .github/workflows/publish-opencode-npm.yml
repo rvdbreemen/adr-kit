@@ -213,7 +213,8 @@ jobs:
             environment: claims.environment ?? null,
           }, null, 2))
 
-          const exchangeUrl = `https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${encodeURIComponent(packageName)}`
+          const escapedPackageName = packageName.replace('/', '%2f')
+          const exchangeUrl = `https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${escapedPackageName}`
           const exchangeResponse = await fetch(exchangeUrl, {
             method: 'POST',
             headers: {
