@@ -46,6 +46,9 @@ the CLI, and acceptance always goes through a human.
 ## During implementation
 
 - Treat hook-provided ADR context as advisory steering. Hooks fail open.
+- When an interactive prompt contains `AUTO_GRILL_PENDING`, invoke its exact
+  client-native grill command before continuing the user's task. The handoff
+  starts the human-gated question flow; it never accepts an ADR automatically.
 - Treat deterministic pre-commit enforcement as the blocking floor.
 - Never rewrite an Accepted ADR. Create a Proposed successor and use the
   supersession lifecycle (`bin/adr supersede`, human-gated like acceptance).

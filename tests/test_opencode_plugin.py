@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -90,7 +91,7 @@ def _project(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _run(project: Path, tmp_path: Path) -> dict:
+def _run(project: Path, tmp_path: Path, session_id: str = "smoke-session") -> dict:
     plugin_url = (ROOT / "opencode" / "plugin.ts").as_uri()
     script = f"""
 const mod = await import({json.dumps(plugin_url)});
@@ -108,19 +109,19 @@ await hooks.config(config);
 const env = {{ env: {{}} }};
 await hooks["shell.env"]({{ cwd: {json.dumps(str(project))} }}, env);
 const message = {{ parts: [{{ type: "text", text: "Update the governed source path" }}] }};
-await hooks["chat.message"]({{ sessionID: "smoke-session" }}, message);
+await hooks["chat.message"]({{ sessionID: {json.dumps(session_id)} }}, message);
 const system = {{ system: [] }};
-await hooks["experimental.chat.system.transform"]({{ sessionID: "smoke-session" }}, system);
+await hooks["experimental.chat.system.transform"]({{ sessionID: {json.dumps(session_id)} }}, system);
 const compact = {{ context: [] }};
 await hooks["experimental.session.compacting"]({{ sessionID: "smoke-session" }}, compact);
 const definition = {{ description: "Edit a file." }};
 await hooks["tool.definition"]({{ toolID: "edit" }}, definition);
 await hooks["tool.execute.before"](
-  {{ tool: "edit", sessionID: "smoke-session" }},
+  {{ tool: "edit", sessionID: {json.dumps(session_id)} }},
   {{ args: {{ filePath: "src/thing.py" }} }}
 );
 const editSystem = {{ system: [] }};
-await hooks["experimental.chat.system.transform"]({{ sessionID: "smoke-session" }}, editSystem);
+await hooks["experimental.chat.system.transform"]({{ sessionID: {json.dumps(session_id)} }}, editSystem);
 console.log(JSON.stringify({{
   hookNames: Object.keys(hooks),
   config,
@@ -204,3 +205,34 @@ console.log(JSON.stringify({{ config, hookNames: Object.keys(hooks) }}));
     payload = json.loads(result.stdout)
     assert payload["config"] == {}
     assert "experimental.chat.system.transform" in payload["hookNames"]
+
+
+def test_native_plugin_translates_automatic_grill_to_its_command_surface(tmp_path):
+    project = _project(tmp_path / "project")
+    now = datetime.now(timezone.utc)
+    (project / "docs" / "adr" / ".adr-kit-readiness.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "generated_at": now.isoformat(),
+                "expires_at": (now + timedelta(hours=24)).isoformat(),
+                "authoritative": False,
+                "actions": [
+                    {
+                        "adr_id": "ADR-001",
+                        "classification": "needs-human-input",
+                        "command": "/adr-kit:grill ADR-001",
+                        "reasons": ["open human questions"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(project, tmp_path, session_id=f"auto-grill-{tmp_path.name}")
+    system = "\n".join(result["system"]["system"])
+
+    assert "AUTO_GRILL_PENDING" in system
+    assert "/adr-kit-grill ADR-001" in system
+    assert "/adr-kit:grill ADR-001" not in system

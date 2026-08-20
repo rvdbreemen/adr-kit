@@ -169,6 +169,14 @@ function extractHookResult(raw: string): HookResult {
   return { context: "", denied: false, reason: "" }
 }
 
+function normalizeAutoGrillCommand(context: string): string {
+  if (!context.includes("AUTO_GRILL_PENDING")) return context
+  return context
+    .replaceAll("/adr-kit:grill", "/adr-kit-grill")
+    .replaceAll("$adr-kit:grill", "/adr-kit-grill")
+    .replaceAll("adr-kit:grill", "/adr-kit-grill")
+}
+
 async function runHook(
   runtimeRoot: string | undefined,
   python: string,
@@ -218,7 +226,11 @@ async function runHook(
   }
 
   if (result.exitCode !== 0) return { context: "", denied: false, reason: "" }
-  return extractHookResult(result.value.slice(0, MAX_OUTPUT_CHARS))
+  const hookResult = extractHookResult(result.value.slice(0, MAX_OUTPUT_CHARS))
+  return {
+    ...hookResult,
+    context: normalizeAutoGrillCommand(hookResult.context),
+  }
 }
 
 function toolName(value: unknown): string {
@@ -293,6 +305,8 @@ export default async function AdrKitOpenCodePlugin(
       if (options.references !== false && existsSync(join(input.directory, "docs", "adr"))) {
         config.references ||= {}
         if (!config.references["adr-decisions"]) {
+          // The string shorthand avoids injecting a plain object into OpenCode's
+          // runtime reference schema, which expects decoded class instances.
           config.references["adr-decisions"] = join(input.directory, "docs", "adr")
         }
       }

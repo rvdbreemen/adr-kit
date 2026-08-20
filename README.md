@@ -100,6 +100,7 @@ patch releases, is in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | What landed | Why it matters |
 | --- | --- | --- |
+| **0.54.0** | Automatic interactive ADR grilling ([ADR-041](docs/adr/ADR-041-automatically-hand-off-unfinished-proposed-adrs-to-interactive-grilling.md)) hands one unfinished Proposed decision to the native grill workflow at the next user-visible prompt. `/adr-kit:upgrade` materializes `grill.auto_start: true` while preserving explicit opt-outs. | Incomplete decisions reach the human while their implementation context is still available, without starting interviews in CI, pre-commit, background, or unattended lifecycle paths. |
 | **0.52.0** | Native [OpenCode](docs/clients/opencode.md) support through a separate TypeScript plugin, backed by the shared deterministic engines and MCP server ([ADR-039](docs/adr/ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md)). The certified Claude Code, Codex, and Copilot CLI registry and release gate remain unchanged. | OpenCode gets its documented native configuration, skills, commands, context, compaction, edit, shell, and MCP integration without weakening the existing certification boundary. |
 | **0.48.0** | Retrieval is lexical scoring over the generated index plus one-hop graph neighbours, and the LLM judge runs on the CLI you are already signed in to ([ADR-036](docs/adr/ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md)): the vector subsystem, `bin/adr-embed` and the openrouter/ollama/openai backends are gone, and eight retired config keys now fail validation by name. The guardian records a verdict per ADR and prints it as the sweep lands ([ADR-037](docs/adr/ADR-037-keep-per-adr-judge-verdicts-in-the-advisory-per-machine-guardian-state.md)). | Two subsystems were carrying their own credentials, install paths and failure modes to answer questions the index already answers. A sweep is also long enough to be interrupted, so a per-sweep timestamp discarded everything it had established; per-ADR verdicts keep it. |
 | **0.44.0** | `/adr-kit:audit` answers "are we still on course?" by linting the decisions and judging the code in one run, over a diff or the whole codebase (the init scanner is now `bin/adr-discover`). A local precomputed vector layer for retrieval ([ADR-018](docs/adr/ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md), retired in 0.48.0 by ADR-036), `adr relate` writing a cross-reference on both sides at once, `adr answer` keeping a grilling question with its answer, a configurable signer, `/adr-kit:settings`, and a pre-PR branch guard. | A clean judge over vague ADRs proves nothing, and a sharp ADR set nobody checks the code against is documentation rather than governance. Whole-codebase mode reaches files no recent diff touched, which is where a rule added after the code was written has never applied. |
@@ -669,7 +670,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.53.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.54.0
         with:
           adr-dir: docs/adr/
 ```
@@ -683,7 +684,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.53.0
+    rev: v0.54.0
     hooks:
       - id: adr-judge
 ```

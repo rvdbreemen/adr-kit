@@ -106,7 +106,9 @@ The native plugin uses OpenCode's documented hooks:
 The hooks call `hooks/adr-hook.py`, not a TypeScript reimplementation. Advisory
 failures time out and fail open. The existing shared pull-request guard may deny
 an OpenCode shell call when it returns an explicit deny decision. Normal edit
-context never blocks an edit.
+context never blocks an edit. When an interactive prompt receives an
+`AUTO_GRILL_PENDING` handoff, the plugin translates the shared client-neutral
+grill command to OpenCode's native `/adr-kit-grill` command before injecting it.
 
 The deterministic enforcement floor remains outside OpenCode:
 

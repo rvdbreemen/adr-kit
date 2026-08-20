@@ -102,7 +102,24 @@ def test_provenance_distinguishes_project_from_default(adr_dir):
 
     assert rows["judge.advisory_only"]["source"] == "project"
     assert rows["judge.llm_enabled"]["source"] == "default"
+    assert rows["grill.auto_start"]["value"] is True
+    assert rows["grill.auto_start"]["source"] == "default"
     assert rows["lifecycle.signer"]["source"] == "unset"
+
+
+def test_automatic_grilling_default_can_be_materialized_without_overriding_opt_out(adr_dir):
+    default = _run(adr_dir, "--format", "json")
+    rows = {row["key"]: row for row in json.loads(default.stdout)["settings"]}
+    assert rows["grill.auto_start"]["value"] is True
+    assert rows["grill.auto_start"]["source"] == "default"
+
+    enabled = _run(adr_dir, "--set", "grill.auto_start=true")
+    assert enabled.returncode == 0, enabled.stderr
+    assert _project(adr_dir)["grill"]["auto_start"] is True
+
+    disabled = _run(adr_dir, "--set", "grill.auto_start=false")
+    assert disabled.returncode == 0, disabled.stderr
+    assert _project(adr_dir)["grill"]["auto_start"] is False
 
 
 def test_machine_local_beats_project_for_a_local_key(adr_dir):
@@ -146,3 +163,4 @@ def test_list_names_every_settable_key(adr_dir):
     assert "lifecycle.signer" in keys
     assert "judge.llm_enabled" in keys
     assert "guardian.llm_stale_days" in keys
+    assert "grill.auto_start" in keys
