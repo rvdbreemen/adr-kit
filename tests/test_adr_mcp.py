@@ -38,16 +38,21 @@ EXPECTED_TOOLS = {
     "adr_status",
     "adr_quality",
     "adr_readiness",
+    "adr_lint",
+    "adr_related",
 }
 
 # Declaration order of TOOL_DEFINITIONS. ADR-016 requires tools/list to be
-# deterministically ordered; this is the order it must keep.
+# deterministically ordered; this is the order it must keep. New tools are
+# appended, never inserted (ADR-040): existing client positions stay stable.
 EXPECTED_TOOL_ORDER = [
     "adr_context",
     "adr_judge",
     "adr_status",
     "adr_quality",
     "adr_readiness",
+    "adr_lint",
+    "adr_related",
 ]
 
 # --- protocol registry, mirrored from ADR-016 rather than imported ----------
@@ -688,6 +693,65 @@ def test_unknown_method_returns_method_not_found(project: Path):
     assert responses[12]["error"]["code"] == -32601
 
 
+def test_adr_lint_reports_verdict_and_stays_read_only(project: Path):
+    """adr_lint wraps rc 0/1 as a verdict (ADR-040) and mutates nothing."""
+    before = sorted(p.name for p in (project / "docs" / "adr").iterdir())
+    responses, _, _ = run_session(
+        project,
+        [
+            INITIALIZE,
+            INITIALIZED,
+            call("adr_lint", {}, 15),
+            call("adr_lint", {"strict": True}, 16),
+        ],
+    )
+    for req_id in (15, 16):
+        result = responses[req_id]["result"]
+        assert not result.get("isError", False)
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["exit_code"] in (0, 1)
+        assert payload["verdict"] in ("ok", "findings")
+        assert payload["result"]["summary"]["total"] == 1
+    strict_payload = json.loads(responses[16]["result"]["content"][0]["text"])
+    assert strict_payload["result"]["strict_mode"] is True
+    after = sorted(p.name for p in (project / "docs" / "adr").iterdir())
+    assert before == after
+
+
+def test_adr_lint_rejects_non_boolean_strict(project: Path):
+    responses, _, _ = run_session(
+        project,
+        [INITIALIZE, INITIALIZED, call("adr_lint", {"strict": "yes"}, 17)],
+    )
+    result = responses[17]["result"]
+    assert result["isError"] is True
+    assert "'strict' must be a boolean" in result["content"][0]["text"]
+
+
+def test_adr_related_returns_edges_for_one_adr(project: Path):
+    responses, _, _ = run_session(
+        project,
+        [
+            INITIALIZE,
+            INITIALIZED,
+            call("adr_related", {"adr_id": "ADR-001"}, 18),
+            call("adr_related", {"adr_id": "ADR-999"}, 19),
+            call("adr_related", {}, 20),
+        ],
+    )
+    ok = responses[18]["result"]
+    assert not ok.get("isError", False)
+    payload = json.loads(ok["content"][0]["text"])
+    assert payload["adr"]["adr_id"] == "ADR-001"
+    assert "outbound" in payload and "inbound" in payload
+    # Unknown id is a CLI usage error (exit 2) surfaced as a tool error.
+    unknown = responses[19]["result"]
+    assert unknown["isError"] is True
+    missing = responses[20]["result"]
+    assert missing["isError"] is True
+    assert "'adr_id' must be a non-empty string" in missing["content"][0]["text"]
+
+
 def test_malformed_json_line_does_not_kill_server(project: Path):
     ping = {"jsonrpc": "2.0", "id": 13, "method": "ping"}
     responses, parse_errors, _ = run_session(
@@ -1043,6 +1107,14 @@ def test_modern_tool_failure_is_is_error_inside_a_complete_result(project: Path)
 GOLDEN_INITIALIZE_ID = 1
 GOLDEN_STATUS_ID = 6
 
+# The adr_lint (id 9) and adr_related (id 10) frames were captured when
+# ADR-040 admitted those tools; they are additions to the surface, not
+# alterations of any pre-change byte. Their payloads quote native OS paths
+# (adr-lint's `target`/`repo_root`, adr-related's `path`), so like adr_status
+# they are compared as JSON with separators normalised, never as bytes.
+GOLDEN_LINT_ID = 9
+GOLDEN_RELATED_ID = 10
+
 # The adr_readiness frame (id 8) was regenerated once, for TASK-82. Readiness
 # used to compute "quality" from three booleans; it now reads the weighted
 # four-gate scorer, and the object carries `source`, `threshold` and
@@ -1055,12 +1127,14 @@ GOLDEN_STATUS_ID = 6
 LEGACY_GOLDEN = r"""
 {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "adr-kit", "version": "{version}"}}}
 {"jsonrpc": "2.0", "id": 2, "result": {}}
-{"jsonrpc": "2.0", "id": 3, "result": {"tools": [{"name": "adr_context", "description": "Find the Architecture Decision Records most relevant to a task through the local generated index. Deterministic, key-free, and read-only; returns authority-labelled explained matches as JSON. The bounded subprocess timeout is 60 seconds.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string", "description": "Task description or question to rank ADRs against."}, "limit": {"type": "integer", "description": "Maximum number of ADRs to return.", "minimum": 1, "maximum": 100}, "paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32, "description": "Target or changed paths used for Enforcement scope matching."}, "components": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32}, "symbols": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32}, "topics": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32}, "statuses": {"type": "array", "items": {"type": "string", "enum": ["Accepted", "Proposed", "Superseded", "Rejected", "Deprecated", "Amended", "Unknown"]}, "uniqueItems": true, "maxItems": 7, "description": "Optional lifecycle-status filter."}, "authorities": {"type": "array", "items": {"type": "string", "enum": ["governing", "advisory", "historical"]}, "uniqueItems": true, "maxItems": 3, "description": "Optional authority filter."}, "include_history": {"type": "boolean", "description": "Permit historical ADRs; false by default."}, "strict_index": {"type": "boolean", "description": "Fail instead of using Markdown fallback."}, "min_score": {"type": "number", "minimum": 0, "maximum": 1}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}, "required": ["query"]}}, {"name": "adr_judge", "description": "Judge a unified diff against the Enforcement blocks of Accepted ADRs (declarative pass only, no LLM, key-free). Returns findings and the adr-judge exit status (0 = clean, 1 = violations).", "inputSchema": {"type": "object", "properties": {"diff": {"type": "string", "description": "Unified diff text (e.g. output of git diff --cached)."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}, "required": ["diff"]}}, {"name": "adr_status", "description": "ADR repository health dashboard: totals, status breakdown, enforcement health, retirement candidates. Returns JSON.", "inputSchema": {"type": "object", "properties": {"project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}}}, {"name": "adr_quality", "description": "Score ADRs on quality via 4 gates (0.0-1.0 each, grade A-D). Pass adr_id (e.g. 'ADR-001' or '1') for one ADR; omit it to score every ADR in the repository. Returns JSON.", "inputSchema": {"type": "object", "properties": {"adr_id": {"type": "string", "description": "ADR identifier such as 'ADR-001', '001' or '1'. Omit to score all ADRs."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}}}, {"name": "adr_readiness", "description": "Inspect ADR lifecycle readiness and explicit implementation links. Read-only, deterministic, key-free, and incapable of accepting ADRs.", "inputSchema": {"type": "object", "properties": {"adr_id": {"type": "string", "description": "Optional ADR identifier such as ADR-011."}, "all_proposed": {"type": "boolean", "description": "Return every Proposed ADR."}, "base": {"type": "string", "description": "Optional git base ref; requires head."}, "head": {"type": "string", "description": "Optional git head ref; requires base."}, "today": {"type": "string", "description": "Optional deterministic YYYY-MM-DD evaluation date."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}}}]}}
+{"jsonrpc": "2.0", "id": 3, "result": {"tools": [{"name": "adr_context", "description": "Find the Architecture Decision Records most relevant to a task through the local generated index. Deterministic, key-free, and read-only; returns authority-labelled explained matches as JSON. The bounded subprocess timeout is 60 seconds.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string", "description": "Task description or question to rank ADRs against."}, "limit": {"type": "integer", "description": "Maximum number of ADRs to return.", "minimum": 1, "maximum": 100}, "paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32, "description": "Target or changed paths used for Enforcement scope matching."}, "components": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32}, "symbols": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32}, "topics": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 32}, "statuses": {"type": "array", "items": {"type": "string", "enum": ["Accepted", "Proposed", "Superseded", "Rejected", "Deprecated", "Amended", "Unknown"]}, "uniqueItems": true, "maxItems": 7, "description": "Optional lifecycle-status filter."}, "authorities": {"type": "array", "items": {"type": "string", "enum": ["governing", "advisory", "historical"]}, "uniqueItems": true, "maxItems": 3, "description": "Optional authority filter."}, "include_history": {"type": "boolean", "description": "Permit historical ADRs; false by default."}, "strict_index": {"type": "boolean", "description": "Fail instead of using Markdown fallback."}, "min_score": {"type": "number", "minimum": 0, "maximum": 1}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}, "required": ["query"]}}, {"name": "adr_judge", "description": "Judge a unified diff against the Enforcement blocks of Accepted ADRs (declarative pass only, no LLM, key-free). Returns findings and the adr-judge exit status (0 = clean, 1 = violations).", "inputSchema": {"type": "object", "properties": {"diff": {"type": "string", "description": "Unified diff text (e.g. output of git diff --cached)."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}, "required": ["diff"]}}, {"name": "adr_status", "description": "ADR repository health dashboard: totals, status breakdown, enforcement health, retirement candidates. Returns JSON.", "inputSchema": {"type": "object", "properties": {"project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}}}, {"name": "adr_quality", "description": "Score ADRs on quality via 4 gates (0.0-1.0 each, grade A-D). Pass adr_id (e.g. 'ADR-001' or '1') for one ADR; omit it to score every ADR in the repository. Returns JSON.", "inputSchema": {"type": "object", "properties": {"adr_id": {"type": "string", "description": "ADR identifier such as 'ADR-001', '001' or '1'. Omit to score all ADRs."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}}}, {"name": "adr_readiness", "description": "Inspect ADR lifecycle readiness and explicit implementation links. Read-only, deterministic, key-free, and incapable of accepting ADRs.", "inputSchema": {"type": "object", "properties": {"adr_id": {"type": "string", "description": "Optional ADR identifier such as ADR-011."}, "all_proposed": {"type": "boolean", "description": "Return every Proposed ADR."}, "base": {"type": "string", "description": "Optional git base ref; requires head."}, "head": {"type": "string", "description": "Optional git head ref; requires base."}, "today": {"type": "string", "description": "Optional deterministic YYYY-MM-DD evaluation date."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}}}, {"name": "adr_lint", "description": "Lint the ADR set against the deterministic verification gates. Read-only, key-free. Returns the adr-lint JSON report and exit status (0 = clean, 1 = failing findings).", "inputSchema": {"type": "object", "properties": {"strict": {"type": "boolean", "description": "CI governance mode: enable the schema gate and make findings FAIL. False by default."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}}}, {"name": "adr_related", "description": "Show the dependency graph (inbound + outbound edges) for one ADR: related decisions, supersession links, mentions, and dangling references. Read-only, deterministic. Returns JSON.", "inputSchema": {"type": "object", "properties": {"adr_id": {"type": "string", "description": "ADR identifier such as 'ADR-007', 'adr-7' or '7'."}, "project_root": {"type": "string", "description": "Absolute path to the active project. Use this for plugin-provided servers whose process starts in a plugin cache."}, "adr_dir": {"type": "string", "description": "Optional ADR directory. Relative paths are resolved from project_root."}}, "required": ["adr_id"]}}]}}
 {"jsonrpc": "2.0", "id": 4, "result": {"content": [{"type": "text", "text": "[\n  {\n    \"adr_id\": \"ADR-001\",\n    \"title\": \"No Foo\",\n    \"path\": \"{project}/docs/adr/ADR-001-no-foo.md\",\n    \"status\": \"Accepted\",\n    \"is_accepted\": true,\n    \"authority\": \"governing\",\n    \"role\": \"primary\",\n    \"format\": \"canonical\",\n    \"decision_summary\": \"Do not use Foo.\",\n    \"scope\": [\n      \"src/**/*.py\"\n    ],\n    \"related_ids\": [],\n    \"metadata\": {\n      \"binding\": false,\n      \"gate\": null,\n      \"documents_shipped\": false,\n      \"verified_in\": [],\n      \"supersedes\": [],\n      \"superseded_by\": null\n    },\n    \"topics\": [],\n    \"aliases\": [],\n    \"components\": [],\n    \"symbols\": [],\n    \"context_scope\": \"selective\",\n    \"decision_contract\": {\n      \"must\": [],\n      \"must_not\": [],\n      \"exceptions\": [],\n      \"verification\": []\n    },\n    \"score\": 0.2,\n    \"signals\": {\n      \"title\": 0.2\n    },\n    \"matches\": [\n      {\n        \"field\": \"title\",\n        \"values\": [\n          \"No Foo\"\n        ]\n      }\n    ],\n    \"source\": \"markdown-fallback\",\n    \"engine\": \"markdown-fallback\",\n    \"schema_version\": 2,\n    \"redirected_from\": null\n  }\n]"}]}}
 {"jsonrpc": "2.0", "id": 5, "result": {"content": [{"type": "text", "text": "{\n  \"exit_code\": 1,\n  \"verdict\": \"violation\",\n  \"result\": {\n    \"summary\": {\n      \"adrs_checked\": 1,\n      \"violations\": 2,\n      \"advisories\": 0\n    },\n    \"findings\": [\n      {\n        \"adr\": \"ADR-001\",\n        \"rule\": \"forbid_pattern\",\n        \"pattern\": \"\\\\bFoo\\\\b\",\n        \"path\": \"src/app/main.py\",\n        \"line\": 1,\n        \"snippet\": \"from lib import Foo\",\n        \"message\": \"No Foo.\",\n        \"severity\": \"violation\"\n      },\n      {\n        \"adr\": \"ADR-001\",\n        \"rule\": \"forbid_pattern\",\n        \"pattern\": \"\\\\bFoo\\\\b\",\n        \"path\": \"src/app/main.py\",\n        \"line\": 2,\n        \"snippet\": \"thing = Foo()\",\n        \"message\": \"No Foo.\",\n        \"severity\": \"violation\"\n      }\n    ]\n  }\n}"}]}}
 {"jsonrpc": "2.0", "id": 6, "result": {"content": [{"type": "text", "text": "{\n  \"summary\": {\n    \"total\": 1,\n    \"by_status\": {\n      \"deprecated\": 0,\n      \"accepted\": 1,\n      \"proposed\": 0,\n      \"amended\": 0,\n      \"superseded\": 0,\n      \"unknown\": 0\n    },\n    \"health_pct\": 100.0,\n    \"avg_age_days\": 96.0,\n    \"with_enforcement\": 1,\n    \"enforcement_valid_pct\": 100.0,\n    \"coverage_pct\": 100.0,\n    \"llm_judge_pct\": 0.0,\n    \"accepted_declarative\": 1,\n    \"accepted_manual_review\": 0,\n    \"accepted_no_enforcement\": 0\n  },\n  \"adrs\": [\n    {\n      \"adr_id\": \"ADR-001\",\n      \"status\": \"Accepted\",\n      \"date\": \"2026-04-25\",\n      \"age_days\": 96,\n      \"has_enforcement\": true,\n      \"enforcement_valid\": true,\n      \"enforcement_types\": [\n        \"forbid_pattern\"\n      ],\n      \"title\": \"No Foo\"\n    }\n  ],\n  \"retirement_candidates\": [],\n  \"retrieval\": {\n    \"status\": \"degraded\",\n    \"source\": null,\n    \"schema_version\": null,\n    \"probe_file\": \"{project}/docs/adr/adr-context-probes.json\",\n    \"index_error\": \"generated ADR graph is missing: <captured-native-path>\",\n    \"metadata_mode\": \"advisory\",\n    \"metadata_findings\": [],\n    \"probes\": {\n      \"configured\": false,\n      \"summary\": {\n        \"total\": 0,\n        \"pass\": 0,\n        \"fail\": 0\n      },\n      \"results\": []\n    }\n  }\n}"}]}}
 {"jsonrpc": "2.0", "id": 7, "result": {"content": [{"type": "text", "text": "{\n  \"adr_id\": \"ADR-001\",\n  \"overall\": 0.84,\n  \"grade\": \"B\",\n  \"gates\": {\n    \"completeness\": {\n      \"score\": 1.0,\n      \"issues\": [],\n      \"checks\": {\n        \"section_status\": true,\n        \"section_context\": true,\n        \"section_decision\": true,\n        \"section_alternatives_considered\": true,\n        \"section_consequences\": true,\n        \"section_related_decisions\": true,\n        \"section_references\": true,\n        \"decision_length_ok\": true,\n        \"alternatives_count_ok\": true,\n        \"consequences_not_empty\": true\n      }\n    },\n    \"evidence\": {\n      \"score\": 0.4,\n      \"issues\": [\n        {\n          \"code\": \"NO_MEASUREMENTS\",\n          \"detail\": \"\",\n          \"severity\": \"low\",\n          \"message\": \"No quantitative measurements found (e.g., '50 ms', '10 MB', '30%')\"\n        },\n        {\n          \"code\": \"NO_EXTERNAL_LINK\",\n          \"detail\": \"\",\n          \"severity\": \"low\",\n          \"message\": \"No external links found in the document; add https:// references\"\n        },\n        {\n          \"code\": \"NO_FILE_LINE_REF\",\n          \"detail\": \"\",\n          \"severity\": \"low\",\n          \"message\": \"No file:line references found (e.g., 'src/main.py:42')\"\n        }\n      ],\n      \"checks\": {\n        \"references_present\": true,\n        \"metrics_present\": false,\n        \"external_link_present\": false,\n        \"file_line_reference_present\": false\n      }\n    },\n    \"clarity\": {\n      \"score\": 0.8,\n      \"issues\": [\n        {\n          \"code\": \"CONTEXT_TOO_SHORT\",\n          \"detail\": \"23\",\n          \"severity\": \"medium\",\n          \"message\": \"Context section too short (23 chars, minimum 50)\"\n        }\n      ],\n      \"checks\": {\n        \"no_vague_language\": true,\n        \"has_title\": true,\n        \"acronyms_defined\": true,\n        \"context_sufficient\": false\n      }\n    },\n    \"consistency\": {\n      \"score\": 1.0,\n      \"issues\": [],\n      \"checks\": {\n        \"related_decisions_present\": true,\n        \"referenced_adrs_exist\": true,\n        \"valid_status\": true\n      }\n    }\n  },\n  \"issues\": [\n    {\n      \"code\": \"CONTEXT_TOO_SHORT\",\n      \"detail\": \"23\",\n      \"severity\": \"medium\",\n      \"message\": \"Context section too short (23 chars, minimum 50)\"\n    },\n    {\n      \"code\": \"NO_MEASUREMENTS\",\n      \"detail\": \"\",\n      \"severity\": \"low\",\n      \"message\": \"No quantitative measurements found (e.g., '50 ms', '10 MB', '30%')\"\n    },\n    {\n      \"code\": \"NO_EXTERNAL_LINK\",\n      \"detail\": \"\",\n      \"severity\": \"low\",\n      \"message\": \"No external links found in the document; add https:// references\"\n    },\n    {\n      \"code\": \"NO_FILE_LINE_REF\",\n      \"detail\": \"\",\n      \"severity\": \"low\",\n      \"message\": \"No file:line references found (e.g., 'src/main.py:42')\"\n    }\n  ],\n  \"recommendations\": [\n    \"Expand ## Context to > 50 chars; explain the problem and constraints\",\n    \"Add measurements to ## Consequences (e.g., '50 ms', '10 MB', '30%')\",\n    \"Add at least one https:// link in ## References\",\n    \"Add a file:line reference (e.g., 'src/main.py:42') in ## References\"\n  ],\n  \"file\": \"ADR-001-no-foo.md\"\n}"}]}}
 {"jsonrpc": "2.0", "id": 8, "result": {"content": [{"type": "text", "text": "{\n  \"adr_dir\": \"docs/adr\",\n  \"adrs\": [\n    {\n      \"adr_id\": \"ADR-001\",\n      \"classification\": \"accepted\",\n      \"documents_shipped\": false,\n      \"evaluated_on\": \"2026-07-20\",\n      \"format\": \"canonical\",\n      \"human_decisions\": [],\n      \"human_findings\": [],\n      \"implementation_link\": {\n        \"blocking_proposed\": false,\n        \"changed_paths\": [],\n        \"evidence\": [],\n        \"implemented\": false,\n        \"linked\": false\n      },\n      \"mechanical_actions\": [],\n      \"mechanical_findings\": [],\n      \"next_command\": null,\n      \"open_questions\": [],\n      \"path\": \"ADR-001-no-foo.md\",\n      \"quality\": {\n        \"below_threshold\": false,\n        \"checks\": {\n          \"decision\": true,\n          \"evidence\": false,\n          \"open_questions_resolved\": true\n        },\n        \"score\": 0.84,\n        \"source\": \"adr-quality\",\n        \"threshold\": 0.7\n      },\n      \"related_adrs\": [],\n      \"status\": \"Accepted\",\n      \"title\": \"No Foo\",\n      \"verified_in\": []\n    }\n  ],\n  \"advisories\": [],\n  \"evaluated_on\": \"2026-07-20\",\n  \"schema_version\": 1,\n  \"summary\": {\n    \"advisory_count\": 0,\n    \"blocking_count\": 0,\n    \"blocking_proposed\": [],\n    \"total\": 1\n  }\n}"}]}}
+{"jsonrpc": "2.0", "id": 9, "result": {"content": [{"type": "text", "text": "{\n  \"exit_code\": 0,\n  \"verdict\": \"ok\",\n  \"result\": {\n    \"target\": \"{project}/docs/adr\",\n    \"config_path\": null,\n    \"config_summary\": {\n      \"template.profile\": \"madr\",\n      \"context.retrieval_completeness\": \"advisory\"\n    },\n    \"strict_from_override\": null,\n    \"strict_mode\": false,\n    \"repo_root\": \"{project}\",\n    \"gates_enabled\": [\n      \"audit\",\n      \"completeness\",\n      \"consistency\"\n    ],\n    \"summary\": {\n      \"pass\": 1,\n      \"advisory\": 0,\n      \"fail\": 0,\n      \"skipped\": 0,\n      \"total\": 1\n    },\n    \"files\": [\n      {\n        \"file\": \"ADR-001-no-foo.md\",\n        \"adr_num\": 1,\n        \"bucket\": \"PASS\",\n        \"findings\": [],\n        \"migration_notice\": {\n          \"file\": \"{project}/docs/adr/ADR-001-no-foo.md\",\n          \"detected_format\": \"canonical\",\n          \"supported\": true,\n          \"metadata_change\": true,\n          \"metadata_issues\": [],\n          \"missing_sections\": [],\n          \"rename_to\": null,\n          \"writes_automatically\": false,\n          \"action\": \"deterministic-preview\",\n          \"deterministic\": true,\n          \"message\": \"Detected supported canonical ADR; canonical metadata can be added deterministically.\",\n          \"preview_command\": \"<command>\",\n          \"apply_command\": \"<command>\",\n          \"guided_command\": null\n        }\n      }\n    ],\n    \"migration_notices\": [\n      {\n        \"file\": \"{project}/docs/adr/ADR-001-no-foo.md\",\n        \"detected_format\": \"canonical\",\n        \"supported\": true,\n        \"metadata_change\": true,\n        \"metadata_issues\": [],\n        \"missing_sections\": [],\n        \"rename_to\": null,\n        \"writes_automatically\": false,\n        \"action\": \"deterministic-preview\",\n        \"deterministic\": true,\n        \"message\": \"Detected supported canonical ADR; canonical metadata can be added deterministically.\",\n        \"preview_command\": \"<command>\",\n        \"apply_command\": \"<command>\",\n        \"guided_command\": null\n      }\n    ],\n    \"exit_code\": 0\n  }\n}"}]}}
+{"jsonrpc": "2.0", "id": 10, "result": {"content": [{"type": "text", "text": "{\n  \"adr\": {\n    \"adr_id\": \"ADR-001\",\n    \"title\": \"No Foo\",\n    \"status\": \"Accepted\",\n    \"path\": \"{project}/docs/adr/ADR-001-no-foo.md\"\n  },\n  \"outbound\": [],\n  \"inbound\": [],\n  \"dangling\": []\n}"}]}}
 """
 
 LEGACY_GOLDEN_FRAMES = [
@@ -1073,6 +1147,8 @@ LEGACY_GOLDEN_FRAMES = [
     call("adr_status", {}, GOLDEN_STATUS_ID),
     call("adr_quality", {"adr_id": "ADR-001"}, 7),
     call("adr_readiness", {"adr_id": "ADR-001", "today": "2026-07-20"}, 8),
+    call("adr_lint", {}, GOLDEN_LINT_ID),
+    call("adr_related", {"adr_id": "ADR-001"}, GOLDEN_RELATED_ID),
 ]
 
 
@@ -1143,8 +1219,34 @@ def normalised_status_payload(text: str) -> dict:
     return payload
 
 
+def normalised_path_payload(text: str):
+    """Parse a payload and normalise OS path separators in every string.
+
+    adr_lint and adr_related quote native paths (lint's `target` and
+    `repo_root`, related's `path`), so their golden frames cannot be compared
+    as bytes across Windows and POSIX. Migration-notice command fields embed
+    the absolute path of the adr-kit checkout that ran the capture, so they
+    are masked entirely. Both sides of the comparison pass through this, so a
+    genuine payload change still fails the test.
+    """
+    masked_keys = {"preview_command", "apply_command", "guided_command"}
+
+    def walk(value, key=None):
+        if isinstance(value, str):
+            if key in masked_keys:
+                return "<command>"
+            return value.replace("\\", "/")
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        if isinstance(value, dict):
+            return {k: walk(item, k) for k, item in value.items()}
+        return value
+
+    return walk(json.loads(text))
+
+
 def test_legacy_wire_output_is_byte_identical_to_the_pre_change_server(project: Path):
-    """initialize, ping, tools/list and all five tools/call shapes, unchanged.
+    """initialize, ping, tools/list and all seven tools/call shapes, unchanged.
 
     This is the guard that serving a second era did not alter one byte of what
     today's clients receive. ADR-016 Must Not: "No legacy-routed result may
@@ -1177,13 +1279,30 @@ def test_legacy_wire_output_is_byte_identical_to_the_pre_change_server(project: 
                 "documented normalisations)"
             )
             continue
+        if req_id in (GOLDEN_LINT_ID, GOLDEN_RELATED_ID):
+            got_obj, want_obj = json.loads(got), json.loads(want)
+            assert list(got_obj) == list(want_obj), "JSON-RPC frame changed"
+            assert list(got_obj["result"]) == list(want_obj["result"]), (
+                "envelope changed: legacy results carry `content` only"
+            )
+            got_payload = normalised_path_payload(
+                got_obj["result"]["content"][0]["text"]
+            )
+            want_payload = normalised_path_payload(
+                want_obj["result"]["content"][0]["text"]
+            )
+            assert got_payload == want_payload, (
+                f"payload changed for request {req_id} (path separators "
+                "normalised on both sides)"
+            )
+            continue
         assert got == want, f"legacy wire output changed for request {req_id}"
 
 
 def test_legacy_golden_covers_the_whole_legacy_surface():
     """The golden is only a guard if it actually covers every legacy method."""
     golden = golden_lines()
-    assert len(golden) == 8
+    assert len(golden) == 10
     methods = {frame["method"] for frame in LEGACY_GOLDEN_FRAMES if "id" in frame}
     assert methods == {"initialize", "ping", "tools/list", "tools/call"}
     tools = {

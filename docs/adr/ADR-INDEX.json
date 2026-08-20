@@ -457,7 +457,7 @@
       "path": "ADR-011-adopt-deterministic-readiness-and-human-gated-grilling-across-the-adr-lifecycle.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-03",
+      "date": "2026-08-19",
       "decision_summary": "Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i...",
       "topics": [
         "grilling",
@@ -589,7 +589,7 @@
       "path": "ADR-014-use-the-generated-adr-graph-as-the-selective-context-query-engine.md",
       "format": "madr",
       "status": "Superseded",
-      "date": "2026-08-09",
+      "date": "2026-08-19",
       "decision_summary": "Chosen direction: query a versioned generated ADR graph through one shared deterministic engine, with Markdown retain...",
       "topics": [
         "ADR retrieval",
@@ -710,7 +710,7 @@
       "path": "ADR-016-serve-both-mcp-protocol-eras-from-one-hand-rolled-stdio-server.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-31",
+      "date": "2026-08-19",
       "decision_summary": "Chosen option: extend the hand-rolled stdio server to serve both protocol eras from one process, with the official mc...",
       "topics": [
         "backward compatibility",
@@ -2129,6 +2129,66 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-040",
+      "title": "Grow the MCP Tool Surface Only With Read-Only Deterministic Cycle Tools",
+      "path": "ADR-040-grow-the-mcp-tool-surface-only-with-read-only-deterministic-cycle-tools.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-19",
+      "decision_summary": "Chosen option: record an expansion criterion and admit exactly the two cycle tools it selects today, because it compl...",
+      "topics": [
+        "agent workflow",
+        "model context protocol",
+        "read-only tooling",
+        "tool surface"
+      ],
+      "aliases": [
+        "adr_lint MCP tool",
+        "adr_related MCP tool",
+        "MCP expansion criterion"
+      ],
+      "components": [
+        "bin/adr-mcp"
+      ],
+      "symbols": [
+        "tool_adr_lint",
+        "tool_adr_related",
+        "TOOL_DEFINITIONS",
+        "TOOL_HANDLERS"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every MCP tool delegates to a sister CLI via subprocess and accepts the optional projectroot / adrdir workspace arguments.",
+          "Every addition to TOOLDEFINITIONS satisfies all four admission tests of this decision, and the ADR recording that addition names the guide step it covers.",
+          "adrlint runs bin/adr-lint with JSON output; adrrelated runs bin/adr-related with JSON output."
+        ],
+        "must_not": [
+          "No MCP tool may mutate repository, lifecycle, or index state (ADR-011).",
+          "No MCP tool may require an API key or invoke an LLM (ADR-004, ADR-016).",
+          "No composite tool may be added when agents can compose the result from exposed tools."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "tests/testadrmcp.py (tool list, delegation, read-only behaviour).",
+          "python scripts/build-client-adapters.py --check (triplicate identity)."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2385,6 +2445,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-011",
+      "target": "ADR-040",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-012",
       "target": "ADR-006",
       "type": "related",
@@ -2451,6 +2517,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-014",
+      "target": "ADR-040",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-015",
       "target": "ADR-001",
       "type": "related",
@@ -2501,6 +2573,12 @@
     {
       "source": "ADR-016",
       "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-016",
+      "target": "ADR-040",
       "type": "related",
       "resolved": true
     },
@@ -3071,6 +3149,24 @@
     {
       "source": "ADR-039",
       "target": "ADR-034",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-040",
+      "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-040",
+      "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-040",
+      "target": "ADR-016",
       "type": "related",
       "resolved": true
     }

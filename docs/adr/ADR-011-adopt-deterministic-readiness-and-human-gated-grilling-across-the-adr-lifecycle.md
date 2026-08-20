@@ -11,7 +11,7 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-022"
-format: "madr"
+  - "ADR-040"
 topics:
   - "grilling"
   - "readiness"
@@ -25,6 +25,7 @@ components:
   - "adr-readiness"
   - "adr-mcp"
   - "adr"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -53,6 +54,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: ADR-022 constrains the grilling readiness model ADR-011 established
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-19
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-040
     changed_via: adr-kit lifecycle
 ```
 

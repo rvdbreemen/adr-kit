@@ -15,6 +15,7 @@ supersedes: []
 superseded_by: "ADR-018"
 related:
   - "ADR-036"
+  - "ADR-040"
 topics:
   - "ADR retrieval"
   - "selective context"
@@ -64,6 +65,11 @@ status_history:
     status: Superseded
     changed_by: adr-kit
     reason: Related to ADR-036
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-19
+    status: Superseded
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-040
     changed_via: adr-kit lifecycle
 ```
 

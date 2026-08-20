@@ -5,53 +5,47 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.53.0] - 2026-08-20
 
-## [0.52.2] - 2026-08-19
+The MCP server grows from five to seven tools, completing the prescribed
+agent development cycle for MCP-only clients. No breaking changes; existing
+installations need no migration.
 
-This release supersedes the unpublished `v0.52.1` tag after its release
-workflow correctly stopped on stale simulated certification evidence.
+### Added
 
-### Fixed
-
-- **OpenCode 1.18.18 startup** no longer rejects the ADR reference registered by
-  the native plugin. The plugin now uses the runtime-compatible string path form
-  for `docs/adr`, while preserving existing user-owned references.
-- **Release certification freshness** now carries simulated contract evidence
-  dated within the 30-day release gate, keeping the full release workflow green.
-
-### Changed
-
-- **OpenCode npm publication flow** runs from the canonical `release-publish.yml`
-  workflow. It stages the package through Trusted Publishing after the GitHub
-  Release, while maintainer 2FA approval remains required before the package
-  becomes public.
-
-### Upgrade Notes
-
-- OpenCode users can install `@rvdbreemen/adr-kit-opencode@0.52.2` after npm
-  staging is approved, or point at a reviewed repository checkout. Restart
-  OpenCode after changing plugin or config files.
-
-## [0.52.1] - 2026-08-18
-
-### Fixed
-
-- **OpenCode 1.18.18 startup** no longer rejects the ADR reference registered by
-  the native plugin. The plugin now uses the runtime-compatible string path form
-  for `docs/adr`, while preserving existing user-owned references.
+- **`adr_lint` MCP tool**: lint the ADR set against the deterministic
+  verification gates over MCP, with an optional `strict` mode. Wraps
+  `bin/adr-lint --format json` and reports `verdict: ok` or
+  `verdict: findings` alongside the full JSON report, so a shell-less agent
+  can run the mandatory pre-completion lint step.
+- **`adr_related` MCP tool**: the dependency graph (inbound and outbound
+  edges, supersession links, dangling references) for one ADR over MCP,
+  wrapping `bin/adr-related --format json`. Agents can now follow graph
+  links after `adr_context` without raw file reads.
+- **ADR-040** (Accepted): records the admission criterion for the MCP tool
+  surface — read-only, deterministic and key-free, agent-query-shaped, and
+  covering a development-cycle step no exposed tool already covers. Future
+  tool proposals are evaluated against these four recorded tests.
 
 ### Changed
 
+- **Agent guide rewritten for autonomous operation**
+  (`.adr-kit/ADR-guide.md`): a tool-surface table mapping each MCP tool to
+  its CLI equivalent with mutation flags, per-phase steps with expected
+  outcomes and agent reactions, and an explicit human-gated list (accept,
+  supersede, reject, signer). Projects pick this up on the next
+  `/adr-kit:setup` or `/adr-kit:upgrade`.
+- **Doctor deep probe and installer smoke test** now verify the complete
+  seven-tool MCP contract.
 - **OpenCode npm publication flow** now runs from the canonical
   `release-publish.yml` workflow. It stages the package through Trusted
   Publishing after the GitHub Release, while maintainer 2FA approval remains
   required before the package becomes public.
 
-### Upgrade Notes
-
-- OpenCode users can install `@rvdbreemen/adr-kit-opencode@0.52.1` after npm
-  staging is approved, or point at a reviewed repository checkout. Restart
-  OpenCode after changing plugin or config files.
+- **OpenCode npm publication flow** now runs from the canonical
+  `release-publish.yml` workflow. It stages the package through Trusted
+  Publishing after the GitHub Release, while maintainer 2FA approval remains
+  required before the package becomes public.
 
 ## [0.52.0] - 2026-08-16
 
@@ -2731,9 +2725,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.2...HEAD
-[0.52.2]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.1...v0.52.2
-[0.52.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...v0.52.1
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.53.0...HEAD
+[0.53.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.49.0...v0.50.0
