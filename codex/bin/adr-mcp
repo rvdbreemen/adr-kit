@@ -783,6 +783,8 @@ TOOL_HANDLERS = {
 # JSON-RPC 2.0 plumbing (newline-delimited over stdio)
 # ---------------------------------------------------------------------------
 
+JSONRPC_VERSION = "2.0"
+
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
@@ -837,8 +839,27 @@ def _write_message(payload: Dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+def request_id_is_valid(value: Any) -> bool:
+    """True when this server may echo `value` as a JSON-RPC id.
+
+    `RequestId` is `string | number` in schema.ts and `string | integer` in the
+    generated schema.json. Floats are refused even when integral: Python cannot
+    echo 1.0 without serialising it as `1.0`, which is not an integer in JSON,
+    and the echo lands in the server's OWN outgoing frame - the one place a
+    non-conformant peer cannot correct for us. Normalising 1.0 to 1 would keep
+    the value but silently change the representation the client chose, against
+    "It MUST be the same as the value of the id member in the Request Object".
+    JSON-RPC 2.0 itself says numbers SHOULD NOT contain fractional parts.
+
+    `bool` is excluded explicitly, because isinstance(True, int) is True.
+    """
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, (str, int))
+
+
 def _reply_result(req_id: Any, result: Dict[str, Any]) -> None:
-    _write_message({"jsonrpc": "2.0", "id": req_id, "result": result})
+    _write_message({"jsonrpc": JSONRPC_VERSION, "id": req_id, "result": result})
 
 
 def _reply_error(
@@ -847,7 +868,7 @@ def _reply_error(
     error: Dict[str, Any] = {"code": code, "message": message}
     if data is not None:
         error["data"] = data
-    _write_message({"jsonrpc": "2.0", "id": req_id, "error": error})
+    _write_message({"jsonrpc": JSONRPC_VERSION, "id": req_id, "error": error})
 
 
 # ---------------------------------------------------------------------------
@@ -922,6 +943,15 @@ def modern_envelope_error(
             f"Invalid params: '{PROTOCOL_VERSION_META_KEY}' must be a string",
             None,
         )
+    if not isinstance(meta[CLIENT_CAPABILITIES_META_KEY], dict):
+        # Also a shape defect, and deliberately decided before negotiation:
+        # RequestMetaObject types this key as ClientCapabilities, so a scalar
+        # there is a malformed envelope rather than a version disagreement.
+        return (
+            INVALID_PARAMS,
+            f"Invalid params: '{CLIENT_CAPABILITIES_META_KEY}' must be an object",
+            None,
+        )
     if requested not in MODERN_PROTOCOL_VERSIONS:
         # Era-scoped: a modern answer lists modern versions only, because a
         # handshake revision cannot be reached through a modern envelope.
@@ -938,7 +968,7 @@ def _modern_result(
 ) -> Dict[str, Any]:
     """Stamp a modern-era result: resultType, cache hints, _meta.serverInfo.
 
-    `resultType` is always "complete": the five tools are fully parameterised
+    `resultType` is always "complete": the seven tools are fully parameterised
     by their arguments, so the server never emits "input_required" and never
     invents a value of its own. Cache hints are stamped on `server/discover`
     and `tools/list` only - `CallToolResult` extends `Result`, not
@@ -1027,6 +1057,24 @@ def dispatch(message: Dict[str, Any], root: Path, adr_dir: Path) -> None:
     if not isinstance(params, dict):
         params = {}
 
+    # Base protocol first, before anything era-specific. `jsonrpc` and the id
+    # shape are JSON-RPC 2.0 rather than MCP, so both eras answer them alike,
+    # and clearing them here means every echo further down is a shape this
+    # server is allowed to emit.
+    if message.get("jsonrpc") != JSONRPC_VERSION:
+        if not is_notification:
+            _reply_error(None, INVALID_REQUEST,
+                         f"Invalid request: 'jsonrpc' must be {JSONRPC_VERSION!r}")
+        return
+
+    if not is_notification and not request_id_is_valid(req_id):
+        # The id cannot be echoed without repeating the defect it carries, so
+        # the reply takes the null id JSON-RPC 2.0 reserves for exactly this
+        # case - the same convention serve() already uses for a parse error.
+        _reply_error(None, INVALID_REQUEST,
+                     "Invalid request: 'id' must be a string or an integer")
+        return
+
     if not isinstance(method, str):
         if not is_notification:
             _reply_error(req_id, INVALID_REQUEST, "Invalid request: missing method")
@@ -1035,7 +1083,7 @@ def dispatch(message: Dict[str, Any], root: Path, adr_dir: Path) -> None:
     if method.startswith("notifications/"):
         # notifications/initialized, notifications/cancelled,
         # notifications/progress, ...: accepted and ignored in both eras.
-        # The notification rules forbid a response, and the five tool
+        # The notification rules forbid a response, and the seven tool
         # handlers are synchronous subprocess calls that cannot be
         # interrupted mid-flight, so nothing further is emitted either.
         return
