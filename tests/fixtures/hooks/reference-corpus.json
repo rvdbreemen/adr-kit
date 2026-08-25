@@ -32,7 +32,7 @@
       "release": "11",
       "python": "3.12.9"
     },
-    "host": "python-fallback; the native binary is opt-in since ADR-029",
+    "host": "python; the only host since ADR-029 retired the native binary",
     "measured_p50_ms": {
       "session-start": 262.9,
       "user-prompt-submit": 275.4,

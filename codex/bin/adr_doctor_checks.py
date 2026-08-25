@@ -192,9 +192,11 @@ def check_hook_package(plugin_root: Path, client: str) -> dict[str, Any]:
             actions=[{"detail": f"Reinstall ADR Kit for {client}."}],
         )
     runtime = root / "hooks" / "adr-hook.py"
-    native = root / "hooks" / "bin" / "windows-x64" / "adr-hook.exe"
     wrapper = root / "hooks" / "run-hook.cmd"
-    required_files = [runtime, native]
+    # The Rust host used to be required here too. ADR-029 retired it, so
+    # demanding the artefact would now fail every healthy install: Python is
+    # the runtime on every platform.
+    required_files = [runtime]
     if client != "copilot":
         required_files.append(wrapper)
     missing = [str(path) for path in required_files if not path.is_file()]

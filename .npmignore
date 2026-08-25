@@ -14,9 +14,6 @@ agents/
 prompts/
 .github/
 
-# Claude-only native hook payloads are not used by the OpenCode adapter.
-hooks/bin/
-hooks/native/
 hooks/hooks.json
 hooks/manifest.json
 hooks/run-hook.cmd

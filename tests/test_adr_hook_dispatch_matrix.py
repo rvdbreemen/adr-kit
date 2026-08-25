@@ -22,7 +22,9 @@ client would send, and an assertion on raw bytes.
 """
 
 # Gate anchor for ADR-029: adr-single-retrieval-engine-v1
-# Verified here: one retrieval engine: the native host runs only under ADR_KIT_NATIVE_HOOK=1.
+# Verified here: one retrieval engine, because there is only one host left.
+# The dispatcher carries no native branch, no committed artefact to prefer,
+# and no env var to re-enable one. The gate fails if a second engine returns.
 
 from __future__ import annotations
 
@@ -260,28 +262,36 @@ def test_the_frame_is_utf8_bytes_whatever_the_console_encoding_is(client, worksp
 @pytest.mark.parametrize(
     "tree", [pytest.param(path, id=client) for client, path in sorted(TREES.items())]
 )
-def test_the_native_host_is_opt_in_until_it_passes_parity(tree):
-    """The dispatcher must not silently prefer the native binary.
+def test_the_dispatcher_carries_no_second_retrieval_engine(tree):
+    """ADR-029 Must: remove the native host, its committed artefact, and the
+    dispatcher branch that prefers it.
 
-    Rebuilt from current source and measured against the Python oracle on this
-    repository, the Windows host returned one of four governing ADRs before an
-    edit, four of five at prompt time, and nothing for ExitPlanMode. Because
-    `run-hook.cmd` preferred it whenever it existed, a fix landing in Python
-    changed nothing on the platform `clients/capabilities.json` marks
-    release-required - which is how two of this release's defects stayed
-    invisible. Restoring the preference is gated on the parity certification
-    `hooks/native/README.md` describes, so this test guards the gate.
+    The predecessor of this test asserted the weaker thing - that the native
+    branch was gated behind ADR_KIT_NATIVE_HOOK=1 - and so certified the option
+    ADR-029 explicitly rejected. Opt-in was a resting place, not the decision:
+    an artefact that ships, cannot be trusted and is nobody's job decays, and
+    it did. Rebuilt from source and measured against the Python oracle, the
+    Windows host returned one of four governing ADRs before an edit and nothing
+    at all for ExitPlanMode.
+
+    Asserted on both halves of the polyglot dispatcher and on every generated
+    tree, because a second engine reintroduced one client over is exactly the
+    divergence nobody would think to re-check.
     """
     dispatcher = (tree / "run-hook.cmd").read_text(encoding="utf-8")
 
-    for line in dispatcher.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("REM") or stripped.startswith("#"):
-            continue
-        if "ADR_HOOK_NATIVE" in stripped and stripped.startswith("if "):
-            assert "ADR_KIT_NATIVE_HOOK" in stripped, stripped
-        if stripped.startswith("if ") and '"$NATIVE"' in stripped:
-            assert "ADR_KIT_NATIVE_HOOK" in stripped, stripped
+    for token in ("ADR_KIT_NATIVE_HOOK", "ADR_HOOK_NATIVE", "adr-hook.exe",
+                  "$NATIVE", "hooks/native", "bin/windows-", "bin/darwin-",
+                  "bin/linux-"):
+        assert token not in dispatcher, (
+            f"{tree.name}/run-hook.cmd still reaches for a native host: {token!r}"
+        )
+
+    # Positive half: the one host must actually be dispatched, on both sides.
+    assert "adr-hook.py" in dispatcher, "the Python host is not dispatched at all"
+    assert dispatcher.count("adr-hook.py") >= 2, (
+        "one of the cmd.exe / POSIX-sh halves does not dispatch the Python host"
+    )
 
 
 @pytest.mark.parametrize("client", ["codex-cli", "github-copilot-cli"])

@@ -57,58 +57,65 @@ def test_windows_process_floor_supports_revised_percentiles_without_hiding_outli
     }
 
 
-def test_the_default_host_is_python_since_the_native_one_became_opt_in(monkeypatch):
-    """v0.44.1 stopped preferring the native host, so the benchmark must too.
+def test_host_command_dispatches_only_python_even_with_the_old_opt_in_set(
+    monkeypatch,
+):
+    """ADR-029 retired the native binary, so there is one host to select and
+    `host_command` must return it regardless of environment.
 
-    Measured against the Python oracle it returned one of four governing ADRs
-    before an edit, so `run-hook.cmd` now runs it only under
-    `ADR_KIT_NATIVE_HOOK=1`. A benchmark that still picked it up whenever the
-    file exists would publish latency for a path that no longer ships -- the
-    most misleading number this file could produce.
+    Asserted on the actual command `host_command` builds, not on the label it
+    returns alongside it: with `host_command` now unconditional, an assertion
+    against the label alone is true by construction and would not catch a
+    native branch reintroduced under a different or unchanged label - the same
+    failure mode as the gate anchor TASK-187 rewrote for exactly this reason.
+    The env var that used to select the other host is set here on purpose: it
+    no longer exists anywhere in the tree, and a benchmark that still honoured
+    it would publish latency for a path that does not ship - the most
+    misleading number this file could produce.
     """
-    monkeypatch.delenv("ADR_KIT_NATIVE_HOOK", raising=False)
-    result = measure(ROOT, ROOT, samples=3)
+    from hooks.hook_benchmark import host_command
 
+    monkeypatch.setenv("ADR_KIT_NATIVE_HOOK", "1")
+    command, host = host_command(ROOT, "codex-cli", "SessionStart")
+
+    assert command == [
+        sys.executable,
+        str(ROOT / "hooks" / "adr-hook.py"),
+        "--client",
+        "codex-cli",
+        "--event",
+        "SessionStart",
+    ], command
+    assert host == "python", host
+
+    result = measure(ROOT, ROOT, samples=3)
     assert all(
-        item["host"] == "python-fallback" for item in result["results"].values()
+        item["host"] == "python" for item in result["results"].values()
     ), result
 
 
-def test_native_hook_host_meets_every_hard_timeout(monkeypatch):
-    monkeypatch.setenv("ADR_KIT_NATIVE_HOOK", "1")
+def test_the_reported_targets_are_consistent_and_never_coerced():
+    """Shape and internal consistency, not machine speed.
+
+    Certification on the declared runner owns the release-blocking assertion
+    that the budgets are met; this potentially loaded developer machine does
+    not. What must hold everywhere is that a miss is reported as a miss:
+    `all_targets_met` has to be exactly the conjunction of the per-event
+    targets, and every target has to be a real boolean rather than a truthy
+    stand-in that hides a number.
+    """
     result = measure(ROOT, ROOT, samples=5)
     assert result["method_id"] == METHOD_ID
     assert result["process_startup_included"]
-    if any(
-        item["host"] != "native" for item in result["results"].values()
-    ):
-        pytest.skip("native hook binary is unavailable on this runner")
     assert all(
-        item["targets"]["hard_timeout"] for item in result["results"].values()
+        isinstance(target, bool)
+        for item in result["results"].values()
+        for target in item["targets"].values()
     ), result
-    assert all(item["timeout_count"] == 0 for item in result["results"].values())
-
-
-def test_windows_native_host_reports_p95_targets_without_masking(monkeypatch):
-    # This test is about the native host, so it asks for it. Since v0.44.1 the
-    # dispatcher does not, and the assertion below would otherwise pin
-    # behaviour that was deliberately removed.
-    monkeypatch.setenv("ADR_KIT_NATIVE_HOOK", "1")
-    result = measure(ROOT, ROOT, samples=30)
-    if os.name == "nt":
-        assert all(
-            item["host"] == "native" for item in result["results"].values()
-        )
-        assert all(
-            isinstance(item["targets"]["p95"], bool)
-            for item in result["results"].values()
-        )
-        # Certification, not this potentially loaded developer machine, owns
-        # the release-blocking target assertion. Never coerce a miss to pass.
-        assert result["all_targets_met"] == all(
-            all(item["targets"].values())
-            for item in result["results"].values()
-        )
+    assert result["all_targets_met"] == all(
+        all(item["targets"].values())
+        for item in result["results"].values()
+    )
 
 
 # ---------------------------------------------------------------------------
