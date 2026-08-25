@@ -114,6 +114,12 @@ deleted safely. SessionStart reads only this cache and offers at most three
 commands such as `/adr-kit:grill ADR-042`; it never calculates readiness or
 starts an interview inside the hook.
 
+During the next user-visible prompt, the first eligible queue item is handed to
+the active client through an `AUTO_GRILL_PENDING` instruction. The client starts
+the exact native grill command automatically. Mechanical-only findings remain
+on the repair path, and the handoff can be disabled with
+`grill.auto_start: false` or `ADR_KIT_AUTO_GRILL_DISABLE=1`.
+
 To inspect the authoritative current state without the cache:
 
 ```bash

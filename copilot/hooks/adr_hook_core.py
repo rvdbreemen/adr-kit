@@ -41,6 +41,7 @@ DEFAULT_MAX_RESULTS = 5
 MAX_RESULTS = DEFAULT_MAX_RESULTS
 QUEUE_CACHE_NAME = ".adr-kit-readiness.json"
 QUEUE_MAX_BYTES = 256 * 1024
+AUTO_GRILL_DISABLE_ENV = "ADR_KIT_AUTO_GRILL_DISABLE"
 WRITE_TOOLS = {
     "edit",
     "multiedit",
@@ -234,23 +235,31 @@ def load_records(workspace: Path) -> list[dict[str, Any]]:
     ]
 
 
-def load_queue_context(workspace: Path) -> str:
-    """Read the prepared Proposed queue only; missing/stale/corrupt fails open."""
+def _load_queue_payload(workspace: Path) -> dict[str, Any] | None:
+    """Read the prepared queue; missing, stale, or corrupt data fails open."""
     path = workspace / "docs" / "adr" / QUEUE_CACHE_NAME
     try:
         if not path.is_file() or path.stat().st_size > QUEUE_MAX_BYTES:
-            return ""
+            return None
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or payload.get("schema_version") != 1:
-            return ""
+            return None
         from datetime import datetime, timezone
 
         expires_at = datetime.fromisoformat(str(payload["expires_at"]))
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) >= expires_at.astimezone(timezone.utc):
-            return ""
+            return None
+        return payload
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return None
+
+
+def load_queue_context(workspace: Path) -> str:
+    """Read the prepared Proposed queue only; missing/stale/corrupt fails open."""
+    payload = _load_queue_payload(workspace)
+    if payload is None:
         return ""
     lines = ["Proposed ADR decision queue (derived, non-authoritative):"]
     count = 0
@@ -273,6 +282,83 @@ def load_queue_context(workspace: Path) -> str:
         if count == MAX_RESULTS:
             break
     return "\n".join(lines)[:MAX_CONTEXT_CHARS] if count else ""
+
+
+def _auto_grill_seen(
+    workspace: Path,
+    session_id: str | None,
+    adr_id: str,
+    queue_marker: str,
+) -> bool:
+    """Suppress a second automatic handoff for one session and queue state."""
+    if not session_id:
+        return False
+    safe_session = re.sub(r"[^A-Za-z0-9._-]", "_", session_id)[:80]
+    state = Path(tempfile.gettempdir()) / f"adr-kit-auto-grill-{safe_session}.seen"
+    try:
+        signature = f"{workspace.resolve()}|{adr_id}|{queue_marker}"
+        if state.is_file() and state.read_text(encoding="utf-8") == signature:
+            return True
+        temporary = state.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_text(signature, encoding="utf-8")
+        os.replace(temporary, state)
+    except OSError:
+        return False
+    return False
+
+
+def load_auto_grill_context(
+    workspace: Path,
+    client: str,
+    session_id: str | None = None,
+) -> str:
+    """Return one deterministic, user-present grill handoff from the queue.
+
+    The hook never invokes a client command. It gives the active model one
+    exact native command at UserPromptSubmit; the model-facing workflow then
+    starts the interactive grill. Mechanical findings stay on the repair path.
+    """
+    if not _auto_grill_enabled(workspace):
+        return ""
+    payload = _load_queue_payload(workspace)
+    if payload is None:
+        return ""
+    queue_marker = str(payload.get("generated_at", ""))
+    for item in payload.get("actions", []):
+        if not isinstance(item, dict):
+            continue
+        adr_id = str(item.get("adr_id", ""))
+        command = str(item.get("command", ""))
+        classification = str(item.get("classification", ""))
+        if not re.fullmatch(r"ADR-\d{3,4}", adr_id):
+            continue
+        if command != f"/adr-kit:grill {adr_id}":
+            continue
+        if classification not in {
+            "needs-human-input",
+            "ready-for-confirmation",
+            "supersession-required",
+        }:
+            continue
+        if _auto_grill_seen(workspace, session_id, adr_id, queue_marker):
+            return ""
+        reasons = [
+            re.sub(r"[\r\n]+", " ", str(reason))[:160]
+            for reason in item.get("reasons", [])
+            if str(reason)
+        ][:3]
+        native_command = _client_grill(client, adr_id)
+        reason_text = ", ".join(reasons) or "readiness requires human attention"
+        return (
+            "AUTO_GRILL_PENDING: The deterministic ADR readiness queue found an "
+            "unfinished or unclear Proposed ADR in this interactive session. "
+            f"Start {native_command} now before continuing the user's task. "
+            f"Target: {adr_id}. Reason: {reason_text}. "
+            "The grill must ask exactly one human question at a time; never "
+            "accept the ADR automatically, and do not repeat this automatic "
+            "handoff while the current grill is active."
+        )[:MAX_CONTEXT_CHARS]
+    return ""
 
 
 def _tokens(text: str) -> set[str]:
@@ -340,6 +426,21 @@ def _switched_off(workspace: Path, block: str) -> bool:
     return block_config.get("enabled") is False
 
 
+def _auto_grill_enabled(workspace: Path) -> bool:
+    """Return whether the interactive prompt handoff is enabled.
+
+    Detection remains fail-open: an unreadable project setting keeps the feature
+    enabled, while the explicit environment override is useful when a host
+    cannot safely dispatch a client workflow.
+    """
+    if os.environ.get(AUTO_GRILL_DISABLE_ENV) == "1":
+        return False
+    grill_config = _project_config(workspace).get("grill")
+    if not isinstance(grill_config, dict):
+        return True
+    return grill_config.get("auto_start") is not False
+
+
 def _configured_limit(workspace: Path) -> int:
     """context.default_limit when set, else the default. Bounded and fail-soft.
 
@@ -362,7 +463,7 @@ PROMPT_SELECTION_INSTRUCTION = (
 )
 
 
-def _prompt_candidates_context(parts: "list[str]") -> str:
+def _prompt_candidates_context(parts: "list[str]", prefix: str = "") -> str:
     """Join candidate sections and append the selection instruction, in budget.
 
     The instruction is the one line that must never be lost: without it the
@@ -372,10 +473,18 @@ def _prompt_candidates_context(parts: "list[str]") -> str:
     set was biggest. The native host mirrors this arithmetic.
     """
     candidates = "\n".join(parts)
-    room = MAX_CONTEXT_CHARS - len(PROMPT_SELECTION_INSTRUCTION) - 1
+    prefix = prefix[: max(0, MAX_CONTEXT_CHARS - len(PROMPT_SELECTION_INSTRUCTION) - 3)]
+    prefix_overhead = len(prefix) + 2 if prefix else 0
+    room = (
+        MAX_CONTEXT_CHARS
+        - len(PROMPT_SELECTION_INSTRUCTION)
+        - 1
+        - prefix_overhead
+    )
     if len(candidates) > room:
         candidates = candidates[:room]
-    return candidates + "\n" + PROMPT_SELECTION_INSTRUCTION
+    body = candidates + "\n" + PROMPT_SELECTION_INSTRUCTION
+    return prefix + "\n\n" + body if prefix else body
 
 
 REFRESHING_EVENTS = {"SessionStart", "UserPromptSubmit"}
@@ -745,13 +854,13 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
             if part
         ]
         return ("\n\n".join(parts)[:MAX_CONTEXT_CHARS], "session") if parts else ("", "noop")
-    if not records and envelope.event not in {"PreToolUse", "PostToolUse"}:
+    if not (records or proposed) and envelope.event not in {"PreToolUse", "PostToolUse"}:
         return "", "noop"
     if envelope.event == "UserPromptSubmit":
         selected = _query(envelope.workspace, envelope.prompt or "")
         governing = [item for item in selected if item.get("status") == "Accepted"]
         advisory = [item for item in selected if item.get("status") == "Proposed"]
-        parts = [
+        candidate_parts = [
             part
             for part in (
                 _render(governing, "Accepted ADR candidates for this prompt (retrieval-ranked):"),
@@ -759,7 +868,16 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
             )
             if part
         ]
-        if not parts:
+        auto_grill = (
+            load_auto_grill_context(
+                envelope.workspace,
+                envelope.client,
+                envelope.session_id,
+            )
+            if (envelope.prompt or "").strip()
+            else ""
+        )
+        if not candidate_parts and not auto_grill:
             return "", "noop"
         # R5: retrieval narrows, the model chooses. The old heading asserted
         # relevance ("relevant to this prompt"), which read as a settled
@@ -768,7 +886,9 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
         # in the hook itself (ADR-036). The instruction's length is reserved
         # in _prompt_candidates_context: append-then-slice cut it precisely
         # when the candidate set was biggest.
-        return _prompt_candidates_context(parts), "prompt"
+        if not candidate_parts:
+            return auto_grill, "prompt"
+        return _prompt_candidates_context(candidate_parts, auto_grill), "prompt"
     if envelope.event in {"PreToolUse", "PostToolUse"}:
         tool = (envelope.tool_name or "").lower().replace("_", "")
         if envelope.event == "PreToolUse" and tool in PLAN_EXIT_TOOLS:

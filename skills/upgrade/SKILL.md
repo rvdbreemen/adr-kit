@@ -64,6 +64,28 @@ Inspect the current state:
 
 Report the detected state to the user in a 4–6 line summary before changing anything.
 
+### Step 1a — Materialize the automatic-grilling default
+
+For a project that has `docs/adr/`, inspect the effective settings before the
+upgrade no-op check:
+
+```bash
+python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --format json
+```
+
+When `grill.auto_start` has source `default` or is absent, write the new
+default explicitly:
+
+```bash
+python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set grill.auto_start=true
+```
+
+This makes the latest install's default visible in the project's tracked
+configuration. If the project already sets `grill.auto_start: false`, preserve
+that explicit opt-out and report it; never overwrite a user's choice. The
+runtime environment opt-out `ADR_KIT_AUTO_GRILL_DISABLE=1` remains temporary and
+must not be written to project configuration.
+
 If all of the following are true, the project is already on v0.12:
 - CLAUDE.md has the marker-bracketed stub
 - `.claude/adr-kit-guide.md` matches the plugin's current version
