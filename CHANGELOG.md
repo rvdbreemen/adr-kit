@@ -4,6 +4,37 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-08-20
+
+Automatic interactive ADR grilling is now enabled by default for user-visible
+sessions. No breaking changes; existing projects retain an explicit opt-out.
+
+### Added
+
+- **Automatic Proposed-ADR handoff** (ADR-041): the next user-visible prompt
+  can emit one bounded `AUTO_GRILL_PENDING` instruction for the highest-priority
+  unfinished Proposed ADR. The handoff remains deterministic, local, fail-open,
+  and human-gated.
+- **Settings visibility**: `grill.auto_start` is available through
+  `bin/adr-settings`, with provenance showing whether the default or project
+  configuration supplied the value.
+
+### Changed
+
+- **Upgrade default materialization**: `/adr-kit:upgrade` writes
+  `grill.auto_start: true` when an existing project has no explicit value. An
+  existing `grill.auto_start: false` setting is preserved.
+- **Native client handoff**: Claude, Codex, Copilot, and OpenCode receive the
+  exact client-native grill command without starting interviews from CI,
+  pre-commit, background, or unattended lifecycle events.
+
+### Upgrade Notes
+
+- Run `/adr-kit:upgrade` after installing this release to materialize the new
+  project setting. The runtime default is already enabled when the setting is
+  absent.
+- Set `grill.auto_start: false` for a project-wide advisory-only opt-out, or
+  use `ADR_KIT_AUTO_GRILL_DISABLE=1` for one run.
 
 ## [0.53.0] - 2026-08-20
 
@@ -2725,7 +2756,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.53.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...HEAD
+[0.54.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.50.0...v0.51.0

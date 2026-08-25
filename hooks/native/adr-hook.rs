@@ -417,6 +417,94 @@ fn client_grill(client: &str, arguments: &str) -> String {
     format!("{} {}", prefix, arguments)
 }
 
+fn auto_grill_enabled(workspace: &Path) -> bool {
+    if env::var("ADR_KIT_AUTO_GRILL_DISABLE").ok().as_deref() == Some("1") {
+        return false;
+    }
+    let path = workspace.join("docs/adr/.adr-kit.json");
+    let Ok(config) = fs::read_to_string(path) else { return true };
+    !config.contains("\"auto_start\": false") && !config.contains("\"auto_start\":false")
+}
+
+fn auto_grill_seen(workspace: &Path, payload: &str, adr_id: &str, marker: &str) -> bool {
+    let Some(session) = json_string(payload, "session_id")
+        .or_else(|| json_string(payload, "sessionId")) else { return false };
+    let safe: String = session.chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || "._-".contains(ch) { ch } else { '_' })
+        .take(80)
+        .collect();
+    let path = env::temp_dir().join(format!("adr-kit-auto-grill-{}.seen", safe));
+    let signature = format!("{}|{}|{}", workspace.display(), adr_id, marker);
+    if fs::read_to_string(&path).ok().as_deref() == Some(signature.as_str()) {
+        return true;
+    }
+    let temporary = env::temp_dir().join(format!(
+        "adr-kit-auto-grill-{}.{}.tmp",
+        safe,
+        std::process::id()
+    ));
+    if fs::write(&temporary, signature).is_ok() {
+        let _ = fs::rename(temporary, path);
+    }
+    false
+}
+
+fn load_auto_grill_context(workspace: &Path, client: &str, payload: &str) -> String {
+    if !auto_grill_enabled(workspace) {
+        return String::new();
+    }
+    let path = workspace.join("docs/adr/.adr-kit-readiness.json");
+    let Ok(metadata) = fs::metadata(&path) else { return String::new() };
+    if metadata.len() > QUEUE_MAX_BYTES {
+        return String::new();
+    }
+    let fresh = metadata.modified().ok().and_then(|modified| {
+        SystemTime::now().duration_since(modified).ok()
+    }).map(|age| age < Duration::from_secs(24 * 60 * 60)).unwrap_or(false);
+    if !fresh {
+        return String::new();
+    }
+    let Ok(text) = fs::read_to_string(path) else { return String::new() };
+    if !text.contains("\"schema_version\": 1") && !text.contains("\"schema_version\":1") {
+        return String::new();
+    }
+    let Some(actions) = array_section(&text, "actions") else { return String::new() };
+    let marker = json_string(&text, "generated_at").unwrap_or_default();
+    for object in top_level_objects(actions) {
+        let Some(adr_id) = json_string(object, "adr_id") else { continue };
+        let Some(command) = json_string(object, "command") else { continue };
+        let classification = json_string(object, "classification").unwrap_or_default();
+        let digits = adr_id.strip_prefix("ADR-").map(|value| {
+            (3..=4).contains(&value.len()) && value.chars().all(|ch| ch.is_ascii_digit())
+        }).unwrap_or(false);
+        if !digits || command != format!("/adr-kit:grill {}", adr_id) {
+            continue;
+        }
+        if !matches!(classification.as_str(), "needs-human-input" | "ready-for-confirmation" | "supersession-required") {
+            continue;
+        }
+        if auto_grill_seen(workspace, payload, &adr_id, &marker) {
+            return String::new();
+        }
+        let reasons = string_array(object, "reasons").into_iter().take(3)
+            .map(|reason| reason.replace(['\r', '\n'], " "))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let reason_text = if reasons.is_empty() {
+            "readiness requires human attention".to_string()
+        } else {
+            reasons
+        };
+        let mut output = format!(
+            "AUTO_GRILL_PENDING: The deterministic ADR readiness queue found an unfinished or unclear Proposed ADR in this interactive session. Start {} now before continuing the user's task. Target: {}. Reason: {}. The grill must ask exactly one human question at a time; never accept the ADR automatically, and do not repeat this automatic handoff while the current grill is active.",
+            client_grill(client, &adr_id), adr_id, reason_text
+        );
+        output.truncate(output.len().min(MAX_CONTEXT));
+        return output;
+    }
+    String::new()
+}
+
 fn proposed_advisory(records: &[Record], relative: &str, client: &str) -> String {
     let mut linked: Vec<&Record> = records.iter().filter(|record| {
         record.status == "Proposed" && record.globs.iter().chain(record.verified.iter())
@@ -564,6 +652,11 @@ fn run() -> Option<String> {
             .filter(|record| record.status == "Proposed").cloned().collect();
         let governed = render(&governing, "Accepted ADR candidates for this prompt (retrieval-ranked):");
         let advised = render(&advisory, "Proposed ADR candidates for this prompt (advisory):");
+        let auto_grill = if prompt.trim().is_empty() {
+            String::new()
+        } else {
+            load_auto_grill_context(&workspace, client, &payload)
+        };
         // R5: retrieval narrows, the model chooses. Mirrors the Python core's
         // selection instruction byte-for-byte; the parity test pins both.
         let choose = "These are retrieval candidates, not confirmed matches: apply \
@@ -572,7 +665,8 @@ the ones that actually govern this work and ignore the rest.";
             (false, false) => format!("{}\n{}", governed, advised),
             (false, true) => governed,
             (true, false) => advised,
-            (true, true) => return None,
+            (true, true) if auto_grill.is_empty() => return None,
+            (true, true) => String::new(),
         };
         // Reserve the instruction's length and truncate the CANDIDATES, so the
         // instruction always survives and the combined context stays inside
@@ -581,7 +675,8 @@ the ones that actually govern this work and ignore the rest.";
         // when the candidate set was biggest, and no cap at all would let the
         // two renders together exceed the budget. Truncation backs up to a
         // char boundary: ADR titles carry multi-byte punctuation.
-        let room = MAX_CONTEXT.saturating_sub(choose.len() + 1);
+        let prefix_overhead = if auto_grill.is_empty() { 0 } else { auto_grill.len() + 2 };
+        let room = MAX_CONTEXT.saturating_sub(choose.len() + 1 + prefix_overhead);
         if candidates.len() > room {
             let mut cut = room;
             while cut > 0 && !candidates.is_char_boundary(cut) {
@@ -589,7 +684,13 @@ the ones that actually govern this work and ignore the rest.";
             }
             candidates.truncate(cut);
         }
-        let context = format!("{}\n{}", candidates, choose);
+        let context = if auto_grill.is_empty() {
+            format!("{}\n{}", candidates, choose)
+        } else if candidates.is_empty() {
+            auto_grill
+        } else {
+            format!("{}\n\n{}\n{}", auto_grill, candidates, choose)
+        };
         (context, false)
     } else if event == "PreToolUse" || event == "PostToolUse" {
         let tool = json_string(&payload, "tool_name")
