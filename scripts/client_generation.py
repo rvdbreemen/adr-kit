@@ -263,7 +263,7 @@ def generate(
             if not path.is_file() or "__pycache__" in path.parts:
                 continue
             relative = path.relative_to(output_root).as_posix()
-            if "/hooks/bin/" in f"/{relative}" or relative in expected_set:
+            if relative in expected_set:
                 continue
             drift.append(relative)
             if not check:

@@ -34,7 +34,7 @@ def test_public_artifact_allowlist_rejects_private_and_developer_state():
         "docs/reviews/private.md",
         ".env",
         "private.pem",
-        "hooks/bin/windows-x64/adr-hook.pdb",
+        "bin/adr-hook.pdb",
     ]
     assert GEN.validate_release_paths(forbidden, ALLOWLIST) == sorted(forbidden)
 

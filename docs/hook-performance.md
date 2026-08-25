@@ -25,8 +25,9 @@ The harness fixes:
 An event that declares no budget now fails the harness rather than being
 skipped, and the measured set is asserted to equal the declared set.
 
-The native host is the certified Windows path for *latency*. Python is a
-fail-open portable fallback.
+Python is the host on every platform, and the only one (ADR-029). It is still
+fail-open; it is no longer a fallback, because there is nothing left to fall
+back from.
 
 **The budgets now describe the Python path, because that is what ships**
 (ADR-030). They were calibrated for the native binary and were exactly right for
@@ -40,20 +41,23 @@ pass` measures 183 ms on the reference machine, so a 100 ms hard timeout expires
 before the process reaches the first line of `adr-hook.py`. That floor is now a
 named constant, `MEASURED_INTERPRETER_FLOOR_MS`, carrying its measurement.
 
-**As of v0.44.1 the native host is opt-in and Python answers by default.**
-Latency was never the whole certification: `hooks/native/README.md` also asks
-for protocol parity with the Python core, and that half had never run. Measured
-on this repository after a rebuild from current source, the native host returned
-one of four governing ADRs before an edit, four of five at prompt time, and
-nothing at all for `ExitPlanMode`. A hook that answers in 20 ms with a quarter
-of the governing decisions is not faster than one that answers in 200 ms with
-all of them; it is wrong sooner.
+**The native host is gone. Python answers on every platform (ADR-029).**
+Latency was never the whole certification: the Rust host also owed protocol
+parity with the Python core, and that half had never run. Measured on this
+repository after a rebuild from current source, it returned one of four
+governing ADRs before an edit, four of five at prompt time, and nothing at all
+for `ExitPlanMode`. A hook that answers in 20 ms with a quarter of the governing
+decisions is not faster than one that answers in 200 ms with all of them; it is
+wrong sooner.
 
-Set `ADR_KIT_NATIVE_HOOK=1` to use it. Restoring the default preference is gated
-on an artefact-level parity test — one that runs the binary rather than reading
-its source, since the test that existed read `adr-hook.rs` and therefore could
-not see a divergent build at all. TASK-104 carries that work and the alternative
-of retiring the binary.
+It was retired rather than repaired, because the alternative was a permanent
+second implementation of the one component every other caller shares, bought
+with latency rather than with capability. `SessionStart` costs 235 ms at the
+median where the binary cost 21 ms, inside the 500 ms budget that event
+declares. If a native path is ever restored, ADR-029 names the shape it must
+take: port `bin/adr_query.py` rather than patch a second engine, and verify it
+by running the artefact — the test that existed read `adr-hook.rs` for a
+constant and therefore could not see a divergent build at all.
 
 ## Client runner timeout
 
@@ -79,30 +83,54 @@ measurements without coercing missed targets into passes.
 
 ## Current Windows development evidence
 
-The native host reduced the Python end-to-end SessionStart path from roughly
-200 ms to roughly 20–35 ms on the development machine. SessionStart, prompt,
-subagent, compact, stop, and hard-timeout budgets pass consistently.
+The section this replaces described the native host as the performance story
+and quoted a 25 ms p50 / 50 ms p95 / 100 ms hard edit-hook budget. Both are
+gone: ADR-029 retired the binary, and ADR-030 recalibrated every budget to the
+Python host that actually ships, because the interpreter floor alone exceeds
+100 ms. `hooks/manifest.json` is the source of truth for the current numbers.
 
-Windows process creation proved that the original 10/25/100 ms edit-hook
-budget was physically unattainable on the certification machine. The approved
-Windows PreToolUse/PostToolUse budget is therefore 25 ms p50, 50 ms p95, and
-a strictly enforced 100 ms hard timeout. Full pre/post-edit automation remains
-enabled.
+The `no_std` process-floor evidence is kept, because it is a property of
+Windows rather than of any host: a 3,072-byte no-CRT executable measured over
+300 launches at 13.171 ms minimum, 18.116 ms p50, 25.857 ms p95 and 144.603 ms
+maximum before any JSON parsing, ADR lookup or output. It is preserved in
+`tests/fixtures/hooks/windows-process-floor.json`, and it is what proved the
+original 10/25/100 ms edit budget physically unattainable.
 
-A 3,072-byte `no_std`, no-CRT executable measured over 300 launches at
-13.171 ms minimum, 18.116 ms p50, 25.857 ms p95, and 144.603 ms maximum before
-JSON parsing, ADR lookup, or output. The evidence is preserved in
-`tests/fixtures/hooks/windows-process-floor.json`.
+### Python-only measurement, 2026-08-24
 
-This is retained as an explicit certification finding, not hidden by
-excluding startup or relabeling the result. The semantic benchmark enforces
-the 100 ms timeout on every measured launch and reports every timeout, rather
-than treating a later successful sample as representative.
+Taken after the native host was removed (TASK-187), 30 samples per event,
+`method_id` `adr-kit-hook-latency-v1`, process startup included. Every event
+reports host `python`; there is no other host left to report.
 
-The first 30-sample warm-filesystem certification after the policy decision
-passed every event and every hard timeout. The edit-hook results were:
+**This is a developer machine measuring against the adr-kit repository
+itself, not the declared certification runner against the fixture corpus.**
+Certification owns the release-blocking judgement; these numbers are recorded
+rather than coerced, exactly as the method requires.
 
-| Event | p50 | p95 | maximum | timeouts |
-|---|---:|---:|---:|---:|
-| PreToolUse | 22.358 ms | 28.275 ms | 30.260 ms | 0 |
-| PostToolUse | 22.932 ms | 28.080 ms | 29.787 ms | 0 |
+| Event | p50 | p95 | maximum | timeouts | targets |
+|---|---:|---:|---:|---:|:--|
+| session-start | 280.1 ms | 345.1 ms | 398.4 ms | 0 | met |
+| user-prompt-submit | 328.5 ms | 627.7 ms | 926.0 ms | 1 | p95, hard timeout missed |
+| subagent-start | 278.0 ms | 401.3 ms | 601.7 ms | 0 | met |
+| pre-tool-use | 303.4 ms | 362.6 ms | 391.3 ms | 0 | met |
+| post-tool-use | 261.6 ms | 301.6 ms | 460.4 ms | 0 | met |
+| plan-exit | 263.8 ms | 303.7 ms | 304.4 ms | 0 | met |
+| pr-create | 4719.5 ms | 5097.8 ms | 5223.8 ms | 13 | p50, p95, hard timeout missed |
+| pre-compact | 597.8 ms | 2117.2 ms | 2208.9 ms | 2 | p95, hard timeout missed |
+
+The edit tier — `pre-tool-use`, `post-tool-use` and `plan-exit` — is the tier
+ADR-029 named as the tight one, and it passes with room on every target.
+
+The three misses are not caused by the retirement, and saying so is a
+code-level fact rather than an inference: `hooks/adr-hook.py`,
+`hooks/adr_hook_core.py` and `hooks/adapters/` are byte-unchanged by that work,
+and `host_command` previously returned this same Python command whenever
+`ADR_KIT_NATIVE_HOOK` was unset, which was its default. The measured path is
+the path that already shipped. `pr-create` is the deliberately slower
+user-initiated event of ADR-031, measured here against a 41-ADR repository with
+a large working tree; `user-prompt-submit` and `pre-compact` miss p95 on a
+loaded machine while their medians sit inside budget. Reproduce with:
+
+```console
+python -c "import sys; sys.path.insert(0,'.'); from hooks.hook_benchmark import measure; from pathlib import Path; print(measure(Path('.'), Path('.'), samples=30))"
+```

@@ -208,15 +208,19 @@ def test_generated_skills_prompts_guides_and_hooks_have_stable_provenance():
         value = json.loads(path.read_text())
         assert value.get("hooks")
     assert not (ROOT / ".claude-plugin/hooks").exists()
-    native_hashes = {
-        hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in (
-            ROOT / "hooks/bin/windows-x64/adr-hook.exe",
-            ROOT / "codex/hooks/bin/windows-x64/adr-hook.exe",
-            ROOT / "copilot/hooks/bin/windows-x64/adr-hook.exe",
+    # This used to assert the three committed adr-hook.exe copies hashed alike.
+    # ADR-029 retired the artefact, so the invariant inverts: no hook tree may
+    # carry a compiled host at all. Asserted on the trees rather than on the
+    # copy manifest, because a binary reintroduced one client over is exactly
+    # the divergence the manifest would not show.
+    for tree in (ROOT / "hooks", ROOT / "codex/hooks", ROOT / "copilot/hooks"):
+        assert not (tree / "bin").exists(), f"{tree}/bin came back"
+        strays = sorted(
+            path.relative_to(ROOT).as_posix()
+            for path in tree.rglob("*")
+            if path.suffix.lower() in {".exe", ".dll", ".so", ".dylib", ".pdb", ".rs"}
         )
-    }
-    assert len(native_hashes) == 1
+        assert not strays, f"a compiled or Rust host shipped again: {strays}"
 
 
 def test_fixture_text_and_mode_metadata_are_cross_platform_stable(tmp_path):
@@ -364,12 +368,15 @@ def test_generated_client_tree_is_distinguishable_from_the_payload_root():
     assert models.client_root(ROOT / "codex", "copilot") is None
 
 
-def test_copilot_powershell_wrapper_gates_the_native_host():
-    """TASK-160: run-hook.cmd runs the native exe only under
-    ADR_KIT_NATIVE_HOOK=1 (it is not parity-certified, and preferring it
-    silently narrowed governance on Windows), but the generated Copilot
-    PowerShell wrapper preferred it unconditionally — the one client that did.
-    The generated artifact must carry the same opt-in gate."""
+def test_copilot_powershell_wrapper_dispatches_python_and_nothing_else():
+    """ADR-029: the generated Copilot wrapper must reach for no second engine.
+
+    TASK-160 made this wrapper gate the native exe behind ADR_KIT_NATIVE_HOOK=1,
+    matching run-hook.cmd. ADR-029 then retired the binary outright, so the gate
+    has nothing left to gate — and Copilot was the one client whose generated
+    artifact ever preferred the exe unconditionally, which is why this asserts
+    on the generated file rather than on the generator that writes it.
+    """
     import json as _json
     from pathlib import Path as _Path
     hooks_file = _Path(__file__).resolve().parent.parent / "copilot" / "hooks.json"
@@ -378,10 +385,24 @@ def test_copilot_powershell_wrapper_gates_the_native_host():
         _pytest.skip("generated copilot/hooks.json not present")
     doc = _json.loads(hooks_file.read_text(encoding="utf-8"))
     blob = _json.dumps(doc)
-    assert "adr-hook.exe" in blob, "wrapper no longer references the native exe"
-    # Every powershell command that can invoke the exe must test the env gate.
-    for event in doc.values():
-        for entry in (event if isinstance(event, list) else [event]):
-            ps = entry.get("powershell") if isinstance(entry, dict) else None
-            if ps and "adr-hook.exe" in ps:
-                assert "ADR_KIT_NATIVE_HOOK" in ps, ps
+    for token in ("adr-hook.exe", "ADR_KIT_NATIVE_HOOK", "hooks/bin/"):
+        assert token not in blob, (
+            f"the generated Copilot wrapper still reaches for a native host: {token!r}"
+        )
+    # Positive half: every powershell handler must still dispatch the one host.
+    # Walked from doc["hooks"], not doc: the predecessor iterated doc.values()
+    # and so ranged over the version number and the hooks map rather than the
+    # event lists, which left its per-handler assertion dead. Only its
+    # whole-blob check was ever doing work.
+    handlers = [
+        entry["powershell"]
+        for event in doc["hooks"].values()
+        for entry in (event if isinstance(event, list) else [event])
+        if isinstance(entry, dict) and "powershell" in entry
+    ]
+    assert len(handlers) == len(doc["hooks"]), (
+        f"expected one powershell handler per event, got {len(handlers)} "
+        f"for {sorted(doc['hooks'])}"
+    )
+    for ps in handlers:
+        assert "adr-hook.py" in ps, ps
