@@ -366,6 +366,18 @@
           "default": false
         }
       }
+    },
+    "grill": {
+      "type": "object",
+      "description": "Configuration for automatic interactive handoff of unfinished Proposed ADRs.",
+      "additionalProperties": false,
+      "properties": {
+        "auto_start": {
+          "type": "boolean",
+          "description": "When true (default), an eligible Proposed ADR is handed to the native grill workflow at the next user-visible prompt. Set false to keep the handoff advisory-only.",
+          "default": true
+        }
+      }
     }
   }
 }

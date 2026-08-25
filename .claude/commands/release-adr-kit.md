@@ -13,9 +13,22 @@ repository, so a release must be version-consistent across every publish
 surface before it ships. Follow these steps in order. Stop and report if any
 step fails.
 
-## 1. Create a task and a branch
+## 1. Create a task, confirm `dev` is current, then branch
 
 - Ensure a backlog task exists for this release (create one if not); set it In Progress.
+- **Before cutting the branch**, confirm `dev` carries every published release:
+
+  ```bash
+  git fetch origin
+  python scripts/check-branch-sync.py
+  ```
+
+  Exit 0: continue. Exit 1: the output names release tags that reached `main`
+  but never reached `dev`. Do the step 5 merge-back for those first and land it
+  — a release branch cut from a stale `dev` collides with `main` on every
+  version stamp, and resolving those by hand is how a published version gets
+  reverted by accident. Exit 2 is an infrastructure error, not a verdict.
+
 - Work on a branch, never commit the release directly to `main`.
 
 ## 2. Prepare the version, release notes and README

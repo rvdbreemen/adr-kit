@@ -94,6 +94,7 @@ FEATURED = [
     "guardian.nudge_cooldown_hours",
     "inject.enabled",
     "watch.enabled",
+    "grill.auto_start",
     "retirement.threshold_days",
     "lifecycle.signer",
     "judge.host_client",

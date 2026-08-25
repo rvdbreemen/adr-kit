@@ -80,6 +80,32 @@ work list immediately instead of one error per tool run.
 
 ## Release steps
 
+### 0. Confirm `dev` carries every published release
+
+```bash
+git fetch origin
+python scripts/check-branch-sync.py
+```
+
+Run this *before* cutting the release branch. A release branch is cut from
+`dev`, so any release still sitting only on `main` is missing from it, and the
+release PR back into `main` then arrives as a pile of version-stamp conflicts —
+one per publish surface, each of them the previous release's number against the
+new one. Resolving them by hand is exactly the moment a published version gets
+reverted by accident.
+
+Exit 0 means `dev` is current: continue to step 1. Exit 1 names the release tags
+that reached `main` but never reached `dev`; do the step 4 merge-back for those
+first, land it, and only then cut the release branch. Exit 2 is an
+infrastructure error (bad ref, not a git repo), not a verdict.
+
+This is the same check step 4 runs after the release. Running it at both ends is
+deliberate: step 4 proves *this* release got home, step 0 proves the *previous*
+one did. Skipping step 0 is silent at the time — the drift only surfaces as
+conflicts once the release PR is already open. It has gone wrong at v0.53.0
+(three releases behind, 18 conflicting files) and, worse, before v0.40.0
+(32 commits behind, missing the release toolchain itself).
+
 ### 1. Prepare the version, release notes and README on a branch
 
 ```bash
@@ -237,7 +263,7 @@ on npmjs.com with these exact values:
 | Environment name | empty; npm performs the final approval |
 | Allowed action | `npm stage publish` |
 
-The reusable staging workflow pins npm `11.17.0`, which satisfies the
+The reusable staging workflow pins npm `11.19.0`, which satisfies the
 staged-publishing requirement of npm `11.15.0` or newer. Configure the
 relationship locally after signing in and enabling 2FA:
 
@@ -266,12 +292,15 @@ day-to-day work continues on `dev`, and nothing else moves the release commits
 back. Skipping it does not cause an error at the time; it silently arms the next
 release to revert this one.
 
-This has already gone wrong twice. By v0.40.0 the `dev` branch was 32 commits
-behind `main`, still declared version 0.37.0, and was missing `bump-version.py`,
-`check-release-version.py`, `packaging/version-sites.json`, this runbook and
-`release-publish.yml`, plus ADR-012, ADR-013 and ADR-014. Every one of those is
-machinery a release is supposed to run, so `dev` had quietly become unable to cut
-a correct release at all.
+This has already gone wrong three times. By v0.40.0 the `dev` branch was 32
+commits behind `main`, still declared version 0.37.0, and was missing
+`bump-version.py`, `check-release-version.py`, `packaging/version-sites.json`,
+this runbook and `release-publish.yml`, plus ADR-012, ADR-013 and ADR-014. Every
+one of those is machinery a release is supposed to run, so `dev` had quietly
+become unable to cut a correct release at all. At v0.53.0 the drift was smaller
+(three releases) but surfaced the same way: a release branch cut from a stale
+`dev` met `main` with 18 conflicting files, every one of them a version stamp.
+Step 0 exists to catch that before the branch is cut.
 
 ```bash
 git fetch origin
@@ -348,6 +377,6 @@ local command rather than a CI job.
 | `.github/workflows/release-publish.yml` | Tag-triggered/manual release gate + GitHub Release + OpenCode npm staging handoff |
 | `.github/workflows/publish-opencode-npm.yml` | Reusable OpenCode release preflight, OIDC staging, and npm approval handoff |
 | `.github/workflows/release-candidate.yml` | Optional three-client native certification |
-| `scripts/check-branch-sync.py` | Fails when `dev` is missing release commits from `main` |
+| `scripts/check-branch-sync.py` | Fails when `dev` is missing release commits from `main`; run in step 0 (before cutting the branch) and step 4 (after merging back) |
 | `.github/workflows/branch-sync-check.yml` | Daily guard that the merge-back in step 4 actually happened |
 | `scripts/install-agent-envs.py` | Per-machine prepared-directory publish + client registration |

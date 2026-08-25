@@ -457,7 +457,7 @@
       "path": "ADR-011-adopt-deterministic-readiness-and-human-gated-grilling-across-the-adr-lifecycle.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-19",
+      "date": "2026-08-20",
       "decision_summary": "Chosen option: combine a deterministic readiness engine with a human-gated, one-question grilling workflow, because i...",
       "topics": [
         "grilling",
@@ -2189,6 +2189,66 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-041",
+      "title": "Automatically Hand Off Unfinished Proposed ADRs to Interactive Grilling",
+      "path": "ADR-041-automatically-hand-off-unfinished-proposed-adrs-to-interactive-grilling.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-20",
+      "decision_summary": "Chosen option: automatic interactive handoff at the next user-visible prompt, because it closes the completion gap wi...",
+      "topics": [
+        "auto grilling",
+        "readiness"
+      ],
+      "aliases": [],
+      "components": [
+        "adr-readiness",
+        "hooks"
+      ],
+      "symbols": [],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Derive eligibility from the shared readiness report and Proposed queue; do not create a second detector.",
+          "Start automatic handoff only during an interactive, user-visible session and dispatch at most one target per session.",
+          "Re-run authoritative readiness when grilling starts and preserve the one-question-at-a-time protocol.",
+          "Keep the exact client-native grill command visible when dispatch is unavailable or fails.",
+          "Keep automatic detection model-free, network-free, bounded, and fail-open.",
+          "Keep the handoff context at or below 4096 characters and the prepared queue at or below three actions.",
+          "Preserve append-only Open Questions and use bin/adr answer to record human answers.",
+          "Require explicit same-session confirmation before invoking adr accept --confirm."
+        ],
+        "must_not": [
+          "Start an interactive interview from pre-commit, CI, PreToolUse, PostToolUse, a background process, or an unattended lifecycle event.",
+          "Treat a queue cache or heuristic architecture signal as lifecycle authority.",
+          "Automatically edit or accept an Accepted ADR, or infer acceptance from shipped code, a pull request, or source material.",
+          "Launch a second grill recursively while the current grill is active.",
+          "Add OpenCode to the certified three-client registry or duplicate the retrieval/readiness engine in TypeScript."
+        ],
+        "exceptions": [
+          "An Accepted ADR may be explicitly revalidated through the existing --revalidate entry point when drift or changed forces require it.",
+          "A client-specific native dispatcher may start the handoff only when its interactive session and user-visible prompt are active."
+        ],
+        "verification": [
+          "tests/testadrreadiness.py and tests/testadrguardianqueue.py verify deterministic eligibility and ranking.",
+          "tests/testadrautogrill.py, tests/testadrgrillsignal.py, and tests/testadrhookdispatchmatrix.py verify advisory-only unattended paths and bounded handoff output.",
+          "tests/testadrlifecycle.py and tests/testadropenquestions.py verify answer recording and explicit acceptance authority.",
+          "python scripts/build-client-adapters.py --check verifies generated parity."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2447,6 +2507,12 @@
     {
       "source": "ADR-011",
       "target": "ADR-040",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-011",
+      "target": "ADR-041",
       "type": "related",
       "resolved": true
     },
@@ -3167,6 +3233,42 @@
     {
       "source": "ADR-040",
       "target": "ADR-016",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-041",
+      "target": "ADR-002",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-041",
+      "target": "ADR-011",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-041",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-041",
+      "target": "ADR-022",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-041",
+      "target": "ADR-024",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-041",
+      "target": "ADR-039",
       "type": "related",
       "resolved": true
     }
