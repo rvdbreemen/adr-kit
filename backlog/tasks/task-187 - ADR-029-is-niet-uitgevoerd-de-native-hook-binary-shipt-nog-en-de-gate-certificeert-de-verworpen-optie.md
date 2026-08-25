@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-08-23 21:41'
-updated_date: '2026-08-24 05:58'
+updated_date: '2026-08-25 23:04'
 labels:
   - adr
   - governance
@@ -166,3 +166,64 @@ AAN DE MAINTAINER: ofwel AC#5 herformuleren naar de ADR-030-budgetten en dan afv
 
 TESTRUN-HYGIENE. Een eerste volledige pytest-run (achtergrondtaak b29emgkf3) kreeg status 'killed' en het log toonde daarna 98 failures over volledig ongerelateerde modules (test_setup_project_command, test_managed_instructions, test_selectable_formats, test_template_profiles, test_otgw_corpus) - geen daarvan raakt bestanden die deze taak wijzigt. Dat patroon plus de 'killed'-status matcht het project-precedent 'Afgebroken testrun geeft valse failures' (CLAUDE.md, KennisBank-geheugen): een gekilde of gelijktijdige run produceert F-lawines die artefact zijn van de checkout, niet van de code. Dat log is verworpen zonder één van de 98 te 'fixen'. Herdraaid in isolatie (bg1mmm82g), zonder enig ander commando gelijktijdig tegen de repo, met eigen --basetemp en log-naar-bestand. Resultaat volgt in deze taak.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-25 23:00
+---
+VERIFICATIE 2026-08-26 — NIET AFGESLOTEN. De sweep is uitgevoerd en gemerged, maar zit **niet in `main`**. De verworpen optie shipt dus nog steeds naar gebruikers.
+
+Bewijs uit `origin/main` (= `1f4cc11`, v0.54.0):
+
+```
+$ git ls-tree -r --name-only origin/main | grep -E 'hooks/bin|hooks/native'
+codex/hooks/bin/windows-x64/adr-hook.exe
+copilot/hooks/bin/windows-x64/adr-hook.exe
+hooks/bin/windows-x64/adr-hook.exe
+hooks/native/README.md
+hooks/native/adr-hook.rs
+hooks/native/windows-process-floor.rs
+```
+
+Alle drie de binaries en de Rust-bron staan nog in `main`. AC#1 en AC#2 zijn daar niet gehaald.
+
+Op de werkboom (`release/v0.55.0`) en op `origin/dev` is de sweep wél compleet: `git ls-files` geeft geen enkele `adr-hook.exe` of `hooks/native`-pad, en `ADR_KIT_NATIVE_HOOK` komt in de werkende boom alleen nog voor in bewust-historische treffers (CHANGELOG, ADR-029/030 Context, C4-Documentation, backlog-records). De lege map `hooks/bin/windows-x64/` staat nog op schijf maar is untracked — een overblijfsel van de checkout, geen repository-inhoud.
+
+Routering:
+- PR #124 gemerged in **`dev`** op 2026-08-25T22:26:43Z, base `dev`, niet `main`.
+- `git merge-base --is-ancestor 2f41914 origin/main` → **NO**; tegen `origin/dev` → YES.
+- Tag `v0.55.0` = `77278c1` = `origin/dev`-tip, **geen** ancestor van `origin/main`. Geen GitHub Release voor v0.55.0.
+- `release-publish.yml` op tag v0.55.0 (2026-08-25): `failure`. Die run is het eerstvolgende obstakel.
+
+Blijft In Progress tot v0.55.0 in `main` landt. Dit is het scherpste geval van de zeven openstaande taken: zolang `main` de binary draagt, geldt de eigen constatering uit dit record onverkort — een aanvaarde bindende beslissing die in het verzonden product niet is uitgevoerd.
+---
+
+author: Claude
+created: 2026-08-25 23:04
+---
+CORRECTIE OP MIJN VORIGE COMMENT — die eindigde met 'blijft In Progress tot v0.55.0 in `main` landt'. Dat suggereert één blokkade. Er zijn er twee, en het record zelf noemt de tweede al. Precies het patroon dat ik hierboven tegen TASK-174 aanvoerde: een record dat gecorrigeerd en verouderd tegelijk is.
+
+BLOKKADE 1 — ROUTERING: het werk zit in `dev`, niet in `main`. Zie vorige comment.
+
+BLOKKADE 2 — AC#5, open binnen de taak zelf. De Implementation Notes stellen vast dat AC#5 niet afvinkbaar is zoals geschreven: het 100 ms edit-budget uit ADR-029 is vervangen door ADR-030, en `hooks/manifest.json` geeft `pre-tool-use` nu 450/550/1100. De notitie eindigt met een expliciete maintainer-keuze die nog niet gemaakt is: AC#5 herformuleren naar de ADR-030-budgetten en dan afvinken, óf een aparte taak voor een certificatierun op de verklaarde runner. Ook met v0.55.0 in `main` is deze taak daarmee niet automatisch klaar.
+
+AC#10 EN AC#11 ZIJN WEL BEANTWOORD — door CI, niet door de lokale run. De Implementation Notes eindigen met 'Herdraaid in isolatie (bg1mmm82g) ... Resultaat volgt in deze taak.' Dat resultaat is nooit in het record beland. De checks op PR #124 vullen dat gat, en beter dan één machine dat kan:
+
+```
+pytest                              pass  2m2s   ← volledige suite (AC#11)
+validate                            pass  28s    ← bevat build-client-adapters.py --check (AC#10)
+Python 3.10 ubuntu / macos / windows  pass
+Python 3.12 ubuntu / macos / windows  pass    ← pytest -q --strict-markers, 6 combinaties
+ADR Enforcement (declarative)       pass
+generated ADR indexes are up to date  pass
+adr-readiness                       pass
+adr-lint smoke test on examples/    pass
+```
+
+Alle twaalf checks groen. `dev` is beschermd met `enforce_admins: true` en `validate` als required context, dus de merge van PR #124 kan die niet omzeild hebben. Het openstaande punt is dus niet 'draaien de tests?', maar AC#5 plus de route naar `main`.
+
+VOLGORDE DIE IK ZOU AANHOUDEN: eerst de gefaalde `release-publish.yml`-run op tag v0.55.0 uitzoeken (bij v0.52.2 bleek een vergelijkbare `failure` alleen het npm-staging-job te zijn, niet de gates — de moeite van het narekenen waard voordat je iets herstelt), dan v0.55.0 in `main`, dan AC#5 beslissen.
+---
+<!-- COMMENTS:END -->

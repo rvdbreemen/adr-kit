@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-08-23 21:40'
-updated_date: '2026-08-24 04:21'
+updated_date: '2026-08-25 23:05'
 labels:
   - mcp
   - conformance
@@ -105,3 +105,43 @@ Bij een ongeldige id kan de server de id niet terugkaatsen — dat zou de schend
 
 De dual-era-poort telt 46 tests over 1401 regels; de legacy-handshake tegenover vier revisies mag niet verschuiven. De nieuwe controles zitten vóór de era-routering, dus ze gelden voor beide era's — dat is bedoeld, want `jsonrpc` en `id` zijn basisprotocol, niet era-specifiek. De bestaande assertions op `:207-210` en `:1381-1384` (parse-error en batch met `id: null`) moeten ongewijzigd blijven slagen; die frames bereiken `dispatch()` niet.
 <!-- SECTION:PLAN:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-08-25 23:00
+---
+VERIFICATIE 2026-08-26 — NIET AFGESLOTEN. De code is geschreven en gemerged, maar zit **niet in `main`**.
+
+Bewijs:
+- PR #124 "Retire the native hook binary (ADR-029) and tighten adr-mcp JSON-RPC conformance" is gemerged in **`dev`** op 2026-08-25T22:26:43Z, met base `dev`, niet `main`.
+- `git merge-base --is-ancestor 2f41914 origin/main` → **NO**. Dezelfde check tegen `origin/dev` → YES.
+- `origin/main` staat op `1f4cc11` = v0.54.0. Dit werk zit in de v0.55.0-lijn.
+- Tag `v0.55.0` wijst naar `77278c1` (de `origin/dev`-tip) en is **geen** ancestor van `origin/main`. Er bestaat geen GitHub Release voor v0.55.0; de laatste is v0.54.0.
+- De `release-publish.yml`-run op tag v0.55.0 (2026-08-25) rapporteert `failure`.
+
+De taak blijft In Progress tot v0.55.0 in `main` landt. Dat is release-werk, geen implementatiewerk: de ACs #1..#11 zijn inhoudelijk afgehandeld in PR #124, alleen het pad naar `main` ontbreekt nog.
+---
+
+author: Claude
+created: 2026-08-25 23:05
+---
+AANVULLING: AC#10 en AC#11 zijn wél bewezen, door CI op PR #124. Het Implementation Plan deelde de branch met TASK-187, wiens notities eindigen met 'Resultaat volgt in deze taak' voor de geïsoleerde pytest-run — dat resultaat is nooit in enig record beland. De PR-checks vullen dat gat:
+
+```
+pytest                                pass  2m2s   ← volledige suite (AC#11)
+validate                              pass  28s    ← bevat build-client-adapters.py --check (AC#10)
+Python 3.10 ubuntu / macos / windows  pass
+Python 3.12 ubuntu / macos / windows  pass       ← pytest -q --strict-markers, 6 combinaties
+ADR Enforcement (declarative)         pass
+generated ADR indexes are up to date  pass
+adr-readiness                         pass
+adr-lint smoke test on examples/      pass
+```
+
+Alle twaalf groen. `dev` heeft `validate` als required context met `enforce_admins: true`, dus de merge kan die niet omzeild hebben.
+
+Voor deze taak is `main` daarmee de enige resterende blokkade — anders dan bij TASK-187, waar AC#5 daarnaast nog een openstaande maintainer-keuze is.
+---
+<!-- COMMENTS:END -->
