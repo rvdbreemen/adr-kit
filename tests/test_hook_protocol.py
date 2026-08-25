@@ -14,7 +14,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / "hooks"
-NATIVE = HOOKS / "bin" / "windows-x64" / "adr-hook.exe"
 if str(HOOKS) not in sys.path:
     sys.path.insert(0, str(HOOKS))
 
@@ -288,82 +287,13 @@ def test_malformed_oversized_and_disabled_payloads_fail_open(tmp_path):
     assert result.stdout == ""
 
 
-@pytest.mark.skipif(sys.platform != "win32" or not NATIVE.is_file(), reason="Windows native hook host")
-def test_native_host_matches_session_prompt_and_edit_outcomes(tmp_path):
-    project = _project(tmp_path)
-    cases = [
-        (
-            "SessionStart",
-            {"cwd": str(project), "hook_event_name": "SessionStart"},
-            "ADR-001",
-        ),
-        (
-            "UserPromptSubmit",
-            {
-                "cwd": str(project),
-                "hook_event_name": "UserPromptSubmit",
-                "prompt": "deterministic hooks",
-            },
-            "ADR-001",
-        ),
-        (
-            "PreToolUse",
-            {
-                "cwd": str(project),
-                "hook_event_name": "PreToolUse",
-                "tool_name": "Edit",
-                "tool_input": {"file_path": "src/hooks/native.rs"},
-            },
-            "ADR-001",
-        ),
-    ]
-    for event, payload, expected in cases:
-        envelope = parse_payload(
-            json.dumps(payload).encode(),
-            "claude-code-cli",
-            event,
-        )
-        assert envelope
-        python_context, _ = evaluate(envelope)
-        result = subprocess.run(
-            [
-                str(NATIVE),
-                "--client",
-                "claude-code-cli",
-                "--event",
-                event,
-            ],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=2,
-        )
-        assert result.returncode == 0
-        response = json.loads(result.stdout)
-        native_context = response["hookSpecificOutput"]["additionalContext"]
-        assert expected in native_context
-        assert set(re.findall(r"ADR-\d{3,4}", native_context)) == set(
-            re.findall(r"ADR-\d{3,4}", python_context)
-        )
-        if event == "SessionStart":
-            assert "ADR-002" not in native_context
-        # The two events word their headings differently: prompt time presents
-        # candidates for the model to choose from (R5/TASK-156), edit time
-        # states which decisions govern the file being touched.
-        if event == "UserPromptSubmit":
-            assert "Accepted ADR candidates for this prompt" in native_context
-            assert "Proposed ADR candidates for this prompt" in native_context
-            assert "retrieval candidates, not confirmed matches" in native_context
-        if event == "PreToolUse":
-            assert "Governing Accepted" in native_context
-            assert "Advisory Proposed" in native_context
+def test_duplicate_event_is_a_successful_noop(tmp_path):
+    """Deduplication is a property of the one host.
 
-
-@pytest.mark.parametrize("native", [False, True])
-def test_duplicate_event_is_a_successful_noop(tmp_path, native):
-    if native and (sys.platform != "win32" or not NATIVE.is_file()):
-        pytest.skip("Windows native hook host")
+    This used to run twice, once per host, because a second engine had to be
+    held to the same contract. ADR-029 retired that engine, so the parameter
+    is gone rather than left permanently skipped.
+    """
     project = _project(tmp_path)
     payload = json.dumps(
         {
@@ -372,19 +302,14 @@ def test_duplicate_event_is_a_successful_noop(tmp_path, native):
             "session_id": f"duplicate-{uuid.uuid4()}",
         }
     )
-    command = (
-        [str(NATIVE), "--client", "codex-cli", "--event", "SessionStart"]
-        if native
-        else
-        [
-            sys.executable,
-            str(HOOKS / "adr-hook.py"),
-            "--client",
-            "codex-cli",
-            "--event",
-            "SessionStart",
-        ]
-    )
+    command = [
+        sys.executable,
+        str(HOOKS / "adr-hook.py"),
+        "--client",
+        "codex-cli",
+        "--event",
+        "SessionStart",
+    ]
     first = subprocess.run(
         command, input=payload, text=True, capture_output=True, check=False
     )

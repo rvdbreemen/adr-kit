@@ -1642,3 +1642,177 @@ def test_non_ascii_adr_content_survives_the_round_trip(non_ascii_project):
     assert "Café Encoding — Naïve Approach → Rejected" in body, (
         f"the ADR title did not survive intact: {body[:400]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Base-protocol hygiene (gate adr-mcp-dual-era-v1, TASK-186)
+#
+# `jsonrpc` and the id shape are JSON-RPC 2.0 rather than MCP, so they are
+# checked before era routing and both eras answer them alike. What makes them
+# worth pinning is the direction of the defect: an id the server echoes lands
+# in the server's OWN outgoing frame, which is the one shape a non-conformant
+# peer cannot correct for us.
+# ---------------------------------------------------------------------------
+
+# Every id the base protocol forbids, with the reason it is forbidden. `1.0`
+# is here on purpose: it is integral, but Python cannot echo it without
+# serialising `1.0`, which is not an integer in the generated schema.json.
+REFUSED_REQUEST_IDS = [
+    pytest.param(None, id="null-MUST-NOT-be-an-id"),
+    pytest.param(1.5, id="float-with-a-fractional-part"),
+    pytest.param(1.0, id="integral-float-still-serialises-as-1.0"),
+    pytest.param({"a": 1}, id="object"),
+    pytest.param([1], id="array"),
+    pytest.param(True, id="bool-which-python-calls-an-int"),
+]
+
+
+@pytest.mark.parametrize("bad_id", REFUSED_REQUEST_IDS)
+def test_an_id_outside_string_or_integer_is_refused_and_never_echoed(
+    project: Path, bad_id
+):
+    """RequestId is `string | number` in schema.ts and `string | integer` in
+    schema.json, and basic/index.mdx:47 adds "the ID MUST NOT be null".
+
+    Before TASK-186 every one of these came back verbatim on a full result,
+    so the server's own reply failed JSONRPCResultResponse. The reply now
+    carries the null id JSON-RPC 2.0 reserves for an unusable id, because
+    echoing it would repeat the very defect being reported.
+    """
+    frame = {"jsonrpc": "2.0", "id": bad_id, "method": "tools/list",
+             "params": {"_meta": envelope()}}
+    lines, _ = run_session_lines(project, [frame])
+    assert len(lines) == 1, f"expected exactly one reply, got {lines}"
+    reply = json.loads(lines[0])
+    assert reply["error"]["code"] == -32600, reply
+    assert reply["id"] is None, f"the refused id was echoed back: {reply['id']!r}"
+    assert "result" not in reply, "a refused frame was served anyway"
+
+
+@pytest.mark.parametrize(
+    "jsonrpc_member",
+    [
+        pytest.param(..., id="member-absent"),
+        pytest.param("1.0", id="the-older-protocol"),
+        pytest.param(2.0, id="the-number-two-rather-than-the-string"),
+        pytest.param(None, id="null"),
+        pytest.param("", id="empty-string"),
+    ],
+)
+def test_a_frame_that_is_not_jsonrpc_2_0_is_refused(project: Path, jsonrpc_member):
+    """The `jsonrpc` member was never read before TASK-186: a frame without it
+    was served normally and answered with `"jsonrpc": "2.0"`, so the server
+    asserted a protocol the client had not claimed."""
+    frame = {"id": 7, "method": "tools/list", "params": {"_meta": envelope()}}
+    if jsonrpc_member is not ...:
+        frame["jsonrpc"] = jsonrpc_member
+    lines, _ = run_session_lines(project, [frame])
+    assert len(lines) == 1, f"expected exactly one reply, got {lines}"
+    reply = json.loads(lines[0])
+    assert reply["error"]["code"] == -32600, reply
+    assert "jsonrpc" in reply["error"]["message"], reply["error"]["message"]
+
+
+def test_a_malformed_notification_still_gets_no_reply(project: Path):
+    """The notification rule outranks both new checks. A frame with no `id` is
+    a notification whatever else is wrong with it, and the spec forbids a
+    response - so a bad `jsonrpc` on one buys silence, not an error frame."""
+    lines, _ = run_session_lines(
+        project,
+        [
+            {"jsonrpc": "1.0", "method": "notifications/initialized"},
+            {"method": "notifications/cancelled", "params": {"requestId": 1}},
+            {"jsonrpc": "1.0", "method": "tools/list"},
+            modern("tools/list", 600),
+        ],
+    )
+    frames = [json.loads(line) for line in lines]
+    assert [frame["id"] for frame in frames] == [600], (
+        f"a notification drew a reply: {frames}"
+    )
+
+
+@pytest.mark.parametrize(
+    "capabilities",
+    [
+        pytest.param("nonsense", id="string"),
+        pytest.param(["tools"], id="array"),
+        pytest.param(42, id="number"),
+        pytest.param(None, id="null"),
+    ],
+)
+def test_modern_client_capabilities_must_be_an_object(project: Path, capabilities):
+    """RequestMetaObject types this reserved key as ClientCapabilities. It was
+    only checked for presence, so a scalar passed and server/discover
+    succeeded. It is a shape defect, decided before version negotiation: the
+    answer is -32602 naming the key, never -32022.
+    """
+    frame = {
+        "jsonrpc": "2.0",
+        "id": 601,
+        "method": "server/discover",
+        "params": {"_meta": {PROTOCOL_VERSION_KEY: MODERN_VERSION,
+                             CLIENT_CAPABILITIES_KEY: capabilities}},
+    }
+    responses, _, _ = run_session(project, [frame])
+    error = responses[601]["error"]
+    assert error["code"] == -32602, responses[601]
+    assert CLIENT_CAPABILITIES_KEY in error["message"], error["message"]
+
+
+def test_a_broken_envelope_is_a_shape_defect_before_it_is_a_version_dispute(
+    project: Path,
+):
+    """Both defects at once: an unsupported version AND a scalar capabilities.
+    Shape wins, so the client is told what is malformed rather than being
+    handed a `supported` list it cannot use until the envelope is fixed."""
+    frame = {
+        "jsonrpc": "2.0",
+        "id": 602,
+        "method": "server/discover",
+        "params": {"_meta": {PROTOCOL_VERSION_KEY: "2025-11-25",
+                             CLIENT_CAPABILITIES_KEY: "nonsense"}},
+    }
+    responses, _, _ = run_session(project, [frame])
+    assert responses[602]["error"]["code"] == -32602, responses[602]
+
+
+@pytest.mark.parametrize(
+    "good_id",
+    [
+        pytest.param(42, id="small-integer"),
+        pytest.param(0, id="zero"),
+        pytest.param(-7, id="negative-integer"),
+        pytest.param(2**53 + 1, id="beyond-double-precision"),
+        pytest.param("abc", id="string"),
+        pytest.param("", id="empty-string-is-still-a-string"),
+    ],
+)
+def test_a_valid_id_is_served_and_echoed_verbatim(project: Path, good_id):
+    """The guard must not narrow what already worked. Strings and integers are
+    the whole of RequestId, and the echo has to come back unchanged - including
+    an integer larger than a double can hold, which a float round-trip would
+    silently corrupt."""
+    lines, _ = run_session_lines(project, [modern("tools/list", good_id)])
+    assert len(lines) == 1, f"expected exactly one reply, got {lines}"
+    reply = json.loads(lines[0])
+    assert reply["id"] == good_id, reply
+    assert type(reply["id"]) is type(good_id), (
+        f"the id changed type on the way back: {type(reply['id'])}"
+    )
+    assert_modern_shape(reply["result"], "tools/list with a valid id", cacheable=True)
+
+
+def test_base_protocol_guards_apply_to_the_legacy_era_too(project: Path):
+    """`jsonrpc` and the id shape are not era-specific. A legacy `initialize`
+    with a refused id is refused as well, and the handshake still works for a
+    conformant one - the guard must not have cost the legacy surface."""
+    bad = dict(INITIALIZE)
+    bad["id"] = None
+    lines, _ = run_session_lines(project, [bad])
+    assert json.loads(lines[0])["error"]["code"] == -32600, lines
+
+    responses, _, _ = run_session(project, [INITIALIZE])
+    result = responses[1]["result"]
+    assert result["protocolVersion"] == "2025-06-18", result
+    assert_legacy_shape(result, "initialize after the base-protocol guards")

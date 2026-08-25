@@ -174,33 +174,3 @@ def test_guardian_refresh_writes_cache_outside_hook(tmp_path):
     assert cache["authoritative"] is False
     assert cache["actions"][0]["command"] == "/adr-kit:grill ADR-001"
 
-
-@pytest.mark.skipif(
-    sys.platform != "win32"
-    or not (HOOKS / "bin" / "windows-x64" / "adr-hook.exe").is_file(),
-    reason="Windows native hook host",
-)
-def test_native_session_start_reads_prepared_queue(tmp_path):
-    project = tmp_path / "repo"
-    adr_dir = project / "docs" / "adr"
-    adr_dir.mkdir(parents=True)
-    payload = build_queue_cache(
-        _report([_item("ADR-001", linked=True)]),
-        generated_at=datetime.now(timezone.utc),
-    )
-    write_queue_cache(adr_dir / ".adr-kit-readiness.json", payload)
-    result = subprocess.run(
-        [
-            str(HOOKS / "bin" / "windows-x64" / "adr-hook.exe"),
-            "--client",
-            "codex-cli",
-            "--event",
-            "SessionStart",
-        ],
-        input=json.dumps({"cwd": str(project)}),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    assert result.returncode == 0
-    assert "/adr-kit:grill ADR-001" in result.stdout

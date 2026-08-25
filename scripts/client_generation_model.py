@@ -47,7 +47,6 @@ HOOK_RUNTIME_FILES = (
     "hooks/adapters/claude.py",
     "hooks/adapters/codex.py",
     "hooks/adapters/copilot.py",
-    "hooks/bin/windows-x64/adr-hook.exe",
 )
 # The modules bin/ entrypoints import from OUTSIDE bin/. Mirrored at their own
 # relative paths, because bin/adr-doctor resolves them by appending ROOT and

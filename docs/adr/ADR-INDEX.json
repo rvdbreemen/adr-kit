@@ -1476,7 +1476,7 @@
       "path": "ADR-029-retire-the-native-hook-binary-rather-than-maintain-a-second-retrieval-engine.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-04",
+      "date": "2026-08-24",
       "decision_summary": "Chosen option: retire the binary, because the alternative is a permanent second implementation of the one component e...",
       "topics": [
         "distribution",
@@ -1512,7 +1512,7 @@
           "A future native path is permitted when it delegates to the shared engine rather than reimplementing it, and carries the artefact parity test."
         ],
         "verification": [
-          "adr-single-retrieval-engine-v1: the gate that anchors this decision. It ships in tests/testadrhookdispatchmatrix.py, so gate carries the name and binding is true. It asserts that no second ranking implementation ships, and that the edit-..."
+          "adr-single-retrieval-engine-v1: the gate that anchors this decision. It ships in tests/testadrhookdispatchmatrix.py, so gate carries the name and binding is true. It asserts that no second ranking implementation ships: both halves of the..."
         ]
       },
       "scope": {
@@ -1521,8 +1521,12 @@
       "metadata": {
         "binding": true,
         "gate": "adr-single-retrieval-engine-v1",
-        "documents_shipped": false,
-        "verified_in": [],
+        "documents_shipped": true,
+        "verified_in": [
+          "tests/test_adr_hook_dispatch_matrix.py",
+          "tests/test_client_adapter_generation.py",
+          "tests/test_hook_performance.py"
+        ],
         "supersedes": [],
         "superseded_by": null
       }
