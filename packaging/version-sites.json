@@ -87,6 +87,12 @@
       "label": "readiness workflow template action pin"
     },
     {
+      "path": "README.md",
+      "kind": "regex_all",
+      "pattern": "(adr-kit-opencode@)(\\d+\\.\\d+\\.\\d+)",
+      "label": "README OpenCode npm pin"
+    },
+    {
       "path": "CHANGELOG.md",
       "kind": "regex",
       "pattern": "(\\[Unreleased\\]: https://github\\.com/rvdbreemen/adr-kit/compare/v)(\\d+\\.\\d+\\.\\d+)(\\.\\.\\.HEAD)",

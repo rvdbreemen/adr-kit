@@ -309,12 +309,12 @@ configured:
 }
 ```
 
-For another project, use the newest version npm serves, 0.52.2:
+For another project, use the published package:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.2"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.55.1"]
 }
 ```
 

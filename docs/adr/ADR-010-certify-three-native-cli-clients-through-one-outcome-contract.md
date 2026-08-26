@@ -11,6 +11,8 @@ verified_in:
   - "tests/test_client_capabilities_schema.py"
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-042"
 topics:
   - "client parity"
   - "release certification"
@@ -54,6 +56,11 @@ status_history:
     status: Accepted
     changed_by: Codex for Robert
     reason: Revalidated after TASK-52 extended lifecycle retrieval metadata and client capability coverage without changing the three-client outcome contract
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-26
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-042
     changed_via: adr-kit lifecycle
 ```
 

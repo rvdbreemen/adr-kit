@@ -79,6 +79,10 @@ README = (
     "    rev: v0.30.0\n"
     "```\n"
     "\n"
+    "```json\n"
+    '  "plugin": ["@rvdbreemen/adr-kit-opencode@0.30.0"]\n'
+    "```\n"
+    "\n"
     "Introduced in v0.12.0 -- a history marker, deliberately not a version site.\n"
 )
 # The readiness workflow users copy into their own repository. Undeclared until
