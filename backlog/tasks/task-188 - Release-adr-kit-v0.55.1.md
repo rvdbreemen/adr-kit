@@ -4,7 +4,7 @@ title: Release adr-kit v0.55.1
 status: Done
 assignee: []
 created_date: '2026-08-26 04:35'
-updated_date: '2026-08-26 17:57'
+updated_date: '2026-08-26 18:03'
 labels: []
 dependencies:
   - TASK-186
@@ -126,6 +126,18 @@ copilot  adr-kit@rvdbreemen-adr-kit-copilot  0.55.1
 ```
 
 LES DIE BREDER GELDT DAN DEZE RELEASE: bij `os error 32` op een plugin-cache is de eerste verdachte niet een verweesd proces, maar de client zelf. Een MCP-server die de client start met een relatief commando erft de cache-map als cwd en blokkeert daarmee zijn eigen upgrade. Zoek op ouder-kindrelatie, niet op padnaam in de commandline — die laatste matcht ook je eigen shell.
+---
+
+author: Claude
+created: 2026-08-26 18:03
+---
+TWEE CORRECTIES OP DIT RECORD, in de append-only vorm die dit project ook voor TASK-127 gebruikte — de eerdere comments blijven staan zoals ze geschreven zijn.
+
+**1. Comment #2 wijst de verkeerde dader aan.** Wie daar begint te lezen krijgt PID 29840 als oorzaak, en dat klopt niet: killen daarvan veranderde niets. De werkelijke houder was PID 41880, een kind van de drááiende `codex.exe`. Zie comment #3 voor de volledige diagnose. Ik laat #2 staan omdat de gevolgde redenering leerzaam is — hij is fout op precies het punt waar hij op de padnaam in de commandline zocht in plaats van op de ouder-kindrelatie.
+
+**2. De herkomstzin in commit `d19fe1d` klopt niet.** Het commit-bericht zegt: "Bump every declared version site from 0.54.0 to 0.55.1 via `scripts/bump-version.py` and regenerate the codex/ and copilot/ adapters." Ik heb geen van beide commando's gedraaid. De 0.55.1-waarden stonden al ongecommit in de werkboom toen ik begon; ik heb ze geverifieerd in plaats van geschreven, met `check-release-version.py --expect v0.55.1` (14 surfaces akkoord) en `build-client-adapters.py --check` (`changed=0`).
+
+De waarden zijn dus aantoonbaar juist en de poort bewijst dat onafhankelijk van wie ze heeft getypt. Alleen de herkomstbewering in het bericht is onjuist. De commit is publiek en zit in `main`, dus ik herschrijf hem niet — dit record is de correctie. Relevant voor ADR-013: die eist dat een versie via de registry wordt geschreven en niet met de hand, en op basis van dit commit-bericht alleen kun je niet vaststellen dát dat gebeurd is. De gate kan dat wel, en deed dat.
 ---
 <!-- COMMENTS:END -->
 
