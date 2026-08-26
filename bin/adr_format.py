@@ -668,13 +668,28 @@ def profile_for_text(text: str, *, fallback: Optional[str] = None) -> str:
     )
 
 
-def section_text(
+def section_span(
     text: str,
     role: str,
     *,
     profile: Optional[str] = None,
     tolerant: bool = True,
-) -> str:
+) -> Optional[Tuple[int, int]]:
+    """Return the (start, end) offsets of a section's body, or None.
+
+    ``section_text`` answers *what* a section says; this answers *where* it
+    says it, which is what a writer needs in order to place something inside
+    the bounds the reader will later parse. Both go through this one matcher,
+    so a writer cannot put content where the reader does not look.
+
+    That failure was real: ``append_status_history`` used to find its insertion
+    point with ``body.find("```")`` over the whole remaining document, so on an
+    ADR whose ``status_history`` block carries no fence the entry landed in the
+    next fenced block - in this project, the ``## Enforcement`` JSON. The
+    lifecycle command reported success, the frontmatter said ``Accepted``, and
+    ``ADR-INDEX.json`` went on reporting ``Proposed`` because the reader only
+    ever looks inside ``## Status History`` (issue #119).
+    """
     profiles: List[str] = []
     if profile is not None:
         profiles.append(normalize_profile(profile))
@@ -697,8 +712,21 @@ def section_text(
             re.IGNORECASE | re.MULTILINE | re.DOTALL,
         )
         if match:
-            return match.group(1).strip()
-    return ""
+            return match.start(1), match.end(1)
+    return None
+
+
+def section_text(
+    text: str,
+    role: str,
+    *,
+    profile: Optional[str] = None,
+    tolerant: bool = True,
+) -> str:
+    span = section_span(text, role, profile=profile, tolerant=tolerant)
+    if span is None:
+        return ""
+    return text[span[0] : span[1]].strip()
 
 
 def replace_role_heading(text: str, role: str, source: str, target: str) -> str:
