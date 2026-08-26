@@ -5,8 +5,11 @@ status: "Accepted"
 date: "2026-08-04"
 binding: true
 gate: "adr-single-retrieval-engine-v1"
-documents_shipped: false
-verified_in: []
+documents_shipped: true
+verified_in:
+  - "tests/test_adr_hook_dispatch_matrix.py"
+  - "tests/test_client_adapter_generation.py"
+  - "tests/test_hook_performance.py"
 supersedes: []
 superseded_by: null
 related:
@@ -53,6 +56,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Accepted by the maintainer in the spec gap-analysis review; the decision stands, its gate and binding flag follow when the implementation ships.
+    changed_via: adr-kit lifecycle
+  - date: 2026-08-24
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Implementation landed in TASK-187 - artefact, Rust source, dispatcher branch, benchmark branch and doctor requirement removed from all three trees. The gate and binding flag had been flipped by TASK-127 on 2026-08-05 while the implementation had NOT shipped, and its anchor asserted the opt-in state this ADR rejected; both are corrected here.
     changed_via: adr-kit lifecycle
 ```
 
@@ -201,7 +209,21 @@ and the measurement is committed alongside the budget.
 * `adr-single-retrieval-engine-v1`: the gate that anchors this decision. It
   ships in `tests/test_adr_hook_dispatch_matrix.py`, so `gate` carries the name
   and `binding` is true. It asserts that no second ranking implementation
-  ships, and that the edit-tier path meets its declared budget.
+  ships: both halves of the polyglot dispatcher, on every generated tree, must
+  carry no native branch, no artefact to prefer and no environment variable to
+  re-enable one, while still dispatching the Python host.
+
+  Corrected on 2026-08-24. Between 2026-08-05 and that date this section
+  claimed the gate also asserted "that the edit-tier path meets its declared
+  budget", and the anchor it named asserted something weaker still — that the
+  native host ran only under `ADR_KIT_NATIVE_HOOK=1`, which is the opt-in state
+  the Decision Outcome above explicitly rejects. A gate certifying the rejected
+  option is worse than no gate, because `adr-lint` reported compliance for a
+  decision that had not been carried out. The budget half is verified where it
+  is actually measured, `tests/test_hook_performance.py`, together with the
+  assertion that Python is the only host the benchmark can report;
+  `tests/test_client_adapter_generation.py` asserts that no hook tree carries a
+  compiled or Rust host at all.
 
 ## Consequences
 

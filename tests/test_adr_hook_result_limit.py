@@ -12,7 +12,6 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -37,15 +36,6 @@ core = _core()
 
 def test_the_default_is_five():
     assert core.DEFAULT_MAX_RESULTS == 5
-
-
-def test_the_rust_hook_carries_the_same_default():
-    """A platform-dependent difference in what an agent is told is invisible."""
-    text = (REPO_ROOT / "hooks" / "native" / "adr-hook.rs").read_text(encoding="utf-8")
-    match = re.search(r"const MAX_RESULTS: usize = (\d+);", text)
-
-    assert match, "the Rust hook no longer declares MAX_RESULTS"
-    assert int(match.group(1)) == core.DEFAULT_MAX_RESULTS
 
 
 def test_the_configured_limit_reaches_the_hook(tmp_path):
@@ -144,26 +134,6 @@ def test_prompt_injection_presents_candidates_and_instructs_selection(tmp_path):
     assert context.index(SELECTION_INSTRUCTION) > context.index(CANDIDATE_HEADINGS[0])
 
 
-def test_the_rust_hook_carries_the_same_candidate_phrasing():
-    """Same invariant as the MAX_RESULTS parity test: what an agent is told must
-    not depend on the platform that told it."""
-    text = (REPO_ROOT / "hooks" / "native" / "adr-hook.rs").read_text(encoding="utf-8")
-    for heading in CANDIDATE_HEADINGS:
-        assert heading in text, f"Rust hook lost the heading: {heading}"
-    # The Rust source splits the instruction over a `\` line continuation.
-    # Canonicalise it the way rustc does — drop backslash + newline + the next
-    # line's leading whitespace, CRLF or LF — and then demand the WHOLE
-    # instruction. The first version of this test replaced the two-character
-    # sequence backslash+'n' (a no-op against real newlines) and only passed
-    # because a fragment happened to sit unbroken on one source line; a re-wrap
-    # would have failed it spuriously and a real divergence could have hidden.
-    canonical = re.sub(r"\\\r?\n[ \t]*", "", text)
-    assert SELECTION_INSTRUCTION in canonical, (
-        "the Rust host's selection instruction diverged from the Python core"
-    )
-    assert "relevant to this prompt" not in text
-
-
 def test_the_selection_instruction_survives_truncation():
     """TASK-157 finding 4: append-then-slice cut the instruction exactly when
     the candidate set was biggest. The instruction's length is reserved and the
@@ -176,10 +146,3 @@ def test_the_selection_instruction_survives_truncation():
     context = core._prompt_candidates_context(small)
     assert context == "one line\n" + core.PROMPT_SELECTION_INSTRUCTION
 
-
-def test_the_rust_hook_reserves_the_instruction_length_too():
-    """Same parity invariant: the native host must not exceed the budget nor
-    lose the instruction, so its source carries the reserve arithmetic."""
-    text = (REPO_ROOT / "hooks" / "native" / "adr-hook.rs").read_text(encoding="utf-8")
-    assert "saturating_sub(choose.len()" in text
-    assert "is_char_boundary" in text

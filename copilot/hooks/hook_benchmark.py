@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import platform
 import statistics
 import subprocess
@@ -22,22 +21,14 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 
 def host_command(plugin_root: Path, client: str, event: str) -> tuple[list[str], str]:
-    machine = platform.machine().lower()
-    arch = "arm64" if machine in {"arm64", "aarch64"} else "x64"
-    if os.name == "nt":
-        native = plugin_root / "hooks" / "bin" / f"windows-{arch}" / "adr-hook.exe"
-    elif sys.platform == "darwin":
-        native = plugin_root / "hooks" / "bin" / f"darwin-{arch}" / "adr-hook"
-    else:
-        native = plugin_root / "hooks" / "bin" / f"linux-{arch}" / "adr-hook"
-    # Follow the dispatcher, not the filesystem. run-hook.cmd stopped preferring
-    # the native host in v0.44.1 -- it runs only under ADR_KIT_NATIVE_HOOK=1,
-    # because measured against the Python oracle it returned one of four
-    # governing ADRs before an edit. A benchmark that still picks it up whenever
-    # the file exists reports latency for a path that no longer ships, which is
-    # the most misleading number this file could produce.
-    if native.is_file() and os.environ.get("ADR_KIT_NATIVE_HOOK") == "1":
-        return [str(native), "--client", client, "--event", event], "native"
+    """The command the dispatcher actually runs, on every platform.
+
+    There is nothing to select between any more: ADR-029 retired the native
+    binary rather than maintain a second retrieval engine, so Python is the
+    only host and this returns it unconditionally. The label is kept in the
+    tuple because the report records which host produced each number, and a
+    reader of an old report has to be able to tell the two eras apart.
+    """
     return [
         sys.executable,
         str(plugin_root / "hooks" / "adr-hook.py"),
@@ -45,7 +36,7 @@ def host_command(plugin_root: Path, client: str, event: str) -> tuple[list[str],
         client,
         "--event",
         event,
-    ], "python-fallback"
+    ], "python"
 
 
 # Measured start cost of a bare CPython process -- `python -c pass`, p50 over 7

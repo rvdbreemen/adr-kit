@@ -204,16 +204,13 @@ def _copilot_hook_config(manifest: dict) -> dict:
                 f"--client github-copilot-cli --event {command} || true"
             ),
             "powershell": (
-                # The native exe is opt-in via ADR_KIT_NATIVE_HOOK=1, exactly as
-                # hooks/run-hook.cmd gates it: preferring it by default silently
-                # narrowed governance on Windows (the host is not
-                # parity-certified), and Copilot was the one client that did.
-                '$native = "${PLUGIN_ROOT}/hooks/bin/windows-x64/adr-hook.exe"; '
-                f'if ($env:ADR_KIT_NATIVE_HOOK -eq "1" -and (Test-Path $native)) '
-                f'{{ & $native --client github-copilot-cli --event {command} }} '
-                "else { $python = Get-Command python -ErrorAction SilentlyContinue; "
+                # Python is the only host (ADR-029). This branch used to prefer
+                # a committed Rust exe, gated behind ADR_KIT_NATIVE_HOOK=1; the
+                # binary was retired rather than maintained as a second
+                # retrieval engine, so there is nothing left to select.
+                "$python = Get-Command python -ErrorAction SilentlyContinue; "
                 f'if ($python) {{ & $python.Source "${{PLUGIN_ROOT}}/hooks/adr-hook.py" '
-                f"--client github-copilot-cli --event {command} }} }}; exit 0"
+                f"--client github-copilot-cli --event {command} }}; exit 0"
             ),
             "cwd": "${PLUGIN_ROOT}",
             "timeoutSec": runner_timeout,

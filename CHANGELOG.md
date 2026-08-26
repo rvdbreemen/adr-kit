@@ -4,6 +4,72 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.55.1] - 2026-08-26
+
+The version number skips 0.55.0. That tag was pushed at the dev tip before
+the version bump was committed, so every version site at that commit still
+read 0.54.0 and the release gate correctly refused to publish it. The tag is
+left in place rather than moved, because a pushed tag is a public ref that
+consumers may register a marketplace from. Nothing was ever published as
+0.55.0.
+
+ADR-029 is finally carried out: the native hook binary is gone and Python is
+the only hook host on every platform. Nothing to do on upgrade unless you set
+`ADR_KIT_NATIVE_HOOK`, which no longer exists.
+
+### Removed
+
+- The committed `adr-hook.exe` artefact, its Rust sources, the dispatcher
+  branch that preferred it, and the `ADR_KIT_NATIVE_HOOK` opt-in, from all
+  three generated client trees. ADR-029 has been Accepted and `binding: true`
+  since 2026-08-04 and its Must reads "Remove the native host, its committed
+  artefact, and the dispatcher branch that prefers it"; none of it had
+  happened (TASK-187).
+- Three parity-from-source tests in `test_adr_hook_result_limit.py` that read
+  the Rust source to compare it against the Python host. Maintaining that
+  comparison is the second implementation ADR-029 rejects.
+
+### Fixed
+
+- `adr-mcp` rejects malformed JSON-RPC frames instead of answering them
+  (TASK-186). Four deviations, all reproduced against v0.54.0:
+  - `"id": null` was answered with a full result and `"id": null`, so the
+    reply itself failed to validate against `JSONRPCResultResponse`. The base
+    protocol says the ID MUST NOT be null; only key presence was checked.
+  - `"id": 1.5` and `"id": {"a":1}` were echoed verbatim. `RequestId` is
+    `string | number`.
+  - The `jsonrpc` member was never checked, so a frame with no version, or
+    with `"1.0"`, was served normally and got `"2.0"` back.
+  - `io.modelcontextprotocol/clientCapabilities` was tested for presence only,
+    so the string `"nonsense"` passed and `server/discover` succeeded. A
+    schema-invalid params now returns `-32602`.
+
+  None of these breaks a conforming client. They are worth fixing because a
+  spec deviation in an *outgoing* frame is the one category the other side
+  cannot correct, and a non-conforming client previously received a
+  valid-looking answer instead of a usable error.
+
+- ADR-029's gate no longer certifies the option the decision rejects. The
+  anchor flipped on by TASK-127 asserted that the native host ran only under
+  `ADR_KIT_NATIVE_HOOK=1`, which is the opt-in state ADR-029's Decision
+  Outcome rules out, so `adr-lint` reported compliance for a decision nobody
+  had implemented. The Verification section is corrected in place, dated, and
+  carries a matching `status_history` entry; `verified_in` now names the three
+  tests that hold the assertions.
+- `bin/adr_doctor_checks.py` no longer requires `adr-hook.exe`, which would
+  have made every healthy install report "failed" once the artefact was gone.
+
+### Changed
+
+- `docs/hook-performance.md` describes Python as the only host rather than a
+  fallback, and drops the edit-tier budget that ADR-030 had already replaced.
+- The `ADR-INDEX.json` size budget in `tests/test_adr_index.py` allows 2.5 KB
+  per ADR instead of 2 KB. At 41 records the old bound cleared by 4 bytes, so
+  it had stopped measuring growth and fired on whichever ADR was edited next.
+  The ratio assertion that bounds the graph at 25% of the ADR markdown is
+  unchanged and remains the meaningful limit.
+
 ## [0.54.0] - 2026-08-20
 
 Automatic interactive ADR grilling is now enabled by default for user-visible
@@ -2756,7 +2822,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...HEAD
+[0.55.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...v0.55.1
 [0.54.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.51.0...v0.52.0
