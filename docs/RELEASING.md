@@ -66,7 +66,8 @@ version-bearing file and how to read and write it. Four tools read that one file
 Currently declared: the CHANGELOG release heading (canonical), the three
 certified client plugin manifests, the OpenCode npm package, the two versioned
 marketplace manifests, the pre-commit / guardian-entry / guide template stamps,
-and the two README version pins. The git tag is compared against them at
+the two README version pins, and the action pin in the readiness workflow
+template. The git tag is compared against them at
 release time.
 
 `.agents/plugins/marketplace.json` (Codex) carries no version by design: it points

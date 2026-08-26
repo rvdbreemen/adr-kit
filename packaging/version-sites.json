@@ -81,6 +81,12 @@
       "label": "README pre-commit rev pin"
     },
     {
+      "path": "templates/github-workflows/adr-readiness.yml",
+      "kind": "regex_all",
+      "pattern": "(adr-readiness@v)(\\d+\\.\\d+\\.\\d+)",
+      "label": "readiness workflow template action pin"
+    },
+    {
       "path": "CHANGELOG.md",
       "kind": "regex",
       "pattern": "(\\[Unreleased\\]: https://github\\.com/rvdbreemen/adr-kit/compare/v)(\\d+\\.\\d+\\.\\d+)(\\.\\.\\.HEAD)",
