@@ -10,7 +10,7 @@
       "name": "adr-kit",
       "source": "./",
       "version": "0.55.1",
-      "description": "Drop-in ADR toolkit for AI coding agents: /adr-kit:init bootstrap + audit; bin/adr-judge pre-commit/CI enforcement; /adr-kit:adr authoring; Guardian staleness detection; layered context injection; MCP server; and v0.33 local governance tools: frontmatter, strict lint, lifecycle commands, indexes, adr-doctor.",
+      "description": "Drop-in ADR toolkit for AI coding agents: bootstrap and audit with /adr-kit:init, guided authoring with /adr-kit:adr, pre-commit and CI enforcement with file:line citations, context injection over a generated graph index, Guardian staleness detection, lifecycle commands, strict lint, adr-doctor, and a key-free MCP server.",
       "homepage": "https://github.com/rvdbreemen/adr-kit",
       "license": "MIT"
     }
