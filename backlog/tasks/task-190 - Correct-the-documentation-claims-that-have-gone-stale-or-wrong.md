@@ -1,10 +1,10 @@
 ---
 id: TASK-190
 title: Correct the documentation claims that have gone stale or wrong
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-26 19:11'
-updated_date: '2026-08-26 19:42'
+updated_date: '2026-08-26 19:49'
 labels: []
 dependencies: []
 references:
@@ -57,7 +57,7 @@ FOUND AND DELIBERATELY NOT FIXED HERE
 - [x] #5 templates/github-workflows/adr-readiness.yml is declared in packaging/version-sites.json, reads 0.55.1, and the two generated client copies follow from one regeneration rather than a hand edit
 - [x] #6 docs/RELEASING.md's list of declared sites names the new registry entry
 - [x] #7 python scripts/check-release-version.py --expect v0.55.1 and python scripts/build-client-adapters.py --check both pass
-- [ ] #8 The change lands in dev through a pull request with green CI
+- [x] #8 The change lands in dev through a pull request with green CI
 <!-- AC:END -->
 
 ## Comments
@@ -110,3 +110,27 @@ RuntimeError: copilot's plugin directory cannot be replaced ...
 Deze twee tests grijpen naar de **live Copilot-installatie** in plaats van naar `tmp_path`. Ze falen dus voor iedere ontwikkelaar die Copilot open heeft staan, en ze slagen op CI omdat de runner geen Copilot-installatie heeft. Dat is het spiegelbeeld van 'tests groen onder condities die het defect maskeren': hier is de test rood om een reden die niets met de code te maken heeft. Verdient een eigen taak; ik heb er hier niets aan veranderd.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Elf documentatieclaims gecorrigeerd, één registry-gat gedicht, één guard toegevoegd. Gemerged in `dev` via PR #132.
+
+WAT ER FOUT WAS, in volgorde van ernst:
+
+1. `SECURITY.md` vertelde een security-reporter dat `v0.33.x` de laatste ondersteunde lijn was en dat alles vanaf `v0.32.x` geen routinematige backports kreeg. De repo shipt 0.55.1. De tabel sprak bovendien de eigen prozaregel erboven tegen.
+2. De README noemde de MCP-server op vijf plaatsen "five-tool" terwijl dezelfde README op regel 439 "Seven tools, all key-free" zegt en `bin/adr-mcp` er zeven exporteert. Een document dat zichzelf tegenspreekt is erger dan één fout getal.
+3. "15 workflows" tegen 17 in `clients/workflows.json`; "six bounded hooks" tegen acht events in `hooks/manifest.json`.
+4. `ROADMAP.md` beweerde "adr-kit is at v0.40.0" en noemde OpenCode niet als distributie, terwijl ADR-039 dat pakket in 0.52.0 opleverde.
+5. De README wees OpenCode-gebruikers naar `@rvdbreemen/adr-kit-opencode@0.52.0` terwijl npm 0.52.2 serveert.
+
+HET STRUCTURELE DEFECT DAARACHTER: `templates/github-workflows/adr-readiness.yml` pinde `adr-readiness@v0.37.0` en stond in geen enkele registry. Geen writer, gate, generator of test wist dat dat bestand een versie droeg — terwijl de vergelijkbare README-pin voor `adr-judge` wél gedeclareerd was en actueel stond. Gebruikers kopiëren die template naar hun eigen repo. De pin is nu een site in `packaging/version-sites.json` en is door `bump-version.py` geschreven, niet met de hand.
+
+SECURITY.md en ROADMAP.md dragen nu geen versienummer meer maar de regel plus een verwijzing naar de laatste release. Dat kan niet opnieuw verlopen.
+
+DE GUARD IS HET ANTWOORD OP "DIT GEBEURT WEER": geen enkele test las de README. `tests/test_readme_counts.py` toetst de drie tellingen tegen hun manifest en vond meteen een vijfde vindplaats in cijfervorm die mijn handmatige sweep had gemist. Falsifieerbaar geverifieerd, niet aangenomen.
+
+DRIE TESTFAILURES IN DE VOLLEDIGE SUITE, alle drie onderzocht: één latency-ceiling onder machinelast (slaagt in isolatie), en twee agent-installer-tests die de live Copilot-installatie aanraken in plaats van `tmp_path`. Die twee falen identiek op een schone worktree van `origin/dev`, dus ze staan los van dit werk. Vastgelegd als TASK-191.
+
+`.adr-kit/ADR-guide.md` (v0.35.0, ongemanaged) is bewust niet aangeraakt en vastgelegd als TASK-192: dat is geen stale string maar een artefact zonder eigenaar, en alleen de stamp bumpen zou een vers nummer over verouderde inhoud zetten.
+<!-- SECTION:FINAL_SUMMARY:END -->
