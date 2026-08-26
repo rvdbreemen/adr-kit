@@ -1,11 +1,11 @@
 ---
 id: TASK-186
 title: adr-mcp accepteert malformed JSON-RPC frames en kaatst ongeldige ids terug
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-08-23 21:40'
-updated_date: '2026-08-25 23:05'
+updated_date: '2026-08-26 05:23'
 labels:
   - mcp
   - conformance
@@ -54,17 +54,17 @@ Meegenomen opruiming: de docstring op `bin/adr-mcp:941` spreekt nog van "the fiv
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Een request met id null wordt afgewezen met JSON-RPC -32600 in plaats van beantwoord met een resultaat dat id null draagt
-- [ ] #2 Een request met een id die geen string of getal is (float met fractie, object, array, boolean) wordt afgewezen met -32600 en de id wordt niet teruggekaatst
-- [ ] #3 Een frame zonder jsonrpc-lid of met een andere waarde dan "2.0" wordt afgewezen met -32600
-- [ ] #4 Een modern gerouteerd request waarvan io.modelcontextprotocol/clientCapabilities geen object is, wordt beantwoord met -32602 dat de ongeldige sleutel benoemt
-- [ ] #5 Parse-error- en batch-antwoorden blijven id null dragen; de bestaande assertions op tests/test_adr_mcp.py:207-210 en :1381-1384 blijven ongewijzigd slagen
-- [ ] #6 Een notifications/*-frame met een id blijft stil genegeerd, conform de regel die ADR-016 vastlegt
-- [ ] #7 Elk nieuw afwijzingspad is gepind in tests/test_adr_mcp.py onder gate adr-mcp-dual-era-v1, inclusief een geval per ongeldig id-type
-- [ ] #8 De zeven bestaande tools blijven bereikbaar in beide era's en de legacy-handshake blijft ongewijzigd tegenover de vier handshake-revisies
-- [ ] #9 De docstring op bin/adr-mcp:941 noemt het juiste aantal tools
-- [ ] #10 python scripts/build-client-adapters.py --check meldt changed=0 en de drie adr-mcp-kopieen zijn byte-identiek
-- [ ] #11 python -m pytest -q slaagt volledig
+- [x] #1 Een request met id null wordt afgewezen met JSON-RPC -32600 in plaats van beantwoord met een resultaat dat id null draagt
+- [x] #2 Een request met een id die geen string of getal is (float met fractie, object, array, boolean) wordt afgewezen met -32600 en de id wordt niet teruggekaatst
+- [x] #3 Een frame zonder jsonrpc-lid of met een andere waarde dan "2.0" wordt afgewezen met -32600
+- [x] #4 Een modern gerouteerd request waarvan io.modelcontextprotocol/clientCapabilities geen object is, wordt beantwoord met -32602 dat de ongeldige sleutel benoemt
+- [x] #5 Parse-error- en batch-antwoorden blijven id null dragen; de bestaande assertions op tests/test_adr_mcp.py:207-210 en :1381-1384 blijven ongewijzigd slagen
+- [x] #6 Een notifications/*-frame met een id blijft stil genegeerd, conform de regel die ADR-016 vastlegt
+- [x] #7 Elk nieuw afwijzingspad is gepind in tests/test_adr_mcp.py onder gate adr-mcp-dual-era-v1, inclusief een geval per ongeldig id-type
+- [x] #8 De zeven bestaande tools blijven bereikbaar in beide era's en de legacy-handshake blijft ongewijzigd tegenover de vier handshake-revisies
+- [x] #9 De docstring op bin/adr-mcp:941 noemt het juiste aantal tools
+- [x] #10 python scripts/build-client-adapters.py --check meldt changed=0 en de drie adr-mcp-kopieen zijn byte-identiek
+- [x] #11 python -m pytest -q slaagt volledig
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -143,5 +143,34 @@ adr-lint smoke test on examples/      pass
 Alle twaalf groen. `dev` heeft `validate` als required context met `enforce_admins: true`, dus de merge kan die niet omzeild hebben.
 
 Voor deze taak is `main` daarmee de enige resterende blokkade — anders dan bij TASK-187, waar AC#5 daarnaast nog een openstaande maintainer-keuze is.
+---
+
+author: Claude
+created: 2026-08-26 05:23
+---
+AFGESLOTEN 2026-08-26. De enige resterende blokkade uit comment #1 — de route naar `main` — is weg. Het werk is gepubliceerd als **v0.55.1** (niet v0.55.0; zie TASK-188 voor waarom dat nummer is overgeslagen).
+
+Bewijs uit `origin/main` (= `3b5ca00`), niet uit de branch:
+
+```
+$ git show origin/main:bin/adr-mcp | grep -n '32600\|clientCapabilities\|RequestId'
+106: CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
+789: INVALID_REQUEST = -32600
+845: `RequestId` is `string | number` in schema.ts and `string | integer` in the
+```
+
+AC#10 (byte-identiek over de drie trees, ADR-016's eis) is direct getoetst op blob-niveau in plaats van via een checksumvergelijking:
+
+```
+8c3f5e443f4e29352e5f33f23c26a7062040dd29  bin/adr-mcp
+8c3f5e443f4e29352e5f33f23c26a7062040dd29  codex/bin/adr-mcp
+8c3f5e443f4e29352e5f33f23c26a7062040dd29  copilot/bin/adr-mcp
+```
+
+Één blob-SHA voor alle drie — dat is byte-identiek per definitie, niet bij benadering.
+
+AC#11 (volledige suite) is tweemaal onafhankelijk bewezen op de release-commit: lokaal `1824 passed, 12 skipped in 683.85s`, en de twaalf checks op PR [#127](https://github.com/rvdbreemen/adr-kit/pull/127) inclusief `pytest` en zes Python 3.10/3.12-combinaties over ubuntu, macos en windows. AC#2 (`build-client-adapters.py --check`, `changed=0`) idem, lokaal en via `validate`.
+
+Release: https://github.com/rvdbreemen/adr-kit/releases/tag/v0.55.1
 ---
 <!-- COMMENTS:END -->
