@@ -16,40 +16,99 @@ name: ADR Kit release publish
 # docs/RELEASING.md).
 
 on:
+  # Three entry points, one workflow. The push-to-main trigger is what makes a
+  # misplaced tag impossible: the tag is derived from the commit that carries
+  # the CHANGELOG version rather than typed by a human against the wrong ref.
+  # It stays in THIS file because npm validates the Trusted Publisher against
+  # the filename of the workflow that initiates the run (ADR-042).
   push:
+    branches:
+      - main
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to (re)publish, e.g. v0.37.0
+        description: Existing tag to (re)publish, e.g. v0.55.1
         required: true
         type: string
 
 permissions:
-  contents: write # required to create the GitHub Release
+  contents: write # create the release tag on a push to main, and the GitHub Release
 
 jobs:
-  publish:
+  # Decide which tag this run publishes, and for a push to main create it.
+  # Separated from publishing so the tag exists before the publish job checks
+  # it out, and so a routine push to main that carries no new version ends the
+  # run quietly instead of failing.
+  resolve:
+    name: Resolve the release tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      proceed: ${{ steps.tag.outputs.proceed }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Resolve tag
         id: tag
         shell: bash
+        # inputs.tag reaches the script through the environment, never through
+        # ${{ }} interpolation into the shell source.
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
-          else
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG="$DISPATCH_TAG"
+          elif [ "$REF_TYPE" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
+          else
+            # Push to main. The CHANGELOG heading is the canonical version
+            # (ADR-013), so the tag is derived from the commit under test
+            # rather than from whatever a human had checked out.
+            VERSION="$(python scripts/check-release-version.py --print-canonical)"
+            TAG="v${VERSION}"
+            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+              echo "::notice::$TAG already exists; nothing to release on this push."
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::notice::main carries $VERSION with no tag; creating $TAG at $GITHUB_SHA"
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "$TAG"
           fi
           case "$TAG" in
             v[0-9]*.[0-9]*.[0-9]*) : ;;
             *) echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH"; exit 1 ;;
           esac
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: resolve
+    if: needs.resolve.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Carry the resolved tag
+        id: tag
+        shell: bash
+        env:
+          RESOLVED_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "tag=$RESOLVED_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${RESOLVED_TAG#v}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -119,6 +178,47 @@ jobs:
           echo "::notice::Public git-source marketplaces now serve ${{ steps.tag.outputs.tag }}."
           echo "::notice::Maintainer machines using the prepared-directory source must run:"
           echo "::notice::  python scripts/install-agent-envs.py --clients all   (then restart each client)"
+
+      # The npm approval is the one step that cannot be automated: npm requires
+      # proof-of-presence. It used to live only in docs/RELEASING.md, which is
+      # why 0.53.0, 0.54.0 and 0.55.1 sat staged and unapproved for a week. It
+      # now appears in the run that created the staging (ADR-042).
+      - name: Write the remaining manual steps to the job summary
+        if: always()
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY
+          ## Still to do by hand: approve the npm package
+
+          The OpenCode package for \`$TAG\` is **staged, not published**. npm
+          requires proof-of-presence, so no workflow can finish this.
+
+          \`\`\`bash
+          npm login
+          npm stage list @rvdbreemen/adr-kit-opencode
+          npm stage view <stage-id>      # inspect the tarball first
+          npm stage approve <stage-id>   # prompts for your OTP
+          \`\`\`
+
+          Or from the browser: <https://www.npmjs.com/staged-packages>
+
+          ### Approve in ascending version order
+
+          npm sets \`latest\` to the version published **last**, not the highest.
+          Approving an older staged version after a newer one moves \`latest\`
+          backwards. This happened on 2026-08-26: approving 0.55.1, then 0.53.0,
+          then 0.54.0 left \`latest\` on 0.54.0 while 0.55.1 was the release.
+
+          Confirm afterwards:
+
+          \`\`\`bash
+          npm dist-tag ls @rvdbreemen/adr-kit-opencode   # latest must be $VERSION
+          \`\`\`
+          SUMMARY
 
   stage-opencode-npm:
     name: Stage OpenCode package for npm
