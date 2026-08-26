@@ -100,6 +100,7 @@ patch releases, is in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | What landed | Why it matters |
 | --- | --- | --- |
+| **0.55.1** | [ADR-029](docs/adr/ADR-029-retire-the-native-hook-binary-rather-than-maintain-a-second-retrieval-engine.md) is carried out: the committed `adr-hook.exe`, its Rust sources, the dispatcher branch that preferred it and the `ADR_KIT_NATIVE_HOOK` opt-in are gone from all three client trees, so Python is the only hook host on every platform. `adr-mcp` now rejects malformed JSON-RPC frames instead of answering them. | The binary was measurably wrong, not merely untested: against the Python oracle it returned one of four governing ADRs on an edit event, and the parity test that should have caught it read a constant out of the Rust source instead of running the build. One retrieval engine means the hook answers what the CLI answers. On the MCP side, a server that answers a malformed frame hides a client defect the client cannot see in its own logs. |
 | **0.54.0** | Automatic interactive ADR grilling ([ADR-041](docs/adr/ADR-041-automatically-hand-off-unfinished-proposed-adrs-to-interactive-grilling.md)) hands one unfinished Proposed decision to the native grill workflow at the next user-visible prompt. `/adr-kit:upgrade` materializes `grill.auto_start: true` while preserving explicit opt-outs. | Incomplete decisions reach the human while their implementation context is still available, without starting interviews in CI, pre-commit, background, or unattended lifecycle paths. |
 | **0.52.0** | Native [OpenCode](docs/clients/opencode.md) support through a separate TypeScript plugin, backed by the shared deterministic engines and MCP server ([ADR-039](docs/adr/ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md)). The certified Claude Code, Codex, and Copilot CLI registry and release gate remain unchanged. | OpenCode gets its documented native configuration, skills, commands, context, compaction, edit, shell, and MCP integration without weakening the existing certification boundary. |
 | **0.48.0** | Retrieval is lexical scoring over the generated index plus one-hop graph neighbours, and the LLM judge runs on the CLI you are already signed in to ([ADR-036](docs/adr/ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md)): the vector subsystem, `bin/adr-embed` and the openrouter/ollama/openai backends are gone, and eight retired config keys now fail validation by name. The guardian records a verdict per ADR and prints it as the sweep lands ([ADR-037](docs/adr/ADR-037-keep-per-adr-judge-verdicts-in-the-advisory-per-machine-guardian-state.md)). | Two subsystems were carrying their own credentials, install paths and failure modes to answer questions the index already answers. A sweep is also long enough to be interrupted, so a per-sweep timestamp discarded everything it had established; per-ADR verdicts keep it. |
@@ -670,7 +671,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.54.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.55.1
         with:
           adr-dir: docs/adr/
 ```
@@ -684,7 +685,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.54.0
+    rev: v0.55.1
     hooks:
       - id: adr-judge
 ```
