@@ -125,6 +125,51 @@ _FORMAT_LINE_RE = re.compile(
     r"^\s*format\s*:\s*[\"']?([a-z-]+)[\"']?\s*$", re.IGNORECASE | re.MULTILINE
 )
 _STATUS_LINE_RE = re.compile(r"^\s*status\s*:", re.IGNORECASE | re.MULTILINE)
+
+# The body-status reader, and the shapes it accepts. These live here rather
+# than in adr_catalog because adr_schema needs them too and adr_catalog imports
+# adr_schema, not the other way round. adr_catalog re-exports them, so the
+# tools that already import them from there are unaffected.
+STATUS_HEADING_RE = re.compile(
+    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
+)
+STATUS_BOLD_INLINE_RE = re.compile(
+    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)"
+    r"|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
+    re.IGNORECASE | re.MULTILINE,
+)
+STATUS_BODY_LINE_RE = re.compile(
+    r"^[ \t]*Status[ \t]*:?[ \t]*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
+)
+_STATUS_LEADING_WORD_RE = re.compile(r"\s*([A-Za-z]+)")
+
+
+def adr_status(text: str) -> Optional[str]:
+    """Return the leading ADR status word, or None.
+
+    The single cross-tool status reader used by adr-index, adr-judge, adr-lint,
+    adr-retire, adr-watch and, since issue #118, the frontmatter inference that
+    ``adr-migrate`` writes with. A ``## Status`` heading body wins, then a
+    bold-inline ``**Status:** X`` form, then a plain ``Status: X`` line. The
+    line form is a deliberate superset of the older per-tool regexes so those
+    tools can never disagree on an ADR's status.
+
+    It returns None rather than guessing. That is the whole point: the writer
+    used to default to ``"Proposed"`` on a shape it could not read, which
+    silently downgraded Accepted records and stopped them being injected.
+    Authoritative lifecycle status still comes from the status_history chain in
+    ``load_adr_record``; this is the lightweight reader used by gates and
+    listings.
+    """
+    match = STATUS_HEADING_RE.search(text)
+    if match:
+        word = _STATUS_LEADING_WORD_RE.match(match.group(1))
+        return word.group(1) if word else None
+    match = STATUS_BOLD_INLINE_RE.search(text)
+    if match:
+        return match.group(1) or match.group(2)
+    match = STATUS_BODY_LINE_RE.search(text)
+    return match.group(1) if match else None
 _CANONICAL_FILENAME_RE = re.compile(
     r"^ADR-\d{3,4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$",
     re.IGNORECASE,

@@ -43,7 +43,7 @@ def _load_sibling(name: str):
 
 _load_sibling("adr_format")
 
-from adr_format import SUPPORTED_PROFILES
+from adr_format import SUPPORTED_PROFILES, adr_status
 
 FRONTMATTER_FIELD_ORDER = (
     "id",
@@ -92,8 +92,13 @@ STATUS_SECTION_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
-SUPERSEDES_RE = re.compile(r"\bSupersedes\s+ADR-(\d{1,4})\b", re.IGNORECASE)
-SUPERSEDED_BY_RE = re.compile(r"\bSuperseded\s+by\s+ADR-(\d{1,4})\b", re.IGNORECASE)
+# The optional `[` accepts the link-wrapped form real bodies use:
+# "Superseded by [ADR-124](ADR-124-title.md)". Requiring a bare ADR-NNN meant
+# superseded_by came back None on those records while the status was guessed
+# separately, producing frontmatter that contradicted the prose it was inferred
+# from (issue #118).
+SUPERSEDES_RE = re.compile(r"\bSupersedes\s+\[?ADR-(\d{1,4})\b", re.IGNORECASE)
+SUPERSEDED_BY_RE = re.compile(r"\bSuperseded\s+by\s+\[?ADR-(\d{1,4})\b", re.IGNORECASE)
 
 
 class FrontmatterError(Exception):
@@ -211,10 +216,23 @@ def infer_frontmatter(body: str, path: Optional[Path] = None) -> Dict:
     status_match = STATUS_SECTION_RE.search(body)
     if status_match:
         status_line = status_match.group(1).strip()
-    status_word_match = re.match(r"([A-Za-z]+)", status_line)
-    status = status_word_match.group(1).capitalize() if status_word_match else "Proposed"
+    # One reader for the status word, shared with adr-index, adr-judge,
+    # adr-lint, adr-retire and adr-watch. It handles the `## Status` heading,
+    # the bold-inline `**Status:** X` form and a plain `Status: X` line, and it
+    # returns None on anything else.
+    #
+    # None must stay None. This used to default to "Proposed" whenever the one
+    # recognised shape did not match - and `re.match` also returns None for any
+    # line starting with `**`, `[` or `-`, so bold and link-wrapped statuses
+    # fell through too. `status` is the field that decides whether a decision is
+    # binding and injected, so guessing it downgraded Accepted records in
+    # silence, with exit 0. Both callers already handle an undetermined status
+    # honestly: adr_catalog reports STATUS_UNKNOWN, and migrate_text returns it
+    # as an issue and writes nothing (issue #118).
+    status_word = adr_status(body)
+    status = status_word.capitalize() if status_word else None
     if status not in VALID_STATUSES:
-        status = "Proposed"
+        status = None
 
     date_match = DATE_RE.search(status_line)
     status_date = date_match.group(1) if date_match else None
