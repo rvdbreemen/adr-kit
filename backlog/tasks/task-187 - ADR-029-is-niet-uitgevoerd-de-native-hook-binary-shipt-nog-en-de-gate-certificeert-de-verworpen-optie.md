@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-08-23 21:41'
-updated_date: '2026-08-25 23:04'
+updated_date: '2026-08-26 17:58'
 labels:
   - adr
   - governance
@@ -70,17 +70,17 @@ CONTEXT DIE ANDERS VERLOREN GAAT: de binary was aantoonbaar onjuist, niet alleen
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 hooks/bin/windows-x64/ is verwijderd uit alle drie de trees (hooks/, codex/hooks/, copilot/hooks/) en geen adr-hook.exe is nog git-tracked
-- [ ] #2 hooks/native/ is verwijderd, inclusief adr-hook.rs en windows-process-floor.rs
-- [ ] #3 De native dispatcher-branch is weg uit hooks/run-hook.cmd (zowel de cmd- als de sh-helft) en uit hooks/hook_benchmark.py; ADR_KIT_NATIVE_HOOK komt nergens meer voor
+- [x] #1 hooks/bin/windows-x64/ is verwijderd uit alle drie de trees (hooks/, codex/hooks/, copilot/hooks/) en geen adr-hook.exe is nog git-tracked
+- [x] #2 hooks/native/ is verwijderd, inclusief adr-hook.rs en windows-process-floor.rs
+- [x] #3 De native dispatcher-branch is weg uit hooks/run-hook.cmd (zowel de cmd- als de sh-helft) en uit hooks/hook_benchmark.py; ADR_KIT_NATIVE_HOOK komt nergens meer voor
 - [ ] #4 Elk manifest-event levert op elke client dezelfde records als vandaag via het Python-pad, op Windows zowel als POSIX
 - [ ] #5 De edit-tier events zijn gemeten tegen hun 100 ms-budget via het fixture-contract van ADR-015 en de meting is meegecommit
-- [ ] #6 De gate-anchor in tests/test_adr_hook_dispatch_matrix.py beweert wat ADR-029 werkelijk besliste, niet dat de native host onder een env-vlag draait; de gate faalt als een tweede retrieval-implementatie terugkeert
-- [ ] #7 ADR-029 frontmatter documents_shipped en verified_in weerspiegelen de werkelijke stand na afloop
+- [x] #6 De gate-anchor in tests/test_adr_hook_dispatch_matrix.py beweert wat ADR-029 werkelijk besliste, niet dat de native host onder een env-vlag draait; de gate faalt als een tweede retrieval-implementatie terugkeert
+- [x] #7 ADR-029 frontmatter documents_shipped en verified_in weerspiegelen de werkelijke stand na afloop
 - [ ] #8 TASK-127 is gecorrigeerd op het punt dat ADR-029 een geshipte implementatie zou hebben gehad
 - [ ] #9 Als de maintainer kiest voor terugdraaien in plaats van uitvoeren, gebeurt dat via een superseding ADR en niet door deze taak te sluiten met de binary intact
-- [ ] #10 python -m pytest -q slaagt volledig
-- [ ] #11 python scripts/build-client-adapters.py --check meldt changed=0
+- [x] #10 python -m pytest -q slaagt volledig
+- [x] #11 python scripts/build-client-adapters.py --check meldt changed=0
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -225,5 +225,44 @@ adr-lint smoke test on examples/    pass
 Alle twaalf checks groen. `dev` is beschermd met `enforce_admins: true` en `validate` als required context, dus de merge van PR #124 kan die niet omzeild hebben. Het openstaande punt is dus niet 'draaien de tests?', maar AC#5 plus de route naar `main`.
 
 VOLGORDE DIE IK ZOU AANHOUDEN: eerst de gefaalde `release-publish.yml`-run op tag v0.55.0 uitzoeken (bij v0.52.2 bleek een vergelijkbare `failure` alleen het npm-staging-job te zijn, niet de gates — de moeite van het narekenen waard voordat je iets herstelt), dan v0.55.0 in `main`, dan AC#5 beslissen.
+---
+
+author: Claude
+created: 2026-08-26 17:58
+---
+BLOKKADE 1 IS WEG, BLOKKADE 2 NIET. Comment #2 noemde er twee: de routering naar `main`, en AC#5. De eerste is opgelost door de release van **v0.55.1** (`main` = `3b5ca00`, zie TASK-188 voor waarom het nummer 0.55.0 is overgeslagen). De tweede staat nog open en is een keuze van jou, niet van mij.
+
+WAT NU BEWEZEN IS IN `main`, niet op een branch:
+
+```
+$ git ls-tree -r --name-only origin/main | grep -cE 'hooks/bin|hooks/native'
+0
+```
+
+Nul treffers. Op v0.54.0 waren dat er zes (drie `adr-hook.exe`, plus `README.md`, `adr-hook.rs` en `windows-process-floor.rs`). AC#1 en AC#2 zijn daarmee gehaald in het verzonden product.
+
+AC#3 gecontroleerd met een gerichte grep die historie uitsluit. Zes bestanden noemen `ADR_KIT_NATIVE_HOOK` nog, en alle zes terecht — ik heb ze één voor één op regelniveau nagelopen in plaats van op de telling af te gaan:
+
+```
+README.md:103                         de 0.55.1-regel die de verwijdering beschrijft
+docs/hook-performance.md:128          historische meetnotitie
+scripts/client_generation_artifacts.py:208  comment die de historie uitlegt
+tests/test_adr_hook_dispatch_matrix.py:283  GUARD: verbiedt het token
+tests/test_client_adapter_generation.py:388 GUARD: verbiedt het token
+tests/test_hook_performance.py:78           zet de env-var en toetst dat hij niets doet
+```
+
+Geen levend opt-in-pad. De laatste drie zijn precies het tegendeel: ze laten de suite falen als een tweede retrieval-implementatie terugkeert. Dat is wat AC#6 vraagt, en het is nu de anchor in plaats van de bewering die de verworpen optie certificeerde.
+
+AC#7 geverifieerd in de frontmatter op `main`: `documents_shipped: true` en `verified_in` noemt de drie tests die de assertions dragen — waar dat eerder `false` en `[]` was.
+
+AC#10 en AC#11: `1824 passed, 12 skipped in 683.85s` lokaal op de release-commit, plus de twaalf checks op PR [#127](https://github.com/rvdbreemen/adr-kit/pull/127) waaronder `validate` (dat `build-client-adapters.py --check` bevat) en zes Python 3.10/3.12-combinaties over ubuntu, macos en windows.
+
+NIET AFGEVINKT, EN WAAROM:
+
+* **AC#4** — 'elk manifest-event levert op elke client dezelfde records via het Python-pad, op Windows zowel als POSIX'. De CI-matrix draait de suite op drie besturingssystemen, maar dat is niet hetzelfde als een per-event recordvergelijking tegen een oracle. Ik heb die vergelijking niet gedraaid en vink hem daarom niet af.
+* **AC#5** — onveranderd de openstaande maintainer-keuze uit de Implementation Notes: het 100 ms edit-budget dat deze AC noemt is door ADR-030 vervangen (`hooks/manifest.json` geeft `pre-tool-use` nu 450/550/1100). Herformuleer de AC naar de ADR-030-budgetten en vink hem af, óf maak een aparte taak voor een certificatierun op de verklaarde runner. Ik heb de AC-tekst niet gewijzigd, want dat is jouw beslissing.
+* **AC#8** — de correctie op TASK-127 staat in de Implementation Notes van dit record; of dat als 'gecorrigeerd' telt is een recordbeslissing, geen meting.
+* **AC#9** — moot: dit is de terugdraai-clausule, en optie 1 (uitvoeren) is gekozen en uitgevoerd.
 ---
 <!-- COMMENTS:END -->
