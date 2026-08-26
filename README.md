@@ -135,8 +135,8 @@ And because decisions age, a periodic guardian flags drift between code and deci
 ### One engine, three certified CLIs plus OpenCode
 
 ADR Kit ships separate integration payloads for Claude Code CLI, OpenAI Codex
-CLI, and the standalone GitHub Copilot CLI. All three carry the same 15
-workflows, the same deterministic engines, the same key-free five-tool MCP
+CLI, and the standalone GitHub Copilot CLI. All three carry the same 17
+workflows, the same deterministic engines, the same key-free seven-tool MCP
 server, and English skill metadata; only the native event surface differs. A
 separate native OpenCode plugin uses the same engines and adds OpenCode-native
 config, skills, commands, hooks, compaction context, and MCP registration. The
@@ -241,7 +241,7 @@ required.
 
 The Claude integration keeps only its manifest under `.claude-plugin/`.
 Plugin-root `skills/`, `hooks/hooks.json`, `.mcp.json`, agents, and bundled
-executables provide 15 workflows, six bounded hooks, and the five-tool MCP
+executables provide 17 workflows, eight bounded hooks, and the seven-tool MCP
 server.
 
 ### OpenAI Codex
@@ -255,8 +255,8 @@ codex mcp list
 Codex does not use Claude's `/adr-kit:...` slash-command syntax. ADR Kit
 workflows appear as namespaced skills: open `/skills`, or invoke
 `$adr-kit:context`, `$adr-kit:judge`, `$adr-kit:lint`, and the other skills.
-The separate `codex/` distribution contains all 15 workflows and the key-free
-five-tool MCP server. See the official [Codex skills](https://learn.chatgpt.com/docs/build-skills)
+The separate `codex/` distribution contains all 17 workflows and the key-free
+seven-tool MCP server. See the official [Codex skills](https://learn.chatgpt.com/docs/build-skills)
 and [plugin](https://learn.chatgpt.com/docs/build-plugins) contracts.
 
 ### Standalone GitHub Copilot CLI
@@ -295,7 +295,7 @@ Agents should use these native update commands instead of editing the installed
 ### OpenCode
 
 OpenCode is supported through a separate native plugin package. It uses the
-same deterministic Python engines and five-tool MCP server as the certified
+same deterministic Python engines and seven-tool MCP server as the certified
 clients, while adding OpenCode-native configuration, skills, commands, context,
 compaction, edit, shell, and session hooks.
 
@@ -309,12 +309,12 @@ configured:
 }
 ```
 
-For another project, use the published package for v0.52.0:
+For another project, use the newest version npm serves, 0.52.2:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.0"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.52.2"]
 }
 ```
 
@@ -796,7 +796,7 @@ A plain ADR template gives you a markdown file with sections to fill in. What `a
 | Enforcement | absent | declarative rules vs every commit and PR, key-free; opt-in LLM judge |
 | Aging | absent | guardian (drift, missing, stale), retirement audit, trend history, coverage KPI |
 | Team workflows | absent | CI sweeps with tracking issue, collision-safe numbering, audited overrides, guided supersession |
-| Tool integration | none | Claude Code, OpenAI Codex, GitHub Copilot CLI, and OpenCode integrations plus a 5-tool MCP server |
+| Tool integration | none | Claude Code, OpenAI Codex, GitHub Copilot CLI, and OpenCode integrations plus a 7-tool MCP server |
 
 If your team is happy with a plain template and the discipline lives in your culture, you do not need this. If you want the discipline to survive contact with an AI agent at 2 a.m., this is what `adr-kit` is for.
 
