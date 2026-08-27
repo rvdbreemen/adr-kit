@@ -210,7 +210,12 @@ Steps 3 and 4 may run in either order. Accepting first is the safer habit, becau
 
 Never edit Decision, Context, Consequences, or Alternatives of an Accepted/Deprecated ADR. Only the Status line and an appended Status History transition may change.
 
-**One thing the commands cannot recover.** An ADR authored before the `## Status History` convention has its acceptance date in the Status line and nowhere else. The lifecycle commands seed a recovered entry from that line before replacing it, recording `changed_by: unknown` and `changed_via: unrecorded` rather than inventing a signer. If the Status line does not yield both a status and a date, the command refuses instead of writing a history that silently omits the earlier transition — fix the line, then re-run.
+**One thing the commands cannot recover.** An ADR authored before the `## Status History` convention has its acceptance date in the Status line and nowhere else. The lifecycle commands seed a recovered entry from that line before replacing it, recording `changed_by: unknown` and `changed_via: unrecorded` rather than inventing a signer. The recovered entry also carries the Status line verbatim in its `reason`, so anything the parser cannot turn into structure — a `Decision Maker:` attribution, a note about which release line the decision applied to — survives in the record rather than being discarded for not fitting a field.
+
+There are two ways the command refuses rather than rewriting, and both exist so it never writes a history that silently omits an earlier transition:
+
+- The Status line does not yield both a status and a date. Fix the line, then re-run.
+- The Status line carries a **second** transition the recovered one does not account for, for example `Superseded by ADR-088, 2026-08-07. Originally Accepted, 2026-05-08.` Only the leading status and the first date are read, so the command can see that it is about to discard something without knowing what. Write the `## Status History` block first, recording each transition the line names, then re-run.
 
 ## Code review checks
 

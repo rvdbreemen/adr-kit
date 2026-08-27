@@ -387,19 +387,49 @@ def ensure_status_history(
     """
     if HISTORY_START_RE.search(body):
         return body
+
     status, when = prior_transition(path, data, body)
+    match = STATUS_RE.search(body)
+    line = match.group(2).strip() if match else ""
+
+    # read_status_line takes the LEADING word and the FIRST date, so a line
+    # carrying two transitions yields only one. When the second date is on the
+    # line and nothing accounts for it, the tool does not know what it is about
+    # to discard - and set_status_line replaces the whole line. Refuse instead
+    # of writing a history that silently omits the earlier transition, which is
+    # what templates/adr-kit-guide.md already promises (issue #120).
+    extra_dates = [found for found in dict.fromkeys(DATE_RE.findall(line)) if found != when]
+    if extra_dates:
+        raise AdrLifecycleError(
+            f"{path}: the Status line records more than one transition and this "
+            f"ADR has no status_history block, so rewriting the line would drop "
+            f"the earlier one.\n"
+            f"    line:  {line}\n"
+            f"    kept:  {status} {when}\n"
+            f"    lost:  {', '.join(extra_dates)}\n"
+            f"Write the status_history block first, recording each transition the "
+            f"line names, then re-run this command. Nothing has been changed."
+        )
+
     if (status, when) == pending:
-        # Same status on the same day: there is no earlier transition to keep.
+        # Same status on the same day, and the check above proved the line
+        # carries nothing else: there is genuinely no earlier transition here.
         return body
+
     return append_status_history(
         body,
         status,
         # The actor genuinely was never recorded. Naming the current user or
         # "adr-kit" would put a signature on a transition neither performed.
         "unknown",
+        # The literal line goes in verbatim. Parsing every prose shape a Status
+        # line can take is how transitions get lost one shape at a time; keeping
+        # the words costs nothing and loses nothing, even where the structure
+        # cannot be recovered. history_entry quotes this through _yaml_scalar,
+        # so a line containing ": " cannot break the block (TASK-70).
         "Recovered from the record as it stood before this transition; this "
         "ADR predates the status_history convention. The actor was never "
-        "recorded and is not guessed here.",
+        "recorded and is not guessed here. The Status line read: " + line,
         "unrecorded",
         when,
     )
