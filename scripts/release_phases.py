@@ -13,14 +13,14 @@ answers `done(ctx)` from the repository's actual state rather than from a
 progress file, because a progress file is one more thing that can disagree with
 reality.
 
-Two checks here exist because nothing had them before, and both cost a release:
+`verify_tag` exists because nothing checked it before and its absence cost a
+release: it asserts the tag resolves to `origin/main`. v0.55.0 was burned by a
+tag on the dev tip, where every version site still read the previous release,
+and the gate correctly refused to publish it.
 
-* `verify_tag` asserts the tag resolves to `origin/main`. v0.55.0 was burned by
-  a tag on the dev tip, where every version site still read the previous
-  release, and the gate correctly refused to publish it.
-* `npm_latest` asserts the dist-tag names the released version. npm sets
-  `latest` to the version published LAST, not the highest, so approving staged
-  versions out of order silently points `npm install` at an older release.
+The npm step is not a phase and lives in release_npm.py. It is the one part of
+a release no tool may finish, so it sits on the other side of ADR-042's
+automation boundary rather than inside PHASES.
 """
 from __future__ import annotations
 
@@ -297,36 +297,6 @@ def install(ctx: Context) -> List[str]:
             "adr-mcp process survives it, then run this command again."
         )
     return [f"all three clients report {ctx.version}"]
-
-
-# --- phase 7: the step npm will not let anyone automate ---------------------
-
-
-def npm_latest_done(ctx: Context) -> bool:
-    code, out, _ = run(["npm", "view", PACKAGE, "dist-tags", "--json", "--prefer-online"])
-    if code != 0:
-        return False
-    try:
-        return json.loads(out).get("latest") == ctx.version
-    except json.JSONDecodeError:
-        return False
-
-
-def npm_instructions(ctx: Context) -> str:
-    return (
-        f"The OpenCode package for {ctx.tag} is STAGED, not published. npm "
-        f"requires proof of presence, so no tool can finish this.\n\n"
-        f"    npm login\n"
-        f"    npm stage list {PACKAGE}\n"
-        f"    npm stage view <stage-id>      # inspect the tarball first\n"
-        f"    npm stage approve <stage-id>   # prompts for your OTP\n\n"
-        f"    or from the browser: https://www.npmjs.com/staged-packages\n\n"
-        f"If more than one version is staged, approve them in ASCENDING order. "
-        f"npm sets `latest` to the version published LAST, not the highest. On "
-        f"2026-08-26 approving 0.55.1, then 0.53.0, then 0.54.0 left `latest` on "
-        f"0.54.0 while 0.55.1 was the release.\n\n"
-        f"    npm dist-tag ls {PACKAGE}   # latest must read {ctx.version}"
-    )
 
 
 class Phase(NamedTuple):

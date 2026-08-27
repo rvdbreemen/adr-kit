@@ -316,6 +316,20 @@ tarball, and approve it with 2FA. The approval publishes the package and allows
 npm to publish the provenance requested during the OIDC staging operation. If the
 staged package is rejected, it never becomes publicly available.
 
+**Approve staged versions in ascending order.** npm sets `latest` to the version
+published *last*, not the highest. On 2026-08-26 three versions had been waiting
+a week and were approved 0.55.1, then 0.53.0, then 0.54.0, which left
+`dist-tags.latest` on 0.54.0 while 0.55.1 was the release: `npm install` served
+a version two releases old, and nothing reported it. Repair it with
+`npm dist-tag add @rvdbreemen/adr-kit-opencode@<version> latest`, and read that
+command's own exit code rather than piping it into `tail`, which reports tail's
+status and hides npm's failure.
+
+Re-running `scripts/release.py <version>` after approval checks this. It
+distinguishes a version still staged, which is normal, from one that is
+published while `latest` names another release, which is the fault above and
+exits non-zero.
+
 ### 4. Merge the release back into `dev`
 
 **Do not skip this, and do not leave it for later.** Releases land on `main`, but
