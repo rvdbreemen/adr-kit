@@ -33,33 +33,28 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from release_npm import (  # noqa: E402
+    DONE,
+    STAGED,
+    UNREACHABLE,
+    WRONG_LATEST,
     npm_instructions,
-    npm_latest_done,
-    npm_published,
+    npm_state,
     npm_wrong_latest,
 )
 from release_phases import PHASES, Context, ReleaseError  # noqa: E402
+
+NPM_LABEL = {
+    DONE: "done",
+    WRONG_LATEST: "PUBLISHED, but `latest` names another version",
+    STAGED: "awaiting your 2FA",
+    UNREACHABLE: "npm did not answer; run this again",
+}
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def _say(text: str = "") -> None:
     print(text, flush=True)
-
-
-def _npm_state(ctx: Context) -> str:
-    """Three states, not two.
-
-    "awaiting your 2FA" is the wrong thing to print at someone whose package is
-    already published: the approval flow they would be sent to has nothing left
-    to approve, and the actual fault - `latest` naming an older release - is
-    fixed with a dist-tag, not an approval.
-    """
-    if npm_latest_done(ctx):
-        return "done"
-    if npm_published(ctx):
-        return "PUBLISHED, but `latest` names another version"
-    return "awaiting your 2FA"
 
 
 def _status(ctx: Context) -> int:
@@ -71,7 +66,7 @@ def _status(ctx: Context) -> int:
         except ReleaseError as exc:  # a phase that cannot even answer
             state = f"unknown ({exc})"
         _say(f"  step {phase.step}  {phase.name:<10} {state}")
-    _say(f"  step 3a  npm        {_npm_state(ctx)}")
+    _say(f"  step 3a  npm        {NPM_LABEL[npm_state(ctx)]}")
     _say()
     _say("Nothing was changed.")
     return 0
@@ -140,18 +135,26 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     _say()
-    if npm_latest_done(ctx):
+    state = npm_state(ctx)
+
+    if state == DONE:
         _say(f"npm already serves {ctx.version} as latest.")
         _say()
         _say(f"{ctx.tag} is released and every surface agrees.")
         return 0
 
-    if npm_published(ctx):
+    if state == WRONG_LATEST:
         _say("=" * 72)
         _say("RELEASED, BUT npm SERVES A DIFFERENT VERSION")
         _say("=" * 72)
         _say()
         _say(npm_wrong_latest(ctx))
+        return 1
+
+    if state == UNREACHABLE:
+        _say(f"Everything up to npm is done, but npm did not answer, so this "
+             f"cannot say whether {ctx.version} is published or still staged. "
+             f"Run the same command again once you have a connection.")
         return 1
 
     _say("=" * 72)

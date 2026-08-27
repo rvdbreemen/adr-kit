@@ -69,7 +69,19 @@ def test_phases_mirror_the_runbook_step_order(phases):
 
 
 def test_status_reports_every_phase_and_changes_nothing():
-    """--status is the "what is left" view, and must be safe on a dirty checkout."""
+    """--status is the "what is left" view, and must be safe on a dirty checkout.
+
+    This runs the real CLI, so it reaches the network: the phase done-checks
+    ask `gh` about open pull requests and the npm step asks the registry. That
+    is deliberate - it is the one test that exercises argparse, the imports and
+    the report together - and it is safe to keep in a required check because
+    every one of those calls degrades to a label rather than to a failure. A
+    silent registry reports "npm did not answer"; an unauthenticated `gh`
+    reports a phase as not done. Neither makes this test red.
+
+    The three-state npm decision itself is asserted in-process below, where it
+    can be driven through every branch without a network at all.
+    """
     before = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=REPO_ROOT, capture_output=True, text=True,
@@ -195,6 +207,54 @@ def test_a_published_version_is_not_reported_as_awaiting_approval(phases, npm, m
     assert "9.9.8" in message, "the message must name what npm actually serves"
     assert "dist-tag add" in message, "and the command that repairs it"
     assert "approve" not in message, "approval cannot fix an already-published version"
+
+
+@pytest.fixture(scope="module")
+def driver(npm):  # npm first: release.py imports it
+    return _load("release")
+
+
+def _driver_sees(monkeypatch, driver, state):
+    """Run main() with no phases, so only the npm decision is under test."""
+    monkeypatch.setattr(driver, "PHASES", ())
+    monkeypatch.setattr(driver, "npm_state", lambda ctx: state)
+    monkeypatch.setattr(driver, "npm_wrong_latest", lambda ctx: "latest names 9.9.8")
+    monkeypatch.setattr(driver, "npm_instructions", lambda ctx: "approve the stage")
+    return driver.main(["9.9.9", "--skip-tests"])
+
+
+def test_the_exit_code_follows_the_npm_state(driver, monkeypatch):
+    """The bug this file exists for was a predicate nothing was wired to.
+
+    `npm_latest_done` was present, correct and called, and `main` returned 0
+    whatever it said. Asserting the predicate alone would not have caught that,
+    so these assert the exit code the caller actually sees.
+    """
+    from release_npm import DONE, STAGED, UNREACHABLE, WRONG_LATEST
+
+    assert _driver_sees(monkeypatch, driver, DONE) == 0
+    assert _driver_sees(monkeypatch, driver, STAGED) == 0, (
+        "a release waiting on npm's 2FA is the normal end of a release"
+    )
+    assert _driver_sees(monkeypatch, driver, WRONG_LATEST) == 1, (
+        "npm serving another version is the v0.55.1 defect, not a pending step"
+    )
+    assert _driver_sees(monkeypatch, driver, UNREACHABLE) == 1, (
+        "a registry that did not answer must not read as a finished release"
+    )
+
+
+def test_npm_state_does_not_guess_when_the_registry_is_silent(phases, npm, monkeypatch):
+    """An unreachable npm gets its own state rather than being folded into one.
+
+    Reporting "awaiting your 2FA" because npm was down is a guess presented as
+    a reading, and it is the reading a maintainer would act on.
+    """
+    monkeypatch.setattr(npm, "run", lambda *a, **k: (1, "", "ENOTFOUND registry.npmjs.org"))
+    assert npm.npm_state(_context(phases)) == npm.UNREACHABLE
+
+    monkeypatch.setattr(npm, "run", lambda *a, **k: (0, "not json at all", ""))
+    assert npm.npm_state(_context(phases)) == npm.UNREACHABLE
 
 
 def test_a_single_published_version_is_recognised(phases, npm, monkeypatch):
