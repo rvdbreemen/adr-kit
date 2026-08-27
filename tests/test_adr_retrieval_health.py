@@ -347,7 +347,11 @@ def test_representative_otgw_project_probes_pass_without_historical_leakage(
         "wifi-reconnect": ("wifi reconnect timeout tuning", "ADR-075"),
         "retained-discovery": ("retained discovery verification", "ADR-062"),
         "heap-contract": ("heap tier machine contract", "ADR-089"),
-        "summary-parsing": ("ps1 print summary parsing", "ADR-045"),
+        # ADR-046, not ADR-045: ADR-045 reads `**Status:** Superseded by
+        # ADR-046` and was labelled Proposed until issue #118, so this probe
+        # expected a superseded decision to come back as the governing answer.
+        # Its successor is the correct result for the same query.
+        "summary-parsing": ("ps1 print summary parsing", "ADR-046"),
     }
     (tmp_path / "adr-context-probes.json").write_text(
         json.dumps(

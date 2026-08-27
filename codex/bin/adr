@@ -54,6 +54,7 @@ from adr_format import (
     normalize_profile,
     profile_catalog,
     profile_template_path,
+    section_span,
     unresolved_open_questions,
 )
 from adr_schema import (
@@ -100,6 +101,24 @@ def find_adr_file(adr_dir: Path, adr_id: str) -> Path:
             f"expected one file for {adr_id} in {adr_dir}, found {len(matches)}"
         )
     return matches[0]
+
+
+_ADR_RECORD_RE = re.compile(r"(?i)^ADR-\d{1,4}-")
+
+
+def iter_adr_records(adr_dir: Path):
+    """Yield ADR record paths, skipping the generated ADR-INDEX.* artefacts.
+
+    ``glob("ADR-*.md")`` also matches ``ADR-INDEX.md``, which every lifecycle
+    command writes in the same transaction as the record it mutates. Feeding
+    that generated file to ``load_adr`` was only ever harmless because the
+    frontmatter inference invented ``status: Proposed`` for it. Once inference
+    started failing closed instead of guessing (issue #118), the generated
+    index became a hard error in the middle of an otherwise valid supersede.
+    """
+    for path in sorted(adr_dir.glob("ADR-*.md")):
+        if _ADR_RECORD_RE.match(path.name):
+            yield path
 
 
 def load_adr(path: Path) -> Tuple[Dict, str]:
@@ -236,6 +255,30 @@ def history_entry(status: str, changed_by: str, reason: str, changed_via: str, w
     )
 
 
+def _splice_after_yaml_block(body: str, pos: int, limit: int, entry: str) -> str:
+    """Insert `entry` after the last line of an unfenced ``status_history`` block.
+
+    A line belongs to the block while it is blank or indented; the first
+    unindented non-blank line inside the section ends it. Bounded by `limit`
+    so a malformed document cannot walk out of the section.
+    """
+    newline = body.find("\n", pos)
+    insert_at = newline + 1 if newline != -1 and newline < limit else limit
+    cursor = insert_at
+    while cursor < limit:
+        newline = body.find("\n", cursor)
+        if newline == -1 or newline >= limit:
+            line, end = body[cursor:limit], limit
+        else:
+            line, end = body[cursor:newline], newline + 1
+        if line.strip():
+            if not line[:1].isspace():
+                break
+            insert_at = end
+        cursor = end
+    return body[:insert_at] + entry + body[insert_at:]
+
+
 def append_status_history(
     body: str,
     status: str,
@@ -245,11 +288,25 @@ def append_status_history(
     when: str,
 ) -> str:
     entry = history_entry(status, changed_by, reason, changed_via, when)
-    start = HISTORY_START_RE.search(body)
-    if start:
-        closing = body.find("```", start.end())
-        if closing != -1:
-            return body[:closing] + entry + body[closing:]
+
+    # Bound every search to the section the reader parses. This used to search
+    # the whole remaining document for the next triple backtick, so an unfenced
+    # status_history block sent the entry into the next fenced block instead -
+    # the ## Enforcement JSON, on every ADR in this project. The command still
+    # exited 0, and the index went on reporting the pre-transition status
+    # because the reader only looks inside ## Status History (issue #119).
+    span = section_span(body, "history")
+    if span is not None:
+        section_start, section_end = span
+        start = HISTORY_START_RE.search(body, section_start, section_end)
+        if start:
+            closing = body.find("```", start.end(), section_end)
+            if closing != -1:
+                return body[:closing] + entry + body[closing:]
+            # No fence: append after the last line that belongs to the YAML
+            # block. Falling through to the section builder below would append
+            # a second ## Status History and invert chronology.
+            return _splice_after_yaml_block(body, start.end(), section_end, entry)
 
     section = (
         "\n## Status History\n\n"
@@ -1037,7 +1094,7 @@ def command_supersede(args) -> List[str]:
     # decision can legitimately retire more than one record. What stays
     # exclusive is the other direction, enforced below: each predecessor gets
     # exactly one successor.
-    for candidate in sorted(adr_dir.glob("ADR-*.md")):
+    for candidate in iter_adr_records(adr_dir):
         if candidate in {old_path, new_path}:
             continue
         candidate_data, _candidate_body = load_adr(candidate)
@@ -1318,7 +1375,7 @@ def command_signer(args) -> List[str]:
 
     if args.audit:
         offenders = []
-        for path in sorted(adr_dir.glob("ADR-*.md")):
+        for path in iter_adr_records(adr_dir):
             try:
                 body = path.read_text(encoding="utf-8")
             except OSError:

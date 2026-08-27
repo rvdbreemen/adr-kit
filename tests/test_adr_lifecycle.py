@@ -992,3 +992,106 @@ def test_a_broken_record_reports_the_gate_not_the_missing_flag(tmp_path):
     assert "--confirm" not in result.stderr, (
         "the gate failure is the real problem and must be reported first"
     )
+
+
+# --- issue #119: the writer must stay inside the section the reader parses ---
+
+
+def _history_block(fenced: bool) -> str:
+    """A single-entry status_history block, with or without a ```yaml fence.
+
+    Both shapes are accepted by HISTORY_START_RE, and the shipped agent
+    template emits the unfenced one, so both have to round-trip.
+    """
+    open_fence = "```yaml\n" if fenced else ""
+    close_fence = "```\n" if fenced else ""
+    return (
+        "## Status History\n\n"
+        + open_fence
+        + "status_history:\n"
+        "  - date: 2026-07-01\n"
+        "    status: Proposed\n"
+        "    changed_by: tester\n"
+        "    reason: Initial\n"
+        "    changed_via: pytest\n"
+        + close_fence
+        + "\n"
+    )
+
+
+def _write_adr_with_history(
+    adr_dir: Path,
+    num: int,
+    title: str,
+    *,
+    fenced: bool,
+    trailing_fence: bool,
+) -> Path:
+    """An ADR carrying a history block, and optionally a later fenced block.
+
+    `trailing_fence` reproduces the shape every ADR in this project has: a
+    fenced ``## Enforcement`` JSON block after the history. That later fence is
+    what the old writer latched onto.
+    """
+    path = _write_adr(adr_dir, num, title)
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("## Context\n", _history_block(fenced) + "## Context\n", 1)
+    if trailing_fence:
+        text += (
+            '\n## Enforcement\n\n```json\n{"llm_judge": false, '
+            '"llm_judge_reason": "fixture"}\n```\n'
+        )
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _entries_in_history_section(text: str) -> int:
+    section = re.search(
+        r"^## Status History\s*$\n(.*?)(?=^##\s+|\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    return section.group(1).count("changed_via") if section else 0
+
+
+@pytest.mark.parametrize(
+    "fenced,trailing_fence,label",
+    [
+        (False, True, "unfenced history with a later ```json block"),
+        (True, True, "fenced history with a later ```json block"),
+        (False, False, "unfenced history with no later fence at all"),
+    ],
+)
+def test_history_entry_lands_inside_the_section_whatever_fences_follow(
+    tmp_path, fenced, trailing_fence, label
+):
+    """Issue #119: the entry used to be spliced into the next fenced block.
+
+    `append_status_history` searched the whole remaining document for the next
+    triple backtick, so an unfenced block sent the entry into ``## Enforcement``
+    while the command reported success. The reader only parses the
+    ``## Status History`` section, so ADR-INDEX.json kept reporting the
+    pre-transition status of a decision the maintainer had just signed.
+
+    With no later fence the old code took a different path and appended a
+    SECOND ``## Status History`` section, inverting chronology. Both shapes are
+    covered here alongside the fenced control, because the fence is the only
+    variable that used to matter.
+    """
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    path = _write_adr_with_history(
+        adr_dir, 1, "Fenced history", fenced=fenced, trailing_fence=trailing_fence
+    )
+
+    result = _run_adr("propose", "1", "--adr-dir", str(adr_dir), "--changed-by", "tester")
+    assert result.returncode == 0, result.stderr
+
+    text = path.read_text(encoding="utf-8")
+    assert text.count("## Status History") == 1, f"{label}: a second section was appended"
+    assert _entries_in_history_section(text) == 2, f"{label}: entry did not land in the section"
+    after_history = text.split("## Status History", 1)[1].split("\n## ", 1)
+    if len(after_history) > 1:
+        assert "changed_via" not in after_history[1], (
+            f"{label}: an entry landed outside ## Status History"
+        )
