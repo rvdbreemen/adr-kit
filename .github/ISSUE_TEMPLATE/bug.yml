@@ -20,7 +20,7 @@ body:
     attributes:
       label: adr-kit version
       description: Which adr-kit version did you install?
-      placeholder: "v0.33.0, or another exact release tag"
+      placeholder: "The exact release tag, for example the one on the latest release"
     validations:
       required: true
   - type: textarea

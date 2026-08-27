@@ -7,6 +7,8 @@ import json
 import subprocess
 import sys
 import textwrap
+
+import pytest
 from pathlib import Path
 
 
@@ -173,3 +175,92 @@ def test_lint_schema_gate_passes_after_migration(tmp_path):
     assert payload["summary"]["pass"] == 1
     assert payload["summary"]["fail"] == 0
 
+
+
+# --- issue #118: the writer must not invent a status it could not read -------
+
+_STATUS_SHAPES = [
+    (
+        "heading with a bare word",
+        "# ADR-001 T\n\n## Status\n\nAccepted, 2026-01-01\n",
+        "Accepted",
+    ),
+    (
+        "bold inline **Status:** X",
+        "# ADR-001 T\n\n**Status:** Accepted\n",
+        "Accepted",
+    ),
+    (
+        "heading-colon, unreadable",
+        "# ADR-001 T\n\n## Status: Accepted\n",
+        None,
+    ),
+    (
+        "bold status word, unreadable",
+        "# ADR-001 T\n\n## Status\n\n**Rejected, 2026-06-18.**\n",
+        None,
+    ),
+    (
+        "link-wrapped supersession, unreadable",
+        "# ADR-001 T\n\n## Status\n\n**Superseded by [ADR-124](ADR-124-x.md)**\n",
+        None,
+    ),
+]
+
+
+@pytest.mark.parametrize("label,body,expected", _STATUS_SHAPES)
+def test_inferred_status_is_read_or_left_undetermined_never_guessed(label, body, expected):
+    """Issue #118: a shape it cannot read must not become `status: Proposed`.
+
+    `status` decides whether a decision is binding and whether it is injected
+    at all, so a guess is not a harmless default: it silently downgrades an
+    Accepted record. Four of these five shapes used to come back `Proposed`,
+    including one that recovered the date and not the status, producing a
+    record that contradicted itself.
+    """
+    schema = _load_schema_module()
+    inferred = schema.infer_frontmatter(body, Path("ADR-001-t.md"))
+    assert inferred.get("status") == expected, label
+
+
+@pytest.mark.parametrize("label,body,_expected", _STATUS_SHAPES)
+def test_inferred_status_agrees_with_the_shared_reader(label, body, _expected):
+    """The writer and the cross-tool reader must not disagree about a record.
+
+    They are now the same function. Before, `infer_frontmatter` had a private
+    matcher that recognised exactly one shape and guessed on the rest, while
+    `adr_status` - whose docstring claims tools "can never disagree on an ADR's
+    status" - was never consulted by the code that writes the field.
+    """
+    schema = _load_schema_module()
+    inferred = schema.infer_frontmatter(body, Path("ADR-001-t.md"))
+    reader = schema.adr_status(body)
+    expected = reader.capitalize() if reader in schema.VALID_STATUSES else None
+    assert inferred.get("status") == expected, label
+
+
+def test_superseded_by_survives_a_link_wrapped_reference():
+    """Real bodies write `Superseded by [ADR-124](...)`, not a bare ADR-124."""
+    schema = _load_schema_module()
+    body = "# ADR-001 T\n\n## Status\n\n**Superseded by [ADR-124](ADR-124-x.md)**\n"
+    inferred = schema.infer_frontmatter(body, Path("ADR-001-t.md"))
+    assert inferred.get("superseded_by") == "ADR-124"
+
+
+def test_migrate_refuses_rather_than_writing_a_guessed_status(tmp_path):
+    """The refusal is the point: adr-migrate used to exit 0 having guessed.
+
+    `migrate_text` already had an issues channel; an undetermined status now
+    reaches it instead of being papered over, so the file is left untouched
+    and the caller is told which field could not be derived.
+    """
+    schema = _load_schema_module()
+    body = "# ADR-001 T\n\n## Status: Accepted\n\n## Context\n\nx\n"
+    path = tmp_path / "ADR-001-t.md"
+    path.write_text(body, encoding="utf-8")
+
+    new_text, changed, issues = schema.migrate_text(body, path)
+
+    assert not changed, "a record whose status could not be read must not be rewritten"
+    assert new_text == body
+    assert any("status" in issue for issue in issues), issues

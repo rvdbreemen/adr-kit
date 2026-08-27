@@ -5,8 +5,11 @@ It exists to make contribution and prioritisation decisions predictable.
 
 ## Status
 
-`adr-kit` is at v0.40.0 and remains pre-1.0. The Claude, Codex, and standalone
-Copilot distributions, 15 workflows, local ADR lifecycle, deterministic
+`adr-kit` remains pre-1.0; the current version is whatever
+[the latest release](https://github.com/rvdbreemen/adr-kit/releases/latest)
+says, because a number written here goes stale on the next tag. The Claude,
+Codex, and standalone Copilot distributions, the native OpenCode package,
+17 workflows, local ADR lifecycle, deterministic
 enforcement, index-first selective context, human-gated ADR grilling with
 deterministic readiness, guardian, MCP server, and generated indexes are all
 shipped. File layout and conventions may still change before v1.0.0.

@@ -38,10 +38,15 @@ If you are not sure whether something qualifies, email anyway. We would rather h
 
 Only the latest minor release line is supported with security fixes. Older versions get a fix only if the maintainer judges the impact severe enough.
 
+This table names no version on purpose. A number written here is correct until
+the next release and false afterwards, and a stale one tells a reporter that a
+supported version is unsupported. Which line is current is answered by
+[the latest release](https://github.com/rvdbreemen/adr-kit/releases/latest).
+
 | Version | Status |
 |---|---|
-| `v0.33.x` (latest) | Supported. |
-| `v0.32.x` and earlier | No routine security backports. |
+| The latest minor release line | Supported. |
+| Every earlier minor line | No routine security backports. |
 
 ## Acknowledgement
 

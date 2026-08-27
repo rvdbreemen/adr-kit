@@ -408,7 +408,7 @@
       "path": "ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-23",
+      "date": "2026-08-26",
       "decision_summary": "Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce...",
       "topics": [
         "client parity",
@@ -504,7 +504,7 @@
       "path": "ADR-012-release-to-the-three-coding-agent-marketplaces-from-the-public-repository.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-22",
+      "date": "2026-08-26",
       "decision_summary": "Chosen: the documented-runbook-plus-tag-triggered-gate option.",
       "topics": [
         "marketplace",
@@ -547,7 +547,7 @@
       "path": "ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-22",
+      "date": "2026-08-26",
       "decision_summary": "Chosen: the declarative registry with a writer.",
       "topics": [
         "registry",
@@ -2072,7 +2072,7 @@
       "path": "ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-16",
+      "date": "2026-08-26",
       "decision_summary": "Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi...",
       "topics": [
         "client compatibility",
@@ -2244,6 +2244,75 @@
       },
       "scope": {
         "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-042",
+      "title": "Drive the Release From the Maintainer's Machine and Create the Tag From the Merge",
+      "path": "ADR-042-drive-the-release-from-the-maintainer-s-machine-and-create-the-tag-from-the-merge.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-08-26",
+      "decision_summary": "Chosen option: Option A, because it is the only one that both removes the failure class and adds no new long-lived cr...",
+      "topics": [
+        "automation boundary",
+        "distribution",
+        "npm",
+        "release"
+      ],
+      "aliases": [
+        "auto-tag",
+        "one-command release",
+        "release driver"
+      ],
+      "components": [
+        "release driver",
+        "tag creation"
+      ],
+      "symbols": [
+        "release-publish.yml",
+        "scripts/release.py"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "The release tag is created by release-publish.yml from the commit whose CHANGELOG heading names that version, in the same run that publishes.",
+          "release-publish.yml remains the workflow that initiates every npm staging run, because npm's Trusted Publisher is validated against the initiating filename. Any new workflow that reaches the npm staging path breaks it.",
+          "scripts/release.py is idempotent: every phase checks whether its work is already done, so an interrupted release is resumed by re-running it.",
+          "After npm approval, the driver reads npm dist-tag ls and fails when latest is not the released version.",
+          "The driver verifies each client reports the new version by reading it back, rather than trusting an installer exit code.",
+          "Any instruction that remains manual is printed where the work happens: in the workflow job summary and in the driver's final output, including the npm approval URL and the warning that approval order sets latest.",
+          "A CI job that exercises installation variants names the variants it does not cover, so a green result is not read as full coverage."
+        ],
+        "must_not": [
+          "No release step may depend on GITHUBTOKEN opening a pull request or pushing a tag and expecting checks to run. They will not run.",
+          "The driver must not merge to main by bypassing branch protection; it opens a pull request and lets the required checks gate it.",
+          "No new long-lived credential is added to the repository for the release path.",
+          "npm publication must not be automated past the 2FA approval, and no code may present the package as published before that approval lands."
+        ],
+        "exceptions": [
+          "The three certified CLI installs stay outside the CI smoke job and remain certified through release-candidate.yml on externally retained evidence, per ADR-010.",
+          "The per-machine prepared-directory publish remains a local step, unchanged from ADR-012, because it mutates per-user client installs."
+        ],
+        "verification": [
+          "tests/testdocsclaims.py — documentation claims and undeclared version pins.",
+          "tests/testreleasedriver.py — driver phase idempotence.",
+          "tests/testreleaseallowlist.py — the driver's line budget under ADR-010.",
+          "python scripts/check-release-version.py --expect v on the main checkout before the tag exists."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          ".github/workflows/release-publish.yml"
+        ]
       },
       "metadata": {
         "binding": false,
@@ -2473,6 +2542,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-010",
+      "target": "ADR-042",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-011",
       "target": "ADR-001",
       "type": "related",
@@ -2533,8 +2608,20 @@
       "resolved": true
     },
     {
+      "source": "ADR-012",
+      "target": "ADR-042",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-013",
       "target": "ADR-012",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-013",
+      "target": "ADR-042",
       "type": "related",
       "resolved": true
     },
@@ -3223,6 +3310,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-039",
+      "target": "ADR-042",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-040",
       "target": "ADR-011",
       "type": "related",
@@ -3272,6 +3365,30 @@
     },
     {
       "source": "ADR-041",
+      "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-042",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-042",
+      "target": "ADR-012",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-042",
+      "target": "ADR-013",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-042",
       "target": "ADR-039",
       "type": "related",
       "resolved": true

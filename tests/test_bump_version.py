@@ -79,7 +79,21 @@ README = (
     "    rev: v0.30.0\n"
     "```\n"
     "\n"
+    "```json\n"
+    '  "plugin": ["@rvdbreemen/adr-kit-opencode@0.30.0"]\n'
+    "```\n"
+    "\n"
     "Introduced in v0.12.0 -- a history marker, deliberately not a version site.\n"
+)
+# The readiness workflow users copy into their own repository. Undeclared until
+# TASK-190, it sat at v0.37.0 while the README pin was current, so a consumer
+# who followed the template got an action eighteen minor versions behind.
+READINESS_WORKFLOW = (
+    "name: ADR readiness\n"
+    "jobs:\n"
+    "  readiness:\n"
+    "    steps:\n"
+    "      - uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.30.0\n"
 )
 
 
@@ -102,6 +116,7 @@ def _make_tree(tmp_path: Path) -> Path:
     (root / ".github" / "plugin").mkdir(parents=True)
     (root / "templates" / "githooks").mkdir(parents=True)
     (root / "templates" / "cc-settings").mkdir(parents=True)
+    (root / "templates" / "github-workflows").mkdir(parents=True)
     (root / ".githooks").mkdir()
     shutil.copy(str(BUMP_VERSION), str(root / "bin" / "bump-version"))
     shutil.copy(
@@ -145,6 +160,9 @@ def _make_tree(tmp_path: Path) -> Path:
     )
     (root / "templates" / "adr-kit-guide.md").write_text(
         "<!-- adr-kit-guide v0.30.0 -->\n# Guide\n", encoding="utf-8"
+    )
+    (root / "templates" / "github-workflows" / "adr-readiness.yml").write_text(
+        READINESS_WORKFLOW, encoding="utf-8"
     )
     return root
 

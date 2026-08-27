@@ -125,6 +125,86 @@ _FORMAT_LINE_RE = re.compile(
     r"^\s*format\s*:\s*[\"']?([a-z-]+)[\"']?\s*$", re.IGNORECASE | re.MULTILINE
 )
 _STATUS_LINE_RE = re.compile(r"^\s*status\s*:", re.IGNORECASE | re.MULTILINE)
+
+# The body-status reader, and the shapes it accepts. These live here rather
+# than in adr_catalog because adr_schema needs them too and adr_catalog imports
+# adr_schema, not the other way round. adr_catalog re-exports them, so the
+# tools that already import them from there are unaffected.
+STATUS_HEADING_RE = re.compile(
+    r"^##\s+Status\s*$\n+([^\n]+)", re.IGNORECASE | re.MULTILINE
+)
+STATUS_BOLD_INLINE_RE = re.compile(
+    r"^\s*\*\*\s*Status\s*:?\s*\*\*\s*:?\s*([A-Za-z]+)"
+    r"|^\s*\*\*\s*Status\s*:?\s*([A-Za-z]+)\s*\*\*",
+    re.IGNORECASE | re.MULTILINE,
+)
+STATUS_BODY_LINE_RE = re.compile(
+    r"^[ \t]*Status[ \t]*:?[ \t]*([A-Za-z]+)", re.IGNORECASE | re.MULTILINE
+)
+_STATUS_LEADING_WORD_RE = re.compile(r"\s*([A-Za-z]+)")
+
+
+def adr_status(text: str) -> Optional[str]:
+    """Return the leading ADR status word, or None.
+
+    The single cross-tool status reader used by adr-index, adr-judge, adr-lint,
+    adr-retire, adr-watch and, since issue #118, the frontmatter inference that
+    ``adr-migrate`` writes with. A ``## Status`` heading body wins, then a
+    bold-inline ``**Status:** X`` form, then a plain ``Status: X`` line. The
+    line form is a deliberate superset of the older per-tool regexes so those
+    tools can never disagree on an ADR's status.
+
+    It returns None rather than guessing. That is the whole point: the writer
+    used to default to ``"Proposed"`` on a shape it could not read, which
+    silently downgraded Accepted records and stopped them being injected.
+    Authoritative lifecycle status still comes from the status_history chain in
+    ``load_adr_record``; this is the lightweight reader used by gates and
+    listings.
+    """
+    match = STATUS_HEADING_RE.search(text)
+    if match:
+        word = _STATUS_LEADING_WORD_RE.match(match.group(1))
+        return word.group(1) if word else None
+    match = STATUS_BOLD_INLINE_RE.search(text)
+    if match:
+        return match.group(1) or match.group(2)
+    match = STATUS_BODY_LINE_RE.search(text)
+    return match.group(1) if match else None
+
+
+def status_statement(text: str) -> str:
+    """Return the whole line the status was read from, or an empty string.
+
+    The status word and the facts printed beside it - the date, the successor -
+    sit on the same line, so they must be recovered from the same region.
+    Reading the word from one shape and the successor from another is why
+    ``superseded_by`` came back None on records whose status reads
+    ``**Status:** Superseded by ADR-046``: the word was found, and the
+    successor was looked for in a ``## Status`` section those records do not
+    have (issue #118).
+    """
+    match = STATUS_HEADING_RE.search(text)
+    if match:
+        return match.group(1).strip()
+    for pattern in (STATUS_BOLD_INLINE_RE, STATUS_BODY_LINE_RE):
+        match = pattern.search(text)
+        if match:
+            # Anchor on the captured status word, not on match.start(): these
+            # patterns begin with `^\s*`, and `\s` eats the preceding newline,
+            # so match.start() can sit on the line ABOVE the status and slice
+            # out an empty string.
+            pos = next(
+                (
+                    match.start(group)
+                    for group in range(1, (match.lastindex or 0) + 1)
+                    if match.group(group) is not None
+                ),
+                match.end(),
+            )
+            line_start = text.rfind("\n", 0, pos) + 1
+            line_end = text.find("\n", pos)
+            return text[line_start : line_end if line_end != -1 else len(text)].strip()
+    return ""
 _CANONICAL_FILENAME_RE = re.compile(
     r"^ADR-\d{3,4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$",
     re.IGNORECASE,
@@ -668,13 +748,28 @@ def profile_for_text(text: str, *, fallback: Optional[str] = None) -> str:
     )
 
 
-def section_text(
+def section_span(
     text: str,
     role: str,
     *,
     profile: Optional[str] = None,
     tolerant: bool = True,
-) -> str:
+) -> Optional[Tuple[int, int]]:
+    """Return the (start, end) offsets of a section's body, or None.
+
+    ``section_text`` answers *what* a section says; this answers *where* it
+    says it, which is what a writer needs in order to place something inside
+    the bounds the reader will later parse. Both go through this one matcher,
+    so a writer cannot put content where the reader does not look.
+
+    That failure was real: ``append_status_history`` used to find its insertion
+    point with ``body.find("```")`` over the whole remaining document, so on an
+    ADR whose ``status_history`` block carries no fence the entry landed in the
+    next fenced block - in this project, the ``## Enforcement`` JSON. The
+    lifecycle command reported success, the frontmatter said ``Accepted``, and
+    ``ADR-INDEX.json`` went on reporting ``Proposed`` because the reader only
+    ever looks inside ``## Status History`` (issue #119).
+    """
     profiles: List[str] = []
     if profile is not None:
         profiles.append(normalize_profile(profile))
@@ -697,8 +792,21 @@ def section_text(
             re.IGNORECASE | re.MULTILINE | re.DOTALL,
         )
         if match:
-            return match.group(1).strip()
-    return ""
+            return match.start(1), match.end(1)
+    return None
+
+
+def section_text(
+    text: str,
+    role: str,
+    *,
+    profile: Optional[str] = None,
+    tolerant: bool = True,
+) -> str:
+    span = section_span(text, role, profile=profile, tolerant=tolerant)
+    if span is None:
+        return ""
+    return text[span[0] : span[1]].strip()
 
 
 def replace_role_heading(text: str, role: str, source: str, target: str) -> str:

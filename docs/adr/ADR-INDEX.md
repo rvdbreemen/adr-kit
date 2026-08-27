@@ -47,3 +47,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-039 | Accepted | - | Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi... |
 | ADR-040 | Accepted | - | Chosen option: record an expansion criterion and admit exactly the two cycle tools it selects today, because it compl... |
 | ADR-041 | Accepted | - | Chosen option: automatic interactive handoff at the next user-visible prompt, because it closes the completion gap wi... |
+| ADR-042 | Accepted | `.github/workflows/release-publish.yml` | Chosen option: Option A, because it is the only one that both removes the failure class and adds no new long-lived cr... |

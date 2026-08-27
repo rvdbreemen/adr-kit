@@ -14,6 +14,13 @@ once. Every mismatch is reported in one pass.
 Usage:
   python scripts/check-release-version.py --expect 0.39.0
   python scripts/check-release-version.py --expect v0.39.0   # leading v is stripped
+  python scripts/check-release-version.py --print-canonical  # the CHANGELOG version, nothing else
+
+`--print-canonical` exists so the release workflow can derive the tag from the
+commit it is standing on (ADR-042) without a second implementation of "what
+version is this". It reads the same registry entry the gate above compares
+against, so the tag and the gate can never disagree about where the version
+lives.
 """
 from __future__ import annotations
 
@@ -40,19 +47,37 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--expect",
-        required=True,
         help="Expected release version (git tag). A leading 'v' is stripped.",
     )
+    parser.add_argument(
+        "--print-canonical",
+        action="store_true",
+        help="Print the canonical CHANGELOG version and exit, comparing nothing.",
+    )
     args = parser.parse_args(argv)
-    expected = args.expect.lstrip("vV").strip()
-    if not SEMVER.match(expected):
-        parser.error(f"not a MAJOR.MINOR.PATCH version: {args.expect!r}")
+    if not args.print_canonical and not args.expect:
+        parser.error("one of --expect or --print-canonical is required")
 
     try:
         registry = load_registry(ROOT)
     except VersionSiteError as exc:
         print(f"check-release-version: {exc}", file=sys.stderr)
         return 1
+
+    if args.print_canonical:
+        canonical = read_canonical(ROOT, registry)
+        if not canonical:
+            print(
+                "check-release-version: the CHANGELOG names no release version",
+                file=sys.stderr,
+            )
+            return 1
+        print(canonical)
+        return 0
+
+    expected = args.expect.lstrip("vV").strip()
+    if not SEMVER.match(expected):
+        parser.error(f"not a MAJOR.MINOR.PATCH version: {args.expect!r}")
 
     print(f"Expected release version: {expected}")
     canonical = read_canonical(ROOT, registry)
