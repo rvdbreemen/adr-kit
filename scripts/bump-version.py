@@ -293,7 +293,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Then verify the changes and:")
         print("  git add " + " ".join(staged))
         print(f'  git commit -m "chore(release): v{version}"')
-        print(f"  git tag v{version}")
+        # Deliberately not "git tag": since ADR-042 the tag is created by
+        # release-publish.yml from the merged main commit. Tagging by hand is
+        # how v0.55.0 was burned - the tag went on the dev tip, where every
+        # version site still read the previous release, and the gate refused to
+        # publish a tag that was already public.
+        print()
+        print(f"Do NOT tag by hand. Open a pull request into main; once it merges,")
+        print(f"release-publish.yml creates v{version} on the merge commit and publishes.")
         return 0
     except VersionSiteError as exc:
         print(f"bump-version: {exc}", file=sys.stderr)
