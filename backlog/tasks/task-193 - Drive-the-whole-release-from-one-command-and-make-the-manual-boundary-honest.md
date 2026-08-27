@@ -4,7 +4,7 @@ title: Drive the whole release from one command and make the manual boundary hon
 status: In Progress
 assignee: []
 created_date: '2026-08-26 20:16'
-updated_date: '2026-08-27 17:40'
+updated_date: '2026-08-27 17:57'
 labels: []
 dependencies:
   - TASK-190
@@ -92,5 +92,20 @@ Not met as written: the composite actions are checked for RESOLVABILITY at the p
 Also not covered, deliberately: the OpenCode tarball. `publish-opencode-npm.yml` already validates it under Bun before staging, so a second copy would be another place to keep in step without adding coverage. Documented in the workflow header.
 
 Recommend either amending AC#7 to what was built, or opening a separate task for the tag-gated execution job. Not decided here.
+---
+
+created: 2026-08-27 17:57
+---
+**Follow-up, PR #143.** Re-reading PR #142 against the bug it fixed rather than against its own tests found two more of the same shape.
+
+1. The exit code was still untested. #142's tests asserted `npm_published`, the text of `npm_wrong_latest` and the bare-string quirk, but nothing asserted `main()` returns 1 — a predicate present, correct, called, and wired to nothing, which is exactly the defect being fixed. The `--status` test uses 9.9.9, never published, so the failing branch was unreachable through the CLI. Now asserted for all four states and proven falsifiable: reverting `return 1` to `return 0` fails the test, restoring it passes.
+
+2. An unreachable registry was reported as a reading. `_dist_tags` returned `{}` both for "npm answered with no tags" and "npm did not answer", so a network failure printed "awaiting your 2FA" — a guess presented as a fact, and the one a maintainer would act on. It now returns None for no-answer and has its own state, exit 1.
+
+The four states are decided once in `npm_state` rather than by two predicates called in sequence at each call site, which is what keeps the report and the exit code from disagreeing.
+
+Also caught: `tests/test_python_compatibility.py` globs `scripts/*.py`, so a new module has to satisfy the Python 3.10 grammar guard as well as the ADR-010 budget list. Green.
+
+**Merge-gate note worth keeping.** `dev` requires only `validate`, which runs a filtered test list; the six `python-compatibility` matrix jobs that run the complete suite are not required there. `--auto` can therefore merge before the full suite finishes, which is what happened on #142. #143 was merged only after all six were green. `gh pr merge --disable-auto` is refused once a PR has merged, so the choice has to be made when the PR is opened.
 ---
 <!-- COMMENTS:END -->
