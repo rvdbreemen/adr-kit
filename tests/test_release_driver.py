@@ -200,7 +200,7 @@ def test_a_published_version_is_not_reported_as_awaiting_approval(phases, npm, m
     )
     ctx = _context(phases)
 
-    assert not npm.npm_latest_done(ctx)
+    assert npm.npm_state(ctx) == npm.WRONG_LATEST
     assert npm.npm_published(ctx), "a version in `npm view versions` is published"
 
     message = npm.npm_wrong_latest(ctx)
@@ -226,7 +226,7 @@ def _driver_sees(monkeypatch, driver, state):
 def test_the_exit_code_follows_the_npm_state(driver, monkeypatch):
     """The bug this file exists for was a predicate nothing was wired to.
 
-    `npm_latest_done` was present, correct and called, and `main` returned 0
+    A dist-tag predicate was present, correct and called, and `main` returned 0
     whatever it said. Asserting the predicate alone would not have caught that,
     so these assert the exit code the caller actually sees.
     """

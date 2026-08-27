@@ -4,7 +4,40 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
 
+- One command now drives a release. `python scripts/release.py X.Y.Z` runs every
+  step of `docs/RELEASING.md` in order and is safe to re-run: each phase asks the
+  repository whether its work is already done, so an interrupted release is
+  resumed rather than restarted. `--status` reports what is left without changing
+  anything, `--only` runs a single phase, and `--skip-tests` leaves the suite to
+  CI. `docs/RELEASING.md` remains the specification the driver implements; the
+  driver is now the sanctioned path (ADR-042).
+- An installation smoke workflow. It exercises the `.pre-commit-hooks.yaml`
+  install path through `pre-commit try-repo` against a fixture repository, which
+  nothing tested before, and checks that every `@vX.Y.Z` action pin shipped in
+  the README and the templates names a tag that exists and still defines that
+  action. Its job summary states what it does not cover: the three vendor CLIs
+  are not installable on a hosted runner and stay certified from retained
+  Windows evidence (ADR-010).
+
+### Changed
+
+- The driver now exits non-zero when npm serves a different version than the one
+  released. `npm` sets `latest` to the version published last rather than the
+  highest, so approving staged versions out of order silently points
+  `npm install` at an older release; that left 0.55.1 released while `latest`
+  read 0.54.0 for a week with nothing reporting it. A registry that does not
+  answer is reported as its own state rather than guessed at, and also exits
+  non-zero, so a release is never reported as finished on the strength of a
+  failed lookup.
+- The release no longer asks anyone to type a tag. `release-publish.yml` creates
+  it from the merged commit, and the driver verifies the tag resolves to
+  `origin/main` and refuses to move one that does not. Typing the tag by hand is
+  what cost v0.55.0.
+- The local install step reads each client's version back instead of trusting the
+  installer's exit code, which has reported success while leaving clients on the
+  previous version.
 
 ## [0.56.0] - 2026-08-27
 

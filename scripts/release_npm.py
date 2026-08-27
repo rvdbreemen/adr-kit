@@ -41,10 +41,6 @@ def _dist_tags(ctx: Context) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def npm_latest_done(ctx: Context) -> bool:
-    return (_dist_tags(ctx) or {}).get("latest") == ctx.version
-
-
 def npm_state(ctx: Context) -> str:
     """Which of the four things npm is currently doing about this version.
 
