@@ -23,19 +23,46 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from release_shell import PACKAGE, Context, run  # noqa: E402
 
 
-def _dist_tags(ctx: Context) -> dict:
+DONE = "done"
+WRONG_LATEST = "wrong-latest"
+STAGED = "staged"
+UNREACHABLE = "unreachable"
+
+
+def _dist_tags(ctx: Context) -> dict | None:
+    """None means npm did not answer, which is not the same as an empty answer."""
     code, out, _ = run(["npm", "view", PACKAGE, "dist-tags", "--json", "--prefer-online"])
     if code != 0:
-        return {}
+        return None
     try:
         parsed = json.loads(out)
     except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def npm_latest_done(ctx: Context) -> bool:
-    return _dist_tags(ctx).get("latest") == ctx.version
+    return (_dist_tags(ctx) or {}).get("latest") == ctx.version
+
+
+def npm_state(ctx: Context) -> str:
+    """Which of the four things npm is currently doing about this version.
+
+    Deciding this in one place is what keeps the driver's report and its exit
+    code from disagreeing, which is the defect this function replaced: the
+    predicate existed and nothing wired it to a failure.
+
+    A registry that does not answer gets its own state rather than being folded
+    into one of the others. Reporting "awaiting your 2FA" because npm was down
+    would be a guess presented as a reading, and it is the reading a maintainer
+    would act on.
+    """
+    tags = _dist_tags(ctx)
+    if tags is None:
+        return UNREACHABLE
+    if tags.get("latest") == ctx.version:
+        return DONE
+    return WRONG_LATEST if npm_published(ctx) else STAGED
 
 
 def npm_published(ctx: Context) -> bool:
@@ -62,7 +89,7 @@ def npm_published(ctx: Context) -> bool:
 
 
 def npm_wrong_latest(ctx: Context) -> str:
-    latest = _dist_tags(ctx).get("latest") or "nothing this driver could read"
+    latest = (_dist_tags(ctx) or {}).get("latest") or "nothing this driver could read"
     return (
         f"{ctx.version} is published on npm, but `latest` names {latest}.\n\n"
         f"`npm install {PACKAGE}` therefore serves {latest} rather than the "
