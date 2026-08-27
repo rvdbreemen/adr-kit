@@ -43,7 +43,7 @@ def _load_sibling(name: str):
 
 _load_sibling("adr_format")
 
-from adr_format import SUPPORTED_PROFILES, adr_status
+from adr_format import SUPPORTED_PROFILES, adr_status, status_statement
 
 FRONTMATTER_FIELD_ORDER = (
     "id",
@@ -212,10 +212,10 @@ def infer_frontmatter(body: str, path: Optional[Path] = None) -> Dict:
         title_match = generic_title
     title = title_match.group(1).strip() if title_match else ""
 
-    status_line = ""
-    status_match = STATUS_SECTION_RE.search(body)
-    if status_match:
-        status_line = status_match.group(1).strip()
+    # The same region the status word was read from, so the date and the
+    # successor beside it are recovered from that line rather than from a
+    # `## Status` section the record may not have (issue #118).
+    status_line = status_statement(body)
     # One reader for the status word, shared with adr-index, adr-judge,
     # adr-lint, adr-retire and adr-watch. It handles the `## Status` heading,
     # the bold-inline `**Status:** X` form and a plain `Status: X` line, and it

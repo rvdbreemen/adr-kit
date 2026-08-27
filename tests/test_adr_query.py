@@ -507,7 +507,13 @@ def test_representative_otgw_probes_meet_top_k_quality_gate(tmp_path):
         "wifi reconnect timeout tuning": "ADR-075",
         "retained discovery verification": "ADR-062",
         "heap tier machine contract": "ADR-089",
-        "ps1 print summary parsing": "ADR-045",
+        # ADR-046, not ADR-045. ADR-045 reads `**Status:** Superseded by
+        # ADR-046`, and until issue #118 the frontmatter inference could not
+        # read that shape and labelled it Proposed, so a superseded decision
+        # was ranked as the governing answer. This probe was passing because
+        # of that bug. Retrieval now returns its successor, which is what a
+        # reader asking about PS=1 summary parsing should be given.
+        "ps1 print summary parsing": "ADR-046",
     }
     top1 = 0
     top3 = 0

@@ -20,17 +20,17 @@
         "unknown": 73
       },
       "action_counts": {
-        "deterministic-preview": 81,
-        "guided-migration": 88
+        "deterministic-preview": 79,
+        "guided-migration": 90
       },
-      "deterministic": 81,
-      "guided": 88,
+      "deterministic": 79,
+      "guided": 90,
       "notices": 169
     },
     "metadata_dry_run": {
       "exit_code": 2,
-      "changed": 154,
-      "failed": 15
+      "changed": 152,
+      "failed": 17
     }
   },
   "files": [

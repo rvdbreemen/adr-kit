@@ -170,6 +170,41 @@ def adr_status(text: str) -> Optional[str]:
         return match.group(1) or match.group(2)
     match = STATUS_BODY_LINE_RE.search(text)
     return match.group(1) if match else None
+
+
+def status_statement(text: str) -> str:
+    """Return the whole line the status was read from, or an empty string.
+
+    The status word and the facts printed beside it - the date, the successor -
+    sit on the same line, so they must be recovered from the same region.
+    Reading the word from one shape and the successor from another is why
+    ``superseded_by`` came back None on records whose status reads
+    ``**Status:** Superseded by ADR-046``: the word was found, and the
+    successor was looked for in a ``## Status`` section those records do not
+    have (issue #118).
+    """
+    match = STATUS_HEADING_RE.search(text)
+    if match:
+        return match.group(1).strip()
+    for pattern in (STATUS_BOLD_INLINE_RE, STATUS_BODY_LINE_RE):
+        match = pattern.search(text)
+        if match:
+            # Anchor on the captured status word, not on match.start(): these
+            # patterns begin with `^\s*`, and `\s` eats the preceding newline,
+            # so match.start() can sit on the line ABOVE the status and slice
+            # out an empty string.
+            pos = next(
+                (
+                    match.start(group)
+                    for group in range(1, (match.lastindex or 0) + 1)
+                    if match.group(group) is not None
+                ),
+                match.end(),
+            )
+            line_start = text.rfind("\n", 0, pos) + 1
+            line_end = text.find("\n", pos)
+            return text[line_start : line_end if line_end != -1 else len(text)].strip()
+    return ""
 _CANONICAL_FILENAME_RE = re.compile(
     r"^ADR-\d{3,4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$",
     re.IGNORECASE,
