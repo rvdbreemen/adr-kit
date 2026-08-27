@@ -42,6 +42,11 @@ def phases():
     return _load("release_phases")
 
 
+@pytest.fixture(scope="module")
+def npm(phases):  # phases first: both import release_shell
+    return _load("release_npm")
+
+
 def _context(phases, **overrides):
     fields = {"version": "9.9.9", "skip_tests": True, "timeout_min": 1}
     fields.update(overrides)
@@ -155,18 +160,55 @@ def test_a_tag_that_names_main_passes(phases, monkeypatch):
     assert phases.verify_tag(_context(phases))
 
 
-def test_the_npm_instructions_carry_the_ordering_warning(phases):
+def test_the_npm_instructions_carry_the_ordering_warning(phases, npm):
     """npm sets `latest` to the version published LAST, not the highest.
 
     Approving 0.55.1, then 0.53.0, then 0.54.0 on 2026-08-26 left `latest` on
     0.54.0 while 0.55.1 was the release, so `npm install` served the wrong one.
     The instructions are the only place a maintainer meets this in time.
     """
-    text = phases.npm_instructions(_context(phases))
+    text = npm.npm_instructions(_context(phases))
     assert "ASCENDING" in text
     assert "LAST" in text
     assert "dist-tag ls" in text
     assert "9.9.9" in text
+
+
+def test_a_published_version_is_not_reported_as_awaiting_approval(phases, npm, monkeypatch):
+    """The two npm states look identical from outside and have opposite fixes.
+
+    Sending a maintainer to the approval flow for a package that is already
+    published wastes the one window in which the real fault is cheap to fix:
+    `latest` points at an older release and every `npm install` serves it.
+    """
+    monkeypatch.setattr(npm, "_dist_tags", lambda ctx: {"latest": "9.9.8"})
+    monkeypatch.setattr(
+        npm, "run",
+        lambda *a, **k: (0, '["9.9.8","9.9.9"]', ""),
+    )
+    ctx = _context(phases)
+
+    assert not npm.npm_latest_done(ctx)
+    assert npm.npm_published(ctx), "a version in `npm view versions` is published"
+
+    message = npm.npm_wrong_latest(ctx)
+    assert "9.9.8" in message, "the message must name what npm actually serves"
+    assert "dist-tag add" in message, "and the command that repairs it"
+    assert "approve" not in message, "approval cannot fix an already-published version"
+
+
+def test_a_single_published_version_is_recognised(phases, npm, monkeypatch):
+    """`npm view <pkg> versions --json` returns a bare string, not a list, for one version.
+
+    Left unhandled, `version in json.loads(out)` becomes a substring test on a
+    string: it answers True for "9.9" against "9.9.9" and False for a genuine
+    lone match written any other way.
+    """
+    monkeypatch.setattr(npm, "run", lambda *a, **k: (0, '"9.9.9"', ""))
+    assert npm.npm_published(_context(phases))
+
+    monkeypatch.setattr(npm, "run", lambda *a, **k: (0, '"9.9.8"', ""))
+    assert not npm.npm_published(_context(phases))
 
 
 def test_install_reads_the_version_back_rather_than_trusting_an_exit_code(phases, monkeypatch):

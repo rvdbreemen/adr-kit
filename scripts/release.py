@@ -32,19 +32,34 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from release_phases import (  # noqa: E402
-    PHASES,
-    Context,
-    ReleaseError,
+from release_npm import (  # noqa: E402
     npm_instructions,
     npm_latest_done,
+    npm_published,
+    npm_wrong_latest,
 )
+from release_phases import PHASES, Context, ReleaseError  # noqa: E402
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def _say(text: str = "") -> None:
     print(text, flush=True)
+
+
+def _npm_state(ctx: Context) -> str:
+    """Three states, not two.
+
+    "awaiting your 2FA" is the wrong thing to print at someone whose package is
+    already published: the approval flow they would be sent to has nothing left
+    to approve, and the actual fault - `latest` naming an older release - is
+    fixed with a dist-tag, not an approval.
+    """
+    if npm_latest_done(ctx):
+        return "done"
+    if npm_published(ctx):
+        return "PUBLISHED, but `latest` names another version"
+    return "awaiting your 2FA"
 
 
 def _status(ctx: Context) -> int:
@@ -56,7 +71,7 @@ def _status(ctx: Context) -> int:
         except ReleaseError as exc:  # a phase that cannot even answer
             state = f"unknown ({exc})"
         _say(f"  step {phase.step}  {phase.name:<10} {state}")
-    _say(f"  step 3a  npm        {'done' if npm_latest_done(ctx) else 'awaiting your 2FA'}")
+    _say(f"  step 3a  npm        {_npm_state(ctx)}")
     _say()
     _say("Nothing was changed.")
     return 0
@@ -130,6 +145,14 @@ def main(argv: list[str] | None = None) -> int:
         _say()
         _say(f"{ctx.tag} is released and every surface agrees.")
         return 0
+
+    if npm_published(ctx):
+        _say("=" * 72)
+        _say("RELEASED, BUT npm SERVES A DIFFERENT VERSION")
+        _say("=" * 72)
+        _say()
+        _say(npm_wrong_latest(ctx))
+        return 1
 
     _say("=" * 72)
     _say("ONE THING LEFT, AND ONLY YOU CAN DO IT")

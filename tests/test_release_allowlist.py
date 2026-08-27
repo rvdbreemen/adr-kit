@@ -97,9 +97,11 @@ def test_task_40_python_modules_stay_within_adr_010_line_budgets():
         "clients/installer/native.py",
         # Budgeted from v0.56.0: release_phases.py crossed 400 lines while it
         # still carried its own process helpers, which is what split them out
-        # into release_shell.py. Budget both so the seam holds.
+        # into release_shell.py, and later its npm handling, which is
+        # release_npm.py. Budget all three so the seams hold.
         "scripts/release_phases.py",
         "scripts/release_shell.py",
+        "scripts/release_npm.py",
     )
     for relative in entrypoints:
         lines = (ROOT / relative).read_text(encoding="utf-8").splitlines()
