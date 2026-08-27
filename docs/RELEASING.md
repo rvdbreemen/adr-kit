@@ -81,6 +81,25 @@ work list immediately instead of one error per tool run.
 
 ## Release steps
 
+**The sanctioned way to run all of this is one command** (ADR-042):
+
+```bash
+python scripts/release.py X.Y.Z            # drives every step below
+python scripts/release.py X.Y.Z --status   # what is left, changing nothing
+```
+
+It is safe to re-run. Each phase asks the repository whether its work is
+already done, so an interrupted release is resumed rather than restarted, and
+it stops with an actionable message rather than half-finishing. It runs from
+your machine with your own `gh` and `npm` credentials on purpose: GitHub does
+not start workflow runs for events caused by `GITHUB_TOKEN`, so a pull request
+a workflow opened would never receive the checks `main` requires.
+
+The steps below remain the specification the driver implements, in this order.
+Read them to understand what it does, and follow them by hand when a phase
+needs unpicking. What stays human either way: deciding to release and choosing
+the version, writing the release notes, approving the merge, and npm's 2FA.
+
 ### 0. Confirm `dev` carries every published release
 
 ```bash
@@ -228,17 +247,28 @@ with `--admin` or otherwise bypass branch protection. If the PR gains extra comm
 after the first CI run (applied code-scanning autofixes, for example), review them
 and confirm CI is green for the final head before merging.
 
+**Do not tag by hand.** Since ADR-042 the tag is derived, not typed:
+`release-publish.yml` triggers on the push to `main`, reads the canonical
+CHANGELOG version, creates the tag on the commit that carries it, and publishes
+in the same run. A tag can therefore only ever name a commit whose version
+sites agree with it.
+
+That is not a stylistic preference. v0.55.0 was lost to a hand-typed tag on the
+`dev` tip, where every version site still read `0.54.0`; the gate correctly
+refused to publish, and the tag could not be moved because a pushed tag is a
+public ref consumers may register a marketplace from. The release shipped as
+v0.55.1 instead.
+
+After the merge, verify rather than assume:
+
 ```bash
-# after the maintainer merged the PR, on main:
-git pull origin main
-python scripts/check-release-version.py --expect vX.Y.Z   # main really carries it
-git tag vX.Y.Z
-git push origin vX.Y.Z
+git fetch origin --tags
+git rev-parse vX.Y.Z^{}     # must equal the next line
+git rev-parse origin/main
 ```
 
-Pushing the tag triggers **`.github/workflows/release-publish.yml`** (the release
-flow), which re-runs every gate above and creates the GitHub Release from the
-CHANGELOG section. If any version site disagrees, the workflow fails before the
+`release-publish.yml` (the release flow) re-runs every gate above and creates
+the GitHub Release from the CHANGELOG section. If any version site disagrees, the workflow fails before the
 Release is cut. After the Release is created, the same workflow invokes the
 reusable `.github/workflows/publish-opencode-npm.yml` workflow. It stages the
 OpenCode package through OIDC; it does not make the package public without the

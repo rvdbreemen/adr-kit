@@ -1,0 +1,141 @@
+name: Installation smoke
+
+# Exercises the installation surfaces CI can genuinely exercise, and says
+# plainly which ones it cannot (ADR-042).
+#
+# NOT covered here, deliberately: installing into Claude Code, Codex or the
+# standalone Copilot CLI. Those vendor CLIs are not installable on a hosted
+# runner, which is why ADR-010 certifies them from externally retained Windows
+# evidence through release-candidate.yml instead. A green run here is not a
+# statement about those three.
+#
+# Also not covered: the npm package tarball, which publish-opencode-npm.yml
+# already validates under Bun before staging. Duplicating it here would add a
+# second place to keep in step without adding coverage.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Ref to smoke, for example v0.56.0 or dev
+        required: false
+        default: ""
+        type: string
+  pull_request:
+    paths:
+      - ".pre-commit-hooks.yaml"
+      - "bin/adr-judge*"
+      - "templates/github-workflows/**"
+      - ".github/actions/**"
+      - ".github/workflows/install-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit-framework:
+    name: pre-commit framework install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pre-commit
+        run: python -m pip install --quiet pre-commit
+
+      # `.pre-commit-hooks.yaml` is a shipped surface: a user adds this repo to
+      # their own .pre-commit-config.yaml and expects the hook to resolve and
+      # run. Nothing exercised that path before, so a broken `entry:` or a
+      # renamed script would only surface in someone else's repository.
+      - name: Build a fixture repository with a staged change
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fixture"
+          cd "$RUNNER_TEMP/fixture"
+          git init -q
+          git config user.email smoke@example.invalid
+          git config user.name "Installation smoke"
+          mkdir -p docs/adr src
+          printf 'x = 1\n' > src/app.py
+          git add -A
+          git commit -qm "fixture"
+          printf 'x = 2\n' > src/app.py
+          git add -A
+
+      - name: Run the shipped hook through the framework
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/fixture"
+          # try-repo resolves the hook exactly as a consumer's config would.
+          # A clean fixture has no Accepted ADR with an Enforcement block, so
+          # the hook must pass; it failing here means the hook could not run at
+          # all, which is the thing worth catching.
+          pre-commit try-repo "$GITHUB_WORKSPACE" adr-judge --verbose --all-files
+
+  shipped-action-pins:
+    name: shipped action pins resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      # A template a user copies carries `@vX.Y.Z`. tests/test_docs_claims.py
+      # already asserts each such pin is a declared version site, so it moves
+      # with a release. What that cannot see is whether the ref it names exists
+      # and still contains the action: a pin written before a rename, or ahead
+      # of the tag it references, resolves to nothing in the consumer's repo
+      # and fails there rather than here.
+      - name: Every pinned action ref exists and defines the action
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --quiet
+          status=0
+          while IFS= read -r pin; do
+            action="${pin%@*}"
+            ref="${pin#*@}"
+            name="${action##*/}"
+            printf '%-46s ' "$name@$ref"
+            if ! git rev-parse -q --verify "refs/tags/$ref" >/dev/null; then
+              echo "MISSING TAG"; status=1; continue
+            fi
+            if git cat-file -e "$ref:.github/actions/$name/action.yml" 2>/dev/null; then
+              echo "ok"
+            else
+              echo "NO action.yml AT THAT TAG"; status=1
+            fi
+          done < <(grep -rhoE 'adr-kit/\.github/actions/[a-z-]+@v[0-9]+\.[0-9]+\.[0-9]+' \
+                     README.md templates/ | sed 's#.*adr-kit/\.github/actions/##' | sort -u)
+          exit $status
+
+      - name: Say what this job does not cover
+        if: always()
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Installation smoke: scope
+
+          Covered here: the pre-commit framework install path from
+          `.pre-commit-hooks.yaml`, and that every action pin shipped in the
+          README and the templates names a tag that exists and still defines
+          that action.
+
+          **Not covered, and not claimed:** installing into Claude Code, Codex
+          or the standalone GitHub Copilot CLI. Those vendor CLIs are not
+          installable on a hosted runner. They are certified from externally
+          retained Windows evidence through `release-candidate.yml` (ADR-010).
+          A green run here says nothing about them.
+          SUMMARY
