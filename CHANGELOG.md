@@ -5,6 +5,97 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+
+## [0.56.0] - 2026-08-27
+
+The release now tags itself. `release-publish.yml` reads the CHANGELOG version
+on a push to `main` and creates the tag on the commit that carries it, so a tag
+can no longer name a commit whose version sites disagree with it. That is the
+failure that burned v0.55.0. Nothing to do on upgrade.
+
+Two lifecycle defects are fixed that both ended in a decision silently not
+reaching your agents, with exit code 0 throughout.
+
+### Added
+
+- `release-publish.yml` creates the release tag from the merged `main` commit
+  and publishes in the same run, and its job summary now carries the npm
+  approval steps, the staged-packages URL, and the warning that npm sets
+  `latest` to the version published last. The instruction used to live only in
+  `docs/RELEASING.md`, which is why three staged versions sat unapproved for a
+  week. Recorded in
+  [ADR-042](docs/adr/ADR-042-drive-the-release-from-the-maintainer-s-machine-and-create-the-tag-from-the-merge.md),
+  which amends ADR-012's automation boundary.
+- `scripts/check-release-version.py --print-canonical` prints the canonical
+  CHANGELOG version and nothing else, so the workflow derives the tag from the
+  same registry entry the gate compares against.
+- `tests/test_docs_claims.py` holds four documentation claims that nothing read
+  before: the counts the README advertises, no version literal in
+  `SECURITY.md`'s supported-versions section, no current-version assertion in
+  `ROADMAP.md`'s status section, and every action pin in a file users copy must
+  be a declared version site.
+- `adr_format.section_span()` returns the offsets `section_text()` already
+  computed, so a writer can place content inside the bounds the reader parses.
+
+### Fixed
+
+- Lifecycle commands no longer write `status_history` entries outside the
+  `## Status History` section. `append_status_history` located its insertion
+  point with `body.find("```")` over the whole remaining document, so on a
+  record whose history block carries no fence - the shape the shipped agent
+  template emits - the entry landed in the next fenced block, in this project
+  the `## Enforcement` JSON. The frontmatter read `Accepted` while
+  `ADR-INDEX.json` went on reporting `Proposed`, and only Accepted ADRs are
+  injected, so a decision the maintainer had just signed stopped reaching any
+  agent. A second shape, no later fence at all, appended a second
+  `## Status History` section and inverted chronology. Affects `accept`,
+  `reject`, `propose`, `supersede` and `document`, which share one mutation
+  path. ([#119](https://github.com/rvdbreemen/adr-kit/issues/119))
+- Frontmatter inference reads the status instead of defaulting to `Proposed`.
+  It recognised exactly one Status shape and guessed on every other, including
+  any line starting with `**`, `[` or `-`. `adr-migrate` wrote that guess and
+  exited 0. Measured over a real 169-record corpus, 79 records were affected:
+  60 read `Proposed` while the body said `Accepted`, 12 while it said
+  `Superseded`, one `Amended`. The reader that handles those shapes already
+  existed and called itself the single cross-tool status reader; the function
+  that writes the field never used it. It now does, and an unreadable status
+  stays undetermined rather than becoming a confident wrong answer - both
+  callers already had an honest path for that and neither was being used.
+  ([#118](https://github.com/rvdbreemen/adr-kit/issues/118))
+- `superseded_by` survives the link-wrapped form real bodies use,
+  `Superseded by [ADR-124](ADR-124-title.md)`, and the date and successor are
+  now recovered from the same line the status word was read from rather than
+  from a `## Status` section the record may not have.
+- Lifecycle commands no longer feed the generated `ADR-INDEX.md` to the
+  frontmatter loader. `glob("ADR-*.md")` matches it, which was only ever
+  harmless because inference invented a status for it.
+- `SECURITY.md` no longer names a supported version line that goes stale; it
+  states the policy and points at the latest release. It had claimed `v0.33.x`
+  was current, twenty-two minor versions behind, and contradicted the sentence
+  directly above it.
+- The README described the MCP server as five-tool in five places while saying
+  "Seven tools" further down, claimed 15 workflows against 17 and six bounded
+  hooks against eight, and pointed OpenCode users at a superseded package
+  version. `ROADMAP.md` asserted a version number and omitted the OpenCode
+  distribution.
+- `templates/github-workflows/adr-readiness.yml` pinned its action eighteen
+  minor versions back because the pin was declared in no registry. It and the
+  README OpenCode package pin are now sites in
+  `packaging/version-sites.json`, so `scripts/bump-version.py` writes them.
+
+### Changed
+
+- The Claude Code marketplace listing no longer advertises "v0.33 local
+  governance tools" as if that set were new.
+- The reviewed migration baseline for the bundled corpus moves from 81
+  deterministic and 88 guided to 79 and 90, and the metadata dry run from 154
+  changed and 15 failed to 152 and 17. Two records now need human judgement
+  instead of receiving an invented status, and two more report an actionable
+  issue instead of being rewritten with one. The retrieval probe for PS=1
+  summary parsing now expects ADR-046 rather than its superseded predecessor
+  ADR-045, which ranked as the governing answer only because its status was
+  misread.
+
 ## [0.55.1] - 2026-08-26
 
 The version number skips 0.55.0. That tag was pushed at the dev tip before
@@ -2822,7 +2913,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...HEAD
+[0.56.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...v0.56.0
 [0.55.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...v0.55.1
 [0.54.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.52.0...v0.53.0
