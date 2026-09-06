@@ -72,6 +72,27 @@ reaching your agents, with exit code 0 throughout.
 
 ### Fixed
 
+- A required section that is present but empty no longer counts as complete. The
+  completeness gate tested whether the heading matched somewhere in the text and
+  never looked at the body, so `## References` with nothing under it passed.
+  `bin/adr accept` runs that gate with `--strict`, which made an empty heading
+  enough to walk a record carrying no verifiable reference into an immutable
+  Accepted state. The finding now separates the two cases, `References` against
+  `References (present but empty)`, because an author needs to know whether they
+  never wrote the section or left the placeholder in. The same hole existed in
+  `adr-quality`, whose section loop scored presence while three checks beside it
+  already measured emptiness for Decision, Alternatives and Consequences;
+  References and Related Decisions fell through that gap and
+  `adr accept --quality-threshold` reads that score.
+- `adr-migrate` says which sections it could not fill. Converting a profile
+  appends `- TODO: ...` into any required heading it has to add, which is honest
+  at write time but counts as content, so a migrated record passed completeness
+  immediately and nothing signalled that it was unfinished. Each such section is
+  now reported as `needs content: ## <heading>`, counting only what that run left
+  unfilled so a hole the author already had is not blamed on the migration. The
+  rule lives once, in `adr_format.unfilled_required_sections`, so the linter, the
+  quality score and the migrator cannot drift into disagreeing about the same
+  record.
 - Lifecycle commands no longer write `status_history` entries outside the
   `## Status History` section. `append_status_history` located its insertion
   point with `body.find("```")` over the whole remaining document, so on a
