@@ -494,12 +494,57 @@ def scan_extra_migration_notices(
     return notices
 
 
+# A section carrying only the placeholder adr-migrate writes is not filled in.
+# Matched on the marker rather than the exact sentence so a reworded placeholder
+# still counts, and anchored to a list item or line start so prose that happens
+# to discuss a TODO elsewhere in the section does not suppress the finding.
+_PLACEHOLDER_LINE_RE = re.compile(r"^\s*(?:[-*+]\s*)?TODO\b", re.IGNORECASE)
+
+
+def _section_body(text: str, heading: str) -> Optional[str]:
+    """Return the text between `heading` and the next H2, or None if absent."""
+    match = _section_pattern(heading).search(text)
+    if match is None:
+        return None
+    rest = text[match.end():]
+    nxt = re.search(r"^##\s", rest, re.MULTILINE)
+    return rest[: nxt.start()] if nxt else rest
+
+
+def _is_unfilled(body: str) -> bool:
+    """True when a section has no content a reader could act on.
+
+    Empty is the obvious case. The placeholder case matters just as much: a
+    required section that still says TODO is what adr-migrate writes when it
+    adds a missing heading, and treating that as content is what let a migrated
+    record walk straight into Accepted.
+    """
+    lines = [ln for ln in body.splitlines() if ln.strip()]
+    if not lines:
+        return True
+    return all(_PLACEHOLDER_LINE_RE.match(ln) for ln in lines)
+
+
 def gate_completeness(text: str, required: List[str]) -> Optional[List[str]]:
-    """Return list of missing required headings, or None if all present."""
+    """Return required sections that are absent or unfilled, or None if all present.
+
+    A heading on its own is not a section. The skill contract has always said a
+    passing ADR carries every load-bearing section "with non-empty content";
+    checking only for the heading meant an empty one passed, and `bin/adr accept`
+    runs this gate with --strict, so that was enough to accept a record with no
+    verifiable reference at all.
+
+    The returned entry keeps the `## ` prefix the caller strips, and appends a
+    reason for anything that is present but hollow, so a reader can tell "you
+    never wrote this" from "you left the placeholder in".
+    """
     missing = []
     for s in required:
-        if not _section_pattern(s).search(text):
+        body = _section_body(text, s)
+        if body is None:
             missing.append(s)
+        elif _is_unfilled(body):
+            missing.append(f"{s} (present but empty)")
     return missing or None
 
 

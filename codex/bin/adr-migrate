@@ -62,6 +62,7 @@ from adr_format import (
     is_migration_candidate,
     migration_notice,
     normalize_profile,
+    unfilled_required_sections,
 )
 from adr_schema import migrate_text
 from adr_catalog import load_adr_record
@@ -166,12 +167,23 @@ def migrate_file(
 
     after, changed, issues = migrate_text(before, path)
     detected_source = None
+    unfilled: List[str] = []
     if not issues and to_profile is not None:
         try:
             after, detected_source = convert_profile(
                 after, to_profile, source=from_profile
             )
             changed = after != before
+            # A conversion that adds a missing heading writes a TODO placeholder
+            # into it. That is a hole, not content, and saying nothing about it
+            # is how a migrated record reaches `adr accept` still unwritten.
+            # Report only what THIS run left unfilled, so a hole the author
+            # already had is not blamed on the migration.
+            unfilled = [
+                s
+                for s in unfilled_required_sections(after, to_profile)
+                if s not in unfilled_required_sections(before, to_profile)
+            ]
         except AdrFormatError as exc:
             issues = [str(exc)]
     if not issues and changed and write:
@@ -192,6 +204,7 @@ def migrate_file(
         "issues": issues,
         "source_profile": detected_source,
         "target_profile": to_profile,
+        "unfilled_sections": unfilled,
     }
 
 
@@ -203,14 +216,28 @@ def render_text(target: Path, results: List[Dict], check: bool, dry_run: bool) -
         f"adr-migrate {mode}: {target}",
         f"Files: {len(results)}; changed: {len(changed)}; failed: {len(failed)}",
     ]
+    unfilled_any = False
     for result in results:
         if result["changed"]:
             prefix = "needs migration" if check or dry_run else "migrated"
             lines.append(f"  {prefix}: {result['file']}")
+        # Say what the conversion could not write for you. A required section
+        # that still carries a TODO placeholder reads as complete to anything
+        # counting headings, so leaving this unsaid is what lets an unfinished
+        # record reach acceptance.
+        for section in result.get("unfilled_sections") or []:
+            unfilled_any = True
+            lines.append(f"    needs content: ## {section}")
         if result["issues"]:
             lines.append(f"  failed: {result['file']}")
             for issue in result["issues"]:
                 lines.append(f"    {issue}")
+    if unfilled_any:
+        lines.append(
+            "Sections marked 'needs content' hold a placeholder, not an answer. "
+            "adr-lint reports them as incomplete and adr accept will refuse "
+            "until they are written."
+        )
     if not results:
         lines.append("No ADR files found.")
     return "\n".join(lines)

@@ -828,6 +828,39 @@ def has_role_heading(text: str, profile: str, role: str) -> bool:
     return any(item.casefold() == expected for item in h2_headings(text))
 
 
+# Matched on the marker rather than the exact sentence, so a reworded placeholder
+# still counts, and anchored to a list item or line start so prose that merely
+# mentions a TODO further down the section does not mask a real gap.
+_PLACEHOLDER_LINE_RE = re.compile(r"^\s*(?:[-*+]\s*)?TODO\b", re.IGNORECASE)
+
+
+def unfilled_required_sections(text: str, profile: str) -> List[str]:
+    """Required headings present in `text` that nobody has actually written yet.
+
+    Covers the empty section and the placeholder section alike, because
+    `_append_missing_role` writes the latter: a heading whose body still says
+    TODO is a hole the migration opened, not content. Callers use this to tell
+    an operator that a migrated record is unfinished, which the write itself
+    otherwise does silently.
+    """
+    normalized = normalize_profile(profile)
+    unfilled: List[str] = []
+    for role in PROFILE_REQUIRED_ROLES[normalized]:
+        title = heading(normalized, role)
+        match = re.search(
+            r"^##\s+" + re.escape(title) + r"\s*$", text, re.MULTILINE
+        )
+        if match is None:
+            continue
+        rest = text[match.end():]
+        nxt = re.search(r"^##\s", rest, re.MULTILINE)
+        body = rest[: nxt.start()] if nxt else rest
+        lines = [ln for ln in body.splitlines() if ln.strip()]
+        if not lines or all(_PLACEHOLDER_LINE_RE.match(ln) for ln in lines):
+            unfilled.append(title)
+    return unfilled
+
+
 def _append_missing_role(text: str, profile: str, role: str) -> str:
     placeholders = {
         "drivers": "- TODO: capture the decision drivers.",

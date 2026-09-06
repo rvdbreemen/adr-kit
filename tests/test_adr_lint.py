@@ -41,6 +41,54 @@ def test_missing_headings_fails_default():
     assert any(f["gate"] == "completeness" and f["level"] == "FAIL" for f in fnd)
 
 
+def _completeness_details(out):
+    for f in out["files"][0]["findings"]:
+        if f["gate"] == "completeness" and f["level"] == "FAIL":
+            return f["details"]
+    return None
+
+
+def test_present_but_empty_required_section_fails_completeness():
+    """A heading on its own is not a section (TASK-198).
+
+    The gate used to test only that the heading matched somewhere in the text,
+    so an empty required section passed. `bin/adr accept` runs this gate with
+    --strict, which made that enough to accept a record carrying no verifiable
+    reference at all.
+    """
+    code, out = run_lint("--gates", "completeness", str(FIXTURES / "empty-section"))
+    assert code == 1
+    details = _completeness_details(out)
+    assert details is not None
+    # The reason has to separate "you never wrote this" from "it is hollow",
+    # otherwise the author cannot tell what the gate is asking for.
+    assert any("References" in d and "empty" in d for d in details)
+
+
+def test_placeholder_only_required_section_fails_completeness():
+    """The TODO that adr-migrate writes is a hole, not content (TASK-198).
+
+    Without this, migrate and accept together walk an unfinished record into an
+    immutable Accepted state, because the placeholder counts as a non-empty body.
+    """
+    code, out = run_lint(
+        "--gates", "completeness", str(FIXTURES / "placeholder-section")
+    )
+    assert code == 1
+    details = _completeness_details(out)
+    assert details is not None
+    assert any("References" in d for d in details)
+
+
+def test_absent_section_still_reported_as_plain_missing():
+    """The original reason must not be swallowed by the new one (TASK-198)."""
+    code, out = run_lint("--gates", "completeness", str(FIXTURES / "missing-headings"))
+    assert code == 1
+    details = _completeness_details(out)
+    assert details is not None
+    assert any("empty" not in d for d in details)
+
+
 def test_bad_filename_consistency_fail():
     code, out = run_lint(str(FIXTURES / "bad-filename"))
     assert code == 1
