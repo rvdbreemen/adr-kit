@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-06 08:17'
-updated_date: '2026-09-06 08:36'
+updated_date: '2026-09-06 13:12'
 labels:
   - bug
   - lint
@@ -31,12 +31,12 @@ Second, related gap on the migrate side. adr-migrate --to-profile does NOT inser
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 gate_completeness reports a required section that exists but has no body as missing, and the reason distinguishes absent from empty
-- [ ] #2 A subheading counts as content, so '## Consequences' followed by '### Positive' keeps passing
-- [ ] #3 adr-migrate does not silently create an empty required section; it either declines or marks the result as needing content, and the operator can tell from its output
-- [ ] #4 Regression test covers both an absent section and a present-but-empty one
-- [ ] #5 A required section whose only content is an adr-kit TODO placeholder is reported as incomplete, so migrate output cannot be accepted unfilled
-- [ ] #6 adr-migrate names the sections it filled with a placeholder, so the operator can see the record is unfinished
+- [x] #1 gate_completeness reports a required section that exists but has no body as missing, and the reason distinguishes absent from empty
+- [x] #2 A subheading counts as content, so '## Consequences' followed by '### Positive' keeps passing
+- [x] #3 adr-migrate does not silently create an empty required section; it either declines or marks the result as needing content, and the operator can tell from its output
+- [x] #4 Regression test covers both an absent section and a present-but-empty one
+- [x] #5 A required section whose only content is an adr-kit TODO placeholder is reported as incomplete, so migrate output cannot be accepted unfilled
+- [x] #6 adr-migrate names the sections it filled with a placeholder, so the operator can see the record is unfinished
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -55,4 +55,16 @@ REGRESSIEMETING. Eerst leek de fix 110 ADRs om te gooien op de OTGW-corpus (177 
 TESTS. Twee fixtures (empty-section, placeholder-section) plus drie tests in test_adr_lint.py en twee in test_selectable_formats.py, waaronder een die controleert dat een volledig ingevuld record geen vals alarm geeft. Gericht: 23 en 29 passed. Volledige suite draait.
 
 End-to-end op de oorspronkelijke casus (OTGW ADR-170, References ontbrak): migratie meldt needs content, lint faalt daarna met References (present but empty). Voorheen: migratie zweeg en lint gaf PASS strictly.
+
+DERDE VINDPLAATS gevonden en gefixt: adr_quality_core.gate_completeness. Dezelfde sectie-lus met alleen pattern.search(). Het veelzeggende detail is dat diezelfde functie drie regels lager wel op leegte controleert, voor Decision, Alternatives en Consequences. References en Related Decisions vielen door dat gat, en adr accept --quality-threshold rekent met die score. Gemeten op de empty-section fixture: completeness 0.90 naar 0.76 met "Required section missing: References". De Evidence-gate van hetzelfde gereedschap meldde al "References section is empty", dus twee helften van een tool spraken elkaar tegen over hetzelfde record.
+
+CHANGELOG-regel toegevoegd onder Unreleased, Fixed, voor beide helften.
+
+Client-adapters geregenereerd (changed=2) en geverifieerd met --check (changed=0). codex/ en copilot/ nooit met de hand aangeraakt.
+
+Tests: 95 passed over test_adr_quality, test_adr_lint, test_selectable_formats, test_adr_migrate en test_release_allowlist.
+
+NIET gedaan: de volledige suite. Twee pogingen zijn door het besturingssysteem afgebroken wegens geheugen (commit charge 88 van 93 GB), dus er is geen uitslag in plaats van een groene. CI is de gate.
+
+PR: https://github.com/rvdbreemen/adr-kit/pull/146 naar dev.
 <!-- SECTION:NOTES:END -->
