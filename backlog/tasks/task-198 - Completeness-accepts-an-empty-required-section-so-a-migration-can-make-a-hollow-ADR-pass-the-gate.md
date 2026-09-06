@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-06 08:17'
-updated_date: '2026-09-06 13:12'
+updated_date: '2026-09-06 13:43'
 labels:
   - bug
   - lint
@@ -35,8 +35,8 @@ Second, related gap on the migrate side. adr-migrate --to-profile does NOT inser
 - [x] #2 A subheading counts as content, so '## Consequences' followed by '### Positive' keeps passing
 - [x] #3 adr-migrate does not silently create an empty required section; it either declines or marks the result as needing content, and the operator can tell from its output
 - [x] #4 Regression test covers both an absent section and a present-but-empty one
-- [x] #5 A required section whose only content is an adr-kit TODO placeholder is reported as incomplete, so migrate output cannot be accepted unfilled
-- [x] #6 adr-migrate names the sections it filled with a placeholder, so the operator can see the record is unfinished
+- [x] #5 adr-migrate names the sections it filled with a placeholder, so the operator can see the record is unfinished
+- [x] #6 A required section whose only content is an adr-kit TODO placeholder does NOT fail a blocking gate; adr-migrate reports it as needing content instead, so the operator is told without the import being refused
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -67,4 +67,31 @@ Tests: 95 passed over test_adr_quality, test_adr_lint, test_selectable_formats, 
 NIET gedaan: de volledige suite. Twee pogingen zijn door het besturingssysteem afgebroken wegens geheugen (commit charge 88 van 93 GB), dus er is geen uitslag in plaats van een groene. CI is de gate.
 
 PR: https://github.com/rvdbreemen/adr-kit/pull/146 naar dev.
+
+- CI on PR #146 rejected the placeholder half of the fix. Two tests already encoded the opposite policy: test_adr_policy.py::test_neither_migration_placeholder_spelling_counts_as_an_option and test_migration_discovery.py both assert that an imported record must NOT fail a blocking gate on arrival, "which is how a migrating team learns to disable the gate".
+- AC #5 as originally written was therefore a policy change, not a bug fix. Rewrote it to state the decision; the emptiness half of the fix stands unchanged.
+- c476525 narrows _is_unfilled to emptiness only in bin/adr-lint and bin/adr_quality_core.py and drops _PLACEHOLDER_LINE_RE from both. adr_format.unfilled_required_sections keeps placeholder awareness: that surface reports, it does not gate.
+- Commit needed ADR_KIT_NO_LLM=1: two attempts were killed by the OS for memory (commit charge 70.6 of 78.4 GB). Declarative adr-judge pass ran, 20 ADRs, 0 violations.
+- PR #146 all 12 checks green and MERGEABLE. Merge to dev is the maintainer action (enforce_admins: true).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A heading on its own is not a section. Three tools shared that hole and the migrator could open it in one command.
+
+Changes:
+- `bin/adr-lint` reads the body between a required heading and the next H2. A section with nothing under it is reported as missing, and the finding separates the two cases (`References` vs `References (present but empty)`).
+- `bin/adr_quality_core.py` carried the same loop. It already measured emptiness for Decision, Alternatives and Consequences three lines below, so References and Related Decisions fell through a gap in the same function. `adr accept --quality-threshold` reads that score; on the empty-section fixture it moves 0.90 -> 0.76.
+- `bin/adr-migrate` names the sections it filled with a placeholder as `needs content: ## <heading>`, counting only what that run left unfilled so a pre-existing hole is not blamed on the migration. The shared rule lives once, in `adr_format.unfilled_required_sections`.
+
+Correction, and the reason AC #5 was rewritten: the first version also treated a `- TODO:` placeholder as a hole. CI rejected it and CI was right. `test_adr_policy.py` and `test_migration_discovery.py` already decided that an imported record must not fail a blocking gate on arrival, "which is how a migrating team learns to disable the gate". That made the placeholder rule a policy change wearing a bugfix's clothes. `c476525` narrows `_is_unfilled` to emptiness only in both blocking gates and drops `_PLACEHOLDER_LINE_RE` from them; only the migrator's report still knows about placeholders, because it informs rather than refuses. The two placeholder tests now assert that policy, so a future tightening trips over the decision instead of silently reversing it.
+
+Regression: none. Downstream corpus of 177 ADRs (OTGW-firmware) 31 PASS / 114 ADVISORY / 32 FAIL, identical before and after; this repository's own `docs/adr` 42 PASS / 0 FAIL, identical. An earlier reading of mine claiming 110 ADRs would flip compared installed 0.56.0 against `dev` and was wrong.
+
+Tests: two fixtures (`empty-section`, `placeholder-section`) plus cases in `test_adr_lint.py`, `test_adr_quality.py` and `test_selectable_formats.py`. Locally 232 passed across thirteen files; the full suite has no local verdict because two attempts were killed by the OS for memory. CI is the gate and PR #146 is green on all twelve checks, six platform/version combinations included.
+
+Note on the commit itself: `c476525` needed `ADR_KIT_NO_LLM=1` after two commits were killed for memory (commit charge 70.6 of 78.4 GB). The declarative adr-judge pass did run: 20 ADRs with Enforcement blocks, 0 violations, 0 advisory. No `--no-verify`.
+
+Blocking item: PR #146 is MERGEABLE but unmerged. `dev` has `enforce_admins: true`, so merging is the maintainer's action, not mine. The fix is not in `dev` until that happens.
+<!-- SECTION:FINAL_SUMMARY:END -->
