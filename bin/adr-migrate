@@ -235,8 +235,9 @@ def render_text(target: Path, results: List[Dict], check: bool, dry_run: bool) -
     if unfilled_any:
         lines.append(
             "Sections marked 'needs content' hold a placeholder, not an answer. "
-            "adr-lint reports them as incomplete and adr accept will refuse "
-            "until they are written."
+            "Nothing blocks on that: an imported record must not fail a gate on "
+            "arrival. adr-readiness reports it and adr accept will not refuse, "
+            "so write them before you accept."
         )
     if not results:
         lines.append("No ADR files found.")
