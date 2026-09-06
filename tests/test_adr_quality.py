@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -203,6 +204,49 @@ def test_completeness_missing_sections():
     assert any(
         issue.code == "MISSING_SECTION"
         and ("Status" in issue.detail or "References" in issue.detail)
+        for issue in result["issues"]
+    )
+
+
+def test_completeness_counts_an_empty_required_section_as_missing():
+    """A heading with nothing under it scored full marks here (TASK-198).
+
+    The section loop tested presence alone, while the checks below it already
+    measured emptiness for Decision, Alternatives and Consequences. References
+    and Related Decisions fell through that gap, and
+    `adr accept --quality-threshold` reads this score.
+    """
+    hollow = re.sub(
+        r"^## References\n.*\Z", "## References\n\n", FULL_ADR, flags=re.M | re.S
+    )
+    assert "## References" in hollow
+    result = gate_completeness(hollow)
+    assert result["score"] < 1.0
+    assert any(
+        issue.code == "MISSING_SECTION" and "References" in issue.detail
+        for issue in result["issues"]
+    )
+
+
+def test_completeness_does_not_count_a_placeholder_section_as_missing():
+    """A migration placeholder is content for this gate, by decision (TASK-198).
+
+    The emptiness rule above deliberately stops at empty. `adr accept
+    --quality-threshold` reads this score, so treating the TODO that
+    adr-migrate writes as a hole would fail an honest import on arrival --
+    exactly what test_adr_policy.py decided against for the blocking lint
+    gate. The same rule has to hold on both scorers, or an imported record
+    passes one and fails the other.
+    """
+    placeholder = re.sub(
+        r"^## References\n.*\Z",
+        "## References\n\n- TODO: add verifiable references.\n",
+        FULL_ADR,
+        flags=re.M | re.S,
+    )
+    result = gate_completeness(placeholder)
+    assert not any(
+        issue.code == "MISSING_SECTION" and "References" in issue.detail
         for issue in result["issues"]
     )
 

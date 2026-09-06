@@ -592,3 +592,38 @@ def test_detect_profile_is_memoized_for_repeated_document_scans():
     assert after_first.misses == 1
     assert after_second.hits == after_first.hits + 1
     assert after_second.misses == after_first.misses
+
+
+def test_migration_reports_the_sections_it_could_not_fill(tmp_path):
+    """A conversion that adds a heading writes a TODO into it (TASK-198).
+
+    Saying nothing about that is how a migrated record reached `adr accept`
+    still unwritten: the placeholder reads as content to anything counting
+    headings, so the operator had no signal the file was unfinished.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    path = materialize("canonical", adr_dir)
+    text = path.read_text(encoding="utf-8")
+    stripped = re.sub(r"^## References\n.*?(?=^## |\Z)", "", text, flags=re.M | re.S)
+    assert "## References" not in stripped
+    path.write_text(stripped, encoding="utf-8")
+
+    result = run(str(BIN / "adr-migrate"), "--to-profile", "canonical", str(path))
+    assert result.returncode == 0, result.stderr
+    assert "needs content: ## References" in result.stdout
+    assert "placeholder, not an answer" in result.stdout
+
+    # The report is the whole signal. The linter deliberately does NOT block on
+    # a placeholder (test_adr_policy.py), so naming the section here is what
+    # separates "imported, unfinished" from "imported, done".
+    lint = run(str(BIN / "adr-lint"), "--gates", "completeness", str(path))
+    assert lint.returncode == 0, lint.stdout
+
+
+def test_migration_stays_quiet_when_every_section_is_written(tmp_path):
+    """No false alarm on a record that needed nothing filled in (TASK-198)."""
+    adr_dir = tmp_path / "docs" / "adr"
+    path = materialize("nygard", adr_dir)
+    result = run(str(BIN / "adr-migrate"), "--to-profile", "canonical", str(path))
+    assert result.returncode == 0, result.stderr
+    assert "needs content" not in result.stdout
