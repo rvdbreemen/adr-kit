@@ -174,3 +174,70 @@ def test_guardian_refresh_writes_cache_outside_hook(tmp_path):
     assert cache["authoritative"] is False
     assert cache["actions"][0]["command"] == "/adr-kit:grill ADR-001"
 
+
+
+# ---------------------------------------------------------------------------
+# A record whose only signal was `ready` (TASK-199)
+# ---------------------------------------------------------------------------
+
+
+def test_a_record_that_needs_human_input_without_open_questions_stays_enrolled():
+    """The eviction this signal exists to prevent.
+
+    `signals` gates enrollment, and for a record carrying a migration
+    placeholder every other signal is false: unlinked, unshipped, above the
+    quality threshold, asking no open question. Its classification used to be
+    `ready-for-confirmation`, so `ready` alone kept it in the queue. Reporting
+    the placeholder honestly moves it to `needs-human-input`, and without this
+    signal that would drop it out of the cache entirely -- making an honest
+    report strictly less visible than saying nothing. Measured: 0 candidates.
+    """
+    item = _item("ADR-001")
+    item["classification"] = "needs-human-input"
+
+    ranked = rank_proposed(_report([item]))
+
+    assert [entry["adr_id"] for entry in ranked] == ["ADR-001"]
+    assert "human input needed" in ranked[0]["reasons"]
+
+
+def test_the_human_input_reason_survives_the_sessionstart_truncation():
+    """Reason order is visibility, not decoration.
+
+    `hooks/adr_hook_core.py` prints `reasons[:2]` in the SessionStart block and
+    `reasons[:3]` in the auto-grill handoff, and the `age N days` entry is
+    appended unconditionally. A reason added after it would be true, stored, and
+    never read.
+    """
+    item = _item("ADR-001")
+    item["classification"] = "needs-human-input"
+
+    ranked = rank_proposed(_report([item]))
+
+    assert "human input needed" in ranked[0]["reasons"][:2]
+
+
+def test_a_placeholder_record_reaches_the_queue_end_to_end(tmp_path):
+    """Readiness and the queue agree about the same file (TASK-199).
+
+    The two halves are edited together and can drift apart, so this runs the
+    real path: an ADR on disk whose References hold what `bin/adr-migrate`
+    writes, through `build_readiness_report`, into `rank_proposed`.
+    """
+    from datetime import date
+
+    from adr_readiness import build_readiness_report
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    _write_adr(adr_dir, 1, references="- TODO: add verifiable references.")
+
+    report = build_readiness_report(
+        adr_dir, evaluated_on=date(2026, 7, 20), all_proposed=True
+    )
+    ranked = rank_proposed(report)
+
+    assert [entry["adr_id"] for entry in ranked] == ["ADR-001"]
+    assert ranked[0]["classification"] == "needs-human-input"
+    assert ranked[0]["command"] == "/adr-kit:grill ADR-001"
+    assert "human input needed" in ranked[0]["reasons"][:2]

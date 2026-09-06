@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from adr_catalog import build_relationships, load_adr_records, normalize_adr_id
-from adr_format import all_open_questions
+from adr_format import AdrFormatError, all_open_questions, placeholder_required_sections
 from adr_quality_core import QUALITY_THRESHOLD, score_path
 
 
@@ -85,6 +85,7 @@ FINDING_CODES = (
     "FORMAT_UNKNOWN",
     "FRONTMATTER_MALFORMED",
     "OPEN_QUESTION",
+    "SECTION_PLACEHOLDER_ONLY",
     "STATUS_UNKNOWN",
     "SUPERSESSION_STATE_INCONSISTENT",
     "VERIFIED_IN_CHANGED",
@@ -252,6 +253,62 @@ def _mechanical_findings(record: Dict) -> List[Dict[str, str]]:
     return sorted(findings, key=lambda item: item["code"])
 
 
+def _record_path(record: Dict, adr_dir: Optional[Path] = None) -> Optional[Path]:
+    """Resolve a record's bare filename against the ADR directory, or None.
+
+    Records reach readiness with `path` set to a filename and no directory, and
+    the test suite passes records whose file does not exist at all. Both are
+    normal, so this answers "no path" rather than raising.
+    """
+    raw = record.get("path")
+    if not raw:
+        return None
+    path = Path(str(raw))
+    if not path.is_absolute() and adr_dir is not None and not path.exists():
+        path = Path(adr_dir) / path.name
+    return path if path.is_file() else None
+
+
+def _placeholder_findings(
+    record: Dict, adr_dir: Optional[Path] = None
+) -> List[Dict[str, str]]:
+    """Required sections holding an adr-kit placeholder instead of an answer.
+
+    A migrated record reaches acceptance with `- TODO: add verifiable
+    references.` under `## References` and nothing refuses it: the completeness
+    gate treats a placeholder as content by decision, because an imported record
+    must not fail a blocking gate on arrival. The record then classifies
+    `ready-for-confirmation`, which is a lie about a record nobody has finished
+    writing. Saying so here reaches the operator before `adr accept` freezes it,
+    and readiness has no power to block, which is the point.
+
+    Empty sections are deliberately not reported: `bin/adr-lint` already fails
+    completeness on those, so acceptance refuses them without help.
+    """
+    path = _record_path(record, adr_dir)
+    if path is None:
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    try:
+        sections = placeholder_required_sections(text, str(record.get("format", "")))
+    except AdrFormatError:
+        # 'hybrid' and 'unknown' are legal values of record["format"], and
+        # neither resolves to a required-section list. Nothing to say, and
+        # raising here would be invisible: bin/adr-guardian swallows the
+        # exception and returns 0, so the queue would just go stale.
+        return []
+    return [
+        {
+            "code": "SECTION_PLACEHOLDER_ONLY",
+            "message": f"## {title} holds a migration placeholder, not an answer.",
+        }
+        for title in sorted(sections)
+    ]
+
+
 def _classification(
     record: Dict,
     mechanical: Sequence[Dict[str, str]],
@@ -293,6 +350,7 @@ def readiness_for_record(
         }
         for question in record.get("open_questions", [])
     ]
+    human.extend(_placeholder_findings(record, adr_dir))
     # Three booleans used to stand in for quality here, which meant a vague ADR
     # and a sharp one scored identically as long as both had a decision line and
     # a verified_in. The real weighted scorer existed the whole time behind
