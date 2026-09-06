@@ -190,19 +190,13 @@ def _section_text(content: str, heading: str) -> str:
     return m.group(1) if m else ""
 
 
-# Same rule as bin/adr-lint and adr_format.unfilled_required_sections: a heading
-# whose body is blank, or holds only the TODO placeholder adr-migrate writes, is
-# a hole rather than content. Kept in step across all three deliberately; a
-# record that one tool calls complete and another calls hollow is worse than
-# either verdict on its own.
-_PLACEHOLDER_LINE_RE = re.compile(r"^\s*(?:[-*+]\s*)?TODO\b", re.IGNORECASE)
-
-
+# Same rule as bin/adr-lint: a heading with nothing under it is a hole, not a
+# section. Emptiness only. A migration placeholder counts as content here by
+# decision, not by oversight: an imported record must not fail a blocking gate
+# on arrival (test_adr_policy.py, test_migration_discovery.py). adr-migrate
+# reports the placeholders it wrote instead, which informs without refusing.
 def _is_unfilled(body: str) -> bool:
-    lines = [ln for ln in body.splitlines() if ln.strip()]
-    if not lines:
-        return True
-    return all(_PLACEHOLDER_LINE_RE.match(ln) for ln in lines)
+    return not any(ln.strip() for ln in body.splitlines())
 
 
 def gate_completeness(content: str) -> Dict:

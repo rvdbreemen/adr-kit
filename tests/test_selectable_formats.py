@@ -613,12 +613,11 @@ def test_migration_reports_the_sections_it_could_not_fill(tmp_path):
     assert "needs content: ## References" in result.stdout
     assert "placeholder, not an answer" in result.stdout
 
-    # And the linter agrees, so the two halves cannot drift apart.
-    lint = run(
-        str(BIN / "adr-lint"), "--gates", "completeness", str(path)
-    )
-    assert lint.returncode == 1, lint.stdout
-    assert "References" in lint.stdout
+    # The report is the whole signal. The linter deliberately does NOT block on
+    # a placeholder (test_adr_policy.py), so naming the section here is what
+    # separates "imported, unfinished" from "imported, done".
+    lint = run(str(BIN / "adr-lint"), "--gates", "completeness", str(path))
+    assert lint.returncode == 0, lint.stdout
 
 
 def test_migration_stays_quiet_when_every_section_is_written(tmp_path):

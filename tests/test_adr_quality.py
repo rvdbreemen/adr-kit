@@ -228,8 +228,16 @@ def test_completeness_counts_an_empty_required_section_as_missing():
     )
 
 
-def test_completeness_counts_a_placeholder_only_section_as_missing():
-    """The TODO that adr-migrate writes is a hole, not content (TASK-198)."""
+def test_completeness_does_not_count_a_placeholder_section_as_missing():
+    """A migration placeholder is content for this gate, by decision (TASK-198).
+
+    The emptiness rule above deliberately stops at empty. `adr accept
+    --quality-threshold` reads this score, so treating the TODO that
+    adr-migrate writes as a hole would fail an honest import on arrival --
+    exactly what test_adr_policy.py decided against for the blocking lint
+    gate. The same rule has to hold on both scorers, or an imported record
+    passes one and fails the other.
+    """
     placeholder = re.sub(
         r"^## References\n.*\Z",
         "## References\n\n- TODO: add verifiable references.\n",
@@ -237,8 +245,7 @@ def test_completeness_counts_a_placeholder_only_section_as_missing():
         flags=re.M | re.S,
     )
     result = gate_completeness(placeholder)
-    assert result["score"] < 1.0
-    assert any(
+    assert not any(
         issue.code == "MISSING_SECTION" and "References" in issue.detail
         for issue in result["issues"]
     )

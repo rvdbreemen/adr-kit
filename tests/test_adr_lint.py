@@ -65,19 +65,22 @@ def test_present_but_empty_required_section_fails_completeness():
     assert any("References" in d and "empty" in d for d in details)
 
 
-def test_placeholder_only_required_section_fails_completeness():
-    """The TODO that adr-migrate writes is a hole, not content (TASK-198).
+def test_placeholder_only_required_section_does_not_block():
+    """A migration placeholder is content for this gate, by decision (TASK-198).
 
-    Without this, migrate and accept together walk an unfinished record into an
-    immutable Accepted state, because the placeholder counts as a non-empty body.
+    The emptiness rule above deliberately stops at empty. An imported record must
+    not fail a blocking gate on arrival, because a team that hits a wall on
+    import disables the gate rather than filling the section in; that is decided
+    and pinned in test_adr_policy.py and test_migration_discovery.py. Asserted
+    here too so a future tightening of `_is_unfilled` trips over the policy
+    instead of silently reversing it. adr-migrate names the placeholders it
+    wrote, which informs without refusing.
     """
     code, out = run_lint(
         "--gates", "completeness", str(FIXTURES / "placeholder-section")
     )
-    assert code == 1
-    details = _completeness_details(out)
-    assert details is not None
-    assert any("References" in d for d in details)
+    assert code == 0, out
+    assert _completeness_details(out) is None
 
 
 def test_absent_section_still_reported_as_plain_missing():

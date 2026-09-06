@@ -494,13 +494,6 @@ def scan_extra_migration_notices(
     return notices
 
 
-# A section carrying only the placeholder adr-migrate writes is not filled in.
-# Matched on the marker rather than the exact sentence so a reworded placeholder
-# still counts, and anchored to a list item or line start so prose that happens
-# to discuss a TODO elsewhere in the section does not suppress the finding.
-_PLACEHOLDER_LINE_RE = re.compile(r"^\s*(?:[-*+]\s*)?TODO\b", re.IGNORECASE)
-
-
 def _section_body(text: str, heading: str) -> Optional[str]:
     """Return the text between `heading` and the next H2, or None if absent."""
     match = _section_pattern(heading).search(text)
@@ -512,17 +505,17 @@ def _section_body(text: str, heading: str) -> Optional[str]:
 
 
 def _is_unfilled(body: str) -> bool:
-    """True when a section has no content a reader could act on.
+    """True when a required section has nothing under its heading at all.
 
-    Empty is the obvious case. The placeholder case matters just as much: a
-    required section that still says TODO is what adr-migrate writes when it
-    adds a missing heading, and treating that as content is what let a migrated
-    record walk straight into Accepted.
+    Emptiness only, deliberately. A migration placeholder is content for this
+    gate's purposes: ADR-policy already decided that an imported record must not
+    fail a blocking gate on arrival, because a team that hits a wall on import
+    turns the gate off instead of filling the section in. That decision is
+    pinned by test_adr_policy.py and test_migration_discovery.py, and this gate
+    is not the place to reopen it. adr-migrate names the placeholders it wrote,
+    which is the migrating team's to-do list rather than a refusal.
     """
-    lines = [ln for ln in body.splitlines() if ln.strip()]
-    if not lines:
-        return True
-    return all(_PLACEHOLDER_LINE_RE.match(ln) for ln in lines)
+    return not any(ln.strip() for ln in body.splitlines())
 
 
 def gate_completeness(text: str, required: List[str]) -> Optional[List[str]]:

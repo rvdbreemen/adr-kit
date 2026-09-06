@@ -78,21 +78,22 @@ reaching your agents, with exit code 0 throughout.
   `bin/adr accept` runs that gate with `--strict`, which made an empty heading
   enough to walk a record carrying no verifiable reference into an immutable
   Accepted state. The finding now separates the two cases, `References` against
-  `References (present but empty)`, because an author needs to know whether they
-  never wrote the section or left the placeholder in. The same hole existed in
-  `adr-quality`, whose section loop scored presence while three checks beside it
-  already measured emptiness for Decision, Alternatives and Consequences;
-  References and Related Decisions fell through that gap and
+  `References (present but empty)`, because an author needs to know whether the
+  section is missing or hollow. The rule stops at empty, deliberately: a
+  migration placeholder still counts as content, because an imported record must
+  not fail a blocking gate on arrival. The same hole existed in `adr-quality`,
+  whose section loop scored presence while three checks beside it already
+  measured emptiness for Decision, Alternatives and Consequences; References and
+  Related Decisions fell through that gap and
   `adr accept --quality-threshold` reads that score.
 - `adr-migrate` says which sections it could not fill. Converting a profile
   appends `- TODO: ...` into any required heading it has to add, which is honest
-  at write time but counts as content, so a migrated record passed completeness
-  immediately and nothing signalled that it was unfinished. Each such section is
-  now reported as `needs content: ## <heading>`, counting only what that run left
-  unfilled so a hole the author already had is not blamed on the migration. The
-  rule lives once, in `adr_format.unfilled_required_sections`, so the linter, the
-  quality score and the migrator cannot drift into disagreeing about the same
-  record.
+  at write time but counts as content by design, so a migrated record passed
+  completeness immediately and nothing signalled that it was unfinished. Each
+  such section is now reported as `needs content: ## <heading>`, counting only
+  what that run left unfilled so a hole the author already had is not blamed on
+  the migration. The report is the signal, not a refusal: the gates stay open on
+  a placeholder, which is what keeps a migrating team from disabling them.
 - Lifecycle commands no longer write `status_history` entries outside the
   `## Status History` section. `append_status_history` located its insertion
   point with `body.find("```")` over the whole remaining document, so on a
