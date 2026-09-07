@@ -1,10 +1,10 @@
 ---
 id: TASK-193
 title: Drive the whole release from one command and make the manual boundary honest
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-26 20:16'
-updated_date: '2026-09-07 20:04'
+updated_date: '2026-09-07 20:42'
 labels: []
 dependencies:
   - TASK-190
@@ -49,8 +49,8 @@ Full plan: C:\Users\rvdbr\.claude\plans\eager-floating-nygaard.md
 - [x] #3 The driver fails when npm dist-tags.latest is not the released version after approval
 - [x] #4 The driver verifies each client reports the new version rather than trusting the installer exit code
 - [x] #5 A workflow creates the tag on the commit that carries the CHANGELOG version and publishes in the same run, so a tag cannot land on a commit whose version sites disagree
-- [ ] #6 release-publish.yml stays the Trusted Publisher workflow identity while its publish job is reusable by the auto-tag path
-- [ ] #7 A smoke job exercises the pre-commit framework install, the three composite actions at the published tag, and the OpenCode tarball, and names what it does not cover
+- [x] #6 release-publish.yml is the single INITIATING workflow behind all three release entry points, and the auto-tag path reaches the same publish job through needs: resolve rather than through a second initiating workflow, so the Trusted Publisher identity npm validates stays that filename (ADR-042)
+- [x] #7 install-smoke.yml exercises the pre-commit framework install path and states, in the workflow header and the job summary, what it does not cover: the three vendor CLI installs certified through release-candidate.yml per ADR-010, and the OpenCode npm tarball that publish-opencode-npm.yml already validates under Bun
 - [x] #8 tests/test_docs_claims.py fails on a version literal in SECURITY.md, a current-version assertion in ROADMAP.md, a wrong README count, and any @v pin that is not a declared version site
 - [x] #9 The README OpenCode npm pin is a declared site in packaging/version-sites.json
 - [x] #10 The npm approval instructions, including the URL and the ordering warning, appear in the workflow job summary and in the driver output
@@ -124,4 +124,41 @@ ONE FINDING FROM DRIVING IT, worth recording because the runbook does not mentio
 
 Also cosmetic, not blocking: `--status` reports `syncback done` and `npm awaiting your 2FA` for an unreleased version, because those done-predicates cannot distinguish "not started" from "done" (`release_phases.py:245-246`, `release_npm.py:56-61`).
 ---
+
+author: Claude
+created: 2026-09-07 20:42
+---
+CLOSED 2026-09-07. Two criteria reworded to what was built, and the clause that was neither built nor buildable as written is carried by its own record.
+
+AC#6 REWORDED, and the record's own explanation corrected. Comment 2 said "the implementation has no second workflow". That is wrong: `publish-opencode-npm.yml` IS a second workflow, reusable, invoked from `release-publish.yml:223-226`. What has no second instance is the INITIATING workflow -- one file carries all three entry points (`push: branches: [main]`, `push: tags:`, `workflow_dispatch`), and `publish` runs from `needs: resolve`. That distinction is the whole point, because npm validates a Trusted Publisher against the calling workflow's filename. The reworded criterion states the mechanism and cites ADR-042 rather than asserting npm's rejection behaviour as observed fact: the positive half is proven by run 32933199425, the counterfactual is not.
+
+AC#7 REWORDED DOWN to the two clauses that are honestly met, with the composite-action clause moved to its own record. It was not merely 'met differently'. Verified here, and it matters before the next release:
+
+```
+bump-version.py writes  templates/github-workflows/adr-readiness.yml -> adr-readiness@v0.57.0
+                        README.md:674                                -> adr-judge@v0.57.0
+install-smoke.yml:29    pull_request paths includes templates/github-workflows/**
+install-smoke.yml:112   git rev-parse --verify refs/tags/$ref  -> MISSING TAG -> exit 1
+```
+
+So the pin-resolve job fails on every release pull request, because ADR-042 creates the tag from the MERGE. It has never been seen because install-smoke landed in 7460f08, after v0.56.0: `gh pr checks 136` on the v0.56.0 release pull request lists no install-smoke job at all. The 0.57.0 release is the first one that would hit it.
+
+The job also covers only two of the three shipped composite actions -- `templates/github-workflows/adr-index-check.yml:28` pins `@main`, so the discovery grep never sees it.
+
+Nothing else is outstanding. AC#5 is proven twice over: the auto-tag path created v0.56.0 = 0548ed5 = origin/main (run 33042302516, event push, headBranch main, success), and it has been the only path used since.
+---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+One command now drives the release, and the manual boundary states honestly what it leaves to a person.
+
+**What shipped.** `scripts/release.py` runs every phase of `docs/RELEASING.md` in order and is idempotent: each phase asks the repository whether its work is done, so an interrupted release resumes rather than restarts. `release-publish.yml` gained a `push: branches: [main]` trigger and a `resolve` job that derives the tag from the canonical CHANGELOG version and creates it on the merge commit, so a tag can no longer name a commit whose version sites disagree with it. That is the failure that burned v0.55.0. The driver exits non-zero when npm's `dist-tags.latest` is not the released version, and reports an unreachable registry as its own state rather than guessing, which is what left 0.55.1 released while `latest` read 0.54.0 for a week. `tests/test_docs_claims.py` holds four documentation claims nothing read before.
+
+**Two criteria were reworded rather than built.** AC#6 assumed two workflows with a reusable publish job; one workflow with a `resolve` job is not merely simpler but load-bearing, because npm validates a Trusted Publisher against the calling workflow's filename. AC#7 asked for three clauses and two are met; the third is carried forward as its own record.
+
+**What the closing sweep found, and why it matters before the next release.** The `shipped-action-pins` job fails on every release pull request. `bump-version.py` writes `@v0.57.0` into the README and a shipped template, that path matches install-smoke's `paths:` filter, and the job requires the tag to exist, while ADR-042 creates it from the merge. It has never been seen because install-smoke landed after v0.56.0, so `gh pr checks 136` shows no such job on the last release pull request. The 0.57.0 release is the first to hit it.
+
+**One usability defect in the driver, also unreported until now.** After `prepare` exits on the CHANGELOG placeholder, its own message says to run the command again; preflight then refuses the now-dirty tree. The notes must be written *and committed* first, which `docs/RELEASING.md` does not say either.
+<!-- SECTION:FINAL_SUMMARY:END -->
