@@ -47,6 +47,7 @@ def rank_proposed(report: dict) -> list[dict]:
         linked = bool(isinstance(link, dict) and link.get("linked"))
         shipped = bool(item.get("documents_shipped"))
         ready = item.get("classification") == "ready-for-confirmation"
+        needs_human = item.get("classification") == "needs-human-input"
         open_questions = bool(item.get("open_questions"))
         age_days = _age_days(item, evaluated_on)
         quality = item.get("quality", {})
@@ -67,7 +68,14 @@ def rank_proposed(report: dict) -> list[dict]:
         # Proposed ADR that is sharp, unlinked, unshipped, not ready and asking
         # nothing has no work attached to it, and listing it teaches the reader
         # to skim the queue.
-        signals = (linked, shipped, ready, open_questions, below_threshold)
+        # `needs_human` is here because the classification it names is the one
+        # that used to be `ready-for-confirmation`. A record whose References
+        # hold only a migration placeholder is unlinked, unshipped, above the
+        # quality threshold and asks no open question, so `ready` was its only
+        # signal; reporting the placeholder honestly would otherwise drop it out
+        # of the queue and make it LESS visible than saying nothing. Measured on
+        # ADR-042 with a placeholder: 0 candidates without this line.
+        signals = (linked, shipped, ready, open_questions, below_threshold, needs_human)
         if not any(signals):
             continue
 
@@ -80,6 +88,11 @@ def rank_proposed(report: dict) -> list[dict]:
             reasons.append("ready for confirmation")
         if open_questions:
             reasons.append("open human questions")
+        if needs_human and not open_questions:
+            # Before the unconditional age entry on purpose: the SessionStart
+            # block prints reasons[:2] and the auto-grill handoff reasons[:3],
+            # so a reason appended after it never reaches a human.
+            reasons.append("human input needed")
         if below_threshold:
             reasons.append(f"quality {quality_score:.3f} below {threshold:.2f}")
         reasons.append(f"age {age_days} days")
@@ -98,6 +111,7 @@ def rank_proposed(report: dict) -> list[dict]:
                     -int(shipped),
                     -int(ready),
                     -int(open_questions),
+                    -int(needs_human),
                     -int(below_threshold),
                     -age_days,
                     quality_score,

@@ -34,6 +34,7 @@ def _write_adr(
     status: str = "Proposed",
     open_questions: str = "None.",
     verified_in: list[str] | None = None,
+    references: str = "* tests/test_adr_readiness.py:1",
 ) -> Path:
     title = f"Decision {num}"
     metadata = {
@@ -88,7 +89,7 @@ def _write_adr(
 
         ## References
 
-        * tests/test_adr_readiness.py:1
+        {references}
         """
     )
     path = adr_dir / f"ADR-{num:03d}-decision-{num}.md"
@@ -559,3 +560,203 @@ def test_github_renderer_escapes_untrusted_title(tmp_path):
     assert result.returncode == 0
     assert "<script>" not in result.stdout
     assert "&lt;script&gt;" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Migration placeholders (TASK-199)
+# ---------------------------------------------------------------------------
+
+PLACEHOLDER_LIST_ITEM = "- TODO: add verifiable references."
+PLACEHOLDER_HTML_COMMENT = "<!-- TODO: add verifiable references. -->"
+
+
+def _placeholder_codes(record: dict) -> list[str]:
+    return [
+        finding["code"]
+        for finding in record["human_findings"]
+        if finding["code"] == "SECTION_PLACEHOLDER_ONLY"
+    ]
+
+
+@pytest.mark.parametrize(
+    "placeholder",
+    [
+        pytest.param(PLACEHOLDER_LIST_ITEM, id="cli-list-item"),
+        pytest.param(PLACEHOLDER_HTML_COMMENT, id="skill-html-comment"),
+    ],
+)
+def test_a_placeholder_section_is_reported_and_needs_human_input(tmp_path, placeholder):
+    """The record that reached acceptance unfinished (TASK-199).
+
+    Measured before this signal existed: a Proposed record whose `## References`
+    held only the line `bin/adr-migrate` writes classified
+    `ready-for-confirmation` with `next_command: None` and no finding at all.
+    That verdict was the defect. Both spellings are covered because
+    `tests/test_adr_policy.py` pins them as equivalent, and only one of them
+    used to be recognised.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    _write_adr(adr_dir, 1, references=placeholder)
+
+    report = build_readiness_report(
+        adr_dir, evaluated_on=date(2026, 7, 20), all_proposed=True
+    )
+    record = report["adrs"][0]
+
+    assert _placeholder_codes(record) == ["SECTION_PLACEHOLDER_ONLY"]
+    # Naming the section is the whole point: "something is unfinished" sends the
+    # reader back to diff the record against the template.
+    assert any(
+        "## References" in finding["message"]
+        for finding in record["human_findings"]
+    )
+    assert record["classification"] == "needs-human-input"
+    assert record["next_command"] == "/adr-kit:grill ADR-001"
+
+
+def test_a_placeholder_does_not_block_the_gate_that_accept_runs(tmp_path):
+    """Readiness reports; it must never become the refusal (TASK-198 policy).
+
+    `tests/test_adr_policy.py` and `tests/test_migration_discovery.py` decided
+    that an imported record must not fail a blocking gate on arrival. This
+    asserts the same record from the other side, so the two halves cannot drift:
+    readiness has something to say, and lint still has nothing.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, references=PLACEHOLDER_LIST_ITEM)
+
+    report = build_readiness_report(
+        adr_dir, evaluated_on=date(2026, 7, 20), all_proposed=True
+    )
+    assert _placeholder_codes(report["adrs"][0]) == ["SECTION_PLACEHOLDER_ONLY"]
+
+    lint = subprocess.run(
+        [
+            sys.executable,
+            str(BIN_DIR / "adr-lint"),
+            "--gates",
+            "completeness",
+            "--context-dir",
+            str(adr_dir),
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert lint.returncode == 0, lint.stdout
+
+
+def test_an_empty_section_is_not_called_a_placeholder(tmp_path):
+    """Two different holes, two different owners (TASK-199).
+
+    An empty required heading already FAILs completeness, so acceptance refuses
+    it without help here. Calling it a placeholder would be a false statement
+    about a record that is already blocked, and would send the author looking
+    for a TODO that is not there.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    _write_adr(adr_dir, 1, references="")
+
+    report = build_readiness_report(
+        adr_dir, evaluated_on=date(2026, 7, 20), all_proposed=True
+    )
+
+    assert _placeholder_codes(report["adrs"][0]) == []
+
+
+def test_placeholder_scan_stays_silent_when_the_file_cannot_be_read(tmp_path):
+    """Records reach readiness with no file behind them, and that is normal.
+
+    `readiness_for_record` is called with hand-built dicts carrying a bare
+    filename that exists nowhere. A raise here would be invisible in production:
+    `bin/adr-guardian` swallows every exception from the in-process refresh and
+    returns 0, so the queue would silently go stale for 24 hours while looking
+    healthy.
+    """
+    record = {
+        "adr_id": "ADR-001",
+        "path": "ADR-001-nowhere.md",
+        "status": "Proposed",
+        "title": "Nowhere",
+        "format": "madr",
+        "decision_text": "Chosen option: something.",
+        "open_questions": [],
+        "metadata_findings": [],
+        "verified_in": [],
+        "scope": [],
+    }
+
+    result = readiness_for_record(record, evaluated_on=date(2026, 7, 20))
+
+    assert _placeholder_codes(result) == []
+    assert result["classification"] == "ready-for-confirmation"
+
+
+@pytest.mark.parametrize("fmt", ["hybrid", "unknown"])
+def test_placeholder_scan_stays_silent_on_a_format_with_no_required_sections(
+    tmp_path, fmt
+):
+    """`hybrid` and `unknown` are legal values of record["format"].
+
+    They are what `detect_profile` returns for a record adr-kit cannot classify,
+    and `normalize_profile` raises on both. Neither resolves to a required
+    section list, so there is nothing to report -- and the raise must not
+    escape, for the same reason as the unreadable-file case above.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, references=PLACEHOLDER_LIST_ITEM)
+    record = {
+        "adr_id": "ADR-001",
+        "path": path.name,
+        "status": "Proposed",
+        "title": "Decision 1",
+        "format": fmt,
+        "decision_text": "Chosen option: something.",
+        "open_questions": [],
+        "metadata_findings": [],
+        "verified_in": [],
+        "scope": [],
+    }
+
+    result = readiness_for_record(
+        record, evaluated_on=date(2026, 7, 20), adr_dir=adr_dir
+    )
+
+    assert _placeholder_codes(result) == []
+
+
+def test_every_placeholder_section_is_reported_in_a_stable_order(tmp_path):
+    """The report is asserted byte-stable across runs, so order is contract.
+
+    `unfilled_required_sections` returns role-tuple order, not sorted order, so
+    the emission sorts explicitly rather than inheriting whatever the profile
+    table happens to list first.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    path = _write_adr(adr_dir, 1, references=PLACEHOLDER_LIST_ITEM)
+    text = path.read_text(encoding="utf-8")
+    text = text.replace(
+        "* Local implementation.\n* Hosted implementation.",
+        "- TODO: record the considered options.",
+    )
+    path.write_text(text, encoding="utf-8")
+
+    report = build_readiness_report(
+        adr_dir, evaluated_on=date(2026, 7, 20), all_proposed=True
+    )
+    messages = [
+        finding["message"]
+        for finding in report["adrs"][0]["human_findings"]
+        if finding["code"] == "SECTION_PLACEHOLDER_ONLY"
+    ]
+
+    assert messages == [
+        "## Considered Options holds a migration placeholder, not an answer.",
+        "## References holds a migration placeholder, not an answer.",
+    ]

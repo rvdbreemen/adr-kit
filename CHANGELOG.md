@@ -72,6 +72,45 @@ reaching your agents, with exit code 0 throughout.
 
 ### Fixed
 
+- `adr-readiness` says when a required section holds a migration placeholder
+  rather than an answer. A Proposed record whose `## References` contained only
+  the line `bin/adr-migrate` writes classified `ready-for-confirmation` with
+  `next_command: null` and no finding at all, which is a lie about a record
+  nobody has finished writing; nothing between the migration and `adr accept`
+  ever said otherwise, because the migrator prints its report once, to whoever
+  ran the command. The new `SECTION_PLACEHOLDER_ONLY` finding names each
+  section and moves the record to `needs-human-input`, which gives it a
+  `next_command` of `/adr-kit:grill`. Readiness cannot block and deliberately
+  gains no exit-1 path: the completeness gate still passes such a record on
+  arrival, because a team that hits a wall on import disables the gate.
+  Empty sections are not reported here, since `adr-lint` already fails
+  completeness on those. Measured across 212 real records (this repository's 43
+  and the 169-record OTGW corpus): zero new findings, so the signal fires only
+  on records that carry a placeholder.
+- The guardian queue no longer drops a record for being honest about itself.
+  Enrollment is gated on `signals = (linked, shipped, ready, open_questions,
+  below_threshold)`, and for exactly this population -- unlinked, unshipped,
+  quality above the threshold, no open questions -- `ready` was the only true
+  signal. Reporting the placeholder moves the classification off
+  `ready-for-confirmation`, which measured as 0 candidates: the honest report
+  would have made the record less visible than saying nothing. A `needs_human`
+  signal now carries it, with its reason placed before the unconditional
+  `age N days` entry so it survives the `reasons[:2]` cut the SessionStart
+  block applies.
+- `unfilled_required_sections` recognises both placeholder spellings. It matched
+  the `- TODO:` list item `bin/adr-migrate` writes but not the
+  `<!-- TODO: ... -->` comment the `/adr-kit:migrate` skill writes, while
+  `bin/adr-lint` has always stripped comments before counting and
+  `tests/test_adr_policy.py` pins the two as equivalent. A skill-migrated record
+  was therefore reported as finished. The helper also splits the two holes it
+  used to conflate: `placeholder_required_sections` returns only the sections
+  holding a placeholder, so a caller no longer has to describe an empty heading
+  and a TODO with the same words.
+- `adr-migrate` stopped telling the operator something false. It printed
+  "adr-lint reports them as incomplete and adr accept will refuse until they are
+  written"; measured, `adr-lint --strict` passes such a record and `adr accept`
+  does not refuse. It now says what actually happens and where the signal is.
+
 - A required section that is present but empty no longer counts as complete. The
   completeness gate tested whether the heading matched somewhere in the text and
   never looked at the body, so `## References` with nothing under it passed.
