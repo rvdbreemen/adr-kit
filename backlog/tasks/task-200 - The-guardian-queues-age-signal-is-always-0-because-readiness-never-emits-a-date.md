@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-06 15:11'
+updated_date: '2026-09-07 20:03'
 labels:
   - bug
   - readiness
@@ -30,3 +31,26 @@ tests/test_adr_guardian_queue.py builds its items by hand with an explicit 'date
 - [ ] #1 readiness emits a date field per record, and the queue's age reason reflects it
 - [ ] #2 A test exercises the age signal through build_readiness_report rather than a hand-built item dict, so the two halves cannot drift apart again
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-09-07 20:03
+---
+RECORD CORRECTION, 2026-09-07, from a release-readiness sweep. The defect reproduces exactly as written; one supporting detail in the evidence does not.
+
+The record says "the committed `docs/adr/.adr-kit-readiness.json`". That file is not committed and never was:
+
+```
+git ls-files --error-unmatch docs/adr/.adr-kit-readiness.json   not tracked
+git check-ignore -v docs/adr/.adr-kit-readiness.json            .gitignore:64
+```
+
+It is a local artefact, last written 2026-08-02 on this machine. That does not weaken the finding -- a live report run in this session showed the same `age 0 days` -- but it does change who can reproduce it: a reader cannot open the file in the repository, they have to run the report. Worth stating, because "committed" invites the next person to look for evidence that is not there.
+
+The cause itself is unchanged and still reproduces: `bin/adr_guardian_queue.py:34-36` reads `item.get('date')` while `readiness_for_record` (`bin/adr_readiness.py:345-373`) emits `evaluated_on` and no `date` key, so `_parse_date` gets None and `_age_days` returns 0 for every record.
+
+Still open, still not a release blocker: the failure is one wasted reason slot in the SessionStart block and an inert ranking term, and it ships in v0.56.0 already. The design question named in the record -- what `date` should mean, filed or last edit or last status change -- is the real gate on this work and is unanswered.
+---
+<!-- COMMENTS:END -->

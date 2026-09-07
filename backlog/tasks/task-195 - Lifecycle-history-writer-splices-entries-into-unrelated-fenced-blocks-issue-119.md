@@ -3,9 +3,10 @@ id: TASK-195
 title: >-
   Lifecycle history writer splices entries into unrelated fenced blocks (issue
   #119)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-26 21:01'
+updated_date: '2026-09-07 20:01'
 labels: []
 dependencies: []
 references:
@@ -50,10 +51,47 @@ DIRECTION: the search for the insertion point must be bounded to the history blo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An unfenced status_history block receives the new entry inside the ## Status History section, with the same result as the fenced form
-- [ ] #2 No lifecycle command can write a status_history entry outside the ## Status History section, whatever fenced blocks the document contains later
-- [ ] #3 A document with no later fence gains no second ## Status History section
-- [ ] #4 ADR-INDEX.json agrees with the frontmatter status after every lifecycle command, on both fenced and unfenced records
-- [ ] #5 Regression tests cover the fenced form, the unfenced-with-later-fence form and the unfenced-with-no-fence form, and fail against the current writer
-- [ ] #6 python -m pytest -q passes
+- [x] #1 An unfenced status_history block receives the new entry inside the ## Status History section, with the same result as the fenced form
+- [x] #2 No lifecycle command can write a status_history entry outside the ## Status History section, whatever fenced blocks the document contains later
+- [x] #3 A document with no later fence gains no second ## Status History section
+- [x] #4 ADR-INDEX.json agrees with the frontmatter status after every lifecycle command, on both fenced and unfenced records
+- [x] #5 Regression tests cover the fenced form, the unfenced-with-later-fence form and the unfenced-with-no-fence form, and fail against the current writer
+- [x] #6 python -m pytest -q passes
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-09-07 20:01
+---
+CLOSING THE RECORD, 2026-09-07. Fixed in 6b31ed1 and shipped in v0.56.0; the record was never updated. Issue #119 was closed 2026-08-27T05:12Z.
+
+RE-VERIFIED HERE rather than taken from the issue being closed:
+
+```
+git merge-base --is-ancestor 6b31ed1 origin/main       yes (shipped, not just on dev)
+pytest tests/test_adr_lifecycle.py -q                  36 passed in 17.49s
+```
+
+The fix is visible in the writer itself: `bin/adr` now bounds the search to the block with `body.find("```", start.end(), section_end)` instead of scanning the whole remaining document. That single bound is what kept the entry out of the `## Enforcement` JSON.
+
+AC#5 is the criterion worth naming, because it is the one that makes this stay fixed. `test_history_entry_lands_inside_the_section_whatever_fences_follow` is parameterised over all three shapes the record described -- unfenced with a later fence, fenced with a later fence, unfenced with no fence at all -- and asserts both that the section holds two entries and that nothing after it contains `changed_via`. The third shape covers the second failure mode, the appended duplicate `## Status History` that inverted chronology.
+
+AC#6: the full suite was not re-run here (~11 minutes). It ran green in CI on the pull request that carried the fix and on every run since. The targeted file above is the one that would fail if the writer regressed.
+---
+<!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Bounded the status-history writer to the section the reader parses, closing GitHub issue #119.
+
+**The defect.** `append_status_history` located its insertion point with `body.find("```")` over the whole remaining document. On a record whose `status_history` block carries no fence, which is the shape the shipped agent template emits, the entry landed in the next fenced block, in this project the `## Enforcement` JSON. The frontmatter read `Accepted` while `ADR-INDEX.json` went on reporting `Proposed`, with exit code 0 throughout. Since only Accepted ADRs are injected into agent context, a decision the maintainer had just signed silently stopped reaching any agent. A second shape, no later fence at all, appended a duplicate `## Status History` section and inverted chronology.
+
+**The fix.** The search is bounded to the history block (`body.find("```", start.end(), section_end)`), and the unfenced shape is handled as a first-class case rather than falling through to the append path. The reader was already the more permissive of the two and matches the shipped templates, so the writer is what changed. All five lifecycle commands benefit, since `accept`, `reject`, `propose`, `supersede` and `document` share one mutation path.
+
+**Tests.** `test_history_entry_lands_inside_the_section_whatever_fences_follow` is parameterised over the three shapes and asserts the section holds the new entry and that nothing below it does. Re-verified 2026-09-07: 36 passed in `tests/test_adr_lifecycle.py`.
+
+Shipped in v0.56.0 (commit 6b31ed1, confirmed an ancestor of `origin/main`). The record stayed In Progress for eleven days after the work landed; closed on evidence during a release-readiness sweep.
+<!-- SECTION:FINAL_SUMMARY:END -->

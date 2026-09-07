@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-06 15:40'
+updated_date: '2026-09-07 20:04'
 labels:
   - enhancement
   - readiness
@@ -39,3 +40,28 @@ Hard constraint inherited from TASK-198: it reports, it never refuses on arrival
 - [ ] #3 The finding is advisory: no exit code changes, and adr-lint still exits 0 on the record
 - [ ] #4 Cost is stated per run before spending, consistent with the existing guardian llm tier
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-09-07 20:04
+---
+CITATION CORRECTION, 2026-09-07. The record cites ADR-089 as the decision that "already decided the shape: declarative per commit, semantic on a cadence". No such ADR exists in this project.
+
+```
+git grep -l 'ADR-089' origin/dev
+  backlog/tasks/task-203..., backlog/tasks/task-204...
+  tests/test_adr_query.py, tests/test_adr_retrieval_health.py
+  tests/testsets/otgw-firmware/adrs/ADR-089-heap-tier-machine-contract.md
+```
+
+Every hit outside the two backlog records is the OTGW firmware corpus, a test fixture. The highest real decision in `docs/adr` is ADR-042.
+
+THE DECISION THE RECORD MEANS is ADR-002, whose Decision Outcome names the two-tier cadence in those words: "cheap tier (declarative drift via `adr-judge`, stale ...)" at `docs/adr/ADR-002-adr-guardian-session-start-staleness-detector.md:73`, with the bi-weekly LLM tier alongside it. ADR-036 carries the companion terms, that the advisory LLM tier is not the enforcement tier at commit time.
+
+This matters beyond tidiness: the argument for putting the semantic judgement on the guardian's LLM tier rests on an existing decision, and a reader who tries to check that reasoning against ADR-089 finds a heap-memory contract for a firmware project. Cite ADR-002.
+
+The proposal itself is unaffected and still open. Not a release blocker.
+---
+<!-- COMMENTS:END -->
