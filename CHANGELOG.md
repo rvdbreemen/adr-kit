@@ -4,6 +4,13 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+Two gates get stricter. `adr-lint --strict` and `bin/adr accept` now fail a
+required section that is present but empty (`missing sections: ['References
+(present but empty)']`), and the lifecycle commands exit 2 on a Status line that
+records more than one transition. A pipeline that was green on a hollow
+`## References` goes red on upgrade; fill the section. A migration placeholder
+still passes.
+
 ### Added
 
 - One command now drives a release. `python scripts/release.py X.Y.Z` runs every
@@ -39,43 +46,54 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   installer's exit code, which has reported success while leaving clients on the
   previous version.
 
-## [0.56.0] - 2026-08-27
-
-The release now tags itself. `release-publish.yml` reads the CHANGELOG version
-on a push to `main` and creates the tag on the commit that carries it, so a tag
-can no longer name a commit whose version sites disagree with it. That is the
-failure that burned v0.55.0. Nothing to do on upgrade.
-
-Two lifecycle defects are fixed that both ended in a decision silently not
-reaching your agents, with exit code 0 throughout.
-
-### Added
-
-- `release-publish.yml` creates the release tag from the merged `main` commit
-  and publishes in the same run, and its job summary now carries the npm
-  approval steps, the staged-packages URL, and the warning that npm sets
-  `latest` to the version published last. The instruction used to live only in
-  `docs/RELEASING.md`, which is why three staged versions sat unapproved for a
-  week. Recorded in
-  [ADR-042](docs/adr/ADR-042-drive-the-release-from-the-maintainer-s-machine-and-create-the-tag-from-the-merge.md),
-  which amends ADR-012's automation boundary.
-- `scripts/check-release-version.py --print-canonical` prints the canonical
-  CHANGELOG version and nothing else, so the workflow derives the tag from the
-  same registry entry the gate compares against.
-- `tests/test_docs_claims.py` holds four documentation claims that nothing read
-  before: the counts the README advertises, no version literal in
-  `SECURITY.md`'s supported-versions section, no current-version assertion in
-  `ROADMAP.md`'s status section, and every action pin in a file users copy must
-  be a declared version site.
-- `adr_format.section_span()` returns the offsets `section_text()` already
-  computed, so a writer can place content inside the bounds the reader parses.
-
 ### Fixed
 
+- Lifecycle commands refuse to discard a transition the Status line still
+  carries. On an ADR that predates the `## Status History` convention, `accept`,
+  `reject`, `propose`, `supersede` and `document` seed one recovered entry from
+  the Status line before replacing it, but the reader took only the leading
+  status and the first date. A line such as `Superseded by ADR-088, 2026-08-07.
+  Originally Accepted, 2026-05-08.` yielded exactly the transition a `supersede`
+  repair was about to write, the equality check returned early, and the line was
+  overwritten with exit 0: the history then asserted the record's first-ever
+  transition was Superseded. The command now exits 2, naming the file, the line,
+  what it kept and what it would lose, and changes nothing; write the
+  `## Status History` block first, then re-run. The recovered entry's `reason`
+  also carries the Status line verbatim, so a `Decision Maker:` attribution or
+  any other prose the parser has no field for survives instead of being dropped.
+  `templates/adr-kit-guide.md` documents both refusal conditions.
+  ([#120](https://github.com/rvdbreemen/adr-kit/issues/120))
+- A required section that is present but empty no longer counts as complete. The
+  completeness gate tested whether the heading matched somewhere in the text and
+  never looked at the body, so `## References` with nothing under it passed.
+  `bin/adr accept` runs that gate with `--strict`, which made an empty heading
+  enough to walk a record carrying no verifiable reference into an immutable
+  Accepted state. The finding now separates the two cases, `References` against
+  `References (present but empty)`, because an author needs to know whether the
+  section is missing or hollow. The rule stops at empty, deliberately: a
+  migration placeholder still counts as content, because an imported record must
+  not fail a blocking gate on arrival. The same hole existed in `adr-quality`,
+  whose section loop scored presence while three checks beside it already
+  measured emptiness for Decision, Alternatives and Consequences; References and
+  Related Decisions fell through that gap and
+  `adr accept --quality-threshold` reads that score.
+- `adr-migrate` says which sections it could not fill. Converting a profile
+  appends `- TODO: ...` into any required heading it has to add, which is honest
+  at write time but counts as content by decision, so a migrated record passes
+  completeness and nothing said it was unfinished. Each such section is now
+  reported as `needs content: ## <heading>`, counting only what that run left
+  unfilled so a hole the author already had is not blamed on the migration. That
+  report is the whole signal, and deliberately not a refusal: the gates stay open
+  on a placeholder, which is what keeps a migrating team from disabling them.
+  Measured on a real record whose `## References` holds only
+  `- TODO: add verifiable references.`, the acceptance gate set still passes it
+  (`adr-quality` scores it 0.87, grade A), while the same record with an empty
+  `## References` is blocked with
+  `missing sections: ['References (present but empty)']`.
 - `adr-readiness` says when a required section holds a migration placeholder
   rather than an answer. A Proposed record whose `## References` contained only
-  the line `bin/adr-migrate` writes classified `ready-for-confirmation` with
-  `next_command: null` and no finding at all, which is a lie about a record
+  the line `bin/adr-migrate` writes classified `ready-for-confirmation` and
+  carried no finding at all, which is a lie about a record
   nobody has finished writing; nothing between the migration and `adr accept`
   ever said otherwise, because the migrator prints its report once, to whoever
   ran the command. The new `SECTION_PLACEHOLDER_ONLY` finding names each
@@ -111,33 +129,39 @@ reaching your agents, with exit code 0 throughout.
   written"; measured, `adr-lint --strict` passes such a record and `adr accept`
   does not refuse. It now says what actually happens and where the signal is.
 
-- A required section that is present but empty no longer counts as complete. The
-  completeness gate tested whether the heading matched somewhere in the text and
-  never looked at the body, so `## References` with nothing under it passed.
-  `bin/adr accept` runs that gate with `--strict`, which made an empty heading
-  enough to walk a record carrying no verifiable reference into an immutable
-  Accepted state. The finding now separates the two cases, `References` against
-  `References (present but empty)`, because an author needs to know whether the
-  section is missing or hollow. The rule stops at empty, deliberately: a
-  migration placeholder still counts as content, because an imported record must
-  not fail a blocking gate on arrival. The same hole existed in `adr-quality`,
-  whose section loop scored presence while three checks beside it already
-  measured emptiness for Decision, Alternatives and Consequences; References and
-  Related Decisions fell through that gap and
-  `adr accept --quality-threshold` reads that score.
-- `adr-migrate` says which sections it could not fill. Converting a profile
-  appends `- TODO: ...` into any required heading it has to add, which is honest
-  at write time but counts as content by decision, so a migrated record passes
-  completeness and nothing said it was unfinished. Each such section is now
-  reported as `needs content: ## <heading>`, counting only what that run left
-  unfilled so a hole the author already had is not blamed on the migration. That
-  report is the whole signal, and deliberately not a refusal: the gates stay open
-  on a placeholder, which is what keeps a migrating team from disabling them.
-  Measured on a real record whose `## References` holds only
-  `- TODO: add verifiable references.`, the acceptance gate set still passes it
-  (`adr-quality` scores it 0.87, grade A), while the same record with an empty
-  `## References` is blocked with
-  `missing sections: ['References (present but empty)']`.
+## [0.56.0] - 2026-08-27
+
+The release now tags itself. `release-publish.yml` reads the CHANGELOG version
+on a push to `main` and creates the tag on the commit that carries it, so a tag
+can no longer name a commit whose version sites disagree with it. That is the
+failure that burned v0.55.0. Nothing to do on upgrade.
+
+Two lifecycle defects are fixed that both ended in a decision silently not
+reaching your agents, with exit code 0 throughout.
+
+### Added
+
+- `release-publish.yml` creates the release tag from the merged `main` commit
+  and publishes in the same run, and its job summary now carries the npm
+  approval steps, the staged-packages URL, and the warning that npm sets
+  `latest` to the version published last. The instruction used to live only in
+  `docs/RELEASING.md`, which is why three staged versions sat unapproved for a
+  week. Recorded in
+  [ADR-042](docs/adr/ADR-042-drive-the-release-from-the-maintainer-s-machine-and-create-the-tag-from-the-merge.md),
+  which amends ADR-012's automation boundary.
+- `scripts/check-release-version.py --print-canonical` prints the canonical
+  CHANGELOG version and nothing else, so the workflow derives the tag from the
+  same registry entry the gate compares against.
+- `tests/test_docs_claims.py` holds four documentation claims that nothing read
+  before: the counts the README advertises, no version literal in
+  `SECURITY.md`'s supported-versions section, no current-version assertion in
+  `ROADMAP.md`'s status section, and every action pin in a file users copy must
+  be a declared version site.
+- `adr_format.section_span()` returns the offsets `section_text()` already
+  computed, so a writer can place content inside the bounds the reader parses.
+
+### Fixed
+
 - Lifecycle commands no longer write `status_history` entries outside the
   `## Status History` section. `append_status_history` located its insertion
   point with `body.find("```")` over the whole remaining document, so on a
