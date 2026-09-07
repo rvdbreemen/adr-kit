@@ -1,10 +1,10 @@
 ---
 id: TASK-189
 title: Refresh the stale Claude marketplace plugin description
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-26 18:58'
-updated_date: '2026-08-26 19:01'
+updated_date: '2026-09-07 20:01'
 labels: []
 dependencies: []
 references:
@@ -33,7 +33,7 @@ Related finding, deliberately NOT in this task's scope: `SECURITY.md:43` states 
 - [x] #1 The plugins[0].description in .claude-plugin/marketplace.json names no frozen version marker and describes the capabilities that ship at 0.55.x
 - [x] #2 python scripts/build-client-adapters.py --check reports changed=0 after the edit
 - [x] #3 The generated codex/ and copilot/ trees are not hand-edited
-- [ ] #4 The change lands in dev through a pull request with green CI
+- [x] #4 The change lands in dev through a pull request with green CI
 <!-- AC:END -->
 
 ## Comments
@@ -75,4 +75,35 @@ pytest (gericht, 3 bestanden)               38 passed in 72.34s
 
 De gerichte run dekt `test_client_adapter_generation.py`, `test_release_allowlist.py` en `test_bump_version.py` — de drie bestanden die de manifesten en de generator toetsen. De volledige suite draait op de PR; voor een eenregelige beschrijvingswijziging is dat de juiste verdeling, en ik meld dit expliciet in plaats van 'alle tests groen' te schrijven op basis van een deelverzameling.
 ---
+
+author: Claude
+created: 2026-09-07 20:01
+---
+CLOSING THE RECORD, 2026-09-07. The work shipped nine days before this check; only the record was stale.
+
+AC#4 verified rather than assumed:
+
+```
+gh pr view 131      MERGED 2026-08-26T19:07:08Z, merge commit 66701a3
+gh pr checks 131    all pass (pytest, validate, ADR Enforcement, indexes,
+                    adr-lint smoke, 6 x Python 3.10/3.12 matrix jobs)
+git grep 'v0.33' origin/main -- .claude-plugin/marketplace.json   0 matches
+```
+
+The last line is the one that matters: the marker is gone from `main`, not merely from `dev`, so the description users read in the Claude Code marketplace listing is the corrected one. It shipped in v0.56.0.
+
+The related SECURITY.md finding this record deliberately left out of scope was closed separately by TASK-190 / PR #132; `git grep 'v0.33' origin/dev -- SECURITY.md` returns nothing.
+---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Replaced the frozen "v0.33 local governance tools" marker in `.claude-plugin/marketplace.json` with a description of what actually ships. One line, one file.
+
+The listing is the first thing the project says about itself to a Claude Code user deciding whether to install, and it was advertising a capability set as new that was twenty-two minor versions old.
+
+Shipped in v0.56.0 through PR #131 (merge commit 66701a3, 2026-08-26) with every check green. Confirmed present on `origin/main`, not only on `dev`.
+
+The record sat In Progress for nine days after the work landed. Closed on evidence during a release-readiness sweep, not on recollection.
+<!-- SECTION:FINAL_SUMMARY:END -->

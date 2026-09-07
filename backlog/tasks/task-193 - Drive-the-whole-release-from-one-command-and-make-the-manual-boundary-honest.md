@@ -4,7 +4,7 @@ title: Drive the whole release from one command and make the manual boundary hon
 status: In Progress
 assignee: []
 created_date: '2026-08-26 20:16'
-updated_date: '2026-08-27 17:57'
+updated_date: '2026-09-07 20:04'
 labels: []
 dependencies:
   - TASK-190
@@ -107,5 +107,21 @@ The four states are decided once in `npm_state` rather than by two predicates ca
 Also caught: `tests/test_python_compatibility.py` globs `scripts/*.py`, so a new module has to satisfy the Python 3.10 grammar guard as well as the ADR-010 budget list. Green.
 
 **Merge-gate note worth keeping.** `dev` requires only `validate`, which runs a filtered test list; the six `python-compatibility` matrix jobs that run the complete suite are not required there. `--auto` can therefore merge before the full suite finishes, which is what happened on #142. #143 was merged only after all six were green. `gh pr merge --disable-auto` is refused once a PR has merged, so the choice has to be made when the PR is opened.
+---
+
+author: Claude
+created: 2026-09-07 20:04
+---
+RE-CHECKED 2026-09-07 during a release-readiness sweep. Nothing changed since the 2026-08-27 notes; this records the verification and the one new data point.
+
+AC#5 IS NOW PROVEN TWICE. The auto-tag path created `v0.56.0` = `0548ed5` = `origin/main` (`gh run list --workflow release-publish.yml`, run 33042302516, event `push`, headBranch `main`, success). That was the first real use; it has since been the only path used.
+
+AC#6 remains met in substance by a single workflow rather than the two the criterion describes: `.github/workflows/release-publish.yml:24-28` triggers on push to `main`, the `resolve` job at :44 creates the tag, and `publish` at :96-97 depends on it. The recommendation in the previous comment stands -- amend the wording to what was built, because npm validates a Trusted Publisher against the CALLING workflow's filename, which makes the two-workflow shape actively wrong rather than merely more complex.
+
+AC#7 unchanged: the pre-commit framework install path is exercised, the job names what it does not cover, and the composite actions are checked for resolvability at the published tag rather than executed there. `uses:` does not accept an expression, so executing at the released tag needs a hardcoded literal pin that cannot resolve on a `pull_request` run. Still a maintainer decision: amend AC#7, or split the tag-gated execution job into its own task.
+
+ONE FINDING FROM DRIVING IT, worth recording because the runbook does not mention it. Executed in a scratch clone with the push URL neutered, `python scripts/release.py 0.57.0` bumps 21 files and exits 1 on the CHANGELOG placeholder, which is by design. Running the same command again then exits 1 in preflight on the now-dirty tree (`release_phases.py:61-66`, and `preflight_done` always returns False at :55-56). The driver's own message says "run this command again - everything else is already in place", which is not literally followable: the notes have to be written AND committed first. `docs/RELEASING.md:129-159` does not say so either. A one-line fix to the error text, or a task of its own.
+
+Also cosmetic, not blocking: `--status` reports `syncback done` and `npm awaiting your 2FA` for an unreleased version, because those done-predicates cannot distinguish "not started" from "done" (`release_phases.py:245-246`, `release_npm.py:56-61`).
 ---
 <!-- COMMENTS:END -->

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-07 05:34'
+updated_date: '2026-09-07 20:04'
 labels:
   - enhancement
   - adr
@@ -36,3 +37,21 @@ Deliberately not proposing a mechanism here. A fully general 'is this decision i
 - [ ] #3 If the conclusion is that no deterministic check is possible, that conclusion is written down with its reasoning and the review-checklist alternative, and the task closes on that rather than on a half-check that reports green
 - [ ] #4 Whatever ships does not add a blocking gate that fires on arrival: an imported or legacy record must stay satisfiable by editing it (spec R15)
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-09-07 20:04
+---
+CITATION CORRECTION, 2026-09-07, the same one as on TASK-203; both records were filed in the same pass and inherited it.
+
+The description says a semantic scope question "belongs to the LLM tier under ADR-089 if anywhere". ADR-089 is not a decision of this project. `git grep -l 'ADR-089' origin/dev` finds it only in these two backlog records and in `tests/testsets/otgw-firmware/adrs/ADR-089-heap-tier-machine-contract.md`, a fixture corpus from another codebase. `docs/adr` stops at ADR-042.
+
+The tiering decision meant here is ADR-002 (the guardian's cheap declarative tier per commit, LLM tier on a cadence, `docs/adr/ADR-002...md:73`), with ADR-036 for the rule that the LLM tier stays advisory while the declarative gates enforce at commit time.
+
+The deterministic subset this record suggests -- checking a scope claim against the Enforcement `path_glob` -- is unaffected by the correction and remains the more promising half of the idea, since it needs no LLM at all.
+
+Still To Do, not a release blocker.
+---
+<!-- COMMENTS:END -->

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-08-23 21:41'
-updated_date: '2026-08-26 17:58'
+updated_date: '2026-09-07 20:04'
 labels:
   - adr
   - governance
@@ -264,5 +264,31 @@ NIET AFGEVINKT, EN WAAROM:
 * **AC#5** — onveranderd de openstaande maintainer-keuze uit de Implementation Notes: het 100 ms edit-budget dat deze AC noemt is door ADR-030 vervangen (`hooks/manifest.json` geeft `pre-tool-use` nu 450/550/1100). Herformuleer de AC naar de ADR-030-budgetten en vink hem af, óf maak een aparte taak voor een certificatierun op de verklaarde runner. Ik heb de AC-tekst niet gewijzigd, want dat is jouw beslissing.
 * **AC#8** — de correctie op TASK-127 staat in de Implementation Notes van dit record; of dat als 'gecorrigeerd' telt is een recordbeslissing, geen meting.
 * **AC#9** — moot: dit is de terugdraai-clausule, en optie 1 (uitvoeren) is gekozen en uitgevoerd.
+---
+
+author: Claude
+created: 2026-09-07 20:04
+---
+STATE OF PLAY, 2026-09-07, verified against origin/main rather than against this record's own notes. The substance shipped; what is left is record-keeping and one measurement, and AC#5 asks for a budget that no longer exists.
+
+SHIPPED AND CONFIRMED IN v0.55.1:
+
+```
+git ls-tree -r --name-only origin/main | grep -cE 'hooks/(bin|native)/'   0   (AC#1, AC#2)
+git grep ADR_KIT_NATIVE_HOOK origin/dev                                   only history, guards
+                                                                          and tests asserting
+                                                                          the token is inert (AC#3, AC#6)
+ADR-029 frontmatter: documents_shipped true, verified_in names three tests (AC#7)
+```
+
+Option 1 was executed, so AC#9 (the supersession route, had the maintainer chosen to reverse) is moot and should be struck rather than left hanging.
+
+AC#5 NAMES A BUDGET THAT NO LONGER EXISTS. The criterion asks for the edit-tier events measured against 100 ms. ADR-030 recalibrated the budgets to the Python host that actually ships, and `hooks/manifest.json:48-55` now declares the edit tier at 1100 ms hard, 450 ms p50, 550 ms p95. The measurement ADR-030 was decided on is recorded at `docs/hook-performance.md:99` under "Python-only measurement, 2026-08-24". So the work AC#5 describes was done under a different number, by a later decision. It should be reworded to the ADR-030 budgets and ticked, not left open against a figure the project has retired.
+
+GENUINELY OUTSTANDING:
+* AC#4 -- the per-event record comparison against a Python oracle, on Windows and POSIX, was never run. This is the only criterion that still asks for work.
+* AC#8 -- `backlog/completed/task-127...md:86` still reads "The remaining seven had shipped implementations", which is the premise this record disproved for ADR-029. The correction lives only here. TASK-127 is in `completed/` and not editable through the tool, so closing AC#8 needs a maintainer decision on whether to amend an archived record at all.
+
+Nothing here blocks a release: the shipped product carries no native binary on any client.
 ---
 <!-- COMMENTS:END -->
