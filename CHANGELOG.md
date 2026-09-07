@@ -28,6 +28,19 @@ still passes.
   are not installable on a hosted runner and stay certified from retained
   Windows evidence (ADR-010).
 
+- A gate refusing a CHANGELOG entry appended to a section that has already
+  shipped. `release-publish.yml` publishes a `## [X.Y.Z]` section verbatim as
+  its GitHub Release body and section membership is positional, so a bullet
+  written under a released heading is absent from the next release's notes and
+  claimed by a release that does not contain it. That reached `dev` twice before
+  a human sweep found it, because the diff carries `### Fixed` as unchanged
+  context and reads like a correct addition. The check compares the number of
+  top-level bullets against the same section at its tag rather than the text:
+  measured over the 59 sections that can be compared, six differ from their tag
+  today and every one is a correction, which a byte-identity rule would fail.
+  Sections whose tag carries no CHANGELOG are reported as skipped rather than
+  passed. It runs in `validate`, the only required check on `dev`.
+
 ### Changed
 
 - The driver now exits non-zero when npm serves a different version than the one

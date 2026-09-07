@@ -76,6 +76,10 @@ def test_task_40_python_modules_stay_within_adr_010_line_budgets():
         # The release driver (ADR-042). Its phases live in the support modules
         # below, so this stays the thin orchestration layer it is meant to be.
         "scripts/release.py",
+        # A CI gate, not a shipped artifact, so it is deliberately absent from
+        # packaging/public-artifacts.json. Budgeted anyway: it is the kind of
+        # check that grows a special case per incident.
+        "scripts/check-changelog-sections.py",
     )
     support_modules = (
         "scripts/adr_settings.py",

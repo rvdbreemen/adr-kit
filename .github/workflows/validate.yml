@@ -10,7 +10,11 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      # Full history and tags: the released-section check below reads
+      # CHANGELOG.md at each release tag, and a shallow clone has neither.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate plugin.json syntax
         run: jq empty .claude-plugin/plugin.json
@@ -151,6 +155,15 @@ jobs:
           python bin/adr-index --check docs/adr
           python -m pip install pytest
           python -m pytest tests/test_agent_installer.py tests/test_adr_mcp.py tests/test_bump_version.py tests/test_python_check.py tests/test_documentation_contracts.py tests/test_packaging_contract.py tests/test_client_adapter_generation.py tests/test_client_generator_performance.py tests/test_release_allowlist.py tests/test_client_certification.py
+
+      # A released section is published verbatim as its GitHub Release body, so
+      # a bullet appended to one is lost from the next release's notes and
+      # falsely claimed by a release that does not contain it. That reached dev
+      # through two separate pull requests before anything looked: both diffs
+      # carry `### Fixed` as unchanged context, which reads like a correct
+      # addition unless you map the line numbers back to the nearest heading.
+      - name: No CHANGELOG entry was appended to an already released section
+        run: python scripts/check-changelog-sections.py
 
       # The kit's own ADRs, at the default gate set. Until now this ran only in
       # the Monday guardian cron and, with --strict, at release, so a missing
