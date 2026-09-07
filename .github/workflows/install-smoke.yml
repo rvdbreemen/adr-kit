@@ -103,6 +103,14 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --tags --quiet
+          # The version this branch is releasing, read the way validate.yml
+          # reads it. On a release pull request bump-version.py has already
+          # rewritten the shipped pins to it, while ADR-042 does not create the
+          # tag until the merge, so that one pin cannot resolve yet and failing
+          # on it would redden every release pull request. Any OTHER unborn tag
+          # is still a defect: a pin left behind by a rename or a typo.
+          releasing=$(grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md \
+                      | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/v\1/')
           status=0
           while IFS= read -r pin; do
             action="${pin%@*}"
@@ -110,6 +118,9 @@ jobs:
             name="${action##*/}"
             printf '%-46s ' "$name@$ref"
             if ! git rev-parse -q --verify "refs/tags/$ref" >/dev/null; then
+              if [ "$ref" = "$releasing" ]; then
+                echo "pending: this release creates it from the merge"; continue
+              fi
               echo "MISSING TAG"; status=1; continue
             fi
             if git cat-file -e "$ref:.github/actions/$name/action.yml" 2>/dev/null; then
@@ -129,13 +140,31 @@ jobs:
           ## Installation smoke: scope
 
           Covered here: the pre-commit framework install path from
-          `.pre-commit-hooks.yaml`, and that every action pin shipped in the
-          README and the templates names a tag that exists and still defines
-          that action.
+          `.pre-commit-hooks.yaml`, and that every VERSION-PINNED action shipped
+          in the README and the templates names a tag that exists and still
+          defines that action. The pin for the version this branch is releasing
+          is reported as pending rather than failing, because ADR-042 creates
+          that tag from the merge.
 
           **Not covered, and not claimed:** installing into Claude Code, Codex
           or the standalone GitHub Copilot CLI. Those vendor CLIs are not
           installable on a hosted runner. They are certified from externally
           retained Windows evidence through `release-candidate.yml` (ADR-010).
           A green run here says nothing about them.
+
+          **Also not covered:** the `@main` pins. `templates/github-workflows/`
+          ships `adr-judge` and `adr-index-check` at `@main` and `adr-readiness`
+          at a version, so the discovery grep sees only the last of the three.
+          A moving ref has nothing to resolve against, so it is out of scope
+          here rather than silently skipped; whether shipped templates should
+          pin a version at all is a product decision, not this job's.
+
+          **And not built, deliberately:** executing those actions at the
+          released tag, rather than checking that they resolve. `uses:` takes no
+          expression, so it needs a literal pin, which cannot resolve on a
+          `pull_request` run because the tag does not exist yet. The only
+          remaining trigger is the tag push, and that never fires for a tag this
+          project creates: the auto-created `v0.56.0` started zero workflow
+          runs, while the hand-pushed `v0.55.0` started one. A tag-gated job
+          would therefore never execute. Reasoned in TASK-207.
           SUMMARY
