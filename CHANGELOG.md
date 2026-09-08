@@ -4,12 +4,21 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
-Two gates get stricter. `adr-lint --strict` and `bin/adr accept` now fail a
-required section that is present but empty (`missing sections: ['References
-(present but empty)']`), and the lifecycle commands exit 2 on a Status line that
-records more than one transition. A pipeline that was green on a hollow
-`## References` goes red on upgrade; fill the section. A migration placeholder
-still passes.
+## [0.57.0] - 2026-09-08
+
+This release makes two gates stricter, and both can turn a pipeline that was
+green on 0.56.0 red on upgrade. `adr-lint --strict` and `bin/adr accept` now
+fail a required section that is present but empty, reporting
+`missing sections: ['References (present but empty)']`; fill the section, and
+note that a migration placeholder still passes deliberately, so an imported
+record is never blocked on arrival. The lifecycle commands now exit 2 rather
+than 0 when an ADR's Status line records a transition they would otherwise
+discard; write the `## Status History` block and re-run.
+
+Everything else is a release the project can now run on itself. One command
+drives it end to end, the tag is created from the merge rather than typed, and
+`adr-readiness` says when a record holds a placeholder instead of an answer
+rather than reporting it ready.
 
 ### Added
 
@@ -36,13 +45,24 @@ still passes.
   a human sweep found it, because the diff carries `### Fixed` as unchanged
   context and reads like a correct addition. The check compares the number of
   top-level bullets against the same section at its tag rather than the text:
-  measured over the 59 sections that can be compared, six differ from their tag
-  today and every one is a correction, which a byte-identity rule would fail.
-  Sections whose tag carries no CHANGELOG are reported as skipped rather than
-  passed. It runs in `validate`, the only required check on `dev`.
+  measured over the 70 sections that can be compared, several differ from their
+  tag today and every one is a correction, which a byte-identity rule would
+  fail. Both tag spellings this repository ships are resolved, `v0.56.0` and the
+  older `adr-kit--v0.1.0`, so only six sections cannot be compared at all, and
+  those are reported as skipped rather than passed. It runs in `validate`, the
+  only required check on `dev`.
 
 ### Changed
 
+- The driver recognises an unwritten release section by its shape rather than by
+  the word `TODO` appearing anywhere in it. `bump-version.py` inserts a
+  `- TODO: describe this release.` list item and the driver must refuse to
+  publish that as a Release body, but the substring test also refused this very
+  release, whose notes describe placeholder detection and therefore quote
+  `- TODO:` markers five times. A gate that will not let a release describe its
+  own subject leaves the author no move except worse notes. A leftover TODO list
+  item is still caught, which comparing against the exact scaffold string would
+  have missed.
 - The driver now exits non-zero when npm serves a different version than the one
   released. `npm` sets `latest` to the version published last rather than the
   highest, so approving staged versions out of order silently points
@@ -3049,7 +3069,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...HEAD
+[0.57.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...v0.56.0
 [0.55.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...v0.55.1
 [0.54.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.53.0...v0.54.0

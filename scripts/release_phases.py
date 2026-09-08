@@ -103,8 +103,22 @@ def _changelog_section(ctx: Context) -> str:
 
 
 def _changelog_is_placeholder(ctx: Context) -> bool:
+    """Is this section still the stub `bump-version.py` wrote, or empty?
+
+    Matched on the placeholder's SHAPE, a top-level `- TODO:` list item, rather
+    than on the word anywhere in the section. The substring test blocked 0.57.0,
+    whose notes describe the placeholder-detection work of TASK-198 and TASK-199
+    and therefore quote `- TODO:` markers five times, none of them a placeholder.
+    A gate that cannot let a release describe its own subject matter leaves the
+    author no move except degrading the notes.
+
+    Still catches a leftover TODO item an author wrote themselves, which
+    comparing against `bump-version.py`'s exact string would miss.
+    """
     body = _changelog_section(ctx)
-    return (not body.strip()) or "TODO" in body
+    return (not body.strip()) or any(
+        line.strip().startswith("- TODO:") for line in body.splitlines()
+    )
 
 
 def prepare(ctx: Context) -> List[str]:
