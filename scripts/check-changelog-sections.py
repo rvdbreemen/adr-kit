@@ -118,9 +118,17 @@ def _git(*args: str) -> Optional[str]:
 
 
 def _published_from_git(tags: set) -> Callable[[str], Optional[str]]:
+    # Two spellings ship in this repository: 65 tags read `v0.56.0` and 14
+    # older ones read `adr-kit--v0.1.0`. Resolving only the first silently
+    # skipped fourteen comparable sections, which is the same kind of
+    # overstated coverage this check exists to prevent.
     def resolve(version: str) -> Optional[str]:
-        tag = f"v{version}"
-        return _git("show", f"{tag}:CHANGELOG.md") if tag in tags else None
+        for tag in (f"v{version}", f"adr-kit--v{version}"):
+            if tag in tags:
+                published = _git("show", f"{tag}:CHANGELOG.md")
+                if published is not None:
+                    return published
+        return None
 
     return resolve
 

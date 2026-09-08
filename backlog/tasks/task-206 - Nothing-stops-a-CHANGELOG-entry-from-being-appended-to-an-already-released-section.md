@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-07 20:30'
-updated_date: '2026-09-07 20:36'
+updated_date: '2026-09-08 04:37'
 labels:
   - release
   - changelog
@@ -100,6 +100,32 @@ SIXTEEN SECTIONS CANNOT BE CHECKED and are reported as skipped every run. They p
 
 KNOWN HOLE, deliberate: deleting one bullet and adding another in the same section nets zero and passes. Catching it needs text comparison, which is what produced the four false positives. The defect being guarded is purely additive.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude
+created: 2026-09-08 04:37
+---
+COVERAGE WIDENED, 2026-09-08, before the 0.57.0 release. The first version resolved only the `v{X}` tag spelling and reported 16 sections as unskippable. That number was itself an overstatement of what cannot be checked, which is the failure mode this whole file exists to prevent.
+
+```
+git tag | 65 spelled v0.56.0
+         | 14 spelled adr-kit--v0.1.0
+```
+
+Resolving both:
+
+```
+before   compared 59, skipped 16
+after    compared 70, skipped  6
+```
+
+Eleven more sections are now genuinely guarded. Still falsifiable in both directions against real commits: rc=0 on the current document, rc=1 on 4a6a7cb naming `## [0.56.0]` and its six added bullets. Nine tests green, 198 lines, inside the 300-line entrypoint budget.
+
+Credit where due: the two-spelling problem came out of a parallel investigation rather than from my own reading, and I confirmed it against `git tag` before acting on it.
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 

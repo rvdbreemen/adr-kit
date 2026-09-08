@@ -144,6 +144,63 @@ def test_prepare_accepts_a_written_changelog(phases, tmp_path, monkeypatch):
     assert phases.prepare(_context(phases))
 
 
+def test_prepare_lets_a_release_describe_todo_markers(phases, tmp_path, monkeypatch):
+    """The 0.57.0 notes are the case: they ship TODO-placeholder detection.
+
+    A section is a placeholder when it still carries the `- TODO:` list item
+    `bump-version.py` writes, not when the word appears anywhere in it. Testing
+    the substring blocked a release whose whole subject was those markers, and
+    left the author no move except writing worse notes.
+    """
+    monkeypatch.setattr(phases, "ROOT", tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [9.9.9] - 2026-01-01\n\n### Fixed\n\n"
+        "- `adr-migrate` appends `- TODO: ...` into any required heading it adds,\n"
+        "  and `adr-readiness` now says so. The `<!-- TODO: ... -->` comment the\n"
+        "  skill writes counts the same, and a TODO is not an answer.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(phases, "_version_everywhere", lambda ctx: True)
+
+    assert phases.prepare(_context(phases))
+
+
+def test_prepare_still_refuses_a_todo_item_the_author_left_behind(
+    phases, tmp_path, monkeypatch
+):
+    """Not just the exact scaffold line: any unfinished top-level TODO item.
+
+    Comparing against `bump-version.py`'s literal string would pass this, and an
+    author who starts from the scaffold and edits it halfway is the likeliest
+    way an unfinished note reaches a Release body.
+    """
+    monkeypatch.setattr(phases, "ROOT", tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [9.9.9] - 2026-01-01\n\n### Added\n\n"
+        "- A feature that is properly described.\n"
+        "- TODO: write up the second half of this.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(phases, "_version_everywhere", lambda ctx: True)
+
+    with pytest.raises(phases.ReleaseError) as caught:
+        phases.prepare(_context(phases))
+
+    assert "placeholder" in str(caught.value)
+
+
+def test_prepare_refuses_an_empty_section(phases, tmp_path, monkeypatch):
+    monkeypatch.setattr(phases, "ROOT", tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [9.9.9] - 2026-01-01\n\n## [9.9.8] - 2025-01-01\n\nOlder.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(phases, "_version_everywhere", lambda ctx: True)
+
+    with pytest.raises(phases.ReleaseError):
+        phases.prepare(_context(phases))
+
+
 def test_a_tag_that_does_not_name_main_is_refused(phases, monkeypatch):
     """The check that would have saved v0.55.0.
 
