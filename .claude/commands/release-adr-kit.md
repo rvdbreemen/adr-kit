@@ -1,158 +1,77 @@
----
-description: Release adr-kit to the certified CLI marketplaces and OpenCode package (drives docs/RELEASING.md)
-argument-hint: "[version, e.g. 0.38.0]"
----
+You are running the adr-kit release for version **$ARGUMENTS** (if empty, ask
+which version to release).
 
-You are running the adr-kit release for version **$ARGUMENTS** (if empty, ask which
-version to release, or read the intended version from `.claude-plugin/plugin.json`).
+Since ADR-042 this is one command. `scripts/release.py` drives every step of
+`docs/RELEASING.md`, and `docs/RELEASING.md` remains the specification it
+implements. Do not perform the steps by hand while the driver exists: a second
+hand-run path is how the two drift apart, and every failure this decision was
+written about came from a mechanical step performed by a person.
 
-The authoritative runbook is `docs/RELEASING.md` and the decision behind it is
-ADR-012. The three certified coding-agent marketplaces (Claude Code, Codex,
-GitHub Copilot) and the OpenCode package resolve adr-kit from the public
-repository, so a release must be version-consistent across every publish
-surface before it ships. Follow these steps in order. Stop and report if any
-step fails.
+## 1. Open a backlog task
 
-## 1. Create a task, confirm `dev` is current, then branch
+Search for an existing release task; create one if there is none, and set it In
+Progress. Record the version and why it is a major, minor or patch bump. A
+behaviour change a consumer can observe is a minor bump even when it is filed
+as a bug fix.
 
-- Ensure a backlog task exists for this release (create one if not); set it In Progress.
-- **Before cutting the branch**, confirm `dev` carries every published release:
+## 2. Write the release notes first
 
-  ```bash
-  git fetch origin
-  python scripts/check-branch-sync.py
-  ```
-
-  Exit 0: continue. Exit 1: the output names release tags that reached `main`
-  but never reached `dev`. Do the step 5 merge-back for those first and land it
-  — a release branch cut from a stale `dev` collides with `main` on every
-  version stamp, and resolving those by hand is how a published version gets
-  reverted by accident. Exit 2 is an infrastructure error, not a verdict.
-
-- Work on a branch, never commit the release directly to `main`.
-
-## 2. Prepare the version, release notes and README
-
-- Bump every version site with one command, then regenerate the client trees:
-
-  ```bash
-  python scripts/bump-version.py $ARGUMENTS
-  python scripts/build-client-adapters.py
-  ```
-
-  `bump-version.py` is the only place a version is typed. It writes the CHANGELOG
-  heading, the three certified plugin manifests, the OpenCode package, the two
-  versioned marketplace manifests, the template version stamps and the README
-  version pins, all from
-  `packaging/version-sites.json`. Never hand-edit a version, and never hand-edit the
-  generated adapters. If some file still carries an old version, declare it in the
-  registry instead of patching it by hand, so the writer, the gate, the generator and
-  the tests all learn about it at once.
-
-- **Release notes (`CHANGELOG.md`).** Add a `## [$ARGUMENTS] - <today>` section at the top.
-  Write it to release-note quality, not a raw commit log: group changes under
-  `### Added` / `### Changed` / `### Fixed` / `### Removed`, name user-facing impact,
-  and call out upgrade steps and breaking changes explicitly. This section is the
-  single source for the release notes: `release-publish.yml` publishes it verbatim as
-  the GitHub Release body, so it must read as the release announcement. Follow Keep a
-  Changelog; no emoji.
-
-- **README (`README.md`).** The version-pinned usage examples are already moved by
-  `bump-version.py` (the release badge is automatic and historical "introduced in vN"
-  markers stay put by design). What still needs judgement: if this release adds,
-  changes or removes a user-facing capability, update the matching feature/usage
-  section so the README describes what actually ships.
-
-## 3. Verify locally (the same gates CI enforces)
-
-Run each and confirm it passes:
+Run the driver once:
 
 ```bash
-python scripts/check-release-version.py --expect v$ARGUMENTS
-python scripts/build-client-adapters.py --check
-python bin/adr-lint --strict docs/adr
-python bin/adr-index --check docs/adr
-python -m pytest -q
+python scripts/release.py X.Y.Z
 ```
 
-When OpenCode package or API behavior changed, also run the focused OpenCode
-smoke on a machine with Bun:
+It bumps every version site through the registry, regenerates the client
+adapters, and then **stops**, because the CHANGELOG section it created is still
+a placeholder. That stop is deliberate: `release-publish.yml` publishes that
+section verbatim as the GitHub Release body, so it has to read as the
+announcement rather than as a commit log.
+
+Write it under `## [X.Y.Z]`: group under `### Added` / `### Changed` /
+`### Fixed` / `### Removed`, name the user-facing impact, and call out upgrade
+steps and breaking changes explicitly. Keep a Changelog, no emoji.
+
+Update `README.md` where this release adds, changes or removes a user-facing
+capability. The version pins move themselves; what needs judgement is whether
+the README still describes what ships.
+
+## 3. Run it again, and keep running it
 
 ```bash
-python -m pytest -q tests/test_opencode_package.py tests/test_opencode_plugin.py
+python scripts/release.py X.Y.Z
 ```
 
-Do not proceed while any gate fails.
+It verifies the gates, opens the pull request into `main` with auto-merge, waits
+for the merge, checks that the tag the workflow created resolves to
+`origin/main`, opens the sync-back pull request into `dev`, and advances this
+machine's prepared-directory marketplace.
 
-## 4. Land and tag (publishes the public git-source marketplaces)
+Safe to re-run at any point. Each phase asks the repository whether its work is
+already done, so an interrupted release is resumed, not restarted. Use
+`--status` to see what is left without changing anything, and `--skip-tests`
+when CI is the run you are relying on.
 
-- Open a PR from the branch into `main` and wait for CI to go green.
+**Never tag by hand**, and never merge with `--admin`. The tag is created by
+`release-publish.yml` from the merged commit; typing it is what cost v0.55.0.
 
-  **Maintainer checkpoint: `main` is a protected branch.** Merging is the
-  maintainer's action, not the agent's. Do not merge with `--admin` and do not
-  otherwise bypass branch protection: report that the PR is green and hand off. If
-  the PR picks up extra commits after the first CI run (for example applied
-  code-scanning autofixes), review those commits and confirm CI is green for the
-  final head before handing off.
+## 4. Do the one thing the driver cannot
 
-- After the maintainer merges, pull `main`, confirm it carries the release version
-  with `python scripts/check-release-version.py --expect v$ARGUMENTS`, then tag and
-  push:
+The driver ends by printing the npm approval steps. npm requires proof of
+presence, so no tool can finish it. If more than one version is staged, approve
+in **ascending** order: npm sets `latest` to the version published last, not
+the highest.
 
-```bash
-git tag v$ARGUMENTS
-git push origin v$ARGUMENTS
-```
+Run the driver once more afterwards. It verifies `dist-tags.latest` names the
+released version and reports the release as complete.
 
-Pushing the tag triggers `.github/workflows/release-publish.yml`, which re-runs the
-gates, creates the GitHub Release from the CHANGELOG section, and then calls the
-reusable OpenCode npm workflow. It stages the package through OIDC; a maintainer
-must approve the staged package with npm 2FA before it becomes public. Confirm
-that workflow went green before continuing. If the npm Trusted Publisher has not
-been configured, the GitHub Release may already exist while the staging job
-fails; configure it before tagging a release.
+## 5. Report and close
 
-**Checkpoint:** tagging + pushing is outward-facing. Confirm with the maintainer
-before pushing the tag unless already authorized.
+Summarise: version and why that bump, the tag and the Release URL, the
+verification that the tag equals `origin/main`, the sync-back pull request, the
+per-client versions read back, and the npm dist-tag. Close the task with that
+evidence.
 
-## 5. Merge the release back into `dev`
-
-The release is on `main`; `dev` does not have it yet and nothing else will move
-it. Skipping this step is silent at the time and arms the next release to revert
-this one. It has already gone wrong twice: `dev` reached 32 commits behind and
-lost the release toolchain itself.
-
-```bash
-git fetch origin
-git checkout -b sync/release-to-dev origin/dev
-git merge origin/main
-python scripts/check-branch-sync.py
-```
-
-Resolve conflicts by treating `main` as authoritative for anything a release
-touches (version sites, generated `codex/` and `copilot/` adapters, manifests,
-and the OpenCode package),
-and in `CHANGELOG.md` keep `dev`'s `[Unreleased]` entries above `main`'s
-published sections. Re-run the step 3 gates on the merge result, then open a PR
-into `dev`.
-
-Merging that PR is the maintainer's action, same as step 4.
-
-## 6. Publish to this machine's prepared-directory marketplace
-
-End users on the git source are already served by step 4. Advance the local
-prepared-directory source and re-register all three clients:
-
-```bash
-python scripts/install-agent-envs.py --clients all
-```
-
-Then remind the maintainer to restart each client (Claude Code / Codex / Copilot)
-to load the new version. Verify with `claude plugin list`, `codex plugin list`,
-`copilot plugin list` that each shows adr-kit at v$ARGUMENTS.
-
-## 7. Report
-
-Summarize: version, gate results, tag + Release URL, the merge-back PR into
-`dev`, and the local install + per-client version confirmation. Close the release
-task.
+If a phase refused, say which one and quote its message rather than
+paraphrasing it. The messages are written to be actionable, and a summary of an
+error is harder to act on than the error.

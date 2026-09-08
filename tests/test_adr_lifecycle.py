@@ -1095,3 +1095,96 @@ def test_history_entry_lands_inside_the_section_whatever_fences_follow(
         assert "changed_via" not in after_history[1], (
             f"{label}: an entry landed outside ## Status History"
         )
+
+
+# --- issue #120: a Status line can carry more transitions than the reader reads
+
+
+def _write_adr_without_history(adr_dir: Path, num: int, title: str, status_line: str) -> Path:
+    """An ADR whose only record of its history is the Status line itself.
+
+    This is the shape that predates the status_history convention: the
+    frontmatter date and the Status line, and nothing else.
+    """
+    path = _write_adr(adr_dir, num, title, status="Accepted")
+    text = path.read_text(encoding="utf-8")
+    text = STATUS_LINE_SUB.sub(rf"\g<1>{status_line}", text, count=1)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+STATUS_LINE_SUB = re.compile(r"(^##\s+Status\s*$\n+)([^\n]*)", re.IGNORECASE | re.MULTILINE)
+
+
+def test_a_status_line_with_two_transitions_refuses_rather_than_dropping_one(tmp_path):
+    """Issue #120: the earlier transition used to vanish, with exit code 0.
+
+    `read_status_line` takes the leading word and the first date, so this line
+    yields ("Superseded", "2026-08-07") - which equals the transition a
+    `supersede` repair is about to write. The equality made the seeding step
+    return early, and `set_status_line` then replaced the whole line, taking
+    "Originally Accepted, 2026-05-08" with it.
+
+    Refusing is the documented promise: the command must not write a history
+    that silently omits the earlier transition. The case it fires on is a
+    legitimate repair, so the message has to say what to do instead.
+    """
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    _write_adr(adr_dir, 2, "Successor", status="Accepted")
+    path = _write_adr_without_history(
+        adr_dir,
+        1,
+        "Predecessor",
+        "Superseded by ADR-002, 2026-08-07. Originally Accepted, 2026-05-08.",
+    )
+    before = path.read_text(encoding="utf-8")
+
+    result = _run_adr(
+        "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
+        "--date", "2026-08-07", "--changed-by", "tester", "--reason", "repair",
+    )
+
+    assert result.returncode != 0, result.stdout
+    assert "2026-05-08" in result.stderr, result.stderr
+    assert "status_history" in result.stderr, result.stderr
+    assert path.read_text(encoding="utf-8") == before, "the record must be untouched"
+
+
+def test_a_recovered_entry_keeps_the_literal_status_line(tmp_path):
+    """The words survive even where the structure cannot be recovered.
+
+    Parsing every prose shape a Status line can take is how transitions get
+    lost one shape at a time. Keeping the line verbatim in the reason costs
+    nothing and loses nothing - here it preserves a Decision Maker attribution
+    that no field of the entry has a home for.
+
+    The line contains ": ", which a plain YAML scalar cannot hold: it re-reads
+    as a nested mapping and takes the whole block down (TASK-70). The entry
+    writer quotes it, so an external parser still sees a valid block.
+    """
+    yaml = pytest.importorskip("yaml")
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    _write_adr(adr_dir, 2, "Successor", status="Accepted")
+    path = _write_adr_without_history(
+        adr_dir, 1, "Predecessor", "Accepted, 2026-05-08. Decision Maker: User: Someone."
+    )
+
+    result = _run_adr(
+        "supersede", "1", "--by", "2", "--adr-dir", str(adr_dir),
+        "--date", "2026-08-07", "--changed-by", "tester", "--reason", "repair",
+    )
+    assert result.returncode == 0, result.stderr
+
+    text = path.read_text(encoding="utf-8")
+    block = re.search(r"```yaml\n(status_history:\n(?:.*\n)*?)```", text)
+    assert block, text
+    entries = yaml.safe_load(block.group(1))["status_history"]
+
+    assert [e["status"] for e in entries] == ["Accepted", "Superseded"]
+    # PyYAML resolves an unquoted YYYY-MM-DD to datetime.date; compare as text
+    # so the assertion tests the value rather than the loader's typing.
+    assert str(entries[0]["date"]) == "2026-05-08"
+    assert entries[0]["changed_by"] == "unknown", "the actor was never recorded; do not invent one"
+    assert "Decision Maker: User: Someone." in entries[0]["reason"]

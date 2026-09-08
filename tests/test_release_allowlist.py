@@ -73,6 +73,13 @@ def test_task_40_python_modules_stay_within_adr_010_line_budgets():
         "scripts/build-client-adapters.py",
         "scripts/settings.py",
         "scripts/setup-project.py",
+        # The release driver (ADR-042). Its phases live in the support modules
+        # below, so this stays the thin orchestration layer it is meant to be.
+        "scripts/release.py",
+        # A CI gate, not a shipped artifact, so it is deliberately absent from
+        # packaging/public-artifacts.json. Budgeted anyway: it is the kind of
+        # check that grows a special case per incident.
+        "scripts/check-changelog-sections.py",
     )
     support_modules = (
         "scripts/adr_settings.py",
@@ -92,6 +99,13 @@ def test_task_40_python_modules_stay_within_adr_010_line_budgets():
         # Budgeted from v0.50.0: it was the largest unbudgeted installer module
         # and TASK-164 pushed it to 406 lines before anything noticed.
         "clients/installer/native.py",
+        # Budgeted from v0.56.0: release_phases.py crossed 400 lines while it
+        # still carried its own process helpers, which is what split them out
+        # into release_shell.py, and later its npm handling, which is
+        # release_npm.py. Budget all three so the seams hold.
+        "scripts/release_phases.py",
+        "scripts/release_shell.py",
+        "scripts/release_npm.py",
     )
     for relative in entrypoints:
         lines = (ROOT / relative).read_text(encoding="utf-8").splitlines()

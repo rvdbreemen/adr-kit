@@ -25,3 +25,13 @@ This repository uses Backlog.md (`backlog/`) as the source of truth for work.
 - `python bin/adr relate ADR-A --to ADR-B` schrijft beide kanten; ADR-028's gate laat een eenzijdige link niet door de lint. `python bin/adr accept ADR-N` weigert zonder `--confirm`: acceptatie zet een naam in een onveranderlijke historie en moet expliciet gevraagd worden.
 - ADR-010 begrenst regels per bestand, afgedwongen in `tests/test_release_allowlist.py`: entrypoints in `scripts/` maximaal 300 regels, support-modules 400. Splits langs de naad die de docstring al beschrijft en voeg de nieuwe module toe aan die lijst.
 - `main` en `dev` zijn beschermd met `enforce_admins: true`, dus `gh pr merge --admin` omzeilt de verplichte `validate`-check niet. Gebruik `--auto`: dat verzwakt niets en mergt zodra de checks slagen. Mergen naar `main` is de actie van de maintainer.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

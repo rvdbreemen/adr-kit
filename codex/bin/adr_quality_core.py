@@ -190,6 +190,15 @@ def _section_text(content: str, heading: str) -> str:
     return m.group(1) if m else ""
 
 
+# Same rule as bin/adr-lint: a heading with nothing under it is a hole, not a
+# section. Emptiness only. A migration placeholder counts as content here by
+# decision, not by oversight: an imported record must not fail a blocking gate
+# on arrival (test_adr_policy.py, test_migration_discovery.py). adr-migrate
+# reports the placeholders it wrote instead, which informs without refusing.
+def _is_unfilled(body: str) -> bool:
+    return not any(ln.strip() for ln in body.splitlines())
+
+
 def gate_completeness(content: str) -> Dict:
     """Gate 1: Completeness (0.0-1.0).
 
@@ -216,9 +225,17 @@ def gate_completeness(content: str) -> Dict:
         pattern = _SECTION_PRESENCE_RE.get(section) or re.compile(
             r"^" + re.escape(section) + r"\b", re.MULTILINE
         )
+        # A heading with nothing under it is not a section (TASK-198). This loop
+        # used to test presence alone, while three checks further down already
+        # measured emptiness for Decision, Alternatives and Consequences. That
+        # split meant References or Related Decisions could be hollow and still
+        # score full marks here, and `adr accept --quality-threshold` reads this
+        # score. The placeholder case counts too: it is what adr-migrate writes
+        # into a heading it has to add.
         present = bool(pattern.search(content))
-        checks[f"section_{section.replace('## ', '').replace(' ', '_').lower()}"] = present
-        if not present:
+        filled = present and not _is_unfilled(_section_text(content, section))
+        checks[f"section_{section.replace('## ', '').replace(' ', '_').lower()}"] = filled
+        if not filled:
             missing_sections.append(section)
 
     score = 1.0

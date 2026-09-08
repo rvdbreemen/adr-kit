@@ -494,12 +494,50 @@ def scan_extra_migration_notices(
     return notices
 
 
+def _section_body(text: str, heading: str) -> Optional[str]:
+    """Return the text between `heading` and the next H2, or None if absent."""
+    match = _section_pattern(heading).search(text)
+    if match is None:
+        return None
+    rest = text[match.end():]
+    nxt = re.search(r"^##\s", rest, re.MULTILINE)
+    return rest[: nxt.start()] if nxt else rest
+
+
+def _is_unfilled(body: str) -> bool:
+    """True when a required section has nothing under its heading at all.
+
+    Emptiness only, deliberately. A migration placeholder is content for this
+    gate's purposes: ADR-policy already decided that an imported record must not
+    fail a blocking gate on arrival, because a team that hits a wall on import
+    turns the gate off instead of filling the section in. That decision is
+    pinned by test_adr_policy.py and test_migration_discovery.py, and this gate
+    is not the place to reopen it. adr-migrate names the placeholders it wrote,
+    which is the migrating team's to-do list rather than a refusal.
+    """
+    return not any(ln.strip() for ln in body.splitlines())
+
+
 def gate_completeness(text: str, required: List[str]) -> Optional[List[str]]:
-    """Return list of missing required headings, or None if all present."""
+    """Return required sections that are absent or unfilled, or None if all present.
+
+    A heading on its own is not a section. The skill contract has always said a
+    passing ADR carries every load-bearing section "with non-empty content";
+    checking only for the heading meant an empty one passed, and `bin/adr accept`
+    runs this gate with --strict, so that was enough to accept a record with no
+    verifiable reference at all.
+
+    The returned entry keeps the `## ` prefix the caller strips, and appends a
+    reason for anything that is present but hollow, so a reader can tell "you
+    never wrote this" from "you left the placeholder in".
+    """
     missing = []
     for s in required:
-        if not _section_pattern(s).search(text):
+        body = _section_body(text, s)
+        if body is None:
             missing.append(s)
+        elif _is_unfilled(body):
+            missing.append(f"{s} (present but empty)")
     return missing or None
 
 

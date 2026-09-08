@@ -4,7 +4,163 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-09-08
 
+This release makes two gates stricter, and both can turn a pipeline that was
+green on 0.56.0 red on upgrade. `adr-lint --strict` and `bin/adr accept` now
+fail a required section that is present but empty, reporting
+`missing sections: ['References (present but empty)']`; fill the section, and
+note that a migration placeholder still passes deliberately, so an imported
+record is never blocked on arrival. The lifecycle commands now exit 2 rather
+than 0 when an ADR's Status line records a transition they would otherwise
+discard; write the `## Status History` block and re-run.
+
+Everything else is a release the project can now run on itself. One command
+drives it end to end, the tag is created from the merge rather than typed, and
+`adr-readiness` says when a record holds a placeholder instead of an answer
+rather than reporting it ready.
+
+### Added
+
+- One command now drives a release. `python scripts/release.py X.Y.Z` runs every
+  step of `docs/RELEASING.md` in order and is safe to re-run: each phase asks the
+  repository whether its work is already done, so an interrupted release is
+  resumed rather than restarted. `--status` reports what is left without changing
+  anything, `--only` runs a single phase, and `--skip-tests` leaves the suite to
+  CI. `docs/RELEASING.md` remains the specification the driver implements; the
+  driver is now the sanctioned path (ADR-042).
+- An installation smoke workflow. It exercises the `.pre-commit-hooks.yaml`
+  install path through `pre-commit try-repo` against a fixture repository, which
+  nothing tested before, and checks that every `@vX.Y.Z` action pin shipped in
+  the README and the templates names a tag that exists and still defines that
+  action. Its job summary states what it does not cover: the three vendor CLIs
+  are not installable on a hosted runner and stay certified from retained
+  Windows evidence (ADR-010).
+
+- A gate refusing a CHANGELOG entry appended to a section that has already
+  shipped. `release-publish.yml` publishes a `## [X.Y.Z]` section verbatim as
+  its GitHub Release body and section membership is positional, so a bullet
+  written under a released heading is absent from the next release's notes and
+  claimed by a release that does not contain it. That reached `dev` twice before
+  a human sweep found it, because the diff carries `### Fixed` as unchanged
+  context and reads like a correct addition. The check compares the number of
+  top-level bullets against the same section at its tag rather than the text:
+  measured over the 70 sections that can be compared, several differ from their
+  tag today and every one is a correction, which a byte-identity rule would
+  fail. Both tag spellings this repository ships are resolved, `v0.56.0` and the
+  older `adr-kit--v0.1.0`, so only six sections cannot be compared at all, and
+  those are reported as skipped rather than passed. It runs in `validate`, the
+  only required check on `dev`.
+
+### Changed
+
+- The driver recognises an unwritten release section by its shape rather than by
+  the word `TODO` appearing anywhere in it. `bump-version.py` inserts a
+  `- TODO: describe this release.` list item and the driver must refuse to
+  publish that as a Release body, but the substring test also refused this very
+  release, whose notes describe placeholder detection and therefore quote
+  `- TODO:` markers five times. A gate that will not let a release describe its
+  own subject leaves the author no move except worse notes. A leftover TODO list
+  item is still caught, which comparing against the exact scaffold string would
+  have missed.
+- The driver now exits non-zero when npm serves a different version than the one
+  released. `npm` sets `latest` to the version published last rather than the
+  highest, so approving staged versions out of order silently points
+  `npm install` at an older release; that left 0.55.1 released while `latest`
+  read 0.54.0 for a week with nothing reporting it. A registry that does not
+  answer is reported as its own state rather than guessed at, and also exits
+  non-zero, so a release is never reported as finished on the strength of a
+  failed lookup.
+- The release no longer asks anyone to type a tag. `release-publish.yml` creates
+  it from the merged commit, and the driver verifies the tag resolves to
+  `origin/main` and refuses to move one that does not. Typing the tag by hand is
+  what cost v0.55.0.
+- The local install step reads each client's version back instead of trusting the
+  installer's exit code, which has reported success while leaving clients on the
+  previous version.
+
+### Fixed
+
+- Lifecycle commands refuse to discard a transition the Status line still
+  carries. On an ADR that predates the `## Status History` convention, `accept`,
+  `reject`, `propose`, `supersede` and `document` seed one recovered entry from
+  the Status line before replacing it, but the reader took only the leading
+  status and the first date. A line such as `Superseded by ADR-088, 2026-08-07.
+  Originally Accepted, 2026-05-08.` yielded exactly the transition a `supersede`
+  repair was about to write, the equality check returned early, and the line was
+  overwritten with exit 0: the history then asserted the record's first-ever
+  transition was Superseded. The command now exits 2, naming the file, the line,
+  what it kept and what it would lose, and changes nothing; write the
+  `## Status History` block first, then re-run. The recovered entry's `reason`
+  also carries the Status line verbatim, so a `Decision Maker:` attribution or
+  any other prose the parser has no field for survives instead of being dropped.
+  `templates/adr-kit-guide.md` documents both refusal conditions.
+  ([#120](https://github.com/rvdbreemen/adr-kit/issues/120))
+- A required section that is present but empty no longer counts as complete. The
+  completeness gate tested whether the heading matched somewhere in the text and
+  never looked at the body, so `## References` with nothing under it passed.
+  `bin/adr accept` runs that gate with `--strict`, which made an empty heading
+  enough to walk a record carrying no verifiable reference into an immutable
+  Accepted state. The finding now separates the two cases, `References` against
+  `References (present but empty)`, because an author needs to know whether the
+  section is missing or hollow. The rule stops at empty, deliberately: a
+  migration placeholder still counts as content, because an imported record must
+  not fail a blocking gate on arrival. The same hole existed in `adr-quality`,
+  whose section loop scored presence while three checks beside it already
+  measured emptiness for Decision, Alternatives and Consequences; References and
+  Related Decisions fell through that gap and
+  `adr accept --quality-threshold` reads that score.
+- `adr-migrate` says which sections it could not fill. Converting a profile
+  appends `- TODO: ...` into any required heading it has to add, which is honest
+  at write time but counts as content by decision, so a migrated record passes
+  completeness and nothing said it was unfinished. Each such section is now
+  reported as `needs content: ## <heading>`, counting only what that run left
+  unfilled so a hole the author already had is not blamed on the migration. That
+  report is the whole signal, and deliberately not a refusal: the gates stay open
+  on a placeholder, which is what keeps a migrating team from disabling them.
+  Measured on a real record whose `## References` holds only
+  `- TODO: add verifiable references.`, the acceptance gate set still passes it
+  (`adr-quality` scores it 0.87, grade A), while the same record with an empty
+  `## References` is blocked with
+  `missing sections: ['References (present but empty)']`.
+- `adr-readiness` says when a required section holds a migration placeholder
+  rather than an answer. A Proposed record whose `## References` contained only
+  the line `bin/adr-migrate` writes classified `ready-for-confirmation` and
+  carried no finding at all, which is a lie about a record
+  nobody has finished writing; nothing between the migration and `adr accept`
+  ever said otherwise, because the migrator prints its report once, to whoever
+  ran the command. The new `SECTION_PLACEHOLDER_ONLY` finding names each
+  section and moves the record to `needs-human-input`, which gives it a
+  `next_command` of `/adr-kit:grill`. Readiness cannot block and deliberately
+  gains no exit-1 path: the completeness gate still passes such a record on
+  arrival, because a team that hits a wall on import disables the gate.
+  Empty sections are not reported here, since `adr-lint` already fails
+  completeness on those. Measured across 212 real records (this repository's 43
+  and the 169-record OTGW corpus): zero new findings, so the signal fires only
+  on records that carry a placeholder.
+- The guardian queue no longer drops a record for being honest about itself.
+  Enrollment is gated on `signals = (linked, shipped, ready, open_questions,
+  below_threshold)`, and for exactly this population -- unlinked, unshipped,
+  quality above the threshold, no open questions -- `ready` was the only true
+  signal. Reporting the placeholder moves the classification off
+  `ready-for-confirmation`, which measured as 0 candidates: the honest report
+  would have made the record less visible than saying nothing. A `needs_human`
+  signal now carries it, with its reason placed before the unconditional
+  `age N days` entry so it survives the `reasons[:2]` cut the SessionStart
+  block applies.
+- `unfilled_required_sections` recognises both placeholder spellings. It matched
+  the `- TODO:` list item `bin/adr-migrate` writes but not the
+  `<!-- TODO: ... -->` comment the `/adr-kit:migrate` skill writes, while
+  `bin/adr-lint` has always stripped comments before counting and
+  `tests/test_adr_policy.py` pins the two as equivalent. A skill-migrated record
+  was therefore reported as finished. The helper also splits the two holes it
+  used to conflate: `placeholder_required_sections` returns only the sections
+  holding a placeholder, so a caller no longer has to describe an empty heading
+  and a TODO with the same words.
+- `adr-migrate` stopped telling the operator something false. It printed
+  "adr-lint reports them as incomplete and adr accept will refuse until they are
+  written"; measured, `adr-lint --strict` passes such a record and `adr accept`
+  does not refuse. It now says what actually happens and where the signal is.
 
 ## [0.56.0] - 2026-08-27
 
@@ -2913,7 +3069,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...HEAD
+[0.57.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...v0.56.0
 [0.55.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...v0.55.1
 [0.54.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.53.0...v0.54.0
