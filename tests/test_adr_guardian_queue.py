@@ -241,3 +241,35 @@ def test_a_placeholder_record_reaches_the_queue_end_to_end(tmp_path):
     assert ranked[0]["classification"] == "needs-human-input"
     assert ranked[0]["command"] == "/adr-kit:grill ADR-001"
     assert "human input needed" in ranked[0]["reasons"][:2]
+
+
+def test_queue_age_comes_from_the_adr_date_end_to_end(tmp_path):
+    """Readiness carries the ADR's date, so the queue's age is real (TASK-200).
+
+    Readiness used to drop the date the catalog had already parsed, so every
+    record ranked at "age 0 days" and age never broke a tie. Two records with
+    the same signals: the older one must rank first and say how old it is.
+    """
+    from datetime import date
+
+    from adr_readiness import build_readiness_report
+
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    question = "- [ ] Which backend owns retries?"
+    older = _write_adr(adr_dir, 2, open_questions=question)
+    older.write_text(
+        older.read_text(encoding="utf-8").replace("2026-07-20", "2026-07-01"),
+        encoding="utf-8",
+    )
+    _write_adr(adr_dir, 1, open_questions=question)
+
+    report = build_readiness_report(
+        adr_dir, evaluated_on=date(2026, 7, 20), all_proposed=True
+    )
+    dates = {item["adr_id"]: item.get("date") for item in report["adrs"]}
+    assert dates == {"ADR-001": "2026-07-20", "ADR-002": "2026-07-01"}
+
+    ranked = rank_proposed(report)
+    assert [entry["adr_id"] for entry in ranked] == ["ADR-002", "ADR-001"]
+    assert "age 19 days" in ranked[0]["reasons"]
