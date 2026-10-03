@@ -59,10 +59,11 @@ from adr_format import (
     AdrFormatError,
     classify_format,
     convert_profile,
+    heading,
     is_migration_candidate,
     migration_notice,
     normalize_profile,
-    unfilled_required_sections,
+    unfilled_required_roles,
 )
 from adr_schema import migrate_text
 from adr_catalog import load_adr_record
@@ -178,11 +179,14 @@ def migrate_file(
             # into it. That is a hole, not content, and saying nothing about it
             # is how a migrated record reaches `adr accept` still unwritten.
             # Report only what THIS run left unfilled, so a hole the author
-            # already had is not blamed on the migration.
+            # already had is not blamed on the migration. Compare roles, each
+            # side read in its own profile: across profiles the same role has
+            # a different title (TASK-201).
+            already = set(unfilled_required_roles(before, detected_source))
             unfilled = [
-                s
-                for s in unfilled_required_sections(after, to_profile)
-                if s not in unfilled_required_sections(before, to_profile)
+                heading(to_profile, role)
+                for role in unfilled_required_roles(after, to_profile)
+                if role not in already
             ]
         except AdrFormatError as exc:
             issues = [str(exc)]

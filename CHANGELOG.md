@@ -17,6 +17,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- `adr-migrate --to-profile` no longer blames a conversion for holes the
+  source already had. It compared section titles before and after, and two
+  profiles name the same section differently, so a nygard `## Context` that
+  already held a TODO was reported as a new `## Context and Problem
+  Statement` hole on the way to madr. It now compares roles, each side read
+  in its own profile (TASK-201).
 - `adr-lint` can no longer walk without end while looking for an Accepted
   binding ADR's `gate`. The scan descended into Windows junctions, which
   `os.walk(followlinks=False)` does not treat as links, and its 5000-file cap
@@ -34,6 +40,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   change, or the frontmatter date when there is no history. The report stays
   deterministic, since the date comes from the file and not from the clock
   (TASK-200).
+- An Open Question that wraps onto more lines, or carries nested bullets, is
+  one question again. `bin/adr answer` used to mark only its first line, so
+  the answer landed mid-question; `--question <text>` searched only that
+  line; each nested bullet counted as a question; and a continuation line
+  ending in `?` became an unresolved question that `answer` could not reach,
+  which kept `accept` blocked after everything was answered. All three
+  parsers now share one item grouping. A multi-line question gets its answer
+  on a new line after its last line, and the confirmation no longer cuts the
+  question mid-word (TASK-194).
 
 ## [0.57.0] - 2026-09-08
 

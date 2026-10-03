@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 DEFAULT_PROFILE = "madr"
@@ -361,38 +361,100 @@ def h2_headings(text: str) -> List[str]:
     return headings
 
 
+_OPEN_QUESTION_BULLET_RE = re.compile(r"^(?P<indent>[ \t]*)[-*+]\s+")
+_NO_OPEN_QUESTIONS = {"none", "no open questions", "no unresolved questions"}
+
+
+def open_question_items(section: str) -> List[Dict[str, Any]]:
+    """Group an Open Questions section into items, one per question.
+
+    A question is a top-level bullet plus every line that belongs to it: an
+    indented continuation, a nested bullet, or an unindented line that
+    directly follows it (a Markdown lazy continuation). A paragraph outside
+    any bullet is an item too, and counts as a question only when one of its
+    lines ends in `?`. Reading line by line instead split a wrapped question
+    into fragments, and a fragment ending in `?` became a question nobody
+    could answer (TASK-194).
+
+    Each item carries `start`/`end` (inclusive indexes into
+    `section.splitlines()`), `question` (its identity, see
+    `_normalise_question`), `text` (the readable form, markup kept),
+    `answered`, `is_question`, and `placeholder` (a
+    "None."-style line that says there is nothing open).
+    """
+    lines = section.splitlines()
+    groups: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+    base: Optional[int] = None
+    previous_blank = True
+    in_fence = False
+    for index, raw in enumerate(lines):
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            current = None
+            continue
+        if in_fence:
+            continue
+        if not stripped:
+            previous_blank = True
+            continue
+        if stripped.startswith(("<!--", "-->")):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        bullet = _OPEN_QUESTION_BULLET_RE.match(raw)
+        if bullet and (base is None or indent <= base):
+            base = indent if base is None else base
+            current = {"start": index, "end": index, "bullet": True}
+            groups.append(current)
+        elif current is not None and (indent > (base or 0) or not previous_blank):
+            current["end"] = index
+        else:
+            current = {"start": index, "end": index, "bullet": False}
+            groups.append(current)
+        previous_blank = False
+
+    items: List[Dict[str, Any]] = []
+    for group in groups:
+        own = lines[group["start"] : group["end"] + 1]
+        first = re.sub(r"^\s*[-*+]\s+", "", own[0].strip()) if group["bullet"] else own[0].strip()
+        joined = " ".join(
+            [own[0].strip()]
+            + [re.sub(r"^[-*+]\s+", "", line.strip()) for line in own[1:]]
+        )
+        answered = bool(re.match(r"^\[[xX]\]\s+", first)) or bool(
+            re.match(r"^(?:answered|resolved)\s*:", first, re.IGNORECASE)
+        )
+        placeholder = len(own) == 1 and first.casefold().rstrip(".") in _NO_OPEN_QUESTIONS
+        is_question = group["bullet"] or any(line.rstrip().endswith("?") for line in own)
+        readable = re.sub(r"^\s*[-*+]\s+", "", joined)
+        readable = re.sub(r"^\[[ xX]\]\s*", "", readable)
+        readable = re.split(r"\s+[—-]{1,2}\s+\*\*Answered\b", readable)[0]
+        items.append(
+            {
+                "start": group["start"],
+                "end": group["end"],
+                "question": _normalise_question(joined),
+                # The same words with their markup, for showing and searching.
+                "text": re.sub(r"\s+", " ", readable).strip(),
+                "answered": answered,
+                "is_question": is_question and not placeholder,
+                "placeholder": placeholder,
+            }
+        )
+    return items
+
+
 def unresolved_open_questions(text: str) -> List[str]:
     """Return stable unresolved items from the optional Open Questions role."""
     section = section_text(text, "open_questions")
     if not section:
         return []
-    questions: List[str] = []
-    for raw_line in section.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith(("```", "<!--", "-->")):
-            continue
-        normalized = re.sub(r"^\s*[-*+]\s+", "", line).strip()
-        if normalized.casefold().rstrip(".") in {
-            "none",
-            "no open questions",
-            "no unresolved questions",
-        }:
-            continue
-        if re.match(r"^\[[xX]\]\s+", normalized):
-            continue
-        if re.match(r"^(?:answered|resolved)\s*:", normalized, re.IGNORECASE):
-            continue
-        unchecked = re.match(r"^\[\s\]\s+(.+)$", normalized)
-        if unchecked:
-            candidate = unchecked.group(1)
-        elif re.match(r"^[-*+]\s+", line) or normalized.endswith("?"):
-            candidate = normalized
-        else:
-            continue
-        candidate = re.sub(r"[`*_]", "", candidate)
-        candidate = re.sub(r"\s+", " ", candidate).strip()
-        if candidate:
-            questions.append(candidate)
+    questions = [
+        item["question"]
+        for item in open_question_items(section)
+        if item["is_question"] and not item["answered"] and item["question"]
+    ]
     return sorted(dict.fromkeys(questions), key=str.casefold)
 
 
@@ -424,30 +486,13 @@ def all_open_questions(text: str) -> "Dict[str, bool]":
     if not section:
         return {}
     found: Dict[str, bool] = {}
-    for raw_line in section.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith(("```", "<!--", "-->")):
-            continue
-        stripped = re.sub(r"^\s*[-*+]\s+", "", line).strip()
-        if stripped.casefold().rstrip(".") in {
-            "none",
-            "no open questions",
-            "no unresolved questions",
-        }:
-            continue
-        answered = bool(re.match(r"^\[[xX]\]\s+", stripped))
-        if not answered and not (
-            re.match(r"^\[\s\]\s+", stripped)
-            or re.match(r"^[-*+]\s+", line)
-            or stripped.endswith("?")
-        ):
-            continue
-        question = _normalise_question(line)
-        if not question:
+    for item in open_question_items(section):
+        if not (item["is_question"] or item["answered"]) or not item["question"]:
             continue
         # An answered form wins: a question listed twice, once each way, is
         # answered.
-        found[question] = found.get(question, False) or answered
+        question = item["question"]
+        found[question] = found.get(question, False) or item["answered"]
     return found
 
 
@@ -851,6 +896,11 @@ def _unwritten_required_sections(text: str, profile: str) -> List[tuple]:
     decision: an imported record must not fail a blocking gate on arrival. Only
     a caller that can tell the two apart can say something true about either.
     """
+    return [(title, kind) for _role, title, kind in _unwritten_required_roles(text, profile)]
+
+
+def _unwritten_required_roles(text: str, profile: str) -> List[tuple]:
+    """(role, heading, kind) for each required heading nobody has written yet."""
     normalized = normalize_profile(profile)
     unwritten: List[tuple] = []
     for role in PROFILE_REQUIRED_ROLES[normalized]:
@@ -869,10 +919,21 @@ def _unwritten_required_sections(text: str, profile: str) -> List[tuple]:
         if visible and not all(_PLACEHOLDER_LINE_RE.match(ln) for ln in visible):
             continue
         if not visible and not body.strip():
-            unwritten.append((title, SECTION_EMPTY))
+            unwritten.append((role, title, SECTION_EMPTY))
         else:
-            unwritten.append((title, SECTION_PLACEHOLDER))
+            unwritten.append((role, title, SECTION_PLACEHOLDER))
     return unwritten
+
+
+def unfilled_required_roles(text: str, profile: str) -> List[str]:
+    """The roles behind `unfilled_required_sections`.
+
+    Two profiles name the same role differently ("Context" against "Context
+    and Problem Statement"), so a before/after comparison across a profile
+    conversion has to compare roles; comparing titles blamed the conversion
+    for every hole the source already had (TASK-201).
+    """
+    return [role for role, _title, _kind in _unwritten_required_roles(text, profile)]
 
 
 def unfilled_required_sections(text: str, profile: str) -> List[str]:
