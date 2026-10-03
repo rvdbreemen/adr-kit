@@ -1,10 +1,10 @@
 ---
 id: TASK-191
 title: Two agent-installer tests reach the live Copilot install instead of tmp_path
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-26 19:46'
-updated_date: '2026-10-03 13:54'
+updated_date: '2026-10-03 16:07'
 labels: []
 dependencies: []
 references:
@@ -46,7 +46,7 @@ SUGGESTED DIRECTION, not a decision: the fake runner should be reached before an
 - [x] #1 Both tests pass on a machine with GitHub Copilot CLI installed and the adr-kit plugin present
 - [x] #2 Neither test reads or writes any path under the developer's home directory; the probe target is injected
 - [x] #3 The failure is reproduced before the fix is designed, and the record states whether the defect was in the test or in a missing seam in the installer
-- [ ] #4 python -m pytest -q tests/test_agent_installer.py passes locally and in CI
+- [x] #4 python -m pytest -q tests/test_agent_installer.py passes locally and in CI
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -83,3 +83,9 @@ Dat maakt het een gecontroleerd experiment in plaats van een vermoeden: deze twe
 EEN TWEEDE BEVINDING VOOR DEZELFDE SCOPE. Tijdens de v0.56.0-install meldde de codex-poging `rollback error: codex validation failed: adr-kit MCP server not listed`. Dat leest als schade van de rollback, maar `codex plugin list` toonde adr-kit onveranderd als `installed, enabled`. De rollback-validatie faalde omdat de MCP-server niet kon antwoorden terwijl zijn eigen map op slot zat. De installatie was intact; alleen de boodschap suggereerde het tegendeel. Een foutpad dat een niet-bestaande schade meldt kost een maintainer net zoveel tijd als een echte.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #160. The defect was in the tests, not a missing seam: three Copilot cases never set COPILOT_HOME, so the replacement probe renamed the developer's live ~/.copilot plugin directory and back. An autouse fixture now sets COPILOT_HOME to tmp_path and asserts, before any rename, that every probe stays inside tmp_path. tests/test_agent_installer.py: 55 passed locally; full suite green in CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-192
 title: This repository's own .adr-kit/ADR-guide.md is stamped v0.35.0 and unmanaged
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-26 19:46'
-updated_date: '2026-10-03 14:04'
+updated_date: '2026-10-03 16:07'
 labels: []
 dependencies: []
 references:
@@ -84,3 +84,9 @@ templates/adr-kit-guide.md          v0.56.0   <- a different file, correctly bum
 SCOPE SHOULD WIDEN from `.adr-kit/` to `instructions/`, since that is the source and the copy is derived. AC#3 remains the real decision: declare it in `packaging/version-sites.json` so the writer moves it, or record why it is exempt. Cosmetic, pre-existing since v0.36.0, not a release blocker.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #162. instructions/ADR-guide.md, the source that setup copies into every project's .adr-kit/ADR-guide.md and that the generator copies into the client trees, is now a declared version site. Its stamp moved from v0.35.0 to 0.57.0. The copies were regenerated, and a test pins the stamp to the plugin version. Only the stamp changed; the content was already current.
+<!-- SECTION:FINAL_SUMMARY:END -->
