@@ -4,6 +4,20 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `adr-lint` can no longer walk without end while looking for an Accepted
+  binding ADR's `gate`. The scan descended into Windows junctions, which
+  `os.walk(followlinks=False)` does not treat as links, and its 5000-file cap
+  counted only files it read. A junction into a large tree took 160 s where it
+  now takes 0.5 s. The scan now skips directory links and `graphify-out`,
+  skips files over 1 MB, and stops after 100,000 entries or 10 seconds. When a
+  budget runs out the finding says the gate `could not be verified` and names
+  the budget, instead of reporting the gate as missing (TASK-209).
+- `bin/adr accept` no longer waits forever on the quality and lint runs it
+  starts: they time out after 120 s and report the timeout as an error. The
+  `git` calls in `adr-lint` no longer inherit the caller's stdin.
+
 ## [0.57.0] - 2026-09-08
 
 This release makes two gates stricter, and both can turn a pipeline that was
