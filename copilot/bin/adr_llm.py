@@ -22,8 +22,10 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 from typing import Dict, List, Optional, Tuple
 
 # Which entry point is running, used only as the warning prefix. A plain module
@@ -136,6 +138,71 @@ class LLMBackend:
         raise NotImplementedError
 
 
+def _kill_tree(proc: "subprocess.Popen[bytes]") -> None:
+    """Stop `proc` and everything it started, as far as the platform allows.
+
+    POSIX: the CLI runs in its own session, so its process group is the tree.
+    Windows: `taskkill /T` walks the tree from the live parent. A grandchild
+    whose parent has already exited is outside that tree and survives; the
+    caller still returns on time, because nothing waits on its pipes.
+    """
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def run_cli(cmd: List[str], input_text: str, timeout_s: float) -> subprocess.CompletedProcess:
+    """Run a host CLI with a wall-clock bound that its children cannot defeat.
+
+    `subprocess.run(capture_output=True, timeout=N)` kills only the direct
+    child and then waits for EOF on the pipes, so a grandchild that inherited
+    stdout held the call open until it exited: measured at 60 s for a 2 s
+    timeout (TASK-210). Output therefore goes to temporary files, which nobody
+    waits on, and a timeout takes the whole process tree down. Raises
+    `subprocess.TimeoutExpired` on timeout, like `subprocess.run`.
+    """
+    session = {"start_new_session": True} if os.name != "nt" else {}
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=out, stderr=err, **session
+        )
+        try:
+            proc.communicate(input=input_text.encode("utf-8"), timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            raise
+        out.seek(0)
+        err.seek(0)
+        return subprocess.CompletedProcess(
+            cmd,
+            proc.returncode,
+            out.read().decode("utf-8", errors="replace"),
+            err.read().decode("utf-8", errors="replace"),
+        )
+
+
 class SubprocessBackend(LLMBackend):
     """Spawn a client CLI, feed it the prompt on stdin, read stdout.
 
@@ -167,14 +234,7 @@ class SubprocessBackend(LLMBackend):
 
     def judge(self, prompt: str, timeout_s: int, adr_id: str) -> Optional[str]:
         try:
-            result = subprocess.run(
-                self.cmd,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=timeout_s,
-            )
+            result = run_cli(self.cmd, prompt, timeout_s)
         except subprocess.TimeoutExpired:
             _warn(
                 f"LLM call timed out after {timeout_s}s on {adr_id}; skipping "
