@@ -15,6 +15,12 @@ from client_certification import support_matrix, validate
 from client_evidence import CertificationError, assemble_native_bundle, write_bundle
 
 
+# ADR-010: release evidence older than this is stale. A simulated fixture has a
+# fixed date, so the CI check that renders docs/client-support.md from it
+# passes a wider window explicitly; release evidence cannot.
+CERTIFICATION_MAX_AGE_DAYS = 30
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="fail when generated files drift")
@@ -24,6 +30,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--certify", type=Path)
     parser.add_argument("--candidate-commit")
     parser.add_argument("--release-candidate", action="store_true")
+    parser.add_argument(
+        "--max-age-days",
+        type=int,
+        default=CERTIFICATION_MAX_AGE_DAYS,
+        help=(
+            "oldest acceptable contract date for --certify; only a simulated "
+            "bundle may relax it, never --release-candidate evidence"
+        ),
+    )
     parser.add_argument("--support-output", type=Path)
     parser.add_argument(
         "--assemble-native-evidence",
@@ -82,7 +97,11 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             print(f"certification bundle error: {exc}", file=sys.stderr)
             return 2
-        errors = validate(bundle, args.candidate_commit, args.release_candidate, 30)
+        if args.release_candidate and args.max_age_days != CERTIFICATION_MAX_AGE_DAYS:
+            parser.error("--max-age-days cannot relax --release-candidate evidence")
+        errors = validate(
+            bundle, args.candidate_commit, args.release_candidate, args.max_age_days
+        )
         if args.support_output and not errors:
             payload = support_matrix(bundle)
             if args.check:
