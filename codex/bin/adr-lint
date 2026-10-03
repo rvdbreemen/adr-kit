@@ -39,8 +39,10 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
@@ -256,9 +258,17 @@ TEXT_SCAN_SKIP_DIRS = {
     "__pycache__",
     "backlog",
     "docs",
+    "graphify-out",
     "node_modules",
     "vendor",
 }
+# Budgets for the gate scan. A repo root that is not a project root (an
+# unexpected cwd, a junction into a share) must end in a "not verified"
+# finding, not in a walk that runs for a day.
+GATE_SCAN_MAX_FILES = 5000
+GATE_SCAN_MAX_ENTRIES = 100_000
+GATE_SCAN_MAX_SECONDS = 10.0
+GATE_SCAN_MAX_FILE_BYTES = 1024 * 1024
 
 
 class PolicyError(Exception):
@@ -998,6 +1008,7 @@ def _verified_pointer_resolves(pointer: str, repo_root: Path) -> bool:
             result = subprocess.run(
                 ["git", "-C", str(repo_root), "cat-file", "-e", f"{commit}^{{commit}}"],
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 timeout=5,
             )
@@ -1021,45 +1032,99 @@ def _verified_pointer_resolves(pointer: str, repo_root: Path) -> bool:
         return False
 
 
-def _iter_gate_scan_files(repo_root: Path):
-    count = 0
+def _is_dir_link(path: Path) -> bool:
+    """True for a symlinked directory or a Windows junction.
+
+    os.walk(followlinks=False) only skips what os.path.islink reports, and a
+    junction is not a symlink to it: a junction back into the tree was walked
+    until the path limit, and one into a network share blocked on its reads.
+    """
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return True
+    if stat.S_ISLNK(st.st_mode):
+        return True
+    # Only junctions and symlinks: OneDrive placeholders and dedup volumes
+    # are reparse points too, and their contents are this project's own.
+    link_tags = {
+        getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", -1),
+        getattr(stat, "IO_REPARSE_TAG_SYMLINK", -1),
+    }
+    return getattr(st, "st_reparse_tag", 0) in link_tags
+
+
+def _iter_gate_scan_files(repo_root: Path, stopped: Optional[List[str]] = None):
+    """Yield the files a gate name may appear in, within fixed budgets.
+
+    Every budget counts what the walk costs, not only what it yields: the old
+    5000-file cap counted yielded files, so directories and skipped files were
+    unbounded. When a budget runs out the reason is appended to `stopped`.
+    """
+    def stop(reason: str) -> None:
+        if stopped is not None:
+            stopped.append(reason)
+
+    deadline = time.monotonic() + GATE_SCAN_MAX_SECONDS
+    visited = 0
+    yielded = 0
     for dirpath, dirnames, filenames in os.walk(repo_root, followlinks=False):
+        current = Path(dirpath)
         dirnames[:] = [
             d for d in dirnames
             if d not in TEXT_SCAN_SKIP_DIRS and d.lower() not in TEXT_SCAN_SKIP_DIRS
+            and not _is_dir_link(current / d)
         ]
         # Never descend into a nested checkout (git worktree, vendored clone):
         # its files belong to another tree, not to this project's source.
         dirnames[:] = [
-            d for d in dirnames if not (Path(dirpath) / d / ".git").exists()
+            d for d in dirnames if not (current / d / ".git").exists()
         ]
-        current = Path(dirpath)
         try:
             rel_first = current.relative_to(repo_root).parts[:1]
         except ValueError:
             rel_first = ()
         preferred_dir = bool(rel_first and rel_first[0] in TEXT_SCAN_DIRS)
+        visited += 1 + len(filenames)
+        if visited > GATE_SCAN_MAX_ENTRIES:
+            stop(f"scan stopped after {GATE_SCAN_MAX_ENTRIES} entries")
+            return
+        if time.monotonic() >= deadline:
+            stop(f"scan stopped after {GATE_SCAN_MAX_SECONDS:g} seconds")
+            return
         for fname in filenames:
             path = current / fname
-            if fname == "evaluate.py" or preferred_dir or path.suffix.lower() in TEXT_SCAN_SUFFIXES:
-                yield path
-                count += 1
-                if count >= 5000:
-                    return
+            if not (fname == "evaluate.py" or preferred_dir or path.suffix.lower() in TEXT_SCAN_SUFFIXES):
+                continue
+            try:
+                if path.stat().st_size > GATE_SCAN_MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            yield path
+            yielded += 1
+            if yielded >= GATE_SCAN_MAX_FILES:
+                stop(f"scan stopped after reading {GATE_SCAN_MAX_FILES} files")
+                return
 
 
-def _resolve_gates_locally(gates: Iterable[str], repo_root: Path) -> Set[str]:
-    """Return the subset of `gates` that appear somewhere under repo_root.
+def _scan_gates(
+    gates: Iterable[str], repo_root: Path
+) -> Tuple[Set[str], Optional[str]]:
+    """Return the gates found under repo_root, and why the scan stopped early.
 
     One pass over the scan set regardless of how many gates are checked. The
     previous per-gate helper re-walked and re-read the whole tree for every
-    gate, making lint runtime O(gates x files).
+    gate, making lint runtime O(gates x files). The second value is None when
+    the scan was complete, so a gate absent from the first value is missing;
+    otherwise it names the budget that ran out and absence proves nothing.
     """
     pending = {g.strip() for g in gates if g and g.strip()}
     found: Set[str] = set()
     if not pending:
-        return found
-    for path in _iter_gate_scan_files(repo_root):
+        return found, None
+    stopped: List[str] = []
+    for path in _iter_gate_scan_files(repo_root, stopped):
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
@@ -1069,8 +1134,13 @@ def _resolve_gates_locally(gates: Iterable[str], repo_root: Path) -> Set[str]:
             found |= hits
             pending -= hits
             if not pending:
-                break
-    return found
+                return found, None
+    return found, (stopped[0] if stopped else None)
+
+
+def _resolve_gates_locally(gates: Iterable[str], repo_root: Path) -> Set[str]:
+    """Return the subset of `gates` that appear somewhere under repo_root."""
+    return _scan_gates(gates, repo_root)[0]
 
 
 def _gate_exists_locally(gate: str, repo_root: Path) -> bool:
@@ -1121,7 +1191,7 @@ def detect_frontmatter_consistency(
         and record["data"].get("binding") is True
         and record["data"].get("gate")
     }
-    present_gates = _resolve_gates_locally(_wanted_gates, repo_root)
+    present_gates, gate_scan_stopped = _scan_gates(_wanted_gates, repo_root)
 
     for adr_id, record in reported.items():
         data = record["data"]
@@ -1177,7 +1247,14 @@ def detect_frontmatter_consistency(
             if not gate:
                 add(record, "Accepted binding ADR requires a named gate")
             elif str(gate).strip() not in present_gates:
-                add(record, f"gate {gate!r} was not found under {repo_root}")
+                if gate_scan_stopped:
+                    add(
+                        record,
+                        f"gate {gate!r} could not be verified under {repo_root}: "
+                        f"{gate_scan_stopped}; pass --repo-root the project root",
+                    )
+                else:
+                    add(record, f"gate {gate!r} was not found under {repo_root}")
 
     return issues
 
@@ -1330,6 +1407,7 @@ def _previous_revision(path: Path) -> Optional[str]:
             ["git", "show", f"HEAD:./{path.name}"],
             cwd=str(path.parent),
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
             errors="replace",
