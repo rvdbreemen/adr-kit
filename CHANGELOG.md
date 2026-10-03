@@ -6,6 +6,13 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- `adr-retire` scans what git would version, not what lies around. It walked
+  every directory, so git-ignored output such as `graphify-out/` (1174 files,
+  67 MB on one machine) took a run from under a second to 3.3 s, and CI,
+  where that folder does not exist, never saw it. Inside a git repository it
+  now reads `git ls-files --cached --others --exclude-standard`; outside one,
+  its walk skips junctions and directory symlinks and stops after 100,000
+  entries or 10 seconds, as `adr-lint`'s scan does since 0.58.0 (TASK-212).
 - `scripts/release.py` can be re-run after `prepare`, as its own message
   says. preflight refused the uncommitted version bump that prepare leaves
   behind on purpose; it now accepts a tree whose only changes are declared

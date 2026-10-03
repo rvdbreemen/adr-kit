@@ -4,7 +4,7 @@ title: Small follow-ups from the 2026-10-03 backlog sweep
 status: Done
 assignee: []
 created_date: '2026-10-03 15:52'
-updated_date: '2026-10-03 20:38'
+updated_date: '2026-10-03 20:39'
 labels:
   - chore
 dependencies: []
@@ -42,6 +42,8 @@ Resolved 2026-10-03, item by item.
 6. release.py preflight accepts a dirty tree only when the version is already everywhere and every changed path is a declared version site or under codex/ or copilot/; otherwise it names the stray files. Three tests. release_phases.py is at 355 of 400 lines.
 
 Broad set (release, bump, artifacts, answer, lifecycle, docs, adapters, allowlist, installer, setup, packaging): 236 passed, 1 skipped.
+
+Original finding for item 6, recorded during the v0.58.0 release (TASK-214): scripts/release.py's preflight refused a dirty tree (scripts/release_phases.py:59-66), and preflight_done was always False. But prepare deliberately leaves the version bump and the CHANGELOG uncommitted and asks the operator to re-run the same command, which preflight then refused. Worked around with --only per phase at the time.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
