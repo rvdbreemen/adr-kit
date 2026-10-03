@@ -4,6 +4,23 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.59.0] - 2026-10-03
+
+A follow-up to 0.58.0 that finishes the same theme: tools that measured the
+developer's machine instead of the project, and tools that quietly rewrote
+files they should only have read.
+
+Upgrade notes. Nothing needs to change, but two results can differ:
+
+- `adr-retire` now reads the files git versions (tracked, plus untracked
+  files that are not ignored). A technology used only in git-ignored output
+  no longer counts as in use, so an ADR whose only remaining trace was build
+  output may now appear as a retirement candidate. That is the intended
+  reading; check the candidate before retiring it.
+- `/adr-kit:lint` now runs `bin/adr-lint`, so the first run may ask your
+  client for permission to use the shell.
+
 ### Fixed
 
 - `adr-retire` scans what git would version, not what lies around. It walked
@@ -3195,7 +3212,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...HEAD
+[0.59.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...v0.56.0
