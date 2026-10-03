@@ -137,8 +137,19 @@ def load_adr(path: Path) -> Tuple[Dict, str]:
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
-    """Write one file through a unique same-directory temporary and replace."""
+    """Write one file through a unique same-directory temporary and replace.
+
+    An existing file keeps its line endings. Every reader here goes through
+    read_text, which turns CRLF into "\\n", so writing the text back as-is
+    rewrote a CRLF record as LF and made one answered question look like a
+    whole-file change on a Windows checkout (TASK-213).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if b"\r\n" in path.read_bytes()[:4096]:
+            text = text.replace("\r\n", "\n").replace("\n", "\r\n")
+    except OSError:
+        pass
     temp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(

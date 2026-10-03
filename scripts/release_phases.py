@@ -56,14 +56,38 @@ def preflight_done(ctx: Context) -> bool:
     return False  # cheap, and its answer can change between runs
 
 
+def _dirty_paths() -> List[str]:
+    paths = []
+    for line in git("status", "--porcelain")[1].splitlines():
+        if len(line) > 3:
+            paths.append(line[3:].split(" -> ")[-1].strip().strip('"'))
+    return paths
+
+
+def _release_owned(path: str) -> bool:
+    """A file prepare writes: a declared version site or a generated client tree."""
+    registry = json.loads((ROOT / "packaging" / "version-sites.json").read_text(encoding="utf-8"))
+    sites = {site["path"] for site in registry.get("sites", [])}
+    return path in sites or path.startswith(("codex/", "copilot/"))
+
+
 def preflight(ctx: Context) -> List[str]:
     notes = []
-    if not _clean_tree():
-        raise ReleaseError(
-            "the working tree has uncommitted changes. Commit or stash them "
-            "first: a release commit must contain the version bump and nothing "
-            "that happened to be lying around."
-        )
+    dirty = _dirty_paths()
+    if dirty:
+        # prepare leaves its bump uncommitted on purpose and asks for a re-run;
+        # refusing that tree made the re-run impossible (TASK-213). Accept it
+        # only once the version is written and every change is prepare's own.
+        stray = [path for path in dirty if not _release_owned(path)]
+        if stray or not _version_everywhere(ctx):
+            listed = "".join(f"\n  {path}" for path in stray)
+            raise ReleaseError(
+                "the working tree has uncommitted changes. Commit or stash them "
+                "first: a release commit must contain the version bump and "
+                "nothing that happened to be lying around."
+                + (f"\nNot written by the release:{listed}" if listed else "")
+            )
+        notes.append(f"continuing a prepared release: {len(dirty)} release file(s) changed")
     code, out, _ = script("check-branch-sync.py")
     if code == 1:
         raise ReleaseError(
