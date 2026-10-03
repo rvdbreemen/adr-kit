@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
+# Ceiling for the quality and lint runs `accept` waits on. Both finish in
+# seconds; without a ceiling a lint that never returned held `accept` forever.
+LIFECYCLE_TOOL_TIMEOUT_S = 120
 
 
 def _load_sibling(name: str):
@@ -626,7 +629,18 @@ def _auto_accept_config(args, adr_dir: Path) -> Tuple[str, float]:
 
 
 def _run_json_tool(command: List[str]) -> Tuple[int, Dict]:
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=LIFECYCLE_TOOL_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AdrLifecycleError(
+            f"tool timed out after {LIFECYCLE_TOOL_TIMEOUT_S:g}s: {' '.join(command)}"
+        ) from exc
     if result.returncode != 0 and not result.stdout.strip():
         # A non-zero exit with no stdout is a crash, not a gate verdict: the
         # tool never reached its JSON writer. Surface stderr instead of
