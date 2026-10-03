@@ -26,12 +26,26 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- `adr-migrate` names a Related Decisions section it had to add. The
+  conversion writes `- None.` into it, which every detector rightly reads as
+  content, but the author never saw the section. It is now listed as
+  `review: ## Related Decisions`, apart from the placeholder holes, and a
+  hand-written `- None.` is still left alone (TASK-202).
 - `adr-migrate --to-profile` no longer blames a conversion for holes the
   source already had. It compared section titles before and after, and two
   profiles name the same section differently, so a nygard `## Context` that
   already held a TODO was reported as a new `## Context and Problem
   Statement` hole on the way to madr. It now compares roles, each side read
   in its own profile (TASK-201).
+- The judge's LLM pass now has a ceiling it keeps. A host CLI call used to
+  return only when every process holding its output pipe had exited, so a
+  helper it started could hold a 120 s call open indefinitely: measured at
+  60 s for a 2 s timeout. Output now goes to temporary files and a timeout
+  stops the CLI's whole process tree. The pass as a whole stops after
+  `judge.llm_pass_timeout_seconds` (default 600); ADRs not reached get no
+  verdict and the attestation names them, as for any unusable call
+  (ADR-038). `adr-judge-precommit` gives up after 900 s, configurable with
+  `ADR_KIT_JUDGE_TIMEOUT_S`, and exits 2 with a hint (TASK-210).
 - `adr-lint` can no longer walk without end while looking for an Accepted
   binding ADR's `gate`. The scan descended into Windows junctions, which
   `os.walk(followlinks=False)` does not treat as links, and its 5000-file cap
