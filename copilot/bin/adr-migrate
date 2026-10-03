@@ -59,6 +59,7 @@ from adr_format import (
     AdrFormatError,
     classify_format,
     convert_profile,
+    has_role_heading,
     heading,
     is_migration_candidate,
     migration_notice,
@@ -169,6 +170,7 @@ def migrate_file(
     after, changed, issues = migrate_text(before, path)
     detected_source = None
     unfilled: List[str] = []
+    machine_written: List[str] = []
     if not issues and to_profile is not None:
         try:
             after, detected_source = convert_profile(
@@ -188,6 +190,14 @@ def migrate_file(
                 for role in unfilled_required_roles(after, to_profile)
                 if role not in already
             ]
+            # The conversion writes "- None." into a Related Decisions section
+            # it had to add. That is real content to every detector, by
+            # design, but nobody answered it: the author never saw the
+            # section. Name it for review rather than as a hole (TASK-202).
+            if not has_role_heading(
+                before, detected_source, "related"
+            ) and has_role_heading(after, to_profile, "related"):
+                machine_written.append(heading(to_profile, "related"))
         except AdrFormatError as exc:
             issues = [str(exc)]
     if not issues and changed and write:
@@ -209,6 +219,7 @@ def migrate_file(
         "source_profile": detected_source,
         "target_profile": to_profile,
         "unfilled_sections": unfilled,
+        "machine_written_sections": machine_written,
     }
 
 
@@ -232,6 +243,11 @@ def render_text(target: Path, results: List[Dict], check: bool, dry_run: bool) -
         for section in result.get("unfilled_sections") or []:
             unfilled_any = True
             lines.append(f"    needs content: ## {section}")
+        for section in result.get("machine_written_sections") or []:
+            lines.append(
+                f"    review: ## {section} (written as '- None.' by the "
+                f"migration; confirm it, or name the related ADRs)"
+            )
         if result["issues"]:
             lines.append(f"  failed: {result['file']}")
             for issue in result["issues"]:

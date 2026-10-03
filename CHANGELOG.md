@@ -17,6 +17,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- `adr-migrate` names a Related Decisions section it had to add. The
+  conversion writes `- None.` into it, which every detector rightly reads as
+  content, but the author never saw the section. It is now listed as
+  `review: ## Related Decisions`, apart from the placeholder holes, and a
+  hand-written `- None.` is still left alone (TASK-202).
 - `adr-migrate --to-profile` no longer blames a conversion for holes the
   source already had. It compared section titles before and after, and two
   profiles name the same section differently, so a nygard `## Context` that
