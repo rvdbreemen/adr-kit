@@ -23,6 +23,7 @@
           "implementation_link", "next_command"
         ],
         "properties": {
+          "date": {"type": ["string", "null"]},
           "classification": {
             "enum": [
               "not-an-adr",
