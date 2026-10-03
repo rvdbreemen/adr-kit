@@ -4,6 +4,7 @@ title: Small follow-ups from the 2026-10-03 backlog sweep
 status: To Do
 assignee: []
 created_date: '2026-10-03 15:52'
+updated_date: '2026-10-03 19:53'
 labels:
   - chore
 dependencies: []
@@ -22,3 +23,9 @@ Side findings recorded while working TASK-191..211. None is fixed; each needs it
 4. `bin/adr answer` rewrites a CRLF file to LF, like the other lifecycle writers.
 5. .githooks/pre-commit runs adr-judge without its own timeout; the LLM pass ceiling from TASK-210 now bounds it, but the declarative pass is not bounded there.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+6. scripts/release.py: preflight refuses a dirty tree (scripts/release_phases.py:59-66), and preflight_done is always False. But prepare deliberately leaves the version bump and the CHANGELOG uncommitted, and asks the operator to run the same command again, which preflight then refuses. Seen on the v0.58.0 release (TASK-214); worked around with --only per phase. Fix direction: let preflight accept a tree whose only changes are prepare's own version sites, CHANGELOG and README; or have prepare's message name --only; or have prepare commit onto the release branch.
+<!-- SECTION:NOTES:END -->
