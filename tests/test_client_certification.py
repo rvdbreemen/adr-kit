@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/client_certification.py"
@@ -137,6 +139,9 @@ def test_schema_and_fixture_scope_exclude_future_clients():
 
 
 def test_public_generator_entrypoint_validates_and_renders_support_matrix(tmp_path):
+    # The fixture's contract date is fixed, so under the default 30-day rule
+    # this test expired 30 days after it. It passes the same wide window that
+    # validate.yml passes; the freshness rule has its own test above.
     fixture = ROOT / "tests/certification/simulated-pass.json"
     output = tmp_path / "support.md"
     command = [
@@ -146,6 +151,8 @@ def test_public_generator_entrypoint_validates_and_renders_support_matrix(tmp_pa
         str(fixture),
         "--candidate-commit",
         "simulated-task40",
+        "--max-age-days",
+        "36500",
         "--support-output",
         str(output),
         "--format",
@@ -394,3 +401,48 @@ def test_release_workflow_pins_evidence_separately_from_candidate():
     assert "actions/upload-artifact@v4" in workflow
     assert "include-hidden-files: true" in workflow
     assert "docs/client-support.md `" not in workflow
+
+
+def test_release_candidate_evidence_cannot_widen_the_freshness_window():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(BUILD),
+            "--certify",
+            str(ROOT / "tests/certification/simulated-pass.json"),
+            "--candidate-commit",
+            "0123456789abcdef",
+            "--release-candidate",
+            "--max-age-days",
+            "36500",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 2
+    assert "cannot relax --release-candidate" in result.stderr
+
+
+def test_default_freshness_window_still_rejects_the_fixed_fixture():
+    # Guards the default: without the explicit flag the 2026-08-19 fixture is
+    # older than 30 days and must be refused.
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(BUILD),
+            "--certify",
+            str(ROOT / "tests/certification/simulated-pass.json"),
+            "--candidate-commit",
+            "simulated-task40",
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if (dt.date.today() - dt.date(2026, 8, 19)).days <= 30:
+        pytest.skip("fixture still inside the default window")
+    assert result.returncode == 1
+    assert "stale" in result.stdout
