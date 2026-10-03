@@ -69,6 +69,12 @@
       "label": "adr-kit guide version stamp"
     },
     {
+      "path": "instructions/ADR-guide.md",
+      "kind": "regex",
+      "pattern": "(<!-- adr-kit-guide v)(\\d+\\.\\d+\\.\\d+)( -->)",
+      "label": "installed ADR guide version stamp"
+    },
+    {
       "path": "README.md",
       "kind": "regex_all",
       "pattern": "(adr-judge@v)(\\d+\\.\\d+\\.\\d+)",
