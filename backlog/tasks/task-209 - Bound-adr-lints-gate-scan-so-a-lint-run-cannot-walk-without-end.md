@@ -4,7 +4,7 @@ title: Bound adr-lint's gate scan so a lint run cannot walk without end
 status: In Progress
 assignee: []
 created_date: '2026-10-03 12:19'
-updated_date: '2026-10-03 12:52'
+updated_date: '2026-10-03 13:09'
 labels:
   - lint
   - performance
@@ -60,4 +60,6 @@ AC#6 open: full suite 1902 passed, 4 failed. Two were codex/copilot sync (adapte
 Not covered: the time budget is only checked between directories, so it cannot interrupt one read blocked on a dead share. Gates in files behind a skipped link now read as 'not found'; the message does not say links were skipped.
 
 Next suspect for the 24 h run (unverified): adr-judge's LLM pass. adr_llm.py calls `claude -p` with a timeout per ADR, but without stdin=DEVNULL kill-tree handling, and adr-judge-precommit starts adr-judge with no timeout at all. The judge in this session took 198 s for 6 ADRs.
+
+Committed ff3c1b8 on fix/bound-lint-gate-scan; PR #158 to dev (https://github.com/rvdbreemen/adr-kit/pull/158). No --auto: on dev only `validate` is required and it runs a subset, so wait for the full matrix.
 <!-- SECTION:NOTES:END -->
