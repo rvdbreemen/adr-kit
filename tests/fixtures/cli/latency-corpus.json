@@ -156,6 +156,12 @@
       "p50_ms": 450,
       "p95_ms": 450,
       "hard_timeout_ms": 2000
+    },
+    "adr-substance": {
+      "kind": "startup",
+      "p50_ms": 350,
+      "p95_ms": 450,
+      "hard_timeout_ms": 2000
     }
   },
   "evidence": {

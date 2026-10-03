@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _BIN_DIR = Path(__file__).resolve().parent
+# Ceiling for the quality and lint runs `accept` waits on. Both finish in
+# seconds; without a ceiling a lint that never returned held `accept` forever.
+LIFECYCLE_TOOL_TIMEOUT_S = 120
 
 
 def _load_sibling(name: str):
@@ -52,6 +55,7 @@ from adr_format import (
     AdrFormatError,
     configured_profile,
     normalize_profile,
+    open_question_items,
     profile_catalog,
     profile_template_path,
     section_span,
@@ -625,7 +629,18 @@ def _auto_accept_config(args, adr_dir: Path) -> Tuple[str, float]:
 
 
 def _run_json_tool(command: List[str]) -> Tuple[int, Dict]:
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=LIFECYCLE_TOOL_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AdrLifecycleError(
+            f"tool timed out after {LIFECYCLE_TOOL_TIMEOUT_S:g}s: {' '.join(command)}"
+        ) from exc
     if result.returncode != 0 and not result.stdout.strip():
         # A non-zero exit with no stdout is a crash, not a gate verdict: the
         # tool never reached its JSON writer. Surface stderr instead of
@@ -935,25 +950,32 @@ def command_answer(args) -> List[str]:
     start, end, section = _open_questions_section(body)
 
     lines = section.splitlines()
+    # A question is an item, not a line: a wrapped question or one with nested
+    # bullets is answered once, after its last line (TASK-194).
     unresolved = [
-        (index, line)
-        for index, line in enumerate(lines)
-        if re.match(r"^\s*[-*+]\s*(?:\[\s\]\s+)?\S", line)
-        and not re.match(r"^\s*[-*+]\s*\[[xX]\]", line)
-        and re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip().casefold().rstrip(".")
-        not in {"none", "no open questions", "no unresolved questions"}
+        item
+        for item in open_question_items(section)
+        if item["is_question"] and not item["answered"] and item["question"]
     ]
     if not unresolved:
         raise AdrLifecycleError(f"{adr_id} has no unresolved question to answer")
 
     target = _select_question(unresolved, args.question)
-    index, line = target
-    question_text = re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip()
+    question_text = target["text"]
     changed_by = resolve_signer(adr_dir, args.changed_by)
-    lines[index] = (
-        f"- [x] {question_text} — **Answered {args.date} by {changed_by}:** "
-        f"{str(args.answer).strip()}"
+    marker = (
+        f"— **Answered {args.date} by {changed_by}:** {str(args.answer).strip()}"
     )
+    first = lines[target["start"]]
+    if re.match(r"^\s*[-*+]\s", first):
+        first_text = re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", first).strip()
+    else:
+        first_text = first.strip()
+    if target["start"] == target["end"]:
+        lines[target["start"]] = f"- [x] {first_text} {marker}"
+    else:
+        lines[target["start"]] = f"- [x] {first_text}"
+        lines.insert(target["end"] + 1, f"  {marker}")
 
     # splitlines() drops the section's trailing newline; putting it back is what
     # keeps the blank line before the next heading, and a heading that loses its
@@ -962,19 +984,26 @@ def command_answer(args) -> List[str]:
     body = body[:start] + rewritten + body[end:]
     _commit_lifecycle_changes(adr_dir, [(path, render_frontmatter(data) + body)])
     return [
-        f"answered in {path.name}: {question_text[:70]}",
+        f"answered in {path.name}: {_shorten(question_text, 100)}",
         "the question and its answer stay in the record; acceptance is no longer blocked by it",
     ]
 
 
-def _select_question(unresolved: List[Tuple[int, str]], wanted: Optional[str]):
+def _shorten(text: str, limit: int) -> str:
+    """`text` whole, or cut at the last word boundary before `limit` plus " ..."."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0]
+    return f"{cut} ..."
+
+
+def _select_question(unresolved: List[Dict], wanted: Optional[str]):
     """Pick the question to answer: the only one, an index, or a substring."""
     if wanted is None:
         if len(unresolved) > 1:
             listing = "; ".join(
-                f"{position}: "
-                + re.sub(r"^\s*[-*+]\s*(?:\[\s\]\s+)?", "", line).strip()[:60]
-                for position, (_index, line) in enumerate(unresolved, 1)
+                f"{position}: {_shorten(item['text'], 60)}"
+                for position, item in enumerate(unresolved, 1)
             )
             raise AdrLifecycleError(
                 f"{len(unresolved)} unresolved questions; name one with "
@@ -991,7 +1020,7 @@ def _select_question(unresolved: List[Tuple[int, str]], wanted: Optional[str]):
         return unresolved[position - 1]
 
     needle = str(wanted).casefold()
-    matches = [item for item in unresolved if needle in item[1].casefold()]
+    matches = [item for item in unresolved if needle in item["text"].casefold()]
     if not matches:
         raise AdrLifecycleError(f"no unresolved question matches {wanted!r}")
     if len(matches) > 1:

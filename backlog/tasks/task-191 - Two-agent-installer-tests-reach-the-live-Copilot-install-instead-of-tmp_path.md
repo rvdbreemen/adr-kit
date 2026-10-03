@@ -1,10 +1,10 @@
 ---
 id: TASK-191
 title: Two agent-installer tests reach the live Copilot install instead of tmp_path
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-26 19:46'
-updated_date: '2026-08-27 06:17'
+updated_date: '2026-10-03 16:07'
 labels: []
 dependencies: []
 references:
@@ -43,11 +43,21 @@ SUGGESTED DIRECTION, not a decision: the fake runner should be reached before an
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Both tests pass on a machine with GitHub Copilot CLI installed and the adr-kit plugin present
-- [ ] #2 Neither test reads or writes any path under the developer's home directory; the probe target is injected
-- [ ] #3 The failure is reproduced before the fix is designed, and the record states whether the defect was in the test or in a missing seam in the installer
-- [ ] #4 python -m pytest -q tests/test_agent_installer.py passes locally and in CI
+- [x] #1 Both tests pass on a machine with GitHub Copilot CLI installed and the adr-kit plugin present
+- [x] #2 Neither test reads or writes any path under the developer's home directory; the probe target is injected
+- [x] #3 The failure is reproduced before the fix is designed, and the record states whether the defect was in the test or in a missing seam in the installer
+- [x] #4 python -m pytest -q tests/test_agent_installer.py passes locally and in CI
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+REPRODUCED 2026-10-03, read-only. A spy on native.directory_replacement_blocked_by showed every Copilot case probing C:\Users\rvdbr\.copilot\installed-plugins\rvdbreemen-adr-kit-copilot. The defect is in the tests, not a missing seam: install_copilot reads COPILOT_HOME through copilot_plugin_directory() (clients/installer/native.py:251-255), and the neighbouring tests already inject it with monkeypatch.setenv. These tests never did.
+
+The record understated two things. (1) Severity: when Copilot does not hold the directory, the tests pass by renaming the developer's live plugin directory and back (native.py:258-279). A run killed between the two renames leaves it at *.adr-kit-probe. Today's full-suite runs did rename it (installed-plugins mtime 14:49:40), and it came back intact. (2) Scope: a third case, test_failed_install_keeps_a_marketplace_it_did_not_register[copilot], also probed home. The rollback test probes twice (native.py:351-353).
+
+Fix (tests only): an autouse fixture in tests/test_agent_installer.py sets COPILOT_HOME to tmp_path/copilot-home and wraps the probe with an assertion that its path is under tmp_path. The assertion fires before any rename. Guard alone: 3 cases fail with 'replacement probe reached C:\Users\rvdbr\.copilot\...', and the live directory is untouched. With COPILOT_HOME: tests/test_agent_installer.py 55 passed, installed-plugins mtime unchanged.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
@@ -73,3 +83,9 @@ Dat maakt het een gecontroleerd experiment in plaats van een vermoeden: deze twe
 EEN TWEEDE BEVINDING VOOR DEZELFDE SCOPE. Tijdens de v0.56.0-install meldde de codex-poging `rollback error: codex validation failed: adr-kit MCP server not listed`. Dat leest als schade van de rollback, maar `codex plugin list` toonde adr-kit onveranderd als `installed, enabled`. De rollback-validatie faalde omdat de MCP-server niet kon antwoorden terwijl zijn eigen map op slot zat. De installatie was intact; alleen de boodschap suggereerde het tegendeel. Een foutpad dat een niet-bestaande schade meldt kost een maintainer net zoveel tijd als een echte.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #160. The defect was in the tests, not a missing seam: three Copilot cases never set COPILOT_HOME, so the replacement probe renamed the developer's live ~/.copilot plugin directory and back. An autouse fixture now sets COPILOT_HOME to tmp_path and asserts, before any rename, that every probe stays inside tmp_path. tests/test_agent_installer.py: 55 passed locally; full suite green in CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

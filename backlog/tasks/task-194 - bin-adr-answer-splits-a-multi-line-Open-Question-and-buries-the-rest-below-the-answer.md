@@ -3,9 +3,10 @@ id: TASK-194
 title: >-
   bin/adr answer splits a multi-line Open Question and buries the rest below the
   answer
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-26 20:25'
+updated_date: '2026-10-03 16:07'
 labels: []
 dependencies: []
 references:
@@ -43,9 +44,27 @@ NOT INVESTIGATED: whether the same truncation affects `bin/adr reject` or any ot
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Answering a multi-line Open Question keeps the whole question together and places the answer after all of it
-- [ ] #2 The command's confirmation output does not truncate the question mid-word
-- [ ] #3 A regression test covers a question of at least three lines and asserts the answer follows the complete question text
-- [ ] #4 ADR-042's answered question is reflowed as part of the fix, since the append-only rule forbids repairing it by hand
-- [ ] #5 python -m pytest -q passes
+- [x] #1 Answering a multi-line Open Question keeps the whole question together and places the answer after all of it
+- [x] #2 The command's confirmation output does not truncate the question mid-word
+- [x] #3 A regression test covers a question of at least three lines and asserts the answer follows the complete question text
+- [x] #4 ADR-042's answered question is reflowed as part of the fix, since the append-only rule forbids repairing it by hand
+- [x] #5 python -m pytest -q passes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reproduced 2026-10-03 with a three-question fixture (wrapped, wrapped with a '?' continuation, nested bullets). The recorded cause is correct but incomplete, and the severity is understated. (1) Deadlock: a continuation line ending in '?' counted as an open question (adr_format.unresolved_open_questions) that answer could not target, so accept stayed blocked after every question was answered. (2) Nested bullets counted as separate questions. (3) --question <text> searched the first line only. (4) The truncated echo is a separate cause: fixed [:70]/[:60] slices. The two parsers also disagreed on the count (5 vs 6).
+
+Fix: one helper, adr_format.open_question_items, groups the section into items (a top-level bullet plus indented lines, nested bullets and lazy continuations; a paragraph counts only if a line ends in '?'). It is used by command_answer, unresolved_open_questions and all_open_questions. Single-line answers keep the one-line form; a multi-line question gets '  — **Answered …**' on a new line after its last line. Identity (ADR-022 append-only) stays _normalise_question over the joined text, so answered and unanswered forms match. The echo cuts at a word boundary. Own ADRs: readiness output byte-identical before and after, and lint is clean. Tests: tests/test_adr_answer_multiline.py (7) plus the related suites, 122 passed.
+
+Not changed: answer rewrites CRLF files to LF, like the other lifecycle writers (seen in the reproduction).
+
+AC#4: ADR-042's answered question was reflowed by script. The answer moved from the end of line 1 to a new line after the question's last line, and the word multiset was asserted unchanged. The question identity changes from the truncated 'Does ... being' (an artefact of the old layout) to the whole question. The ADR-022 append-only guard does not apply because ADR-042 is Accepted. adr-lint over docs/adr is clean; single-file strict lint gives the same 5 findings before and after (directory-context artefacts); judge OK; the index check finds no artefact change.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #163. adr_format.open_question_items groups the Open Questions section into items, and `answer`, unresolved_open_questions and all_open_questions all use it. This fixes four things: the answer landing mid-question, --question matching only the first line, nested bullets counting as questions, and a deadlock where a continuation line ending in '?' kept accept blocked. The confirmation no longer cuts the question mid-word. ADR-042's answered question was reflowed, with the word set unchanged. Full suite green in CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

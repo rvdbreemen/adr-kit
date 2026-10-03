@@ -314,7 +314,7 @@ For another project, use the published package:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.57.0"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.58.0"]
 }
 ```
 
@@ -419,6 +419,8 @@ Three layers, each with a clear path:
 - **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart reads only that local 24-hour cache and offers at most three next actions; it never scans or starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
   - **Team mode (v0.22.0+)**: a weekly CI cron sweep maintains a single "ADR guardian audit" tracking issue (created on findings, updated, closed when clean) so the whole team sees ADR health, not just whoever opened a session today. Copy `templates/github-workflows/adr-guardian-audit.yml` into your repo.
   - **Trend history (v0.29.0+)**: every sweep appends to a 52-entry trend log, and the nudge shows the delta: `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`. A KPI with memory, not a snapshot.
+  - **Sections that say nothing (v0.58.0+)**: in the LLM tier, `bin/adr-substance` asks the model whether each written section of a Proposed ADR answers its heading, and reports "TBD", "see above" and generic prose with the author's own words quoted. One call per Proposed ADR, counted in the cost prompt; advisory only.
+- **Rules that check nothing (`adr-judge --check-scope`, v0.58.0+)**: names every Enforcement rule of an Accepted ADR whose `path_glob` matches no tracked file, because such a rule stays green forever. `adr-audit --whole-codebase` includes it as advisory.
 - **Health dashboard (`adr-audit status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, retrieval probe results, Accepted-binding metadata completeness, and the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
 - **Quality scoring (`adr-audit quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
 - **Generated index refresh (`bin/adr-index docs/adr/`)**: atomically rebuilds the sentinel-owned `docs/adr/README.md` block plus `ADR-INDEX.md` and `ADR-INDEX.json`. `--check` exits non-zero when any generated view is missing or stale, or duplicate ADR ids exist. Use `--format graph --adr-dir docs/adr` to inspect the graph without writing.
@@ -671,7 +673,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.57.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.58.0
         with:
           adr-dir: docs/adr/
 ```
@@ -685,7 +687,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.57.0
+    rev: v0.58.0
     hooks:
       - id: adr-judge
 ```

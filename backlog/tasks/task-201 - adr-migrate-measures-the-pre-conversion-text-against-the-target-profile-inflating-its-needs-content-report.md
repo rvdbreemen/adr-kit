@@ -3,10 +3,10 @@ id: TASK-201
 title: >-
   adr-migrate measures the pre-conversion text against the target profile,
   inflating its needs-content report
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-06 15:11'
-updated_date: '2026-09-07 20:03'
+updated_date: '2026-10-03 16:07'
 labels:
   - bug
   - migrate
@@ -27,9 +27,17 @@ The fix is to resolve the before-text with its own detected profile (detect_prof
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The before-set is computed with the profile the pre-conversion text actually has
-- [ ] #2 A cross-profile fixture proves the delta no longer names a section that was already unwritten before the run
+- [x] #1 The before-set is computed with the profile the pre-conversion text actually has
+- [x] #2 A cross-profile fixture proves the delta no longer names a section that was already unwritten before the run
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reproduced 2026-10-03: a nygard record whose Context holds a TODO, migrated with --to-profile madr, reported 'needs content' for both Context and Problem Statement and Decision Drivers; only the second is a hole the run opened. Root cause: bin/adr-migrate compared title sets, with 'before' measured against the target profile, and titles differ per profile. The fix the description proposed (measure 'before' in the source profile) still fails, because the title delta is unchanged; it has to be a role comparison. The concern that detect_profile could return hybrid/unknown does not apply: convert_profile normalises the source and returns it, and adr-migrate already uses that value.
+
+Fix: adr_format.unfilled_required_roles (shares _unwritten_required_roles with the title-based helpers); adr-migrate compares roles(after, target) against roles(before, detected_source) and prints the target titles. New test test_a_cross_profile_migration_blames_only_the_holes_it_opened; it failed before the fix and passes after. Selectable-formats, readiness and policy tests: 105 passed. Adapters regenerated.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
@@ -57,3 +65,9 @@ DIRECTION, replacing the one in the description: compare by ROLE. Either build b
 Severity unchanged and still not a release blocker: over-reporting names a hole the author genuinely has, which is the conservative direction to fail in.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #165. adr-migrate compares unfilled sections by role, with each side read in its own profile, so a hole the source already had is no longer blamed on a cross-profile conversion. The fix the task originally proposed would not have helped, because the titles still differ across profiles. A cross-profile fixture covers it.
+<!-- SECTION:FINAL_SUMMARY:END -->

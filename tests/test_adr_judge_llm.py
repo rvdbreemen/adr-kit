@@ -794,7 +794,7 @@ def test_spawn_failure_degrades_instead_of_raising(monkeypatch):
     def boom(*_args, **_kwargs):
         raise OSError(8, "%1 is not a valid Win32 application")
 
-    monkeypatch.setattr(aj.subprocess, "run", boom)
+    monkeypatch.setattr(aj._adr_llm, "run_cli", boom)
     monkeypatch.setattr(aj.shutil, "which", lambda _b: "/somewhere/claude")
     attestation = {"evaluated": [], "degraded": False, "degraded_reason": None}
     result = aj.run_llm_batch(
@@ -825,7 +825,7 @@ def _judge_module_with_responses(monkeypatch, responses):
         calls["n"] += 1
         return _R(stdout)
 
-    monkeypatch.setattr(aj.subprocess, "run", fake_run)
+    monkeypatch.setattr(aj._adr_llm, "run_cli", fake_run)
     monkeypatch.setattr(aj.shutil, "which", lambda _b: "/somewhere/claude")
     return aj
 
@@ -1066,12 +1066,12 @@ def test_host_backend_produces_a_verdict(monkeypatch):
         stdout = BAD_VERDICT
         stderr = ""
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd, input_text, timeout_s):
         seen["cmd"] = cmd
-        seen["input"] = kwargs.get("input")
+        seen["input"] = input_text
         return _R()
 
-    monkeypatch.setattr(aj.subprocess, "run", fake_run)
+    monkeypatch.setattr(aj._adr_llm, "run_cli", fake_run)
     monkeypatch.setattr(aj.shutil, "which", lambda _b: "/somewhere/claude")
     backend, _ = aj.resolve_llm_backend(
         {"backend": "host"}, {"judge": {"host_client": "claude-code-cli"}}, None, {}
@@ -1161,7 +1161,7 @@ def test_the_host_backend_degrades_on_unparseable_output(monkeypatch):
         stdout = "I am afraid I cannot do that."
         stderr = ""
 
-    monkeypatch.setattr(aj.subprocess, "run", lambda *a, **k: _R())
+    monkeypatch.setattr(aj._adr_llm, "run_cli", lambda *a, **k: _R())
     monkeypatch.setattr(aj.shutil, "which", lambda _b: "/somewhere/claude")
     host, _ = aj.resolve_llm_backend(
         {"backend": "host"}, {"judge": {"host_client": "claude-code-cli"}}, None, {}

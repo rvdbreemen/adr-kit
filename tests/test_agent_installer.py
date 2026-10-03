@@ -34,6 +34,33 @@ sys.modules[spec.name] = installer
 spec.loader.exec_module(installer)
 
 
+_REAL_REPLACEMENT_PROBE = native.directory_replacement_blocked_by
+
+
+@pytest.fixture(autouse=True)
+def _probe_stays_in_tmp_path(tmp_path, monkeypatch):
+    """Refuse any replacement probe outside this test's tmp_path.
+
+    The probe renames the directory it is given and renames it back. Before
+    this guard, three Copilot tests probed the developer's live
+    ~/.copilot/installed-plugins/... directory: they failed whenever Copilot
+    held it open, and when it did not they renamed the real install twice.
+    The assertion runs before the rename, so a regression fails without
+    touching the real directory (TASK-191).
+    """
+    def guarded(path):
+        assert Path(path).resolve().is_relative_to(tmp_path.resolve()), (
+            f"replacement probe reached {path}, outside the test's tmp_path"
+        )
+        return _REAL_REPLACEMENT_PROBE(path)
+
+    monkeypatch.setattr(native, "directory_replacement_blocked_by", guarded)
+    # The installer finds Copilot's plugin directory through COPILOT_HOME and
+    # falls back to the real home. Tests that need a specific home still set
+    # their own; this only removes the fallback.
+    monkeypatch.setenv("COPILOT_HOME", str(tmp_path / "copilot-home"))
+
+
 def completed(command, stdout="", stderr="", returncode=0):
     return subprocess.CompletedProcess(command, returncode, stdout, stderr)
 

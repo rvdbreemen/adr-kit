@@ -1,10 +1,10 @@
 ---
 id: TASK-192
 title: This repository's own .adr-kit/ADR-guide.md is stamped v0.35.0 and unmanaged
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-26 19:46'
-updated_date: '2026-09-07 20:03'
+updated_date: '2026-10-03 16:07'
 labels: []
 dependencies: []
 references:
@@ -41,11 +41,21 @@ Found during the documentation sweep of TASK-190, which deliberately left it out
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The tool that produces .adr-kit/ADR-guide.md is identified by name, or the file is established to be an orphan
-- [ ] #2 The file's content matches what its generator currently produces, rather than only its version stamp being updated
-- [ ] #3 If the file stays tracked, it is either declared in packaging/version-sites.json or the record states why a dogfood copy is exempt where .githooks/pre-commit is not
-- [ ] #4 python scripts/check-release-version.py --expect v0.55.1 still passes
+- [x] #1 The tool that produces .adr-kit/ADR-guide.md is identified by name, or the file is established to be an orphan
+- [x] #2 The file's content matches what its generator currently produces, rather than only its version stamp being updated
+- [x] #3 If the file stays tracked, it is either declared in packaging/version-sites.json or the record states why a dogfood copy is exempt where .githooks/pre-commit is not
+- [x] #4 python scripts/check-release-version.py --expect v0.55.1 still passes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Verified 2026-10-03; the 2026-09-07 correction holds in every claim. The generator is scripts/project_setup.py:229-245 (a byte copy of instructions/ADR-guide.md); scripts/client_generation.py:117-121 copies the same source into codex/ and copilot/. Root cause: packaging/version-sites.json declared only templates/adr-kit-guide.md, and the stamp test covered only the template. The stamp was wrong from the start: it arrived in the v0.36.0 release commit (53c3217) already reading v0.35.0.
+
+Fix: instructions/ADR-guide.md declared as a regex site with the template's pattern; its stamp set to 0.57.0; adapters regenerated; .adr-kit/ADR-guide.md refreshed from the source (identical bytes, so the setup dry-run lists no guide change). New test test_installed_guide_version_line_matches_plugin_version; the bump-version fixture covers the new site. `check-release-version.py --expect v0.57.0` passes (AC#4 named v0.55.1, which is no longer current). The content was already current as of v0.55.0, so only the stamp moved, which is what AC#2 asks.
+
+Side finding, not in scope: this repo's own .githooks/pre-commit lags templates/githooks/pre-commit in comment text (backend selection vs ADR-036, suggest opt-in vs ADR-035). The registry syncs only the stamp, so a matching stamp can sit on stale content.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
@@ -74,3 +84,9 @@ templates/adr-kit-guide.md          v0.56.0   <- a different file, correctly bum
 SCOPE SHOULD WIDEN from `.adr-kit/` to `instructions/`, since that is the source and the copy is derived. AC#3 remains the real decision: declare it in `packaging/version-sites.json` so the writer moves it, or record why it is exempt. Cosmetic, pre-existing since v0.36.0, not a release blocker.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #162. instructions/ADR-guide.md, the source that setup copies into every project's .adr-kit/ADR-guide.md and that the generator copies into the client trees, is now a declared version site. Its stamp moved from v0.35.0 to 0.57.0. The copies were regenerated, and a test pins the stamp to the plugin version. Only the stamp changed; the content was already current.
+<!-- SECTION:FINAL_SUMMARY:END -->

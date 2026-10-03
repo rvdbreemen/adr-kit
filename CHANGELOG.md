@@ -4,6 +4,105 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.58.0] - 2026-10-03
+
+This release is about tools that could run for a very long time and checks
+that could stay green while checking nothing. `adr-lint` no longer walks into
+Windows junctions without bound, and the judge's LLM pass now has a ceiling a
+host CLI cannot hold open. Two new advisory checks look for what every gate
+missed: Enforcement rules whose scope reaches no file, and ADR sections that
+are written but say nothing.
+
+Upgrade notes. Nothing needs to change for an existing project. Three
+behaviours are new and visible:
+
+- `judge.llm_pass_timeout_seconds` (default 600) is a new, optional key in
+  `docs/adr/.adr-kit.json`. A pass that reaches it leaves the remaining ADRs
+  without a verdict and marks the attestation degraded; the commit still
+  passes on the declarative checks.
+- `adr-judge-precommit` exits 2 after 900 s (`ADR_KIT_JUDGE_TIMEOUT_S`)
+  where it used to wait without limit.
+- `adr-lint` reports a gate it could not reach within its scan budget as
+  `could not be verified` rather than as missing. Pass `--repo-root` the
+  project root if you see it.
+
+### Added
+
+- `adr-substance` asks the host model, in the guardian's LLM tier, whether
+  each written section of a Proposed ADR actually answers its heading. It
+  reports "TBD", "see above" and generic prose, which every deterministic
+  check reads as written, and quotes the author's own words. A quote the
+  model cannot locate in the section is dropped. One isolated call per
+  Proposed ADR; `--estimate` states the count before anything is spent, and
+  the guardian skill adds it to its cost prompt. Advisory only: the exit code
+  is 0, and `adr-readiness`, the MCP server and `adr-lint` are untouched
+  (TASK-203).
+- `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR
+  whose `path_glob` matches no tracked file. Such a rule is checked against
+  nothing, so every gate that asks whether it was violated answers green for
+  as long as the glob and the code disagree about where the code lives.
+  `adr-audit --whole-codebase` carries the result as advisory, without moving
+  its exit code. The review skill gains the half no tool can check: whether
+  every case an ADR enumerates and every target it names reaches an
+  implementation (TASK-204).
+
+### Fixed
+
+- `adr-migrate` names a Related Decisions section it had to add. The
+  conversion writes `- None.` into it, which every detector rightly reads as
+  content, but the author never saw the section. It is now listed as
+  `review: ## Related Decisions`, apart from the placeholder holes, and a
+  hand-written `- None.` is still left alone (TASK-202).
+- `adr-migrate --to-profile` no longer blames a conversion for holes the
+  source already had. It compared section titles before and after, and two
+  profiles name the same section differently, so a nygard `## Context` that
+  already held a TODO was reported as a new `## Context and Problem
+  Statement` hole on the way to madr. It now compares roles, each side read
+  in its own profile (TASK-201).
+- The judge's LLM pass now has a ceiling it keeps. A host CLI call used to
+  return only when every process holding its output pipe had exited, so a
+  helper it started could hold a 120 s call open indefinitely: measured at
+  60 s for a 2 s timeout. Output now goes to temporary files and a timeout
+  stops the CLI's whole process tree. The pass as a whole stops after
+  `judge.llm_pass_timeout_seconds` (default 600); ADRs not reached get no
+  verdict and the attestation names them, as for any unusable call
+  (ADR-038). `adr-judge-precommit` gives up after 900 s, configurable with
+  `ADR_KIT_JUDGE_TIMEOUT_S`, and exits 2 with a hint (TASK-210).
+- `adr-lint` can no longer walk without end while looking for an Accepted
+  binding ADR's `gate`. The scan descended into Windows junctions, which
+  `os.walk(followlinks=False)` does not treat as links, and its 5000-file cap
+  counted only files it read. A junction into a large tree took 160 s where it
+  now takes 0.5 s. The scan now skips directory links and `graphify-out`,
+  skips files over 1 MB, and stops after 100,000 entries or 10 seconds. When a
+  budget runs out the finding says the gate `could not be verified` and names
+  the budget, instead of reporting the gate as missing (TASK-209).
+- `bin/adr accept` no longer waits forever on the quality and lint runs it
+  starts: they time out after 120 s and report the timeout as an error. The
+  `git` calls in `adr-lint` no longer inherit the caller's stdin.
+- The guardian's Proposed-ADR queue ranks by age again. Every record showed
+  `age 0 days`, because `adr-readiness` dropped the date the ADR catalog had
+  already parsed. Each readiness item now carries `date`: the latest status
+  change, or the frontmatter date when there is no history. The report stays
+  deterministic, since the date comes from the file and not from the clock
+  (TASK-200).
+- An Open Question that wraps onto more lines, or carries nested bullets, is
+  one question again. `bin/adr answer` used to mark only its first line, so
+  the answer landed mid-question; `--question <text>` searched only that
+  line; each nested bullet counted as a question; and a continuation line
+  ending in `?` became an unresolved question that `answer` could not reach,
+  which kept `accept` blocked after everything was answered. All three
+  parsers now share one item grouping. A multi-line question gets its answer
+  on a new line after its last line, and the confirmation no longer cuts the
+  question mid-word (TASK-194).
+- The ADR guide that setup installs as `.adr-kit/ADR-guide.md` carried the
+  stamp `v0.35.0` in every project set up since v0.36.0. Its source is now a
+  declared version site and moves with each release (TASK-192).
+- The test suite no longer renames a developer's live Copilot plugin
+  directory while testing the installer (TASK-191), and the certification
+  checks no longer fail on the calendar 30 days after their fixture date
+  (TASK-211).
+
 ## [0.57.0] - 2026-09-08
 
 This release makes two gates stricter, and both can turn a pipeline that was
@@ -3069,7 +3168,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...HEAD
+[0.58.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...v0.56.0
 [0.55.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...v0.55.1

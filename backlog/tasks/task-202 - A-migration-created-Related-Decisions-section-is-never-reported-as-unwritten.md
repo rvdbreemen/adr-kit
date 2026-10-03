@@ -1,9 +1,10 @@
 ---
 id: TASK-202
 title: A migration-created Related Decisions section is never reported as unwritten
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-06 15:11'
+updated_date: '2026-10-03 16:07'
 labels:
   - migrate
   - question
@@ -24,6 +25,20 @@ Both readings are defensible: '- None.' is a real answer that happens to have be
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A decision is recorded on whether a machine-written '- None.' counts as the author's answer
-- [ ] #2 If it does not, adr-migrate names it alongside the other sections it filled, and the placeholder detector still leaves a hand-written '- None.' alone
+- [x] #1 A decision is recorded on whether a machine-written '- None.' counts as the author's answer
+- [x] #2 If it does not, adr-migrate names it alongside the other sections it filled, and the placeholder detector still leaves a hand-written '- None.' alone
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (maintainer, 2026-10-03): a '- None.' written by the migration does NOT count as the author's answer. Reason: the author never saw the section, so the line is a machine's guess on their behalf. It is reported for review, not as a hole: the line is true in most records, and the placeholder detector must keep treating a hand-written '- None.' as content (test_the_related_decisions_none_line_stays_real_content is unchanged).
+
+Reproduced 2026-10-03: canonical record without Related Decisions, migrate --to-profile canonical, output silent about the added section. Fix: adr-migrate records machine_written_sections when the source lacked the related role and the result has it, and prints 'review: ## Related Decisions (written as '- None.' by the migration; confirm it, or name the related ADRs)'. Tests: test_a_machine_written_related_section_is_named_for_review (fails before, passes after) and test_a_hand_written_related_none_is_not_named; tests/test_selectable_formats.py 37 passed.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #167. Decision (maintainer): a '- None.' that the migration wrote is not the author's answer. adr-migrate lists it as 'review: ## Related Decisions', apart from the placeholder holes, and the placeholder detector is unchanged.
+<!-- SECTION:FINAL_SUMMARY:END -->

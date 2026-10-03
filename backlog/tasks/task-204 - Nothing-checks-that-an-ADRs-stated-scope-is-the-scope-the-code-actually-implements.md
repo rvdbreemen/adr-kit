@@ -3,10 +3,10 @@ id: TASK-204
 title: >-
   Nothing checks that an ADR's stated scope is the scope the code actually
   implements
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-07 05:34'
-updated_date: '2026-09-07 20:04'
+updated_date: '2026-10-03 16:07'
 labels:
   - enhancement
   - adr
@@ -32,11 +32,23 @@ Deliberately not proposing a mechanism here. A fully general 'is this decision i
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The problem is stated as a check with a decidable outcome, not as advice: given an ADR and a repository, something answers whether the decision is implemented across the scope the ADR names
-- [ ] #2 Both recorded instances are used as fixtures: the ADR-041 prose-versus-implementation gap and an ADR-168-shaped case where the call site sits behind a guard that excludes a named target
-- [ ] #3 If the conclusion is that no deterministic check is possible, that conclusion is written down with its reasoning and the review-checklist alternative, and the task closes on that rather than on a half-check that reports green
-- [ ] #4 Whatever ships does not add a blocking gate that fires on arrival: an imported or legacy record must stay satisfiable by editing it (spec R15)
+- [x] #1 The problem is stated as a check with a decidable outcome, not as advice: given an ADR and a repository, something answers whether the decision is implemented across the scope the ADR names
+- [x] #2 Both recorded instances are used as fixtures: the ADR-041 prose-versus-implementation gap and an ADR-168-shaped case where the call site sits behind a guard that excludes a named target
+- [x] #3 If the conclusion is that no deterministic check is possible, that conclusion is written down with its reasoning and the review-checklist alternative, and the task closes on that rather than on a half-check that reports green
+- [x] #4 Whatever ships does not add a blocking gate that fires on arrival: an imported or legacy record must stay satisfiable by editing it (spec R15)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (maintainer, 2026-10-03): a deterministic sub-check plus a review-checklist item for the semantic rest.
+
+What already existed: `adr-audit --whole-codebase` applies forbid_pattern and require_pattern to every tracked file, so 'does the rule hold everywhere in its scope' was already decidable. What was missing: a rule whose path_glob matches no tracked file is checked against nothing and stays green forever. That is the decidable outcome AC#1 asks for: given an ADR and a repository, `adr-judge --check-scope` answers which rules have an empty scope.
+
+Both recorded instances are fixtures (AC#2) and are pinned as out of reach, with their reasons. The ADR-168 shape: the call sits behind `#if HAS_RUNTIME_HW_DETECT`, so the symbol exists and the pattern matches, and only a per-target preprocessor view would see the gap. The ADR-041 shape: five cases in prose, one in code, and no rule naming the other four. Every report carries a `limits` sentence saying that a resolving scope is not proof of implementation, so silence is not read as green (AC#3). The review skill (step 3b) holds the checklist for both shapes.
+
+Advisory only: exit codes are unchanged (ADR-026 contract), and nothing fires on arrival (AC#4). This repository: 17 rule globs, all resolving. Tests: tests/test_enforcement_scope.py (6); the audit, judge, security, adapter and docs suites: 94 passed.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
@@ -55,3 +67,9 @@ The deterministic subset this record suggests -- checking a scope claim against 
 Still To Do, not a release blocker.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #166. `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR whose path_glob matches no tracked file, since such a rule can never fire. adr-audit --whole-codebase carries the result as advisory. The semantic half is a review-skill checklist: every enumerated case, and every named target, must have an implementation. Both recorded instances are pinned as fixtures of what the deterministic check cannot see.
+<!-- SECTION:FINAL_SUMMARY:END -->

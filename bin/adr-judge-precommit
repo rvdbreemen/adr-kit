@@ -25,6 +25,7 @@ Usage (direct smoke-test, cwd = a git repository):
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -68,18 +69,35 @@ def main() -> int:
 
     staged_diff = diff_proc.stdout  # bytes
 
-    # Step 2: pipe the diff into adr-judge.
-    judge_proc = subprocess.run(
-        [
-            sys.executable,
-            str(_ADR_JUDGE),
-            "--diff", "-",
-            "--adr-dir", "docs/adr/",
-            "--repo-root", str(Path.cwd()),
-            "--snapshot", "staged",
-        ],
-        input=staged_diff,
-    )
+    # Step 2: pipe the diff into adr-judge, within a ceiling. adr-judge bounds
+    # its own LLM pass (judge.llm_pass_timeout_seconds); this is the backstop
+    # for a judge that never returns at all, which used to hold the commit
+    # without limit (TASK-210).
+    try:
+        timeout_s = float(os.environ.get("ADR_KIT_JUDGE_TIMEOUT_S", "900"))
+    except ValueError:
+        timeout_s = 900.0
+    try:
+        judge_proc = subprocess.run(
+            [
+                sys.executable,
+                str(_ADR_JUDGE),
+                "--diff", "-",
+                "--adr-dir", "docs/adr/",
+                "--repo-root", str(Path.cwd()),
+                "--snapshot", "staged",
+            ],
+            input=staged_diff,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"[adr-judge-precommit] ERROR: adr-judge timed out after "
+            f"{timeout_s:g}s. Retry with ADR_KIT_NO_LLM=1 to run the "
+            f"declarative pass only, or raise ADR_KIT_JUDGE_TIMEOUT_S.",
+            file=sys.stderr,
+        )
+        return 2
     return judge_proc.returncode
 
 

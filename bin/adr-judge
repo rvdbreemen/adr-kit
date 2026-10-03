@@ -128,6 +128,10 @@ RegexEvaluationError = _adr_regex.RegexEvaluationError
 bounded_regex_search = _adr_regex.bounded_regex_search
 
 DEFAULT_LLM_TIMEOUT_S = 120
+# Ceiling for the whole LLM pass (TASK-210). Without it the pass was bounded
+# only by targets x DEFAULT_LLM_TIMEOUT_S, and a host CLI that outlived its
+# timeout held it longer still.
+DEFAULT_LLM_PASS_TIMEOUT_S = 600
 
 # ---------- backend registry (ADR-017), shared with bin/adr-suggest ----------
 #
@@ -1472,8 +1476,14 @@ def run_llm_batch(
     backend: "LLMBackend | List[str] | str | None",
     timeout_s: int,
     attestation: Optional[Dict] = None,
+    pass_timeout_s: Optional[float] = None,
 ) -> Optional[List[Dict]]:
     """Run the LLM judge over every `llm_judge: true` target, one call each.
+
+    `pass_timeout_s` bounds the whole pass. Each call gets the smaller of
+    `timeout_s` and what is left; once nothing is left the remaining ADRs get
+    no verdict and the attestation says so (TASK-210). Without it the pass was
+    bounded only by targets x timeout_s.
 
     "batch" is now the target SET, not a single shared call: each ADR is judged
     in isolation so no sibling ADR's text can reach the context that decides
@@ -1527,9 +1537,20 @@ def run_llm_batch(
     findings: List[Dict] = []
     evaluated: List[str] = []
     unusable: List[str] = []
+    out_of_time: List[str] = []
+    deadline = (
+        time.monotonic() + pass_timeout_s if pass_timeout_s is not None else None
+    )
     for t in targets:
         adr_id = t["adr_id"]
-        outcome = _run_llm_single(t, diff_text, resolved, timeout_s)
+        call_timeout = timeout_s
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                out_of_time.append(adr_id)
+                continue
+            call_timeout = min(timeout_s, remaining)
+        outcome = _run_llm_single(t, diff_text, resolved, call_timeout)
         if outcome is None:
             # One unusable call costs THIS ADR's verdict and nothing else.
             # Discarding the pass threw away true positives: a VIOLATION
@@ -1555,19 +1576,35 @@ def run_llm_batch(
                 "severity": "violation",
             }
         )
+    if out_of_time:
+        print(
+            f"[adr-judge] WARN: LLM pass deadline of {pass_timeout_s:g}s reached; "
+            f"{len(out_of_time)} ADR(s) not judged. Raise "
+            f"judge.llm_pass_timeout_seconds in .adr-kit.json if commits "
+            f"routinely need more.",
+            file=sys.stderr,
+        )
     if attestation is not None:
         attestation["evaluated"] = evaluated
-        if unusable:
+        if unusable or out_of_time:
             attestation["degraded"] = True
+            parts = []
+            if unusable:
+                parts.append(f"no usable verdict for {', '.join(unusable)}")
+            if out_of_time:
+                parts.append(
+                    f"pass deadline reached before {', '.join(out_of_time)}"
+                )
             attestation["degraded_reason"] = (
-                f"no usable verdict for {', '.join(unusable)}; "
+                "; ".join(parts)
+                + "; "
                 + (
                     "no ADR was judged in this pass"
                     if not evaluated
                     else f"{len(evaluated)} of {len(targets)} ADR(s) still judged"
                 )
             )
-    if unusable and not evaluated:
+    if (unusable or out_of_time) and not evaluated:
         # Nothing came back at all: keep the documented "None means the LLM
         # pass produced nothing" contract that the unavailable-backend path
         # above already uses, so callers need no new case.
@@ -2013,6 +2050,11 @@ def build_config_report(
             "project" if "llm_timeout_seconds" in judge_cfg else "default",
         ),
         _entry(
+            "judge.llm_pass_timeout_seconds",
+            int(judge_cfg.get("llm_pass_timeout_seconds", DEFAULT_LLM_PASS_TIMEOUT_S)),
+            "project" if "llm_pass_timeout_seconds" in judge_cfg else "default",
+        ),
+        _entry(
             "judge.advisory_only",
             bool(judge_cfg.get("advisory_only", False)),
             "project" if "advisory_only" in judge_cfg else "default",
@@ -2209,6 +2251,72 @@ def _register_git_exclude(adr_dir: Path, name: str) -> None:
         return
 
 
+SCOPE_CHECK_LIMITS = (
+    "A resolving scope is not proof that the decision is implemented: the "
+    "check cannot see a call compiled out for one target, or a decision whose "
+    "prose names more cases than any rule does. Those belong to review."
+)
+
+
+def tracked_paths(repo_root: Path) -> Optional[List[str]]:
+    """Every path git tracks under repo_root, or None when git cannot say."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", "-z"],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return [p for p in result.stdout.decode("utf-8", "replace").split("\0") if p]
+
+
+def scope_check(
+    adrs: List[Tuple[str, Path, str]], paths: List[str]
+) -> Dict:
+    """Name every Enforcement rule of an Accepted ADR that is checked against nothing.
+
+    A rule whose `path_glob` matches no tracked file can never fire, so every
+    gate that asks "was it violated?" answers green for as long as the glob
+    and the code disagree about where the code lives (TASK-204). This is the
+    deterministic slice of "is the decision implemented where it says it
+    applies"; the rest is semantic, and `limits` says so in every report.
+    """
+    findings: List[Dict] = []
+    checked = 0
+    for adr_id, adr_path, body in adrs:
+        if (adr_status(body) or "").lower() != "accepted":
+            continue
+        enforcement = parse_enforcement(body, adr_path)
+        if not enforcement or validate_enforcement(enforcement):
+            continue
+        for kind in ("forbid_pattern", "forbid_import", "require_pattern"):
+            for rule in enforcement.get(kind, []) or []:
+                glob = (rule or {}).get("path_glob")
+                if not glob:
+                    continue
+                checked += 1
+                if any(path_matches(path, glob) for path in paths):
+                    continue
+                findings.append(
+                    {
+                        "adr": adr_id,
+                        "rule": kind,
+                        "path_glob": glob,
+                        "severity": "advisory",
+                        "message": (
+                            f"{kind} path_glob {glob!r} matches no tracked file, "
+                            f"so this rule is checked against nothing; point it "
+                            f"at where the code lives, or retire it"
+                        ),
+                    }
+                )
+    return {"rules_checked": checked, "findings": findings, "limits": SCOPE_CHECK_LIMITS}
+
+
 def collect_adrs(
     adr_dir: Path, dry_run_target: Optional[str] = None
 ) -> List[Tuple[str, Path, str]]:
@@ -2389,6 +2497,13 @@ def main() -> int:
         "here.",
     )
     p.add_argument(
+        "--check-scope",
+        action="store_true",
+        help="Report every Enforcement rule of an Accepted ADR whose path_glob "
+        "matches no tracked file, then exit 0. Such a rule can never fire. "
+        "Read-only and advisory; pair with --json.",
+    )
+    p.add_argument(
         "--show-config",
         action="store_true",
         help="Print the effective judge configuration -- backend, models, "
@@ -2526,6 +2641,9 @@ def main() -> int:
             if args.llm_timeout is not None
             else judge_cfg.get("llm_timeout_seconds", DEFAULT_LLM_TIMEOUT_S)
         )
+        llm_pass_timeout_s = int(
+            judge_cfg.get("llm_pass_timeout_seconds", DEFAULT_LLM_PASS_TIMEOUT_S)
+        )
 
         repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd()
 
@@ -2540,6 +2658,29 @@ def main() -> int:
                 f"[adr-judge] judge.host_client = {args.record_host_client} "
                 f"written to {path}"
             )
+            return 0
+
+        if args.check_scope:
+            paths = tracked_paths(repo_root)
+            if paths is None:
+                print(
+                    "[adr-judge] scope check needs a git repository; "
+                    f"`git ls-files` failed under {repo_root}",
+                    file=sys.stderr,
+                )
+                return 2
+            report = scope_check(collect_adrs(adr_dir), paths)
+            if args.json:
+                json.dump(report, sys.stdout, indent=2)
+                sys.stdout.write("\n")
+            else:
+                print(
+                    f"[adr-judge] scope check: {report['rules_checked']} rule "
+                    f"glob(s), {len(report['findings'])} resolve to no tracked file"
+                )
+                for finding in report["findings"]:
+                    print(f"  ADVISORY {finding['adr']}: {finding['message']}")
+                print(f"  note: {report['limits']}")
             return 0
 
         if args.show_config:
@@ -2718,6 +2859,7 @@ def main() -> int:
                     llm_backend,
                     llm_timeout_s,
                     attestation=llm_attestation,
+                    pass_timeout_s=llm_pass_timeout_s,
                 )
                 profiler.stop_llm()
                 if llm_findings is not None:

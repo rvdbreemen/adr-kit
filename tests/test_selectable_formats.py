@@ -622,6 +622,66 @@ def test_migration_reports_the_sections_it_could_not_fill(tmp_path):
     assert lint.returncode == 0, lint.stdout
 
 
+def test_a_cross_profile_migration_blames_only_the_holes_it_opened(tmp_path):
+    """Before and after are compared by role, not by heading title (TASK-201).
+
+    A nygard Context that already held a TODO was reported as a hole the
+    madr conversion opened, because "Context" and "Context and Problem
+    Statement" are different titles. Only Decision Drivers is new.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    path = materialize("nygard", adr_dir)
+    text = path.read_text(encoding="utf-8")
+    text = re.sub(
+        r"(^## Context\n\n).*?(?=^## )",
+        r"\1- TODO: describe the context.\n\n",
+        text,
+        count=1,
+        flags=re.M | re.S,
+    )
+    path.write_text(text, encoding="utf-8")
+
+    result = run(str(BIN / "adr-migrate"), "--to-profile", "madr", str(path))
+
+    assert result.returncode == 0, result.stderr
+    assert "needs content: ## Decision Drivers" in result.stdout
+    assert "Context and Problem Statement" not in result.stdout, result.stdout
+
+
+def test_a_machine_written_related_section_is_named_for_review(tmp_path):
+    """A '- None.' the migration wrote is not the author's answer (TASK-202).
+
+    The maintainer decided on 2026-10-03 that it does not count as one: the
+    author never saw the section. It is named for review, not as a hole, so
+    the placeholder detector still treats a hand-written '- None.' as content.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    path = materialize("canonical", adr_dir)
+    text = path.read_text(encoding="utf-8")
+    stripped = re.sub(
+        r"^## Related Decisions\n.*?(?=^## |\Z)", "", text, flags=re.M | re.S
+    )
+    assert "## Related Decisions" not in stripped
+    path.write_text(stripped, encoding="utf-8")
+
+    result = run(str(BIN / "adr-migrate"), "--to-profile", "canonical", str(path))
+
+    assert result.returncode == 0, result.stderr
+    assert "review: ## Related Decisions" in result.stdout, result.stdout
+    assert "needs content: ## Related Decisions" not in result.stdout
+
+
+def test_a_hand_written_related_none_is_not_named(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    path = materialize("nygard", adr_dir)
+    assert "## Related Decisions" in path.read_text(encoding="utf-8")
+
+    result = run(str(BIN / "adr-migrate"), "--to-profile", "canonical", str(path))
+
+    assert result.returncode == 0, result.stderr
+    assert "review: ## Related Decisions" not in result.stdout
+
+
 def test_migration_stays_quiet_when_every_section_is_written(tmp_path):
     """No false alarm on a record that needed nothing filled in (TASK-198)."""
     adr_dir = tmp_path / "docs" / "adr"
