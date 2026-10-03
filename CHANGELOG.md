@@ -4,6 +4,17 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR
+  whose `path_glob` matches no tracked file. Such a rule is checked against
+  nothing, so every gate that asks whether it was violated answers green for
+  as long as the glob and the code disagree about where the code lives.
+  `adr-audit --whole-codebase` carries the result as advisory, without moving
+  its exit code. The review skill gains the half no tool can check: whether
+  every case an ADR enumerates and every target it names reaches an
+  implementation (TASK-204).
+
 ### Fixed
 
 - `adr-migrate --to-profile` no longer blames a conversion for holes the

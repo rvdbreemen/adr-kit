@@ -2209,6 +2209,72 @@ def _register_git_exclude(adr_dir: Path, name: str) -> None:
         return
 
 
+SCOPE_CHECK_LIMITS = (
+    "A resolving scope is not proof that the decision is implemented: the "
+    "check cannot see a call compiled out for one target, or a decision whose "
+    "prose names more cases than any rule does. Those belong to review."
+)
+
+
+def tracked_paths(repo_root: Path) -> Optional[List[str]]:
+    """Every path git tracks under repo_root, or None when git cannot say."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", "-z"],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return [p for p in result.stdout.decode("utf-8", "replace").split("\0") if p]
+
+
+def scope_check(
+    adrs: List[Tuple[str, Path, str]], paths: List[str]
+) -> Dict:
+    """Name every Enforcement rule of an Accepted ADR that is checked against nothing.
+
+    A rule whose `path_glob` matches no tracked file can never fire, so every
+    gate that asks "was it violated?" answers green for as long as the glob
+    and the code disagree about where the code lives (TASK-204). This is the
+    deterministic slice of "is the decision implemented where it says it
+    applies"; the rest is semantic, and `limits` says so in every report.
+    """
+    findings: List[Dict] = []
+    checked = 0
+    for adr_id, adr_path, body in adrs:
+        if (adr_status(body) or "").lower() != "accepted":
+            continue
+        enforcement = parse_enforcement(body, adr_path)
+        if not enforcement or validate_enforcement(enforcement):
+            continue
+        for kind in ("forbid_pattern", "forbid_import", "require_pattern"):
+            for rule in enforcement.get(kind, []) or []:
+                glob = (rule or {}).get("path_glob")
+                if not glob:
+                    continue
+                checked += 1
+                if any(path_matches(path, glob) for path in paths):
+                    continue
+                findings.append(
+                    {
+                        "adr": adr_id,
+                        "rule": kind,
+                        "path_glob": glob,
+                        "severity": "advisory",
+                        "message": (
+                            f"{kind} path_glob {glob!r} matches no tracked file, "
+                            f"so this rule is checked against nothing; point it "
+                            f"at where the code lives, or retire it"
+                        ),
+                    }
+                )
+    return {"rules_checked": checked, "findings": findings, "limits": SCOPE_CHECK_LIMITS}
+
+
 def collect_adrs(
     adr_dir: Path, dry_run_target: Optional[str] = None
 ) -> List[Tuple[str, Path, str]]:
@@ -2389,6 +2455,13 @@ def main() -> int:
         "here.",
     )
     p.add_argument(
+        "--check-scope",
+        action="store_true",
+        help="Report every Enforcement rule of an Accepted ADR whose path_glob "
+        "matches no tracked file, then exit 0. Such a rule can never fire. "
+        "Read-only and advisory; pair with --json.",
+    )
+    p.add_argument(
         "--show-config",
         action="store_true",
         help="Print the effective judge configuration -- backend, models, "
@@ -2540,6 +2613,29 @@ def main() -> int:
                 f"[adr-judge] judge.host_client = {args.record_host_client} "
                 f"written to {path}"
             )
+            return 0
+
+        if args.check_scope:
+            paths = tracked_paths(repo_root)
+            if paths is None:
+                print(
+                    "[adr-judge] scope check needs a git repository; "
+                    f"`git ls-files` failed under {repo_root}",
+                    file=sys.stderr,
+                )
+                return 2
+            report = scope_check(collect_adrs(adr_dir), paths)
+            if args.json:
+                json.dump(report, sys.stdout, indent=2)
+                sys.stdout.write("\n")
+            else:
+                print(
+                    f"[adr-judge] scope check: {report['rules_checked']} rule "
+                    f"glob(s), {len(report['findings'])} resolve to no tracked file"
+                )
+                for finding in report["findings"]:
+                    print(f"  ADVISORY {finding['adr']}: {finding['message']}")
+                print(f"  note: {report['limits']}")
             return 0
 
         if args.show_config:
