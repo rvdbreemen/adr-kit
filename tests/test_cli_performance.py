@@ -11,12 +11,15 @@ Two layers, mirroring tests/test_hook_performance.py:
 from __future__ import annotations
 
 import json
+import os
 import runpy
 import statistics
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CORPUS = REPO_ROOT / "tests" / "fixtures" / "cli" / "latency-corpus.json"
@@ -122,6 +125,130 @@ def test_lint_single_gate_wrapper_still_works(tmp_path):
     root = _project(tmp_path, {"scripts/run.sh": "mentions gate-alpha\n"})
     assert LINT["_gate_exists_locally"]("gate-alpha", root) is True
     assert LINT["_gate_exists_locally"]("", root) is False
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    """A junction on Windows, a directory symlink elsewhere.
+
+    Windows gets the junction first on purpose: os.walk already skipped a
+    symlink, and the junction is the case it walked into.
+    """
+    if sys.platform == "win32":
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True, check=False,
+        )
+    else:
+        try:
+            os.symlink(target, link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pass
+    if not link.exists():
+        pytest.skip("cannot create a directory link on this machine")
+
+
+def test_lint_gate_scan_does_not_follow_directory_links(tmp_path):
+    # A link (symlink or Windows junction) out of the tree, and one that loops
+    # back into it. os.walk(followlinks=False) still descends into junctions,
+    # so the loop was walked until the path limit and the outside tree was
+    # read as if it were this project's source.
+    root = _project(tmp_path / "proj", {"scripts/run.sh": "no gates here\n"})
+    outside = _project(tmp_path / "outside", {"scripts/x.sh": "gate-alpha\n"})
+    _link_dir(root / "elsewhere", outside)
+    _link_dir(root / "scripts" / "loop", root)
+    found, unverified = LINT["_scan_gates"](["gate-alpha"], root)
+    assert found == set()
+    assert unverified is None
+
+
+# runpy hands back a copy of the module namespace; the functions read their
+# constants from the live one, so overrides go through __globals__.
+LINT_LIVE = LINT["detect_frontmatter_consistency"].__globals__
+
+
+def _with_lint_globals(**overrides):
+    saved = {key: LINT_LIVE[key] for key in overrides}
+    LINT_LIVE.update(overrides)
+    return saved
+
+
+def test_lint_gate_scan_stops_at_entry_budget(tmp_path):
+    root = _project(
+        tmp_path, {f"scripts/f{i}.sh": "nothing\n" for i in range(20)}
+    )
+    saved = _with_lint_globals(GATE_SCAN_MAX_ENTRIES=5)
+    try:
+        found, unverified = LINT["_scan_gates"](["gate-alpha"], root)
+    finally:
+        LINT_LIVE.update(saved)
+    assert found == set()
+    assert unverified and "5 entries" in unverified
+
+
+def test_lint_gate_scan_stops_at_time_budget(tmp_path):
+    root = _project(tmp_path, {"scripts/run.sh": "nothing\n"})
+    saved = _with_lint_globals(GATE_SCAN_MAX_SECONDS=0.0)
+    try:
+        found, unverified = LINT["_scan_gates"](["gate-alpha"], root)
+    finally:
+        LINT_LIVE.update(saved)
+    assert found == set()
+    assert unverified and "seconds" in unverified
+
+
+def test_lint_gate_scan_skips_large_files_and_graphify_out(tmp_path):
+    root = _project(
+        tmp_path,
+        {
+            "scripts/big.sh": "gate-alpha\n" + "x" * 64,
+            "graphify-out/graph.json": '{"gate": "gate-beta"}\n',
+        },
+    )
+    saved = _with_lint_globals(GATE_SCAN_MAX_FILE_BYTES=32)
+    try:
+        found, unverified = LINT["_scan_gates"](["gate-alpha", "gate-beta"], root)
+    finally:
+        LINT_LIVE.update(saved)
+    assert found == set()
+    assert unverified is None
+
+
+def test_lint_reports_unverified_gate_apart_from_missing_gate(tmp_path):
+    root = _project(tmp_path, {f"scripts/f{i}.sh": "nothing\n" for i in range(20)})
+    adr_dir = root / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    adr = adr_dir / "ADR-001-bound.md"
+    adr.write_text(
+        "---\n"
+        'id: "ADR-001"\n'
+        'title: "Bound"\n'
+        'status: "Accepted"\n'
+        'date: "2026-10-03"\n'
+        "binding: true\n"
+        'gate: "gate-alpha"\n'
+        "documents_shipped: false\n"
+        "verified_in: []\n"
+        "supersedes: []\n"
+        "superseded_by: null\n"
+        "---\n\n# ADR-001: Bound\n\n## Status\n\nAccepted\n",
+        encoding="utf-8",
+    )
+    saved = _with_lint_globals(GATE_SCAN_MAX_ENTRIES=5)
+    try:
+        issues = LINT["detect_frontmatter_consistency"]([adr], root)
+    finally:
+        LINT_LIVE.update(saved)
+    messages = [m for found in issues.values() for m in found if "gate-alpha" in m]
+    assert messages, issues
+    assert all("could not be verified" in m for m in messages)
+    assert not any("was not found" in m for m in messages)
+
+
+def test_lifecycle_lint_call_times_out():
+    adr = runpy.run_path(str(REPO_ROOT / "bin" / "adr"))
+    adr["_run_json_tool"].__globals__["LIFECYCLE_TOOL_TIMEOUT_S"] = 0.5
+    with pytest.raises(adr["AdrLifecycleError"], match="timed out"):
+        adr["_run_json_tool"]([sys.executable, "-c", "import time; time.sleep(30)"])
 
 
 # ---------------------------------------------------------------------------
