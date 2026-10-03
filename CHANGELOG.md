@@ -4,6 +4,29 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.58.0] - 2026-10-03
+
+This release is about tools that could run for a very long time and checks
+that could stay green while checking nothing. `adr-lint` no longer walks into
+Windows junctions without bound, and the judge's LLM pass now has a ceiling a
+host CLI cannot hold open. Two new advisory checks look for what every gate
+missed: Enforcement rules whose scope reaches no file, and ADR sections that
+are written but say nothing.
+
+Upgrade notes. Nothing needs to change for an existing project. Three
+behaviours are new and visible:
+
+- `judge.llm_pass_timeout_seconds` (default 600) is a new, optional key in
+  `docs/adr/.adr-kit.json`. A pass that reaches it leaves the remaining ADRs
+  without a verdict and marks the attestation degraded; the commit still
+  passes on the declarative checks.
+- `adr-judge-precommit` exits 2 after 900 s (`ADR_KIT_JUDGE_TIMEOUT_S`)
+  where it used to wait without limit.
+- `adr-lint` reports a gate it could not reach within its scan budget as
+  `could not be verified` rather than as missing. Pass `--repo-root` the
+  project root if you see it.
+
 ### Added
 
 - `adr-substance` asks the host model, in the guardian's LLM tier, whether
@@ -72,6 +95,13 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   parsers now share one item grouping. A multi-line question gets its answer
   on a new line after its last line, and the confirmation no longer cuts the
   question mid-word (TASK-194).
+- The ADR guide that setup installs as `.adr-kit/ADR-guide.md` carried the
+  stamp `v0.35.0` in every project set up since v0.36.0. Its source is now a
+  declared version site and moves with each release (TASK-192).
+- The test suite no longer renames a developer's live Copilot plugin
+  directory while testing the installer (TASK-191), and the certification
+  checks no longer fail on the calendar 30 days after their fixture date
+  (TASK-211).
 
 ## [0.57.0] - 2026-09-08
 
@@ -3138,7 +3168,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...HEAD
+[0.58.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.55.1...v0.56.0
 [0.55.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.54.0...v0.55.1
