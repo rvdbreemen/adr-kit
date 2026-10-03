@@ -166,6 +166,12 @@
           "minimum": 1,
           "default": 120
         },
+        "llm_pass_timeout_seconds": {
+          "type": "integer",
+          "description": "Ceiling in seconds for the whole per-commit LLM pass, across every llm_judge ADR it calls. Default 600. Each call gets the smaller of llm_timeout_seconds and the time left; ADRs reached after the ceiling get no verdict, and the attestation marks the pass degraded and names them (ADR-038). The commit is not blocked by the ceiling: the declarative pass still decides.",
+          "minimum": 1,
+          "default": 600
+        },
         "pre_commit_timeout_ms": {
           "type": "integer",
           "description": "Performance budget in milliseconds for the non-blocking pre-commit perf WARN (TASK-712 performance-bounded hooks; surfaced in bin/adr-judge --profile). When the pre-commit pass runs longer than this and warn_on_exceed is true, a non-blocking WARN is printed; the commit is never blocked by this budget. Distinct from llm_timeout_seconds, which is the hard per-call LLM call timeout. Default 5000.",
