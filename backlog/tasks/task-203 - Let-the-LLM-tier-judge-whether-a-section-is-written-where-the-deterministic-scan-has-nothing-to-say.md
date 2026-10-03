@@ -3,10 +3,10 @@ id: TASK-203
 title: >-
   Let the LLM tier judge whether a section is written, where the deterministic
   scan has nothing to say
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-06 15:40'
-updated_date: '2026-09-07 20:04'
+updated_date: '2026-10-03 15:47'
 labels:
   - enhancement
   - readiness
@@ -35,11 +35,21 @@ Hard constraint inherited from TASK-198: it reports, it never refuses on arrival
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The llm tier can report a required section that is present, not a placeholder, and still says nothing, naming the section and quoting what it found
-- [ ] #2 bin/adr-readiness stays deterministic and key-free: its byte-stability tests pass unchanged and no model call is reachable from it or from the MCP tool
-- [ ] #3 The finding is advisory: no exit code changes, and adr-lint still exits 0 on the record
-- [ ] #4 Cost is stated per run before spending, consistent with the existing guardian llm tier
+- [x] #1 The llm tier can report a required section that is present, not a placeholder, and still says nothing, naming the section and quoting what it found
+- [x] #2 bin/adr-readiness stays deterministic and key-free: its byte-stability tests pass unchanged and no model call is reachable from it or from the MCP tool
+- [x] #3 The finding is advisory: no exit code changes, and adr-lint still exits 0 on the record
+- [x] #4 Cost is stated per run before spending, consistent with the existing guardian llm tier
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (maintainer, 2026-10-03): build it, advisory, in the guardian's LLM tier. Governing records: ADR-002 (two-tier cadence; the record's ADR-089 citation was already corrected to ADR-002), ADR-017/036 (host backend, shared resolver), and ADR-038 (unusable answers degrade per ADR). No new ADR was written. The guardian skill is the only caller, and the tool adds no gate, so it falls within ADR-002's semantic tier; flagged for the maintainer in the PR in case a record is still wanted.
+
+Shape: new bin/adr-substance. Per Proposed ADR, it takes the required sections that are written and not a placeholder (Status and Related skipped; missing, empty and TODO sections are left to the deterministic gates). One isolated host-CLI call per ADR via adr_llm.resolve_llm_backend. ADR text is fenced with content-derived sentinels. The model must return {heading, quote, reason}; a finding survives only if the heading was sent and the quote occurs in that section (whitespace-normalised), so it always points at the author's words (AC#1). --estimate prints the call count and calls nothing (AC#4); the guardian skill adds that line to its cost prompt and runs the tool as step 3a-bis.
+
+Exit 0 on findings and on degrade, 2 on a config error, so nothing blocks (AC#3). bin/adr_readiness.py and bin/adr-mcp do not reference it: asserted in a test, and readiness byte-stability is untouched (AC#2). Packaging: packaging/executables.json, mode 100755 for bin and both adapter copies. Tests: tests/test_adr_substance.py (6, with a fake host CLI, no real model) plus the packaging, allowlist, adapter, docs and guardian artifact suites: 66 passed, 3 skipped. On this repository --estimate reports 1 call (ADR-035).
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

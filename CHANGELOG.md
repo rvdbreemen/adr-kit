@@ -6,6 +6,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- `adr-substance` asks the host model, in the guardian's LLM tier, whether
+  each written section of a Proposed ADR actually answers its heading. It
+  reports "TBD", "see above" and generic prose, which every deterministic
+  check reads as written, and quotes the author's own words. A quote the
+  model cannot locate in the section is dropped. One isolated call per
+  Proposed ADR; `--estimate` states the count before anything is spent, and
+  the guardian skill adds it to its cost prompt. Advisory only: the exit code
+  is 0, and `adr-readiness`, the MCP server and `adr-lint` are untouched
+  (TASK-203).
 - `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR
   whose `path_glob` matches no tracked file. Such a rule is checked against
   nothing, so every gate that asks whether it was violated answers green for
