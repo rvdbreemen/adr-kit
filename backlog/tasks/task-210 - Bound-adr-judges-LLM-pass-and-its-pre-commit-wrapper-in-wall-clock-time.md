@@ -1,9 +1,10 @@
 ---
 id: TASK-210
 title: Bound adr-judge's LLM pass and its pre-commit wrapper in wall-clock time
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-03 13:05'
+updated_date: '2026-10-03 14:30'
 labels:
   - judge
   - windows
@@ -30,6 +31,16 @@ First reproduce the 24 h run, or rule this route out, before writing a fix.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 It is established whether a hung or long LLM pass is a cause of a multi-hour run (reproduced, or ruled out with evidence)
-- [ ] #2 The whole LLM pass has a wall-clock ceiling, and so does adr-judge-precommit's adr-judge run
-- [ ] #3 On Windows a timed-out host CLI is killed together with its child processes, so the caller does not keep waiting on the pipes
+- [x] #2 The whole LLM pass has a wall-clock ceiling, and so does adr-judge-precommit's adr-judge run
+- [x] #3 On Windows a timed-out host CLI is killed together with its child processes, so the caller does not keep waiting on the pipes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reproduced 2026-10-03 without a real LLM. A fake host CLI starts a grandchild that inherits stdout and sleeps 30-60 s. subprocess.run(capture_output=True, timeout=2) raised only after 60.3 s with the parent alive and 60.5 s with the parent exited: run() kills the child, then waits for pipe EOF with no timeout. Stdin is not the hazard (input= gives a pipe). Code bound: bin/adr-judge DEFAULT_LLM_TIMEOUT_S=120, one sequential call per target, no pass deadline; adr-judge-precommit and .githooks/pre-commit had no timeout at all.
+
+AC#1 is partly established: the mechanism that turns a per-call timeout into an unbounded wait is reproduced. The specific 24 h run was never found in transcripts, so whether it was this mechanism remains unverified. Whether `claude -p` itself starts children that inherit stdout is unverified; 23 running claude.exe had children, but no -p run was observed.
+
+Fix: adr_llm.run_cli (Popen, output to temp files, own session on POSIX, taskkill /T on Windows, SIGKILL to the process group on POSIX); SubprocessBackend.judge uses it. run_llm_batch gets pass_timeout_s, each call gets min(per-call, remaining), and ADRs reached after the deadline are named in the attestation as degraded. Config judge.llm_pass_timeout_seconds (default 600) is in the schema and in --show-config. adr-judge-precommit: timeout 900 s (env ADR_KIT_JUDGE_TIMEOUT_S), exit 2 with a hint. Tests in tests/test_adr_llm_bounded.py (6): 5 red before the fix, the timed-out call took 30.3 s; all green after. The LLM-related files: 167 passed. Known limit: on Windows, a grandchild whose parent already exited is outside the taskkill tree and keeps running, but the call no longer waits on it. .githooks/pre-commit still calls adr-judge without its own timeout; the pass ceiling now bounds it.
+<!-- SECTION:NOTES:END -->
