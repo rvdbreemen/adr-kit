@@ -82,6 +82,24 @@ For violations, offer the same three resolution paths as `/adr-kit:judge` (new A
 
 If the user wants the semantic pass too, offer `--llm` as an explicit follow-up (costs money; same cost posture as `/adr-kit:judge`).
 
+### 3b. Is the decision implemented where it says it applies?
+
+The judge answers "was a rule violated?", which is green when the rule checks nothing. Run the deterministic half first:
+
+```bash
+"$ADR_KIT/bin/adr-judge" --check-scope --adr-dir docs/adr/ \
+    --repo-root "$(git rev-parse --show-toplevel)"
+```
+
+Report each ADVISORY: an Enforcement `path_glob` that matches no tracked file can never fire.
+
+Then check the half no tool can, for each Accepted ADR the range touches whose Decision enumerates cases or names targets:
+
+- **Every enumerated case has code that tests it.** ADR-041 named five reasons a record is queue-eligible; the code tested one, and every check stayed green because each sentence of the ADR was true.
+- **Every named target compiles the code path.** In one firmware project the mitigation call sat inside an `#if` that was 1 only on another board, so the target the ADR named never ran it. Look for preprocessor guards, feature flags and platform checks around the call sites.
+
+Report a gap as an advisory finding with the ADR id, the case or target, and the file:line where it is missing. It does not block; it goes to the user like an enforcement finding.
+
 ## Step 4 - Discovery pass
 
 Two signals, cheapest first.
