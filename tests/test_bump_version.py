@@ -161,6 +161,10 @@ def _make_tree(tmp_path: Path) -> Path:
     (root / "templates" / "adr-kit-guide.md").write_text(
         "<!-- adr-kit-guide v0.30.0 -->\n# Guide\n", encoding="utf-8"
     )
+    (root / "instructions").mkdir(exist_ok=True)
+    (root / "instructions" / "ADR-guide.md").write_text(
+        "<!-- adr-kit-guide v0.30.0 -->\n# Installed guide\n", encoding="utf-8"
+    )
     (root / "templates" / "github-workflows" / "adr-readiness.yml").write_text(
         READINESS_WORKFLOW, encoding="utf-8"
     )
@@ -234,6 +238,8 @@ def test_bump_updates_both_client_manifests_and_release_artifacts(tmp_path):
     assert entry["_wrapper_version"] == "0.31.0"
     guide = (root / "templates" / "adr-kit-guide.md").read_text(encoding="utf-8")
     assert guide.splitlines()[0] == "<!-- adr-kit-guide v0.31.0 -->"
+    installed = (root / "instructions" / "ADR-guide.md").read_text(encoding="utf-8")
+    assert installed.splitlines()[0] == "<!-- adr-kit-guide v0.31.0 -->"
 
 
 def test_fixture_covers_every_declared_site(tmp_path):
@@ -550,6 +556,7 @@ def test_staging_hint_names_every_changed_target(tmp_path):
         "templates/githooks/pre-commit",
         "templates/cc-settings/guardian-hook-entry.json",
         "templates/adr-kit-guide.md",
+        "instructions/ADR-guide.md",
         ".githooks/pre-commit",
     ):
         assert expected in hint
