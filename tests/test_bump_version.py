@@ -165,6 +165,10 @@ def _make_tree(tmp_path: Path) -> Path:
     (root / "instructions" / "ADR-guide.md").write_text(
         "<!-- adr-kit-guide v0.30.0 -->\n# Installed guide\n", encoding="utf-8"
     )
+    (root / ".adr-kit").mkdir(exist_ok=True)
+    (root / ".adr-kit" / "ADR-guide.md").write_text(
+        "<!-- adr-kit-guide v0.30.0 -->\n# Installed guide\n", encoding="utf-8"
+    )
     (root / "templates" / "github-workflows" / "adr-readiness.yml").write_text(
         READINESS_WORKFLOW, encoding="utf-8"
     )

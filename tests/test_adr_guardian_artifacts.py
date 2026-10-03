@@ -290,3 +290,19 @@ def test_installed_guide_version_line_matches_plugin_version(plugin_version):
     guide = REPO_ROOT / "instructions" / "ADR-guide.md"
     first_line = guide.read_text(encoding="utf-8").splitlines()[0]
     assert first_line == f"<!-- adr-kit-guide v{plugin_version} -->"
+
+
+@pytest.mark.parametrize(
+    "copy, source",
+    [
+        (".adr-kit/ADR-guide.md", "instructions/ADR-guide.md"),
+        (".githooks/pre-commit", "templates/githooks/pre-commit"),
+    ],
+)
+def test_this_repositorys_dogfood_copies_match_their_source(copy, source):
+    # setup-project installs both as byte copies. The version registry moves
+    # their stamps, but nothing moved their content: the hook lagged the
+    # template by two ADRs of comment text and the guide sat a release behind
+    # (TASK-213). Re-run `python scripts/setup-project.py --clients claude .`.
+    read = lambda rel: (REPO_ROOT / rel).read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert read(copy) == read(source)

@@ -75,6 +75,12 @@
       "label": "installed ADR guide version stamp"
     },
     {
+      "path": ".adr-kit/ADR-guide.md",
+      "kind": "regex",
+      "pattern": "(<!-- adr-kit-guide v)(\\d+\\.\\d+\\.\\d+)( -->)",
+      "label": "own installed ADR guide stamp (this repo dogfoods instructions/ADR-guide.md)"
+    },
+    {
       "path": "README.md",
       "kind": "regex_all",
       "pattern": "(adr-judge@v)(\\d+\\.\\d+\\.\\d+)",

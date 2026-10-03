@@ -4,6 +4,26 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `scripts/release.py` can be re-run after `prepare`, as its own message
+  says. preflight refused the uncommitted version bump that prepare leaves
+  behind on purpose; it now accepts a tree whose only changes are declared
+  version sites and the generated client trees, once the version is
+  written, and still names any other changed file (TASK-213).
+- `adr-doctor` no longer regenerates client adapters when it runs from a git
+  checkout; it reports them stale with the build command instead. Repair
+  mode rewrote this repository's `codex/` and `copilot/` from every test
+  that ran doctor without `--check`. Installed payloads keep the repair
+  (TASK-213).
+- `bin/adr` lifecycle commands keep a CRLF file CRLF. They wrote every
+  record back with LF, so one answered question showed as a whole-file
+  change on a Windows checkout (TASK-213).
+- `/adr-kit:lint` runs `bin/adr-lint` and explains its findings. It
+  described the CLI's output without being allowed to run it (TASK-213).
+- This repository's own `.adr-kit/ADR-guide.md` and `.githooks/pre-commit`
+  are refreshed from their sources, the guide's stamp is a declared version
+  site, and a test keeps both copies equal to their source (TASK-213).
 
 ## [0.58.0] - 2026-10-03
 

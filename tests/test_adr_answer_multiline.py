@@ -168,3 +168,20 @@ def test_answered_and_unanswered_forms_share_one_identity(tmp_path):
     after = adr_format.all_open_questions(_path(root).read_text(encoding="utf-8"))
     assert set(before) == set(after)
     assert sum(after.values()) == 1
+
+
+def test_answering_keeps_a_crlf_file_crlf(tmp_path):
+    """Lifecycle writes keep the file's line endings (TASK-213).
+
+    `answer` used to rewrite a CRLF record as LF, so one answered question
+    showed up as a whole-file change on a Windows checkout.
+    """
+    root = _project(tmp_path, "- [ ] Who owns the dead-letter policy?\n")
+    path = _path(root)
+    path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+
+    assert _answer(root, "--answer", "Platform team.").returncode == 0
+
+    raw = path.read_bytes()
+    assert b"**Answered" in raw
+    assert raw.count(b"\n") == raw.count(b"\r\n"), "every line ending stays CRLF"
