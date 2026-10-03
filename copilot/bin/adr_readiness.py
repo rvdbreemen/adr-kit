@@ -405,6 +405,9 @@ def readiness_for_record(
         "title": record["title"],
         "path": normalize_path(str(record["path"])),
         "status": record["status"],
+        # The latest status-history date, else the frontmatter date, as the
+        # catalog resolved it. The guardian queue ranks age on it (TASK-200).
+        "date": record.get("date"),
         "format": record["format"],
         "evaluated_on": evaluated_on.isoformat(),
         "classification": classification,

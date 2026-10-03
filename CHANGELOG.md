@@ -4,6 +4,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The guardian's Proposed-ADR queue ranks by age again. Every record showed
+  `age 0 days`, because `adr-readiness` dropped the date the ADR catalog had
+  already parsed. Each readiness item now carries `date`: the latest status
+  change, or the frontmatter date when there is no history. The report stays
+  deterministic, since the date comes from the file and not from the clock
+  (TASK-200).
+
 ## [0.57.0] - 2026-09-08
 
 This release makes two gates stricter, and both can turn a pipeline that was
