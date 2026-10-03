@@ -622,6 +622,32 @@ def test_migration_reports_the_sections_it_could_not_fill(tmp_path):
     assert lint.returncode == 0, lint.stdout
 
 
+def test_a_cross_profile_migration_blames_only_the_holes_it_opened(tmp_path):
+    """Before and after are compared by role, not by heading title (TASK-201).
+
+    A nygard Context that already held a TODO was reported as a hole the
+    madr conversion opened, because "Context" and "Context and Problem
+    Statement" are different titles. Only Decision Drivers is new.
+    """
+    adr_dir = tmp_path / "docs" / "adr"
+    path = materialize("nygard", adr_dir)
+    text = path.read_text(encoding="utf-8")
+    text = re.sub(
+        r"(^## Context\n\n).*?(?=^## )",
+        r"\1- TODO: describe the context.\n\n",
+        text,
+        count=1,
+        flags=re.M | re.S,
+    )
+    path.write_text(text, encoding="utf-8")
+
+    result = run(str(BIN / "adr-migrate"), "--to-profile", "madr", str(path))
+
+    assert result.returncode == 0, result.stderr
+    assert "needs content: ## Decision Drivers" in result.stdout
+    assert "Context and Problem Statement" not in result.stdout, result.stdout
+
+
 def test_migration_stays_quiet_when_every_section_is_written(tmp_path):
     """No false alarm on a record that needed nothing filled in (TASK-198)."""
     adr_dir = tmp_path / "docs" / "adr"

@@ -4,8 +4,25 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR
+  whose `path_glob` matches no tracked file. Such a rule is checked against
+  nothing, so every gate that asks whether it was violated answers green for
+  as long as the glob and the code disagree about where the code lives.
+  `adr-audit --whole-codebase` carries the result as advisory, without moving
+  its exit code. The review skill gains the half no tool can check: whether
+  every case an ADR enumerates and every target it names reaches an
+  implementation (TASK-204).
+
 ### Fixed
 
+- `adr-migrate --to-profile` no longer blames a conversion for holes the
+  source already had. It compared section titles before and after, and two
+  profiles name the same section differently, so a nygard `## Context` that
+  already held a TODO was reported as a new `## Context and Problem
+  Statement` hole on the way to madr. It now compares roles, each side read
+  in its own profile (TASK-201).
 - The judge's LLM pass now has a ceiling it keeps. A host CLI call used to
   return only when every process holding its output pipe had exited, so a
   helper it started could hold a 120 s call open indefinitely: measured at
@@ -26,6 +43,21 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 - `bin/adr accept` no longer waits forever on the quality and lint runs it
   starts: they time out after 120 s and report the timeout as an error. The
   `git` calls in `adr-lint` no longer inherit the caller's stdin.
+- The guardian's Proposed-ADR queue ranks by age again. Every record showed
+  `age 0 days`, because `adr-readiness` dropped the date the ADR catalog had
+  already parsed. Each readiness item now carries `date`: the latest status
+  change, or the frontmatter date when there is no history. The report stays
+  deterministic, since the date comes from the file and not from the clock
+  (TASK-200).
+- An Open Question that wraps onto more lines, or carries nested bullets, is
+  one question again. `bin/adr answer` used to mark only its first line, so
+  the answer landed mid-question; `--question <text>` searched only that
+  line; each nested bullet counted as a question; and a continuation line
+  ending in `?` became an unresolved question that `answer` could not reach,
+  which kept `accept` blocked after everything was answered. All three
+  parsers now share one item grouping. A multi-line question gets its answer
+  on a new line after its last line, and the confirmation no longer cuts the
+  question mid-word (TASK-194).
 
 ## [0.57.0] - 2026-09-08
 

@@ -239,6 +239,30 @@ def run_judge(
     return {"clean": not violations, "violations": violations, "empty": False}
 
 
+def run_scope(adr_dir: Path, repo_root: Path) -> Dict:
+    """Enforcement rules whose path_glob reaches no tracked file (TASK-204).
+
+    Advisory by construction: it never moves the exit code, and a failure to
+    run is reported in the result rather than failing the audit, because the
+    two questions the audit answers do not depend on it.
+    """
+    argv = [
+        sys.executable, str(_BIN_DIR / "adr-judge"), "--check-scope", "--json",
+        "--adr-dir", str(adr_dir), "--repo-root", str(repo_root),
+    ]
+    try:
+        result = _run(argv, repo_root)
+        payload = json.loads(result.stdout or "{}")
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        return {"error": f"scope check did not run ({exc})", "findings": []}
+    if result.returncode != 0 or not isinstance(payload, dict):
+        return {
+            "error": (result.stderr or "scope check failed").strip()[:300],
+            "findings": [],
+        }
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
@@ -255,7 +279,9 @@ def exit_code(lint: Dict, judge: Dict) -> int:
     return EXIT_OK
 
 
-def render_text(lint: Dict, judge: Dict, mode: str, code: int) -> str:
+def render_text(
+    lint: Dict, judge: Dict, mode: str, code: int, scope: Optional[Dict] = None
+) -> str:
     lines = [f"[adr-audit] {mode}"]
 
     if lint["clean"]:
@@ -288,6 +314,17 @@ def render_text(lint: Dict, judge: Dict, mode: str, code: int) -> str:
             )
         if len(judge["violations"]) > 10:
             lines.append(f"    ... and {len(judge['violations']) - 10} more")
+
+    if scope is not None:
+        if scope.get("error"):
+            lines.append(f"  scope:     not checked ({scope['error']})")
+        else:
+            lines.append(
+                f"  scope:     {scope.get('rules_checked', 0)} rule glob(s), "
+                f"{len(scope['findings'])} reach no tracked file (advisory)"
+            )
+            for finding in scope["findings"][:10]:
+                lines.append(f"    {finding['adr']}  {finding['message']}")
 
     lines.append(f"  verdict:   exit {code} ({_VERDICTS[code]})")
     return "\n".join(lines)
@@ -423,6 +460,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             diff_text, adr_dir, repo_root,
             args.snapshot or "worktree", budget, args.llm,
         )
+        scope = run_scope(adr_dir, repo_root) if args.whole_codebase else None
     except AuditError as exc:
         print(f"adr-audit: {exc}", file=sys.stderr)
         return EXIT_TOOLING
@@ -434,13 +472,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "mode": mode,
                 "decisions": lint,
                 "code": judge,
+                "scope": scope,
                 "exit_code": code,
                 "verdict": _VERDICTS[code],
             },
             indent=2, ensure_ascii=False,
         ))
     else:
-        print(render_text(lint, judge, mode, code))
+        print(render_text(lint, judge, mode, code, scope))
     return code
 
 
