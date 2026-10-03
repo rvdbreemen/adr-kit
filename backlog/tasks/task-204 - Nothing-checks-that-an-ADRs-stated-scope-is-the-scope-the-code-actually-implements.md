@@ -3,10 +3,10 @@ id: TASK-204
 title: >-
   Nothing checks that an ADR's stated scope is the scope the code actually
   implements
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-07 05:34'
-updated_date: '2026-10-03 14:49'
+updated_date: '2026-10-03 16:07'
 labels:
   - enhancement
   - adr
@@ -67,3 +67,9 @@ The deterministic subset this record suggests -- checking a scope claim against 
 Still To Do, not a release blocker.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #166. `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR whose path_glob matches no tracked file, since such a rule can never fire. adr-audit --whole-codebase carries the result as advisory. The semantic half is a review-skill checklist: every enumerated case, and every named target, must have an implementation. Both recorded instances are pinned as fixtures of what the deterministic check cannot see.
+<!-- SECTION:FINAL_SUMMARY:END -->

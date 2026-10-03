@@ -1,10 +1,10 @@
 ---
 id: TASK-209
 title: Bound adr-lint's gate scan so a lint run cannot walk without end
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03 12:19'
-updated_date: '2026-10-03 13:09'
+updated_date: '2026-10-03 16:07'
 labels:
   - lint
   - performance
@@ -41,7 +41,7 @@ Not in scope (follow-ups): process-tree kill after a subprocess timeout on Windo
 - [x] #3 Files above a size cap are not read, and graphify-out is skipped
 - [x] #4 bin/adr's lint call has a timeout and reports a timeout as an error
 - [x] #5 git children in adr-lint get stdin=DEVNULL
-- [ ] #6 Regression tests cover the junction loop and the budget; the full suite passes
+- [x] #6 Regression tests cover the junction loop and the budget; the full suite passes
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -63,3 +63,9 @@ Next suspect for the 24 h run (unverified): adr-judge's LLM pass. adr_llm.py cal
 
 Committed ff3c1b8 on fix/bound-lint-gate-scan; PR #158 to dev (https://github.com/rvdbreemen/adr-kit/pull/158). No --auto: on dev only `validate` is required and it runs a subset, so wait for the full matrix.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #158. The adr-lint gate scan skips junctions and directory symlinks, skips graphify-out and files over 1 MiB, and stops after 100,000 entries or 10 s. A gate it could not reach is reported as "could not be verified", not as missing. `bin/adr accept` times out after 120 s, and git children get stdin=DEVNULL. Measured: a project with a junction to C:\Windows went from 160 s to 0.5 s. The full suite passes in CI (the pytest job on every PR). The two local failures seen on 2026-10-03 also failed on clean dev: the date-dependent one is fixed by TASK-211, and the adr-retire ceiling moves to TASK-212. The reported 24 h run itself was never identified; the strongest mechanism is the one TASK-210 fixed.
+<!-- SECTION:FINAL_SUMMARY:END -->

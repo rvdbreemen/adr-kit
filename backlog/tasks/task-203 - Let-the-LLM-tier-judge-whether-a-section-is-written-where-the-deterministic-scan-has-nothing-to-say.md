@@ -3,10 +3,10 @@ id: TASK-203
 title: >-
   Let the LLM tier judge whether a section is written, where the deterministic
   scan has nothing to say
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-06 15:40'
-updated_date: '2026-10-03 15:47'
+updated_date: '2026-10-03 16:07'
 labels:
   - enhancement
   - readiness
@@ -75,3 +75,9 @@ This matters beyond tidiness: the argument for putting the semantic judgement on
 The proposal itself is unaffected and still open. Not a release blocker.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #168. New bin/adr-substance runs in the guardian's LLM tier. It makes one isolated host-CLI call per Proposed ADR over its written required sections, and keeps a finding only when the quoted text occurs in that section. --estimate feeds the cost prompt. It is advisory, with exit 0. readiness, MCP and lint are untouched. Its startup is budgeted under ADR-015 (p50 350 ms).
+<!-- SECTION:FINAL_SUMMARY:END -->

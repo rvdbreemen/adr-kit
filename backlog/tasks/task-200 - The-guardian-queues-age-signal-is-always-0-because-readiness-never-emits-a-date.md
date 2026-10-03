@@ -3,10 +3,10 @@ id: TASK-200
 title: >-
   The guardian queue's age signal is always 0 because readiness never emits a
   date
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-06 15:11'
-updated_date: '2026-10-03 13:59'
+updated_date: '2026-10-03 16:07'
 labels:
   - bug
   - readiness
@@ -28,8 +28,8 @@ tests/test_adr_guardian_queue.py builds its items by hand with an explicit 'date
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 readiness emits a date field per record, and the queue's age reason reflects it
-- [ ] #2 A test exercises the age signal through build_readiness_report rather than a hand-built item dict, so the two halves cannot drift apart again
+- [x] #1 readiness emits a date field per record, and the queue's age reason reflects it
+- [x] #2 A test exercises the age signal through build_readiness_report rather than a hand-built item dict, so the two halves cannot drift apart again
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -62,3 +62,9 @@ The cause itself is unchanged and still reproduces: `bin/adr_guardian_queue.py:3
 Still open, still not a release blocker: the failure is one wasted reason slot in the SessionStart block and an inert ranking term, and it ships in v0.56.0 already. The design question named in the record -- what `date` should mean, filed or last edit or last status change -- is the real gate on this work and is unanswered.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #161. adr-readiness now passes through the date the catalog already resolves (the latest status change, else the frontmatter date), so the guardian queue ranks by real age. An end-to-end test drives build_readiness_report into rank_proposed. The MCP golden frame was regenerated on purpose; it differs only by `date`.
+<!-- SECTION:FINAL_SUMMARY:END -->

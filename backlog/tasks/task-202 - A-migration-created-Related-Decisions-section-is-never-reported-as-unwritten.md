@@ -1,10 +1,10 @@
 ---
 id: TASK-202
 title: A migration-created Related Decisions section is never reported as unwritten
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-06 15:11'
-updated_date: '2026-10-03 15:40'
+updated_date: '2026-10-03 16:07'
 labels:
   - migrate
   - question
@@ -36,3 +36,9 @@ Decision (maintainer, 2026-10-03): a '- None.' written by the migration does NOT
 
 Reproduced 2026-10-03: canonical record without Related Decisions, migrate --to-profile canonical, output silent about the added section. Fix: adr-migrate records machine_written_sections when the source lacked the related role and the result has it, and prints 'review: ## Related Decisions (written as '- None.' by the migration; confirm it, or name the related ADRs)'. Tests: test_a_machine_written_related_section_is_named_for_review (fails before, passes after) and test_a_hand_written_related_none_is_not_named; tests/test_selectable_formats.py 37 passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #167. Decision (maintainer): a '- None.' that the migration wrote is not the author's answer. adr-migrate lists it as 'review: ## Related Decisions', apart from the placeholder holes, and the placeholder detector is unchanged.
+<!-- SECTION:FINAL_SUMMARY:END -->
