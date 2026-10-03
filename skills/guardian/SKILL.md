@@ -168,6 +168,11 @@ Enforcement coverage percent (from 2c) in the append-only trend log.
   Estimated cost: ~$0.10–0.30. Run now? (y/N)
   ```
 
+  Before printing it, run `"$ADR_KIT/bin/adr-substance" --estimate` and add
+  its line to the prompt: the section-substance check in 3a-bis costs one more
+  model call per Proposed ADR with written sections, and the user is agreeing
+  to that number too.
+
   And wait for an explicit `y` / `yes`. If the user says no (or presses Enter on the default), skip the LLM tier and stop at Step 4.
 
 - If `guardian.llm_autorun` is `true`, proceed without asking (user opted in explicitly in config).
@@ -186,6 +191,22 @@ git diff "$BASE" HEAD --unified=0 | "$ADR_KIT/bin/adr-suggest" \
 Read `/tmp/guardian-suggest.json`.
 
 **Response (mix-by-finding-type: Missing ADR):** Passive. List candidates where `needs_adr=true` with `confidence >= medium`. Offer to author selected ones via the `adr-generator` subagent. User picks; never auto-create.
+
+### 3a-bis. Written sections that say nothing (adr-substance)
+
+The deterministic checks report a missing, empty or `- TODO:` section. They
+cannot tell "TBD", "see above" or generic prose from an answer. This step asks
+the model, one isolated call per Proposed ADR (TASK-203):
+
+```bash
+"$ADR_KIT/bin/adr-substance" --adr-dir docs/adr/ --json > /tmp/guardian-substance.json
+```
+
+**Response (advisory):** For each finding, show the ADR, the section and the
+quoted text, and offer `/adr-kit:grill ADR-NNN` to answer it. Nothing blocks:
+the exit code is always 0, `adr-lint` and `adr accept` are unaffected, and a
+`degraded` field means the model gave no usable answer for the ADRs it names,
+not that they are fine.
 
 ### 3b. Full audit (adr-judge with LLM pass, one ADR at a time)
 
