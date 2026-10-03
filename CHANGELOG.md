@@ -6,6 +6,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- `adr-migrate --to-profile` no longer blames a conversion for holes the
+  source already had. It compared section titles before and after, and two
+  profiles name the same section differently, so a nygard `## Context` that
+  already held a TODO was reported as a new `## Context and Problem
+  Statement` hole on the way to madr. It now compares roles, each side read
+  in its own profile (TASK-201).
 - `adr-lint` can no longer walk without end while looking for an Accepted
   binding ADR's `gate`. The scan descended into Windows junctions, which
   `os.walk(followlinks=False)` does not treat as links, and its 5000-file cap
