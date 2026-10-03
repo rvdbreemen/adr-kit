@@ -137,7 +137,19 @@ def test_schema_and_fixture_scope_exclude_future_clients():
 
 
 def test_public_generator_entrypoint_validates_and_renders_support_matrix(tmp_path):
-    fixture = ROOT / "tests/certification/simulated-pass.json"
+    # The CLI enforces the 30-day freshness rule and offers no way to relax it,
+    # so the fixed fixture expired 30 days after its contract date and took this
+    # test with it. Re-date a copy: this test is about the generator, and the
+    # freshness rule has its own test above.
+    bundle = json.loads(
+        (ROOT / "tests/certification/simulated-pass.json").read_text(encoding="utf-8")
+    )
+    today = dt.date.today().isoformat()
+    bundle["contract_date"] = today
+    for record in bundle["records"]:
+        record["contract_date"] = today
+    fixture = tmp_path / "simulated-pass.json"
+    fixture.write_text(json.dumps(bundle), encoding="utf-8")
     output = tmp_path / "support.md"
     command = [
         sys.executable,
