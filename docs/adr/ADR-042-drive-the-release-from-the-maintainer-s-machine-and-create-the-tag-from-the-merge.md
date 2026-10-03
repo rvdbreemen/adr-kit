@@ -318,7 +318,7 @@ version as `latest`.
 
 ## Open Questions
 
-- [x] Does npm's Trusted Publisher relationship survive the publish job being — **Answered 2026-08-26 by User: Robert van den Breemen:** No. npm validates the CALLING workflow's filename, not the reusable workflow that runs the publish command; npm's own documentation says validation 'checks the calling workflow's name instead of the workflow that actually contains the publish command'. This repository already proves it: the trust is registered for release-publish.yml while the npm stage publish call runs inside the called publish-opencode-npm.yml, and staging succeeded on run 32933199425. A separate release-tag.yml would therefore initiate the run under its own name and npm would refuse the OIDC exchange. Resolution: do not add a separate tag workflow. Give release-publish.yml a push trigger on main, have it create the tag when the top CHANGELOG heading names a version with no tag, and continue into the existing publish path in the same run. The initiating workflow stays release-publish.yml, so the Trusted Publisher relationship is untouched and no reusable-workflow refactor is needed.
+- [x] Does npm's Trusted Publisher relationship survive the publish job being
   invoked through `workflow_call`? npm matches the trust relationship against
   the workflow filename that *initiates* the run, and it is configured for
   `release-publish.yml` (`docs/RELEASING.md:256-266`). If `release-tag.yml`
@@ -328,6 +328,7 @@ version as `latest`.
   case keeps the caller's identity, or register a second Trusted Publisher for
   `release-tag.yml`, or have `release-tag.yml` create the tag only and accept
   that the publish path still needs a human-pushed tag.
+  — **Answered 2026-08-26 by User: Robert van den Breemen:** No. npm validates the CALLING workflow's filename, not the reusable workflow that runs the publish command; npm's own documentation says validation 'checks the calling workflow's name instead of the workflow that actually contains the publish command'. This repository already proves it: the trust is registered for release-publish.yml while the npm stage publish call runs inside the called publish-opencode-npm.yml, and staging succeeded on run 32933199425. A separate release-tag.yml would therefore initiate the run under its own name and npm would refuse the OIDC exchange. Resolution: do not add a separate tag workflow. Give release-publish.yml a push trigger on main, have it create the tag when the top CHANGELOG heading names a version with no tag, and continue into the existing publish path in the same run. The initiating workflow stays release-publish.yml, so the Trusted Publisher relationship is untouched and no reusable-workflow refactor is needed.
 
 ## Related Decisions
 

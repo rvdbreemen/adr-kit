@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-26 20:25'
-updated_date: '2026-10-03 14:13'
+updated_date: '2026-10-03 14:17'
 labels: []
 dependencies: []
 references:
@@ -44,10 +44,10 @@ NOT INVESTIGATED: whether the same truncation affects `bin/adr reject` or any ot
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Answering a multi-line Open Question keeps the whole question together and places the answer after all of it
-- [ ] #2 The command's confirmation output does not truncate the question mid-word
-- [ ] #3 A regression test covers a question of at least three lines and asserts the answer follows the complete question text
-- [ ] #4 ADR-042's answered question is reflowed as part of the fix, since the append-only rule forbids repairing it by hand
+- [x] #1 Answering a multi-line Open Question keeps the whole question together and places the answer after all of it
+- [x] #2 The command's confirmation output does not truncate the question mid-word
+- [x] #3 A regression test covers a question of at least three lines and asserts the answer follows the complete question text
+- [x] #4 ADR-042's answered question is reflowed as part of the fix, since the append-only rule forbids repairing it by hand
 - [ ] #5 python -m pytest -q passes
 <!-- AC:END -->
 
@@ -59,4 +59,6 @@ Reproduced 2026-10-03 with a three-question fixture (wrapped, wrapped with a '?'
 Fix: one helper, adr_format.open_question_items, groups the section into items (a top-level bullet plus indented lines, nested bullets and lazy continuations; a paragraph counts only if a line ends in '?'). It is used by command_answer, unresolved_open_questions and all_open_questions. Single-line answers keep the one-line form; a multi-line question gets '  — **Answered …**' on a new line after its last line. Identity (ADR-022 append-only) stays _normalise_question over the joined text, so answered and unanswered forms match. The echo cuts at a word boundary. Own ADRs: readiness output byte-identical before and after, and lint is clean. Tests: tests/test_adr_answer_multiline.py (7) plus the related suites, 122 passed.
 
 Not changed: answer rewrites CRLF files to LF, like the other lifecycle writers (seen in the reproduction).
+
+AC#4: ADR-042's answered question was reflowed by script. The answer moved from the end of line 1 to a new line after the question's last line, and the word multiset was asserted unchanged. The question identity changes from the truncated 'Does ... being' (an artefact of the old layout) to the whole question. The ADR-022 append-only guard does not apply because ADR-042 is Accepted. adr-lint over docs/adr is clean; single-file strict lint gives the same 5 findings before and after (directory-context artefacts); judge OK; the index check finds no artefact change.
 <!-- SECTION:NOTES:END -->
