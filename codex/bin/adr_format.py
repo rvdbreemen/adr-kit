@@ -851,6 +851,11 @@ def _unwritten_required_sections(text: str, profile: str) -> List[tuple]:
     decision: an imported record must not fail a blocking gate on arrival. Only
     a caller that can tell the two apart can say something true about either.
     """
+    return [(title, kind) for _role, title, kind in _unwritten_required_roles(text, profile)]
+
+
+def _unwritten_required_roles(text: str, profile: str) -> List[tuple]:
+    """(role, heading, kind) for each required heading nobody has written yet."""
     normalized = normalize_profile(profile)
     unwritten: List[tuple] = []
     for role in PROFILE_REQUIRED_ROLES[normalized]:
@@ -869,10 +874,21 @@ def _unwritten_required_sections(text: str, profile: str) -> List[tuple]:
         if visible and not all(_PLACEHOLDER_LINE_RE.match(ln) for ln in visible):
             continue
         if not visible and not body.strip():
-            unwritten.append((title, SECTION_EMPTY))
+            unwritten.append((role, title, SECTION_EMPTY))
         else:
-            unwritten.append((title, SECTION_PLACEHOLDER))
+            unwritten.append((role, title, SECTION_PLACEHOLDER))
     return unwritten
+
+
+def unfilled_required_roles(text: str, profile: str) -> List[str]:
+    """The roles behind `unfilled_required_sections`.
+
+    Two profiles name the same role differently ("Context" against "Context
+    and Problem Statement"), so a before/after comparison across a profile
+    conversion has to compare roles; comparing titles blamed the conversion
+    for every hole the source already had (TASK-201).
+    """
+    return [role for role, _title, _kind in _unwritten_required_roles(text, profile)]
 
 
 def unfilled_required_sections(text: str, profile: str) -> List[str]:
