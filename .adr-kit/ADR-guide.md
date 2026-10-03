@@ -1,4 +1,4 @@
-<!-- adr-kit-guide v0.57.0 -->
+<!-- adr-kit-guide v0.59.0 -->
 <!-- Generated ADR Kit guidance. Local additions belong in .adr-kit/ADR-guide.local.md. -->
 
 # ADR Kit agent guide

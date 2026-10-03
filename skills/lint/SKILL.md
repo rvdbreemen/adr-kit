@@ -3,7 +3,7 @@ name: lint
 description: "Lint ADRs against schema and four verification gates. Use for ADR lint, validation, status-history checks, or file-and-line findings. Read-only."
 argument-hint: "[file or directory; defaults to docs/adr/]"
 disable-model-invocation: true
-allowed-tools: [Read, Glob, Grep]
+allowed-tools: [Read, Bash, Glob, Grep]
 ---
 
 # adr-kit lint
@@ -12,6 +12,23 @@ Use `$ARGUMENTS` as the ADR file or directory; default to `docs/adr/` when it
 is empty.
 
 You are running `/adr-kit:lint`. The user wants to know whether existing ADRs in their project pass the four verification gates that the main `adr` skill enforces and, for v0.14 ADRs, whether their status histories are intact. You read files; you do not modify them. You report.
+
+## Run the deterministic CLI first
+
+The gates below are implemented by `bin/adr-lint`; run it and report what it
+finds, rather than re-deriving every verdict by reading files:
+
+```bash
+ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+python "$ADR_KIT/bin/adr-lint" --format json docs/adr/
+```
+
+Pass the argument path instead of `docs/adr/` when one was given. Exit 0 is
+clean, 1 means findings, 2 is a configuration or input error: relay its
+message and stop. Use the gate descriptions below to explain each finding
+and to judge what the CLI leaves to judgment (the heuristic Evidence and
+Clarity calls); when the CLI cannot run at all, fall back to reading the
+files yourself and say that you did.
 
 The deterministic CLI also returns read-only migration notices. Report them
 even when every canonical ADR passes. A notice may contain an exact

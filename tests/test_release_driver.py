@@ -342,3 +342,48 @@ def test_install_reads_the_version_back_rather_than_trusting_an_exit_code(phases
         phases.install(_context(phases))
 
     assert "do not report the released version" in str(caught.value)
+
+
+def _preflight_env(phases, monkeypatch, status_lines, versioned=True):
+    """Drive preflight with a fake git status and the other checks passing."""
+    def fake_git(*args, **kwargs):
+        if args[:1] == ("status",):
+            return 0, "\n".join(status_lines) + ("\n" if status_lines else ""), ""
+        return 0, "", ""
+    monkeypatch.setattr(phases, "git", fake_git)
+    monkeypatch.setattr(phases, "script", lambda *a, **k: (0, "", ""))
+    monkeypatch.setattr(phases, "run", lambda *a, **k: (0, "", ""))
+    monkeypatch.setattr(phases, "_version_everywhere", lambda ctx: versioned)
+
+
+def test_preflight_lets_the_second_run_continue_a_prepared_release(phases, monkeypatch):
+    """prepare leaves its bump uncommitted and asks for a re-run (TASK-213).
+
+    preflight used to refuse that same dirty tree, so the command prepare told
+    the operator to run could never get past step 0.
+    """
+    _preflight_env(phases, monkeypatch, [
+        " M CHANGELOG.md",
+        " M README.md",
+        " M .claude-plugin/plugin.json",
+        " M codex/.codex-plugin/plugin.json",
+        " M copilot/instructions/ADR-guide.md",
+    ])
+
+    notes = phases.preflight(_context(phases))
+
+    assert any("prepared release" in note for note in notes)
+
+
+def test_preflight_still_refuses_a_stray_change(phases, monkeypatch):
+    _preflight_env(phases, monkeypatch, [" M CHANGELOG.md", "?? bin/new-tool"])
+
+    with pytest.raises(phases.ReleaseError, match="bin/new-tool"):
+        phases.preflight(_context(phases))
+
+
+def test_preflight_refuses_release_files_before_the_version_is_written(phases, monkeypatch):
+    _preflight_env(phases, monkeypatch, [" M CHANGELOG.md"], versioned=False)
+
+    with pytest.raises(phases.ReleaseError, match="uncommitted"):
+        phases.preflight(_context(phases))

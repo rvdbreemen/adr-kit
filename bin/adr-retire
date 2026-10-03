@@ -20,7 +20,10 @@ import importlib.util
 import json
 import os
 import re
+import stat
+import subprocess
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
@@ -61,6 +64,9 @@ from adr_format import section_text
 
 # Safety cap for repo-wide file scans (tech-removal signal).
 MAX_FILES = 50_000
+# Bounds for the fallback walk outside git (TASK-212).
+WALK_MAX_ENTRIES = 100_000
+WALK_MAX_SECONDS = 10.0
 
 JSON_FENCE_RE = re.compile(r"```json\s*\n(.*?)\n```", re.IGNORECASE | re.DOTALL)
 STATUS_HISTORY_START_RE = re.compile(r"^\s*status_history\s*:\s*$", re.IGNORECASE)
@@ -189,17 +195,40 @@ def _walk_repo_files(repo_root: Path, extensions: set) -> List[Path]:
     if cached is not None:
         return cached
 
+    listed = _git_listed_files(repo_root, extensions)
+    if listed is not None:
+        _WALK_CACHE[cache_key] = listed
+        return listed
+
     result: List[Path] = []
     count = 0
+    visited = 0
+    deadline = time.monotonic() + WALK_MAX_SECONDS
     skip_dirs = set(IGNORED_DIRS) | {"node_modules", ".tox"}
     for dirpath, dirnames, filenames in os.walk(repo_root, followlinks=False):
-        # Prune ignored directories in-place so os.walk skips them.
-        dirnames[:] = [d for d in dirnames if d.lower() not in skip_dirs]
+        # Prune ignored directories in-place so os.walk skips them, and never
+        # follow a junction or directory symlink: os.walk(followlinks=False)
+        # still descends into Windows junctions (TASK-209, TASK-212).
+        dirnames[:] = [
+            d for d in dirnames
+            if d.lower() not in skip_dirs and not _is_dir_link(Path(dirpath) / d)
+        ]
         # Never descend into a nested checkout (git worktree, vendored clone):
         # its files are not this project's source.
         dirnames[:] = [
             d for d in dirnames if not (Path(dirpath) / d / ".git").exists()
         ]
+        # The cap above counts files kept; these bound the walk itself, so a
+        # tree that is not a project still ends (TASK-212, as TASK-209 for lint).
+        visited += 1 + len(filenames)
+        if visited > WALK_MAX_ENTRIES or time.monotonic() > deadline:
+            import warnings
+            warnings.warn(
+                f"[adr-retire] File scan stopped after {visited} entries; "
+                f"run it from the project root."
+            )
+            _WALK_CACHE[cache_key] = result
+            return result
         for fname in filenames:
             if Path(fname).suffix.lower() in extensions:
                 result.append(Path(dirpath) / fname)
@@ -214,6 +243,61 @@ def _walk_repo_files(repo_root: Path, extensions: set) -> List[Path]:
                     return result
     _WALK_CACHE[cache_key] = result
     return result
+
+
+def _is_dir_link(path: Path) -> bool:
+    """True for a directory symlink or a Windows junction (not other reparse points)."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return True
+    if stat.S_ISLNK(st.st_mode):
+        return True
+    link_tags = {
+        getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", -1),
+        getattr(stat, "IO_REPARSE_TAG_SYMLINK", -1),
+    }
+    return getattr(st, "st_reparse_tag", 0) in link_tags
+
+
+def _git_listed_files(repo_root: Path, extensions) -> Optional[List[Path]]:
+    """Tracked plus untracked-but-not-ignored files, or None outside a git repo.
+
+    What git ignores is not project source: build output, caches, generated
+    graphs. Walking it made this tool's cost depend on whatever a developer
+    machine had accumulated (graphify-out/, 67 MB, took a run from well under
+    a second to 3.3 s) and hid that from CI, where those folders do not exist
+    (TASK-212). git also never lists a nested checkout's files or follows a
+    link out of the tree.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", "-z", "--cached",
+             "--others", "--exclude-standard"],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    skip_dirs = set(IGNORED_DIRS) | {"node_modules", ".tox"}
+    files: List[Path] = []
+    for rel in proc.stdout.decode("utf-8", "replace").split("\0"):
+        if not rel or rel.endswith("/"):
+            continue
+        parts = rel.split("/")
+        if any(p.lower() in skip_dirs for p in parts[:-1]):
+            continue
+        if Path(rel).suffix.lower() not in extensions:
+            continue
+        path = repo_root / rel
+        if path.is_file():
+            files.append(path)
+        if len(files) >= MAX_FILES:
+            break
+    return files
 
 
 def _source_files(repo_root: Path) -> Iterable[Path]:

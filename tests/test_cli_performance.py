@@ -86,6 +86,34 @@ def test_retire_ignores_nested_checkout(tmp_path):
     assert found == set(), "terms inside a nested checkout are not project source"
 
 
+def test_retire_skips_what_git_ignores(tmp_path):
+    """Ignored build output is not project source (TASK-212).
+
+    graphify-out/ (1174 files, 67 MB, gitignored) made adr-retire take 3.3 s
+    on a developer machine and stay fast in CI, where the folder does not
+    exist: the ceiling test measured the machine's leftovers, not the code.
+    """
+    root = _project(
+        tmp_path,
+        {
+            ".gitignore": "build/\n",
+            "src/app.py": "plain code\n",
+            "build/generated.py": "uses redis\n",
+        },
+    )
+    subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+    RETIRE["_WALK_CACHE"].clear()
+    assert RETIRE["resolve_present_terms"](root, ["redis"]) == set()
+
+
+def test_retire_walk_does_not_follow_directory_links(tmp_path):
+    root = _project(tmp_path / "proj", {"src/app.py": "plain code\n"})
+    outside = _project(tmp_path / "outside", {"lib.py": "uses redis\n"})
+    _link_dir(root / "elsewhere", outside)
+    RETIRE["_WALK_CACHE"].clear()
+    assert RETIRE["resolve_present_terms"](root, ["redis"]) == set()
+
+
 def test_retire_tech_removal_matches_precomputed_and_on_demand(tmp_path):
     root = _project(tmp_path, {"src/app.py": "redis here\n"})
     content = "# ADR-001 X\n\n## Decision\n\nUse `redis`.\n"
