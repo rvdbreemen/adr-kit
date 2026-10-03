@@ -26,6 +26,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 - `bin/adr accept` no longer waits forever on the quality and lint runs it
   starts: they time out after 120 s and report the timeout as an error. The
   `git` calls in `adr-lint` no longer inherit the caller's stdin.
+- The guardian's Proposed-ADR queue ranks by age again. Every record showed
+  `age 0 days`, because `adr-readiness` dropped the date the ADR catalog had
+  already parsed. Each readiness item now carries `date`: the latest status
+  change, or the frontmatter date when there is no history. The report stays
+  deterministic, since the date comes from the file and not from the clock
+  (TASK-200).
 
 ## [0.57.0] - 2026-09-08
 
