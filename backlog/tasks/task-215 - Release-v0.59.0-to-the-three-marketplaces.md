@@ -4,7 +4,7 @@ title: Release v0.59.0 to the three marketplaces
 status: Done
 assignee: []
 created_date: '2026-10-03 20:51'
-updated_date: '2026-10-03 21:26'
+updated_date: '2026-10-04 19:27'
 labels: []
 dependencies: []
 priority: high
@@ -33,7 +33,7 @@ The whole release ran in one driver invocation after the notes were written. Pre
 
 Land: release PR #175 merged into main with all 14 checks green. Tag v0.59.0 resolves to 7857f42, equal to origin/main. The 'ADR Kit release publish' run completed with success. Release page: https://github.com/rvdbreemen/adr-kit/releases/tag/v0.59.0 (not a draft, not a prerelease, published 2026-10-03T21:13:13Z). Syncback: PR #176 merged; v0.59.0 is an ancestor of origin/dev, and check-branch-sync reports in sync. Install: all three clients report 0.59.0.
 
-Open: npm. dist-tags.latest still reads 0.58.0, and approval needs the maintainer's 2FA.
+npm: approved by the maintainer with 2FA; `npm view @rvdbreemen/adr-kit-opencode dist-tags` reads latest 0.59.0 (checked 2026-10-04).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
