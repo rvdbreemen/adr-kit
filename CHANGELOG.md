@@ -5,6 +5,36 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.59.1] - 2026-10-05
+
+A patch release for the pre-commit hook, prompted by an external bug report
+(#155, thank you @Simwawa). Both fixes make the hook choose the right tools on
+machines that do not look like the maintainer's: several Pythons side by side,
+or a `sort` without GNU extensions such as the one macOS ships.
+
+Upgrade note. Nothing needs to change on a supported setup (a Python 3.10 or
+newer on PATH). On a machine whose only Python is older than 3.10, the hook no
+longer runs `adr-judge` on that interpreter. It prints its existing
+"Python 3 not found ... Skipping ADR check for this commit." message and lets
+the commit through. Install Python 3.10+ to get the check back.
+
+The hook is a copy in each project, so existing projects pick the fix up by
+re-running `/adr-kit:install-hooks` and choosing `replace` when it reports
+that `.githooks/pre-commit` differs from the template. The old hook is kept as
+a timestamped backup.
+
+### Fixed
+
+- The pre-commit hook selects a Python that can run `adr-judge`. Its probe
+  took the first command reporting any Python 3, so with `python3` on 3.9 and
+  a newer `python` or `py` installed it picked 3.9 and the gate failed. It now
+  asks each candidate for its version and skips one below 3.10. Reported in
+  #155.
+- The pre-commit hook no longer depends on GNU `sort -V` to pick the newest
+  installed plugin. Under `set -e` a `sort` without version mode aborted the
+  whole hook; the comparison now runs on the Python the hook already requires.
+  Reported in #155.
+
 ## [0.59.0] - 2026-10-03
 
 A follow-up to 0.58.0 that finishes the same theme: tools that measured the
@@ -3212,7 +3242,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...HEAD
+[0.59.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.56.0...v0.57.0
