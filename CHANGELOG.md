@@ -4,6 +4,17 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The pre-commit hook selects a Python that can run `adr-judge`. Its probe
+  took the first command reporting any Python 3, so with `python3` on 3.9 and
+  a newer `python` or `py` installed it picked 3.9 and the gate failed. It now
+  asks each candidate for its version and skips one below 3.10. Reported in
+  #155.
+- The pre-commit hook no longer depends on GNU `sort -V` to pick the newest
+  installed plugin. Under `set -e` a `sort` without version mode aborted the
+  whole hook; the comparison now runs on the Python the hook already requires.
+  Reported in #155.
 
 ## [0.59.0] - 2026-10-03
 
