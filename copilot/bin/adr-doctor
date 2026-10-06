@@ -120,7 +120,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--format", choices=("text", "human", "json"), default="text")
     parser.add_argument("--check", action="store_true", help="Diagnose without repair.")
     parser.add_argument("--fix", action="store_true", help="Permit backed-up managed rewrites.")
-    parser.add_argument("--deep", action="store_true", help="Run bounded native, MCP, and model probes.")
+    parser.add_argument("--deep", action="store_true", help="Run bounded native-registration, MCP and hook-latency probes.")
     parser.add_argument("--fix-index", action="store_true", help=argparse.SUPPRESS)
     return parser
 

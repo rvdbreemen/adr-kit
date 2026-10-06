@@ -183,9 +183,9 @@ def gate_findings_from_lint(lint_payload: Dict) -> List[Dict]:
     return findings
 
 
-def run_audit(repo_root: Path, audit_script: Path) -> Dict:
+def run_discover(repo_root: Path, discover_script: Path) -> Dict:
     result = subprocess.run(
-        [sys.executable, str(audit_script), "--root", str(repo_root)],
+        [sys.executable, str(discover_script), "--root", str(repo_root)],
         capture_output=True,
         text=True,
     )
@@ -213,7 +213,7 @@ def run_doctor(args) -> Dict:
     bin_dir = Path(__file__).resolve().parent
     index_script = bin_dir / "adr-index"
     lint_script = bin_dir / "adr-lint"
-    audit_script = bin_dir / "adr-discover"
+    discover_script = bin_dir / "adr-discover"
 
     if args.fix_index:
         subprocess.run([sys.executable, str(index_script), str(adr_dir)], capture_output=True, text=True)
@@ -277,7 +277,7 @@ def run_doctor(args) -> Dict:
         "reason": None,
     }
     if material_drift:
-        audit_payload = run_audit(repo_root, audit_script)
+        audit_payload = run_discover(repo_root, discover_script)
         audit_payload["reason"] = "material_drift"
 
     return {

@@ -197,9 +197,9 @@
         },
         "llm_timeout_seconds": {
           "type": "integer",
-          "description": "Per-call timeout for the suggestion LLM pass in seconds. Defaults to judge.llm_timeout_seconds, then 120.",
+          "description": "Per-call timeout for the suggestion LLM pass in seconds. When unset: judge.llm_timeout_seconds if set, otherwise 30 (TASK-122: a nudge must not outlast what a person will wait for).",
           "minimum": 1,
-          "default": 120
+          "default": 30
         }
       }
     },

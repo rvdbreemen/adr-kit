@@ -72,6 +72,7 @@ README = (
     "\n"
     "```yaml\n"
     "      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.30.0\n"
+    "      - uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.30.0\n"
     "```\n"
     "\n"
     "```yaml\n"
@@ -171,6 +172,14 @@ def _make_tree(tmp_path: Path) -> Path:
     )
     (root / "templates" / "github-workflows" / "adr-readiness.yml").write_text(
         READINESS_WORKFLOW, encoding="utf-8"
+    )
+    for action in ("adr-judge", "adr-index-check"):
+        (root / "templates" / "github-workflows" / f"{action}.yml").write_text(
+            READINESS_WORKFLOW.replace("adr-readiness@", f"{action}@"), encoding="utf-8"
+        )
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "adr-grilling.md").write_text(
+        "```yaml\n" + READINESS_WORKFLOW + "```\n", encoding="utf-8"
     )
     return root
 
@@ -319,7 +328,7 @@ def test_a_site_added_to_the_registry_is_bumped_without_touching_the_writer(tmp_
     root = _make_tree(tmp_path)
     registry_path = root / "packaging" / "version-sites.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    (root / "docs").mkdir()
+    (root / "docs").mkdir(exist_ok=True)
     (root / "docs" / "install.md").write_text(
         "Install adr-kit:\n\n    pip install adr-kit==0.30.0\n", encoding="utf-8"
     )

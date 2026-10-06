@@ -69,6 +69,16 @@ def test_no_exclusion_names_something_that_is_not_an_entrypoint():
     )
 
 
+def test_no_budget_names_something_that_is_not_an_entrypoint():
+    """A budget for a retired tool reads as coverage that measures nothing.
+
+    `adr-embed` and `adr-context-vector` kept their rows for months after ADR-036
+    removed them, because only `excluded` was checked against bin/ (TASK-221).
+    """
+    stale = sorted(set(CORPUS["budgets"]) - _entrypoints())
+    assert not stale, f"budget rows for names that are no longer in bin/: {stale}"
+
+
 def test_every_budget_row_declares_which_kind_of_measurement_it_is():
     """A startup floor and a workload cost are not the same claim.
 

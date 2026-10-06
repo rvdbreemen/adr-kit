@@ -621,9 +621,10 @@ repository at v0.59.1 (2026-10-06) unless marked otherwise.
    `README.md` falls outside every `generated_roots` entry so the sweep never reaches it. Editing
    `codex/bin/adr-lint` is silently reverted on the next run; editing `codex/README.md` persists. The
    generated files carry no provenance header — only `ADR-guide.md`, the skills and the prompts do.
-   The ownership registry disagrees with the generator on one pair: `clients/capabilities.json` lists
-   `codex/hooks/hooks.json` and `copilot/hooks.json` under `hand_authored_validated`, while
-   `client_generation.py:165-170` writes both from `native_hook_config()`.
+   The ownership registry agrees with the generator on the hook registration files: since
+   TASK-221 `clients/capabilities.json` lists `hooks/hooks.json`, `codex/hooks/hooks.json` and
+   `copilot/hooks.json` under `generated`, matching `client_generation.py`, which writes all three
+   from `native_hook_config()`.
 
 9. **`packaging/executables.json` omits the mirrored executables.** `inventory()` filters
    on `relative.startswith("bin/") and path.suffix == ""` (excluding `bump-version`), so its 31 entries

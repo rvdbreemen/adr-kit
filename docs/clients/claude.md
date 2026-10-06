@@ -37,7 +37,7 @@ advisory; the git pre-commit gate remains the deterministic enforcement floor.
 ## Doctor, updates, and removal
 
 `adr-doctor` is fast and local. `adr-doctor --deep` adds native registration,
-live MCP, model identity, hook, and latency probes. `--fix` permits backups,
+live MCP, hook, and latency probes. `--fix` permits backups,
 config rewrites, and re-registration; safe owned repairs remain automatic.
 
 Stable updates use Claude's native update flow after source verification.

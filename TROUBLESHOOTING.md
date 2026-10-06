@@ -26,9 +26,9 @@ python bin/adr-doctor --check --format json
 python bin/adr-doctor --deep --format json
 ```
 
-Deep mode adds bounded native plugin-list probes, an MCP
-initialize/tools-list/adr-status call, and local provider/model identity and
-health checks. It never performs an agent turn. Hook fixtures and latency
+Deep mode adds bounded native plugin-list probes and an MCP
+initialize/tools-list/adr-status call. It never performs an agent turn and never
+calls a model. Hook fixtures and latency
 measurements use the versioned `hook-latency-extension` object populated by
 the hook certification harness.
 

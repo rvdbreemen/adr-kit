@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@main
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.59.1
         with:
           adr-dir: docs/adr
 ```
