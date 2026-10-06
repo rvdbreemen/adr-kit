@@ -4,6 +4,16 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- ADR-043 restores the two rules that guarded the host-model-only judge: no
+  entry point may pin a vendor model, and none may carry its own default
+  command vector. ADR-017 enforced them until ADR-036 superseded it without an
+  Enforcement section, and since then no commit was checked against them. The
+  scope now also covers `bin/adr-substance`, which calls a model and was never
+  inside it; a gate test (`adr-no-pinned-model-v1`) fails when a new
+  model-calling entry point is left outside the rule.
+
 ### Changed
 
 - `ADR_KIT_NO_LLM=1` now stops every model call, not only the judge's. The
