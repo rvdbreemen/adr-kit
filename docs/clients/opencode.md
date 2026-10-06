@@ -86,8 +86,9 @@ registration follows the OpenCode schema:
 }
 ```
 
-The server exposes `adr_context`, `adr_judge`, `adr_status`, `adr_quality`,
-and read-only `adr_readiness`. It supports the MCP handshake revisions already
+The server exposes seven read-only tools: `adr_context`, `adr_judge`,
+`adr_status`, `adr_quality`, `adr_readiness`, `adr_lint`, and `adr_related`
+(ADR-040). It supports the MCP handshake revisions already
 implemented by ADR Kit and the stateless MCP 2026-07-28 discovery envelope.
 
 ## Hooks
