@@ -9,8 +9,9 @@ are discoverable skills; invoke them explicitly with names such as
 are not advertised as a plugin command surface. Project setup adds a concise
 managed `AGENTS.md` block and keeps the detailed guide separate.
 
-The package exposes the five key-free MCP tools `adr_context`, `adr_judge`,
-`adr_status`, `adr_quality`, and read-only `adr_readiness`. The
+The package exposes the seven key-free, read-only MCP tools `adr_context`,
+`adr_judge`, `adr_status`, `adr_quality`, `adr_readiness`, `adr_lint`, and
+`adr_related` (ADR-040). The
 [ADR Grilling user guide](../adr-grilling.md) documents the complete
 Proposed-to-Accepted flow.
 

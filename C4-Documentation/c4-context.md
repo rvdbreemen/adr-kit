@@ -36,10 +36,13 @@ decision's machine-readable rules and can refuse the action outright. A
 human remains the only one who can accept a decision as final — that
 signature is what turns a proposal into policy — and a periodic health sweep
 tells that human which decisions have gone stale, which were made but never
-recorded, and which are ready to retire. The whole system is deterministic,
-stdlib-only Python, and free by default: any pass that calls a language
-model is opt-in and never sits on a path the agent cannot avoid (README,
-"Why", "Security notes on the LLM passes").
+recorded, and which are ready to retire. The deterministic core is
+stdlib-only Python and needs no API key or service. The passes that call a
+language model run only on the host agent's own CLI (ADR-036): the judge's
+LLM pass runs by default once a host client is recorded, which the installer
+does for a single-client install, and `ADR_KIT_NO_LLM=1` or
+`judge.llm_enabled: false` turns it off. Running them on a local model is
+opt-in, per machine, through `ADR_KIT_LLM_CMD` (README, "Working locally").
 
 ## 2. Personas
 
@@ -52,7 +55,7 @@ the maintainer's.
 
 | Persona | Type | Primary features used |
 | --- | --- | --- |
-| Maintainer / human decision-maker | Human | Guided authoring & grilling, lifecycle acceptance, guardian, release runbook |
+| Maintainer / human decision-maker | Human | Guided authoring & grilling, lifecycle acceptance, guardian, release driver |
 | Coding agent (Claude Code / Codex / Copilot CLI / OpenCode) | Programmatic — interactive, four host surfaces; three certified instances plus one separate native package | Context retrieval & injection, MCP tools, subject to the enforcement floor |
 | Committing engineer | Human | Pre-commit gate, pull-request guard, override escape hatch |
 | CI / the automated gate | Programmatic — unattended | Readiness action, judge action, lint gate, scheduled guardian/retire sweeps, release-publish gate |
@@ -83,10 +86,12 @@ otherwise bypass branch protection."
 
 - **Goals.** Keep the decision log accurate and worth reading. Be the
   accountable name behind every Accepted, Superseded, Rejected, or Retired
-  ADR. Ship a version-coherent release across all three marketplaces.
+  ADR. Ship a version-coherent release across the three certified
+  marketplaces and the OpenCode npm package.
 - **Key features used.** `/adr-kit:adr`, `/adr-kit:grill`, `bin/adr-readiness`,
   `bin/adr accept/propose/supersede/reject/document`, `bin/adr-guardian`,
-  `docs/RELEASING.md`'s runbook.
+  `python scripts/release.py X.Y.Z` (ADR-042), which implements
+  `docs/RELEASING.md`.
 
 ### 2.2 Coding agent (Claude Code, Codex, GitHub Copilot CLI, OpenCode)
 
@@ -114,8 +119,9 @@ registered profile catalog.
   (historical) context. Self-check a diff via MCP before triggering the
   enforcement floor.
 - **Key features used.** Session/prompt/edit/subagent/compaction hook
-  injection, the five-tool MCP server (`adr_context`, `adr_judge`,
-  `adr_status`, `adr_quality`, `adr_readiness`), the native OpenCode plugin
+  injection, the seven-tool MCP server (`adr_context`, `adr_judge`,
+  `adr_status`, `adr_quality`, `adr_readiness`, `adr_lint`, `adr_related`;
+  ADR-040 admits only read-only deterministic tools), the native OpenCode plugin
   surface where applicable, and — as the party whose work is judged — the
   commit and pull-request enforcement tiers.
 
@@ -156,10 +162,12 @@ explicit, inspectable evidence shows that the pull request implements a
 linked Proposed ADR" — a suspected-but-unproven undocumented decision is
 advisory, never a merge block (ADR-011, Decision Drivers and "Automation
 boundary"). ADR-012 gives it the release gate: `.github/workflows/release-
-publish.yml` triggers on a `v*` tag and re-runs the version-consistency
-check, the client-adapter drift check, `adr-lint --strict`, `adr-index
---check`, and the full pytest suite before a GitHub Release is cut (ADR-012,
-"Release flow").
+publish.yml` triggers on the push to `main` that merges a release, creates
+the `vX.Y.Z` tag on that merged commit itself (ADR-042; a tag push or a
+manual dispatch re-publishes an existing tag), and re-runs the
+version-consistency check, the client-adapter drift check, `adr-lint
+--strict`, `adr-index --check`, and the full pytest suite before a GitHub
+Release is cut (ADR-012, "Release flow").
 
 - **Goals.** Block a pull request only on evidence it can point to, never on
   suspicion. Keep a release from shipping with a version mismatch across the
@@ -167,19 +175,20 @@ check, the client-adapter drift check, `adr-lint --strict`, `adr-index
   team, not just whoever opened a session that day.
 - **Key features used.** The `adr-readiness` and `adr-judge` composite
   GitHub Actions, `bin/adr-lint --strict`, `scripts/check-release-
-  version.py`, the weekly `adr-guardian-audit.yml` and `adr-retire-
+  version.py`, `install-smoke.yml` (exercises the `.pre-commit-hooks.yaml`
+  install path), the weekly `adr-guardian-audit.yml` and `adr-retire-
   audit.yml` cron workflows.
 
 ## 3. System Features
 
 | Feature | Description | Personas | Journey |
 | --- | --- | --- | --- |
-| **Context Retrieval & Layered Injection** | The index-first query engine (`bin/adr-context`, with query-time semantic embedding and lexical fallback per ADR-020) plus ADR-004's three fail-open tiers that push relevant decisions into a session unasked. | Coding agent (primary), Maintainer (manual `/adr-kit:context` lookup) | [§4.1](#41-coding-agent--context-retrieval--layered-injection-programmatic-integration) |
+| **Context Retrieval & Layered Injection** | The index-first query engine (`bin/adr-context`, lexical scoring over the generated index plus one-hop graph neighbours; ADR-036 retired the embedding layer) plus ADR-004's three fail-open tiers that push relevant decisions into a session unasked. | Coding agent (primary), Maintainer (manual `/adr-kit:context` lookup) | [§4.1](#41-coding-agent--context-retrieval--layered-injection-programmatic-integration) |
 | **Deterministic Enforcement Floor** | The only two mechanisms in the whole system that block: `bin/adr-judge` at pre-commit/CI (ADR-004's commit tier) and `hooks/adr_pr_guard.py` at `gh pr create` (ADR-023's pull-request tier). | Committing engineer, Coding agent (as the judged party), CI | [§4.2](#42-committing-engineer--deterministic-enforcement) |
 | **Guided Authoring & Human-Gated Acceptance** | `/adr-kit:adr`, `/adr-kit:grill`'s one-question-at-a-time interview, `bin/adr-readiness`'s deterministic classification, and `bin/adr accept --confirm` as the sole mutation authority (ADR-011, ADR-027). | Maintainer (author/decider), Coding agent (drafts and asks, never signs) | [§4.3](#43-maintainer--guided-authoring--human-gated-acceptance) |
 | **Readiness & Enforcement in CI** | The unattended pull-request path: an explicit-link readiness check and a declarative judge, both key-free and model-free. | CI | [§4.4](#44-ci--readiness-and-enforcement-on-a-pull-request) |
 | **Health, Guardian & Retirement Maintenance** | `bin/adr-guardian`'s two-tier staleness/drift/missing-decision sweep, `bin/adr-retire`'s four-signal retirement ranking, and team-mode's tracking-issue cron. | Maintainer, CI (weekly sweep) | [§4.5](#45-maintainer--ci--guardian-health-sweep) |
-| **Certified CLI Distribution, OpenCode Package & Release** | The capability registry (ADR-010) certifies three named clients through one outcome contract. ADR-039 keeps the native OpenCode package separate, while the release runbook (ADR-012) publishes the repository source and its version-consistent manifests. | Maintainer (cuts the release), CI (gates it) | [§4.6](#46-maintainer--certified-cli-distribution-and-opencode-package-release) |
+| **Certified CLI Distribution, OpenCode Package & Release** | The capability registry (ADR-010) certifies three named clients through one outcome contract. ADR-039 keeps the native OpenCode package separate. The release driver `scripts/release.py` (ADR-042) implements the ADR-012 runbook: it lands version-consistent manifests on the repository source, lets `release-publish.yml` derive the tag from the merged commit, and stages the OpenCode npm package. | Maintainer (cuts the release), CI (gates it) | [§4.6](#46-maintainer--certified-cli-distribution-and-opencode-package-release) |
 
 ## 4. User Journeys
 
@@ -203,14 +212,11 @@ plugin contract in ADR-039 rather than entering `clients/capabilities.json`.
    equivalent prompt path. The same freshness-and-regenerate path runs (ADR-021
    restricts in-process regeneration to exactly these two events because
    their 1000 ms and 900 ms budgets can absorb the measured 84 ms median
-   render cost; the 1100 ms pre-tool-use edit tier cannot). If a local embedding backend is
-   configured, the query itself is embedded here and compared against the
-   precomputed corpus vectors; status and authority for every match are
-   joined live from `ADR-INDEX.json`, never carried in the vector store
-   (ADR-020, Decision Contract). An unreachable or slow backend falls back
-   to lexical ranking, exits 0, and names which route answered — "a path
-   that silently answers worse is worse than one that says it is answering
-   worse" (ADR-020, Decision Drivers).
+   render cost; the 1100 ms pre-tool-use edit tier cannot). Ranking is
+   lexical over the generated index plus one-hop graph neighbours, with
+   status and authority read from `ADR-INDEX.json`. The hook cannot reach a
+   model or the network: ADR-036 retired the query-embedding exception that
+   ADR-020 had carved out (`hooks/adr_hook_core.py`, `_query`).
 3. **Before an edit.** On Claude Code and Codex, `PreToolUse` matched to
    `Edit|MultiEdit|Write` injects the top-ranked governing ADR's `## Decision`
    text, bounded to a token budget, *before* the file is written (ADR-004's
@@ -295,6 +301,9 @@ degrades context quality, never availability of the agent's tool loop.
    claim as observed, human-stated, inferred, or unknown (ADR-011, "Evidence
    model"), and asks one unresolved decision question at a time with a
    recommended answer. Each answer is recorded and readiness is recomputed.
+   Since 0.54.0 (ADR-041), an unfinished Proposed ADR is handed off to this
+   interview automatically at the next user-visible prompt; setting
+   `grill.auto_start: false` makes that handoff advisory-only project-wide.
 3. An interrupted session leaves a valid Proposed ADR with explicit Open
    Questions and a resume command — source material (a PR, a chat log, a
    document) is evidence, never acceptance authority (ADR-011, "Interaction
@@ -353,7 +362,10 @@ degrades context quality, never availability of the agent's tool loop.
 3. The LLM tier (bi-weekly) hunts for missing ADRs and runs the full
    model-reviewed audit, but "never runs in the background, never spends
    without asking" (README) — the maintainer is prompted before any
-   cost-bearing pass.
+   cost-bearing pass. The same tier runs `bin/adr-substance` (0.58.0), which
+   asks the host model whether each written section of a Proposed ADR
+   actually says something, kept out of the byte-stable `adr-readiness`
+   report on purpose.
 4. Findings route by type: drift is surfaced loudly with `file:line`,
    missing decisions are offered for authoring, stale ADRs get a retirement
    draft for review — always for a human to act on, never applied
@@ -364,33 +376,45 @@ degrades context quality, never availability of the agent's tool loop.
 
 ### 4.6 Maintainer × Certified CLI Distribution and OpenCode Package Release
 
-1. `python scripts/bump-version.py X.Y.Z` writes every version-bearing site
-   from the single `packaging/version-sites.json` registry — the CHANGELOG
-   heading, three certified client plugin manifests, the OpenCode package,
-   two versioned marketplace manifests, template stamps, and README pins —
-   because "a release is only coherent when the version is identical
-   everywhere" (ADR-012, "Version-consistency invariant").
+Since ADR-042 one command drives every step below from the maintainer's
+machine: `python scripts/release.py X.Y.Z` (`--status` shows what is left).
+It is safe to re-run, and `docs/RELEASING.md` is the specification it
+implements. What stays human: choosing the version, writing the release
+notes, approving the merge, and npm's 2FA.
+
+1. The prepare phase writes every version-bearing site from the single
+   `packaging/version-sites.json` registry — three certified client plugin
+   manifests, the OpenCode `package.json`, two versioned marketplace
+   manifests, template and guide stamps, README pins, and the CHANGELOG
+   compare link — then creates the CHANGELOG section and stops for the
+   release notes, because "a release is only coherent when the version is
+   identical everywhere" (ADR-012, "Version-consistency invariant").
 2. `python scripts/build-client-adapters.py` regenerates `codex/` and
    `copilot/` from the canonical source; `--check` is the drift gate that
    fails on any byte mismatch.
-3. `scripts/check-release-version.py --expect vX.Y.Z`, `adr-lint --strict`,
-   `adr-index --check`, the full pytest suite, and the focused OpenCode package
-   smoke run locally — the same gates CI will re-run, with the OpenCode smoke
-   additionally requiring Bun when available.
-4. The maintainer opens the release PR; **merging it is the maintainer's own
-   action** because `main` is a protected branch (`docs/RELEASING.md`, step
-   3).
-5. After merge, the maintainer tags `vX.Y.Z` and pushes the tag, which
-   triggers `.github/workflows/release-publish.yml` — re-running every gate
-   above before creating the GitHub Release from the CHANGELOG section
-   (ADR-012, "Release flow"). This serves git-source users of the three
-   certified marketplaces and the repository-native OpenCode package. npm
-   publication, if desired, remains a separate operation.
-6. The maintainer merges the release back into `dev` — a step ADR-012's
-   own Context paragraph exists to formalize, because skipping it once left
-   `dev` 32 commits behind `main`, still declaring the old version, and
-   missing the release machinery itself.
-7. The maintainer separately advances any maintainer machine on the
+3. The verify phase runs `scripts/check-release-version.py`, the adapter
+   drift check, `adr-lint --strict`, `adr-index --check`, and the full pytest
+   suite (including the focused OpenCode package tests) locally — the same
+   gates CI will re-run.
+4. The land phase opens the release PR into `main` and arms auto-merge;
+   **approving that merge stays the maintainer's action** because `main` is
+   a protected branch (`docs/RELEASING.md`, step 3).
+5. The push to `main` triggers `.github/workflows/release-publish.yml`, which
+   reads the canonical CHANGELOG version, creates the `vX.Y.Z` tag on the
+   merged commit — never typed by hand, after v0.55.0 was lost to a tag on
+   the wrong ref (ADR-042) — re-runs every gate above, and creates the
+   GitHub Release from the CHANGELOG section (ADR-012, "Release flow"). This
+   serves git-source users of the three certified marketplaces and the
+   repository-native OpenCode package. The same run calls
+   `publish-opencode-npm.yml`, which stages the npm package through OIDC; a
+   human approves it with npm 2FA, and the driver verifies
+   `dist-tags.latest`.
+6. The syncback phase opens a PR that merges the release back into `dev` —
+   a step ADR-012's own Context paragraph exists to formalize, because
+   skipping it once left `dev` 32 commits behind `main`, still declaring the
+   old version, and missing the release machinery itself.
+7. The install phase reads each client's installed version back. The
+   maintainer separately advances any maintainer machine on the
    version-pinned local prepared-directory source
    (`scripts/install-agent-envs.py --clients all`, then restarts each
    client) — a documented per-machine step, deliberately not CI-automatable,
@@ -402,11 +426,10 @@ degrades context quality, never availability of the agent's tool loop.
 | System | Type | Description | Integration mechanism | Why adr-kit depends on it |
 | --- | --- | --- | --- | --- |
 | **git** | External CLI | Version control for the repository adr-kit governs and for adr-kit's own source. | Subprocess — diffs, staged content, refs (c4-container.md, CLI Toolkit dependencies); also the identity source `git config user.name` reads for signer derivation (ADR-027). | Every enforcement and lifecycle path needs the staged/committed diff and, for acceptance, a trustworthy human identity that already exists on the machine rather than one adr-kit would have to invent. |
-| **Host CLI (Claude Code / Codex / GitHub Copilot CLI / OpenCode)** | External application (the agent's runtime) | The process that resolves adr-kit as a plugin, dispatches native lifecycle events, and launches the MCP server. | Certified clients use native plugin managers and stdio MCP manifests; OpenCode loads `opencode/plugin.ts` through `opencode.json` / `package.json` and the OpenCode plugin API. | This is the delivery mechanism for the Coding Agent persona (§2.2) — without a host runtime, no native hook or plugin callback fires and no MCP tool is reachable. |
+| **Host CLI (Claude Code / Codex / GitHub Copilot CLI / OpenCode)** | External application (the agent's runtime) | The process that resolves adr-kit as a plugin, dispatches native lifecycle events, and launches the MCP server. | Certified clients use native plugin managers and stdio MCP manifests; OpenCode loads `opencode/plugin.ts` through `opencode.json` / `package.json` and the OpenCode plugin API. | This is the delivery mechanism for the Coding Agent persona (§2.2) — without a host runtime, no lifecycle hook or plugin callback fires and no MCP tool is reachable. |
 | **GitHub repository `rvdbreemen/adr-kit`** | External system (source-controlled marketplace/package source) | The public repository every certified client resolves its plugin marketplace from directly and where the native OpenCode package source lives (`docs/RELEASING.md`). | Certified clients read `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.github/plugin/marketplace.json`; OpenCode reads `opencode.json` and `package.json` from a checkout or a separately published npm package. | It is the publication surface for the repository release (ADR-012); `release-publish.yml` also stages the npm package, with final publication still requiring maintainer 2FA. |
-| **GitHub Actions** | External CI runner | Executes adr-kit's own composite Actions and scheduled workflows. | Subprocess/CI job — `.github/workflows/release-publish.yml` (tag-triggered), `.github/actions/adr-judge`, `.github/actions/adr-readiness`, `adr-guardian-audit.yml`, `adr-retire-audit.yml`, `release-candidate.yml` (ADR-010's optional native certification). | This is the concrete machinery behind the CI persona (§2.4) — every unattended gate described in §4.4 and the release gate in §4.6 runs here. |
-| **Optional LLM backend (`claude` CLI subprocess, OpenRouter, or an Ollama loopback endpoint)** | External service, opt-in | Reviews an ADR's more nuanced Enforcement rules when regex cannot express them; also powers the guardian's LLM tier and `/adr-kit:grill`'s judgement passes. | Subprocess or loopback HTTP call, gated by `judge.llm_enabled` / `ADR_KIT_LLM=1`; "opt-in LLM judge pass only (ADR-001), never on the hot path" (c4-container.md, CLI Toolkit dependencies). | Some Enforcement rules are genuinely too nuanced for a regex (README); the model pass exists for exactly that case, and only that case, by design. |
-| **Optional local embedding model (Ollama-hosted, default `qwen3-embedding:4b`, `nomic-embed-text` as an English-only fallback)** | External service, opt-in, local-first | Supplies the query-time vector for semantic ADR retrieval. | Loopback HTTP to `127.0.0.1:11434`; embeds only the query, never the corpus, at `session-start` and `user-prompt-submit`; falls back to lexical ranking on any failure (ADR-020, Decision Contract). | Without it, `adr-context`/the hooks answer lexically only — a query "whose wording shares no tokens with the governing ADR" (ADR-020, "Why not the alternatives") is the miss this backend exists to close. |
+| **GitHub Actions** | External CI runner | Executes adr-kit's own composite Actions and scheduled workflows. | Subprocess/CI job — `.github/workflows/release-publish.yml` (triggered by the release merge into `main`, where it creates the tag per ADR-042; a tag push or dispatch re-publishes), `publish-opencode-npm.yml`, `.github/actions/adr-judge`, `.github/actions/adr-readiness`, `adr-guardian-audit.yml`, `adr-retire-audit.yml`, `install-smoke.yml`, `release-candidate.yml` (ADR-010's optional native certification). | This is the concrete machinery behind the CI persona (§2.4) — every unattended gate described in §4.4 and the release gate in §4.6 runs here. |
+| **Host model CLI (`claude -p`, `codex exec`, or `copilot -p`)** | External application, used only where a host client is recorded | Reviews an ADR's more nuanced Enforcement rules when regex cannot express them; also powers the guardian's LLM tier (including `bin/adr-substance`) and `/adr-kit:grill`'s judgement passes. | Subprocess only, selected by `judge.host_client` or an operator's `ADR_KIT_LLM_CMD` / `--llm-cmd` (`bin/adr_llm.py`, `BACKENDS`); ADR-036 retired every HTTP backend (OpenRouter, Ollama, openai-compatible). `judge.llm_enabled` (default on, ADR-017) and `ADR_KIT_LLM=1` gate the pass; never on the hot path. | Some Enforcement rules are genuinely too nuanced for a regex (README); the model pass exists for exactly that case, and only that case, by design. |
 | **pre-commit.com framework** | External tool, optional | An alternative to adr-kit's own git-hook wrapper for installing the commit-time judge. | The `adr-judge` hook id, installed via a `repos:` entry pointing at a pinned adr-kit tag (README, "`pre-commit` framework"). | Gives teams that already standardize on the pre-commit framework the same deterministic gate without adr-kit's own installer. |
 
 ## 6. System Context Diagram
@@ -428,32 +451,31 @@ C4Context
   System_Ext(git, "git", "Version control CLI")
   System_Ext(hostcli, "Host CLI runtimes", "Claude Code / Codex / Copilot / OpenCode processes that dispatch native plugin events")
   System_Ext(repo, "GitHub repository\nrvdbreemen/adr-kit", "Public marketplace source for three certified clients and native OpenCode package source")
-  System_Ext(gha, "GitHub Actions", "Executes release, judge, readiness and guardian workflows")
-  System_Ext(llm, "Optional LLM backend", "claude CLI / OpenRouter / Ollama loopback — opt-in judge pass")
-  System_Ext(embed, "Optional local embedding model", "Ollama-hosted qwen3-embedding:4b — opt-in query-time vector")
+  System_Ext(gha, "GitHub Actions", "Executes release, judge, readiness, install-smoke and guardian workflows; creates the release tag")
+  System_Ext(llm, "Host model CLI", "claude -p / codex exec / copilot -p subprocess — LLM judge, grill and guardian passes")
   System_Ext(precommit, "pre-commit.com framework", "Optional alternate install path for the commit-time judge")
 
-  Rel(maintainer, core, "Authors, grills, accepts, supersedes, retires ADRs; cuts and merges releases")
+  Rel(maintainer, core, "Authors, grills, accepts, supersedes, retires ADRs; runs the release driver and approves the release merge")
   Rel(engineer, core, "Commits code; is judged by the enforcement floor; may invoke the audited override")
   Rel(agent, core, "Queries context, receives injected decisions, is judged by the enforcement floor")
-  Rel(ciGate, core, "Runs readiness, judge, lint and release-consistency gates on a pull request or tag")
+  Rel(ciGate, core, "Runs readiness, judge, lint and release-consistency gates on a pull request or release merge")
 
   Rel(core, git, "Reads staged diffs, refs, and the committer's git identity")
   Rel(hostcli, agent, "Hosts the interactive session")
   Rel(hostcli, core, "Launches the MCP server; dispatches native lifecycle hook events into")
   Rel(core, repo, "Resolves plugin/marketplace manifests and native package source from")
-  Rel(gha, repo, "Runs on tag push and pull request events from")
+  Rel(gha, repo, "Runs on pull request and push-to-main events; tags the merged release commit in")
   Rel(gha, core, "Executes composite Actions and scripts against")
-  Rel(core, llm, "Opt-in judge/grill/guardian review, never on the hot path")
-  Rel(core, embed, "Opt-in query-time embedding; falls back to lexical ranking on failure")
+  Rel(core, llm, "Judge/grill/guardian review by subprocess, never on the hot path")
   Rel(precommit, core, "Invokes adr-judge as a framework hook")
 ```
 
 ## 7. Related Documentation
 
 - [c4-container.md](./c4-container.md) — the container-level breakdown (CLI
-  Toolkit, MCP Server, Hook Runtime, Pre-commit Gate, Instruction & Skill
-  Corpus, Client Generation & Release Toolchain, Generated Client Mirrors)
+  Toolkit, MCP Server, Hook Runtime, Native OpenCode Plugin, Pre-commit
+  Gate, Instruction & Skill Corpus, Client Generation & Release Toolchain,
+  Generated Client Mirrors)
   that this document treats as a single system boundary.
 - [c4-component.md](./c4-component.md) — the seven-component synthesis
   beneath the containers above (decision-engine, enforcement-engine,

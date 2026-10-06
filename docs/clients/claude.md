@@ -12,7 +12,7 @@ registers the local marketplace, and installs `adr-kit@rvdbreemen-adr-kit`.
 Project setup preserves bytes outside its managed `CLAUDE.md` markers and
 writes the generated guide under `.adr-kit/`.
 
-Claude discovers 15 namespaced skills such as `/adr-kit:context`,
+Claude discovers 17 namespaced skills such as `/adr-kit:context`,
 `/adr-kit:grill`, `/adr-kit:judge`, and `/adr-kit:setup`. Skill descriptions
 carry the trigger catalog; `$ARGUMENTS` carries explicit slash-command input.
 Side-effecting or deliberately timed workflows use
@@ -24,12 +24,14 @@ Proposed-to-Accepted flow.
 
 The plugin registers SessionStart, UserPromptSubmit, PreToolUse, PostToolUse,
 SubagentStart, and PreCompact. All are bounded, deterministic, read-only, and
-fail open. On Windows the dispatcher prefers the bundled native host; macOS and
-Linux use a native host when shipped and otherwise fall back to the prepared
-Python runtime. Stop-like and unsupported events are successful no-ops.
+fail open. `hooks/run-hook.cmd` runs `hooks/adr-hook.py` on the prepared
+Python runtime, falling back to `python3`, `python` or `py -3`; Python is the
+only hook host since the native binary was retired in 0.55.1 (ADR-029).
+Stop-like and unsupported events are successful no-ops.
 
-The root `.mcp.json` exposes `adr_context`, `adr_judge`, `adr_quality`,
-`adr_status`, and read-only `adr_readiness`. Model-visible hook context is
+The root `.mcp.json` exposes seven read-only, deterministic tools:
+`adr_context`, `adr_judge`, `adr_status`, `adr_quality`, `adr_readiness`,
+`adr_lint`, and `adr_related` (ADR-040). Model-visible hook context is
 advisory; the git pre-commit gate remains the deterministic enforcement floor.
 
 ## Doctor, updates, and removal

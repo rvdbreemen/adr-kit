@@ -36,13 +36,13 @@ that does not apply here.
 
 | Container | Description | Type | Technology |
 | --- | --- | --- | --- |
-| **CLI Toolkit** | 26 extensionless entrypoints in `bin/` (25 excluding `adr-mcp`, which is documented separately below) plus 24 `bin/*.py` support modules — the engine behind every ADR workflow: lint, judge, audit, context, index, status, quality, readiness, retire, doctor, guardian, migrate, renumber, related, settings, watch, suggest, grill-signal, embed. | Short-lived, one-shot subprocesses | Python 3, standard library only (ADR-016's zero-runtime-dependency baseline extends to the whole `bin/` surface) |
-| **MCP Server** | `bin/adr-mcp` (1,093 lines) — a hand-rolled, dual-era Model Context Protocol (MCP) server that wraps five of the CLI Toolkit's tools for direct agent invocation. | Long-lived, persistent stdio process (`for line in sys.stdin:`) | Python 3 standard library, zero runtime dependencies (ADR-016) |
-| **Hook Runtime** | `hooks/` — per-client lifecycle adapters (`hooks/adapters/{claude,codex,copilot}.py`) over a shared core (`hooks/adr_hook_core.py`, `hooks/adr_embed_query.py`, `hooks/adr_pr_guard.py`), dispatched by `hooks/adr-hook.py` and `hooks/run-hook.cmd`, with an opt-in native fallback. | Short-lived subprocess, invoked by the host client on a lifecycle event | Python 3 (canonical path); optional native Rust binary `hooks/bin/windows-x64/adr-hook.exe` (ADR-029 has **Accepted** its retirement — see Distribution, below) |
+| **CLI Toolkit** | 26 extensionless entrypoints in `bin/` (25 excluding `adr-mcp`, which is documented separately below) plus 22 `bin/*.py` support modules — the engine behind every ADR workflow: lint, judge, audit, discover, context, index, status, quality, readiness, substance, retire, doctor, guardian, migrate, renumber, related, settings, watch, suggest, grill-signal. | Short-lived, one-shot subprocesses | Python 3, standard library only (ADR-016's zero-runtime-dependency baseline extends to the whole `bin/` surface) |
+| **MCP Server** | `bin/adr-mcp` (1,233 lines) — a hand-rolled, dual-era Model Context Protocol (MCP) server that wraps seven of the CLI Toolkit's tools for direct agent invocation. | Long-lived, persistent stdio process (`for line in sys.stdin:`) | Python 3 standard library, zero runtime dependencies (ADR-016) |
+| **Hook Runtime** | `hooks/` — per-client lifecycle adapters (`hooks/adapters/{claude,codex,copilot}.py`) over a shared core (`hooks/adr_hook_core.py`, `hooks/adr_pr_guard.py`), entered through `hooks/adr-hook.py` and `hooks/run-hook.cmd`. | Short-lived subprocess, invoked by the host client on a lifecycle event | Python 3, the only hook host. The native `adr-hook.exe` host was retired in 0.55.1 (ADR-029); ADR-030 recalibrated the latency budgets to the Python host that ships |
 | **Native OpenCode Plugin** | `opencode/plugin.ts` plus the root `package.json` and `opencode.json` — an additive OpenCode plugin adapter that discovers the shared runtime, registers skills/instructions/references/commands/MCP, and delegates hook work to the Python Hook Runtime. | Host-loaded plugin inside the OpenCode process; child subprocesses for shared hooks and MCP | TypeScript executed by Bun/OpenCode, Python 3 for the shared engines, stdio JSON-RPC for MCP |
-| **Pre-commit Gate** | `templates/githooks/pre-commit`, installed by `/adr-kit:install-hooks` into a consuming project's own `.githooks/pre-commit` (this repository dogfoods its own copy at `.githooks/pre-commit`). Chains any pre-existing hook, then runs the declarative judge always and the LLM pass on `llm_judge:true` ADRs by default (ADR-017). | Shell script invoked by `git commit`, outside any agent host | Bash (with a `perl` timing fallback for macOS), subprocessing into the CLI Toolkit |
+| **Pre-commit Gate** | `templates/githooks/pre-commit`, installed by `/adr-kit:install-hooks` into a consuming project's own `.githooks/pre-commit` (this repository dogfoods its own copy at `.githooks/pre-commit`). Chains any pre-existing hook, then runs the declarative judge always and the LLM pass on `llm_judge:true` ADRs by default (ADR-017). | Shell script invoked by `git commit`, outside any agent host | Bash (with a `perl` timing fallback for macOS), probing for a Python >= 3.10 interpreter (0.59.1) and subprocessing into the CLI Toolkit |
 | **Instruction & Skill Corpus** | `skills/` (17 canonical-rich `SKILL.md` files), `instructions/` (`ADR-guide.md`, `adr.coding.md`, `adr.review.md`), `prompts/claude-code-cli/`, and `agents/adr-generator.md` (the one subagent) — plus their generated counterparts `codex/skills/`, `copilot/skills/`, `prompts/codex-cli/`, `prompts/github-copilot-cli/`. Not executable; content consumed by each client's native skill/prompt discovery, including the OpenCode plugin's additive path registration. | Declarative content (Markdown + JSON front matter), no runtime process | Markdown, rendered per-workflow by the generation toolchain for the two non-canonical certified clients; canonical content is registered directly by OpenCode |
-| **Client Generation & Release Toolchain** | `scripts/build-client-adapters.py` (and its `client_generation*.py`, `client_certification.py`, `client_evidence.py` support modules), `scripts/install-agent-envs.py`, `scripts/setup-project.py`, `scripts/settings.py`, `scripts/sync-agent-plugins.py`, plus the release-only `scripts/bump-version.py` / `scripts/check-release-version.py` / `scripts/check-branch-sync.py`, reading `packaging/*.json`. Produces the two generated certified mirrors, validates the native OpenCode package version, enforces version consistency, and drives per-machine installs. | Command-line build/release tooling — some of it distributed to installed clients, some maintainer/CI-only (see Distribution) | Python 3 |
+| **Client Generation & Release Toolchain** | `scripts/build-client-adapters.py` (and its `client_generation*.py`, `client_certification.py`, `client_evidence.py` support modules), `scripts/install-agent-envs.py`, `scripts/setup-project.py`, `scripts/settings.py`, `scripts/sync-agent-plugins.py`, plus the release-only driver `scripts/release.py` (with `release_phases.py`, `release_shell.py`, `release_npm.py`; ADR-042) and `scripts/bump-version.py` / `scripts/check-release-version.py` / `scripts/check-branch-sync.py`, reading `packaging/*.json`. Produces the two generated certified mirrors, validates the native OpenCode package version, enforces version consistency, and drives per-machine installs. | Command-line build/release tooling — some of it distributed to installed clients, some maintainer/CI-only (see Distribution) | Python 3 |
 | **Generated Client Mirrors** | `codex/` and `copilot/` — deterministic projections of the CLI Toolkit, MCP Server, Hook Runtime and Instruction & Skill Corpus, produced by the Client Generation Toolchain, each carrying its own hand-authored plugin manifest, `.mcp.json` and `hooks.json`. | Generated distribution trees, drift-checked, never hand-edited | Identical technology to the containers they mirror; generation and validation logic in Python |
 
 Claude Code needs no mirror: its plugin source is the repository root itself
@@ -65,12 +65,14 @@ other containers duplicates its logic.
 
 ### MCP Server
 
-Gives an agent host a structured, typed way to call five read-only CLI
+Gives an agent host a structured, typed way to call seven read-only CLI
 Toolkit operations without shelling out and parsing text — `tools/list`
 advertises them, `tools/call` invokes them, and every response is either
 plain text or JSON emitted by the wrapped CLI. It owns no ADR semantics of
 its own; per its own module docstring, it is "a thin Model Context Protocol
-server wrapping the adr-kit CLIs."
+server wrapping the adr-kit CLIs." ADR-040 governs admission: a CLI joins
+the surface only when it is read-only, deterministic, key-free, and covers
+an agent-guide cycle step no exposed tool already covers.
 
 ### Hook Runtime
 
@@ -111,9 +113,11 @@ CLI Toolkit or MCP Server call.
 Turns one canonical semantic source (`clients/workflows.json`,
 `clients/capabilities.json`, `hooks/manifest.json`, and the CLI
 Toolkit/Hook Runtime/Instruction Corpus files themselves) into two
-byte-verified, client-native trees, and keeps every version-bearing file in
-the repository — eleven of them, per `packaging/version-sites.json` — equal
-to the tag being released (ADR-013).
+byte-verified, client-native trees, and keeps every version-bearing site in
+the repository — seventeen entries across fifteen files, per
+`packaging/version-sites.json` — equal to the version being released
+(ADR-013). Its release driver, `scripts/release.py`, runs the whole release
+from the maintainer's machine as resumable phases (ADR-042).
 
 ### Generated Client Mirrors
 
@@ -154,7 +158,7 @@ from distribution.
 currently describes `bin/adr-audit` as "a deterministic missing-ADR
 candidate scanner" belonging to no component. That description predates
 ADR-026 (Accepted 2026-08-04): the file it describes is now
-`bin/adr-discover`, and `bin/adr-audit` (419 lines, verified by direct read)
+`bin/adr-discover`, and `bin/adr-audit` (493 lines, verified by direct read)
 is the combined lint-and-judge command with the five-way exit contract
 documented under Interfaces below. Both files exist side by side today in
 the CLI Toolkit; this document describes the current, post-rename state.
@@ -167,20 +171,23 @@ from the certified three-client hook manifest.
 
 ### 1. MCP tool surface — `tools/list` on `bin/adr-mcp`
 
-Read directly from `TOOL_DEFINITIONS` in `bin/adr-mcp` (lines 169-334), not
-paraphrased. All five tools are read-only, key-free (no API key required or
+Read directly from `TOOL_DEFINITIONS` in `bin/adr-mcp` (lines 176-381), not
+paraphrased. All seven tools are read-only, key-free (no API key required or
 accepted), and each is a bounded subprocess call into a sibling `bin/`
-script with a 60-second timeout (`CLI_TIMEOUT_S = 60`, `bin/adr-mcp:122`).
+script with a 60-second timeout (`CLI_TIMEOUT_S = 60`, `bin/adr-mcp:129`).
+`adr_lint` and `adr_related` joined in 0.53.0 under ADR-040's admission rule.
 
 | Tool | Purpose | Parameters |
 | --- | --- | --- |
-| `adr_context` | Find the ADRs most relevant to a task through the local generated index; deterministic, read-only. Wraps `bin/adr-context --format json`. | **Required:** `query` (string). **Optional:** `limit` (integer 1-100), `paths`/`components`/`symbols`/`topics` (string arrays, ≤32 items each), `statuses` (enum array: `Accepted`, `Proposed`, `Superseded`, `Rejected`, `Deprecated`, `Amended`, `Unknown`), `authorities` (enum array: `governing`, `advisory`, `historical`), `include_history` (boolean), `strict_index` (boolean), `min_score` (number 0-1), plus `project_root`/`adr_dir` (workspace override, common to all five tools). |
+| `adr_context` | Find the ADRs most relevant to a task through the local generated index; deterministic, read-only. Wraps `bin/adr-context --format json`. | **Required:** `query` (string). **Optional:** `limit` (integer 1-100), `paths`/`components`/`symbols`/`topics` (string arrays, ≤32 items each), `statuses` (enum array: `Accepted`, `Proposed`, `Superseded`, `Rejected`, `Deprecated`, `Amended`, `Unknown`), `authorities` (enum array: `governing`, `advisory`, `historical`), `include_history` (boolean), `strict_index` (boolean), `min_score` (number 0-1), plus `project_root`/`adr_dir` (workspace override, common to all seven tools). |
 | `adr_judge` | Judge a unified diff against the `## Enforcement` blocks of Accepted ADRs — declarative pass only, never `--llm` (key-free by design). Wraps `bin/adr-judge --json`. | **Required:** `diff` (string, e.g. `git diff --cached` output). **Optional:** `project_root`/`adr_dir`. |
 | `adr_status` | ADR repository health dashboard: totals, status breakdown, enforcement health, retirement candidates. Wraps `bin/adr-status --format json`. | **Optional only:** `project_root`/`adr_dir`. |
 | `adr_quality` | Score ADRs on quality across 4 gates (0.0-1.0 each, grade A-D). Wraps `bin/adr-quality --format json`. | **Optional:** `adr_id` (string, e.g. `ADR-001`; omit to score every ADR), plus `project_root`/`adr_dir`. |
 | `adr_readiness` | Inspect ADR lifecycle readiness and explicit implementation links; incapable of accepting an ADR. Wraps `bin/adr-readiness --format json`. | **Optional:** `adr_id`, `all_proposed` (boolean), `base`/`head` (git refs, must be given together), `today` (deterministic `YYYY-MM-DD` evaluation date), plus `project_root`/`adr_dir`. |
+| `adr_lint` | Lint the ADR set against the deterministic verification gates; returns the report and exit status (0 clean, 1 failing findings). Wraps `bin/adr-lint --format json`. | **Optional:** `strict` (boolean, CI governance mode: schema gate on, findings FAIL; default false), plus `project_root`/`adr_dir`. |
+| `adr_related` | Show the dependency graph for one ADR: inbound and outbound edges, supersession links, mentions, dangling references. Wraps `bin/adr-related --format json`. | **Required:** `adr_id` (string, e.g. `ADR-007`, `adr-7` or `7`). **Optional:** `project_root`/`adr_dir`. |
 
-`adr-suggest` is deliberately **not** exposed (`bin/adr-mcp:41-43`): it is an
+`adr-suggest` is deliberately **not** exposed (`bin/adr-mcp:47-49`): it is an
 LLM-only advisory tool and the server stays key-free.
 
 **Protocol shape.** Per ADR-016 (Accepted, 2026-07-30, verified live in the
@@ -199,8 +206,10 @@ per-connection state. All three shipped copies (`bin/adr-mcp`,
 Eight events, read directly from the manifest (schema version 1). Global
 policy: `fail_open: true`, `network_allowed: false`,
 `future_clients_allowed: false`. The network line is the *default* every event
-inherits, not a property of the set (ADR-034): `user-prompt-submit` and
-`pr-create` override it with `network_allowed: true` and a `network_reason`.
+inherits, not a property of the set (ADR-034): only `pr-create` overrides it,
+with `network_allowed: true` and a `network_reason` (the judge's LLM pass is a
+subprocess to the host client's CLI). `user-prompt-submit` inherits `false`
+again since ADR-036 removed the query embedder.
 
 | Event id | Native matcher | Outcome | p50 / p95 | Hard timeout | Claude Code | Codex | Copilot |
 | --- | --- | --- | ---: | ---: | --- | --- | --- |
@@ -256,7 +265,7 @@ value can route the failure to its owner without parsing output.
 
 The two commands `adr-audit` wraps carry a simpler, shared two-plus-one
 contract that `adr-audit`'s own code composes into the five-way result
-(`exit_code()` in `bin/adr-audit:246-255`, verified by direct read):
+(`exit_code()` in `bin/adr-audit:270-279`, verified by direct read):
 
 | Command | 0 | 1 | 2 |
 | --- | --- | --- | --- |
@@ -299,8 +308,8 @@ not enter the three-client certification bundle.
 | --- | --- | --- |
 | CLI Toolkit | ADR Markdown files (`docs/adr/*.md`), `ADR-INDEX.json`, `.adr-kit.json`/`.adr-kit-state.json` | File system read/write |
 | CLI Toolkit | `git` CLI | Subprocess (diffs, staged content, refs) |
-| CLI Toolkit | `claude` CLI, OpenRouter, or an Ollama loopback endpoint | Subprocess / loopback HTTP — opt-in LLM judge pass only (ADR-001), never on the hot path |
-| MCP Server | CLI Toolkit (`adr-context`, `adr-judge`, `adr-status`, `adr-quality`, `adr-readiness`) | Subprocess, one call per tool invocation, `PYTHONIOENCODING=utf-8` forced on the child |
+| CLI Toolkit | Host model CLI (`claude -p`, `codex exec`, `copilot -p`, chosen by `judge.host_client`, or an operator's `ADR_KIT_LLM_CMD`) | Subprocess only — LLM judge, suggest, substance and guardian passes, never on the hot path; ADR-036 retired the HTTP backends and `bin/adr_llm.py` cannot open a socket |
+| MCP Server | CLI Toolkit (`adr-context`, `adr-judge`, `adr-status`, `adr-quality`, `adr-readiness`, `adr-lint`, `adr-related`) | Subprocess, one call per tool invocation, `PYTHONIOENCODING=utf-8` forced on the child |
 | MCP Server | Agent host (Claude Code, Codex, Copilot, OpenCode) | Long-lived stdio JSON-RPC — certified hosts launch the process via `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json`; OpenCode synthesizes the local entry through `opencode/plugin.ts` |
 | Hook Runtime | CLI Toolkit (`adr-context`, `adr-judge`, retrieval helpers) | Subprocess and, for `hooks/adr_hook_core.py`, a direct Python import of `query_adr_context` (the one documented exception to "surfaces only subprocess") |
 | Hook Runtime | Agent host | Native lifecycle event dispatch (host calls the hook command synchronously and reads stdout/exit code) |
@@ -320,11 +329,11 @@ not enter the three-client certification bundle.
 | --- | --- | --- | --- |
 | CLI Toolkit | `.claude-plugin/plugin.json` (canonical); `codex/.codex-plugin/plugin.json` and `copilot/plugin.json` for the mirrored copies | Carries no version stamp of its own; version is inherited from whichever co-located plugin manifest ships it (demonstrated by `bin/adr-mcp`'s `server_version()`, which reads the nearest of the three plugin manifests — the same resolution pattern the rest of `bin/` relies on implicitly) | `scripts/build-client-adapters.py --check` (byte-identity of the copied `bin/` files across all three trees) |
 | MCP Server | `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json` (hand-authored-and-validated, per `clients/capabilities.json` `ownership.hand_authored_validated`) | Same three plugin manifests as CLI Toolkit | `scripts/build-client-adapters.py --check`; ADR-016 additionally requires all three shipped `adr-mcp` copies to stay byte-identical |
-| Hook Runtime | `.claude-plugin/plugin.json` (hooks wired via the plugin's own hook registration; `codex/hooks/hooks.json` and `copilot/hooks.json` are the per-client hook registration files, `ownership.hand_authored_validated`) | No dedicated version site; content identity is what's checked, not a version number | `scripts/build-client-adapters.py --check` (the eight `HOOK_RUNTIME_FILES` entries, including `hooks/manifest.json` itself, are copied verbatim — `scripts/client_generation_model.py:35-52`); latency-budget *correctness* (as opposed to drift) is separately gated by ADR-031's `adr-hook-ceiling-v1` |
+| Hook Runtime | `.claude-plugin/plugin.json` (hooks wired via the plugin's own hook registration; `codex/hooks/hooks.json` and `copilot/hooks.json` are the per-client hook registration files, `ownership.hand_authored_validated`) | No dedicated version site; content identity is what's checked, not a version number | `scripts/build-client-adapters.py --check` (the nine `HOOK_RUNTIME_FILES` entries, including `hooks/manifest.json` itself, are copied verbatim — `scripts/client_generation_model.py:35-50`; `hooks/hook_benchmark.py` travels in `RUNTIME_SUPPORT_FILES`); latency-budget *correctness* (as opposed to drift) is separately gated by ADR-031's `adr-hook-ceiling-v1` |
 | Native OpenCode Plugin | `opencode.json` / `package.json` | `package.json` `/version` plus the shared release registry | `tests/test_opencode_package.py`, focused Bun smoke, and `scripts/check-release-version.py`; not part of generated mirror drift or three-client certification |
 | Pre-commit Gate | None — not marketplace-declared; installed into a *consuming* project's own `.githooks/` by `/adr-kit:install-hooks`, outside any plugin manifest | `templates/githooks/pre-commit` (`ADR_KIT_WRAPPER_VERSION` stamp), `.githooks/pre-commit` (this repository's own dogfooded copy of the same stamp), `templates/cc-settings/guardian-hook-entry.json` (`/_wrapper_version`) | `scripts/build-client-adapters.py --check`, because `templates/` is one of the four verbatim `COPY_ROOTS` |
 | Instruction & Skill Corpus | `.claude-plugin/plugin.json` (skills are plugin content, not separately manifested) | `templates/adr-kit-guide.md` (`<!-- adr-kit-guide vX.Y.Z -->` stamp); `skills/`/`prompts/` themselves carry no per-file stamp — they are regenerated wholesale each release | `scripts/build-client-adapters.py --check`, which also asserts every canonical-rich skill exists before rendering the generated ones (`client_generation.py`: `"missing canonical rich skill: {workflow['id']}"`) |
-| Client Generation & Release Toolchain | Not itself plugin-declared | None directly — it is the thing that enforces the other sites via `packaging/version-sites.json` | `tests/test_version_sites.py` keeps the registry itself honest; **partially distributed**: `packaging/public-artifacts.json` names 11 specific `scripts/*.py` files in its public-archive `include_roots` (`build-client-adapters.py`, `client_generation*.py`, `client_certification.py`, `client_evidence.py`, `install-agent-envs.py`, `project_setup.py`, `settings.py`, `setup-project.py`, `sync-agent-plugins.py`, `benchmark-client-generation.py`, `adr_settings.py`) — these are live probes other containers call (e.g. `clients/capabilities.json` points `disable` at `scripts/settings.py` and `install`/`update`/`rollback`/`remove` at `scripts/install-agent-envs.py`). The release-cutting scripts (`bump-version.py`, `check-release-version.py`, `check-branch-sync.py`) are **not** in that allowlist — maintainer/CI-only, present in the git-source checkout but never resolved as part of any client's plugin source |
+| Client Generation & Release Toolchain | Not itself plugin-declared | None directly — it is the thing that enforces the other sites via `packaging/version-sites.json` | `tests/test_version_sites.py` keeps the registry itself honest; **partially distributed**: `packaging/public-artifacts.json` names 14 specific `scripts/*.py` files in its public-archive `include_roots` (`build-client-adapters.py`, `client_generation*.py`, `client_certification.py`, `client_evidence.py`, `install-agent-envs.py`, `project_setup.py`, `settings.py`, `setup-project.py`, `sync-agent-plugins.py`, `benchmark-client-generation.py`, `adr_settings.py`) — these are live probes other containers call (e.g. `clients/capabilities.json` points `disable` at `scripts/settings.py` and `install`/`update`/`rollback`/`remove` at `scripts/install-agent-envs.py`). The release-cutting scripts (`release.py` and its `release_*.py` modules, `bump-version.py`, `check-release-version.py`, `check-branch-sync.py`) are **not** in that allowlist — maintainer/CI-only, present in the git-source checkout but never resolved as part of any client's plugin source |
 | Generated Client Mirrors | `.agents/plugins/marketplace.json` + `codex/.codex-plugin/plugin.json` (Codex); `.github/plugin/marketplace.json` + `copilot/plugin.json` (Copilot) | `codex/.codex-plugin/plugin.json` `/version`, `copilot/plugin.json` `/version`, `.github/plugin/marketplace.json` `/plugins/0/version`. `.claude-plugin/marketplace.json` `/plugins/0/version` also applies (Claude Code reads the repo root directly, not a mirror). `.agents/plugins/marketplace.json` is declared to **carry no version** (`must_not_carry_version` in the registry) because it points at the local `./codex` source and inherits the version from the Codex plugin manifest | `scripts/build-client-adapters.py --check` — the entire purpose of this gate; `scripts/check-release-version.py` additionally fails a release on any of the version sites above disagreeing with the git tag |
 
 Both consumption paths named in `docs/RELEASING.md` apply across every
@@ -356,7 +365,7 @@ flowchart TB
 
     subgraph GEN["Client Generation & Release Toolchain"]
         BUILD["build-client-adapters.py<br/>+ client_generation*.py"]
-        REL["bump-version.py<br/>check-release-version.py<br/>(release-only, not in public archive)"]
+        REL["release.py driver<br/>bump-version.py<br/>check-release-version.py<br/>(release-only, not in public archive)"]
     end
 
     subgraph CODEXM["Generated: codex/"]
@@ -377,9 +386,10 @@ flowchart TB
     CODEX(["Codex CLI<br/>marketplace rvdbreemen-adr-kit-codex"])
     COPILOT(["GitHub Copilot CLI<br/>marketplace rvdbreemen-adr-kit-copilot"])
     OPENCODE(["OpenCode<br/>repository package or npm"])
+    GHA(["GitHub Actions<br/>release-publish.yml"])
 
     CLI -->|verbatim copy: COPY_ROOTS| BUILD
-    MCP -->|verbatim copy: HOOK_RUNTIME_FILES| BUILD
+    MCP -->|verbatim copy: COPY_ROOTS| BUILD
     HOOK -->|verbatim copy: HOOK_RUNTIME_FILES| BUILD
     CORPUS -->|render_skill / render_prompt<br/>from clients/workflows.json| BUILD
     OC -->|delegates to shared runtime| CLI
@@ -400,6 +410,8 @@ flowchart TB
     REL -->|writes declared version sites<br/>packaging/version-sites.json| SRC
     REL -->|writes 2 mirrored manifests| CODEXM
     REL -->|writes 2 mirrored manifests| COPM
+    REL -->|"release PR merged to main"| GHA
+    GHA -.->|"creates the vX.Y.Z tag on the merged commit,<br/>GitHub Release, staged npm package"| SRC
 
     CLAUDE -->|"plugin source ./<br/>.claude-plugin/marketplace.json"| SRC
     CODEX -->|"plugin source ./codex<br/>.agents/plugins/marketplace.json"| CODEXM
@@ -414,8 +426,9 @@ flowchart TB
 **Reading the diagram.** Solid arrows are the generation pipeline: the
 canonical source tree is copied or rendered into the two certified mirrors by
 the toolchain, and the toolchain separately stamps every declared version site
-across those mirrors and the OpenCode package. Dashed arrows are runtime call relationships (subprocess/import)
-and the drift-check relationship, kept visually distinct from generation
+across those mirrors and the OpenCode package; once the release PR merges,
+`release-publish.yml` derives the tag from that commit (ADR-042). Dashed arrows are runtime call relationships (subprocess/import),
+the drift-check relationship, and the release workflow's tagging, kept visually distinct from generation
 because they run at a different time and for a different reason — generation
 happens at release time; `--check` and the runtime calls happen on every
 commit and every agent session, respectively. The three certified client nodes
