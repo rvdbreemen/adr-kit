@@ -1887,7 +1887,7 @@
       "path": "ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-09",
+      "date": "2026-10-06",
       "decision_summary": "Chosen option: retire definitively; host model plus operator escape hatch.",
       "topics": [
         "backend selection",
@@ -2317,6 +2317,64 @@
       "metadata": {
         "binding": false,
         "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-043",
+      "title": "Forbid a pinned model or a default LLM command in every model-calling entry point",
+      "path": "ADR-043-forbid-a-pinned-model-or-a-default-llm-command-in-every-model-calling-entry-point.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-06",
+      "decision_summary": "Chosen option: carry the two rules in a new ADR and widen their scope to every model-calling entry point, because it...",
+      "topics": [
+        "enforcement",
+        "host model",
+        "llm judge",
+        "model selection"
+      ],
+      "aliases": [
+        "--model claude",
+        "DEFAULT_LLM_CMD",
+        "pinned model"
+      ],
+      "components": [
+        "bin/adr_llm.py"
+      ],
+      "symbols": [
+        "HOST_COMMANDS",
+        "resolve_llm_backend"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every entry point that calls a model resolves its backend through bin/adrllm.py (resolvellmbackend), the only place a command vector may live (HOSTCOMMANDS).",
+          "A new model-calling entry point is added to this ADR's pathglob in the same change; the gate test fails until it is."
+        ],
+        "must_not": [
+          "Pass a model flag that pins a vendor model (--model ... claude) from any entry point in scope.",
+          "Define a DEFAULTLLMCMD constant (or any equivalent default command vector) in an entry point."
+        ],
+        "exceptions": [
+          "None. An operator selects a different model per machine through ADRKITLLMCMD or --llm-cmd, which are environment and flag inputs, not code in an entry point (ADR-025)."
+        ],
+        "verification": [
+          "tests/testnopinnedmodelgate.py (gate adr-no-pinned-model-v1).",
+          "The two forbidpattern rules below, applied by bin/adr-judge to every staged diff that touches a file in scope."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-no-pinned-model-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -3232,6 +3290,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-036",
+      "target": "ADR-043",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-037",
       "target": "ADR-011",
       "type": "related",
@@ -3390,6 +3454,24 @@
     {
       "source": "ADR-042",
       "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-043",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-043",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-043",
+      "target": "ADR-036",
       "type": "related",
       "resolved": true
     }

@@ -17,6 +17,7 @@ related:
   - "ADR-014"
   - "ADR-025"
   - "ADR-034"
+  - "ADR-043"
 topics:
   - "simplification"
   - "llm judging"
@@ -89,6 +90,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: "Superseded by ADR-036: the vector layer is retired; retrieval is lexical over the index plus the graph"
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-043
     changed_via: adr-kit lifecycle
 ```
 
