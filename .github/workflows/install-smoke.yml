@@ -152,12 +152,10 @@ jobs:
           retained Windows evidence through `release-candidate.yml` (ADR-010).
           A green run here says nothing about them.
 
-          **Also not covered:** the `@main` pins. `templates/github-workflows/`
-          ships `adr-judge` and `adr-index-check` at `@main` and `adr-readiness`
-          at a version, so the discovery grep sees only the last of the three.
-          A moving ref has nothing to resolve against, so it is out of scope
-          here rather than silently skipped; whether shipped templates should
-          pin a version at all is a product decision, not this job's.
+          Every shipped workflow template and documentation example pins its
+          action to a release (`adr-judge`, `adr-index-check` and
+          `adr-readiness`), registered as version sites so a release moves
+          them, so the discovery grep sees all three (TASK-221).
 
           **And not built, deliberately:** executing those actions at the
           released tag, rather than checking that they resolve. `uses:` takes no

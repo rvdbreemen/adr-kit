@@ -428,7 +428,7 @@ Three layers, each with a clear path:
 - **Health dashboard (`adr-audit status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, retrieval probe results, Accepted-binding metadata completeness, and the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
 - **Quality scoring (`adr-audit quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
 - **Generated index refresh (`bin/adr-index docs/adr/`)**: atomically rebuilds the sentinel-owned `docs/adr/README.md` block plus `ADR-INDEX.md` and `ADR-INDEX.json`. `--check` exits non-zero when any generated view is missing or stale, or duplicate ADR ids exist. Use `--format graph --adr-dir docs/adr` to inspect the graph without writing.
-- **Local doctor (`adr-audit doctor`)**: fast mode checks ADR/index state, retrieval probes and metadata completeness, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Probe failures block; metadata completeness is advisory unless configured strict. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
+- **Local doctor (`adr-audit doctor`)**: fast mode checks ADR/index state, retrieval probes and metadata completeness, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, and MCP launchers without login or model invocation. Probe failures block; metadata completeness is advisory unless configured strict. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
 - **Lifecycle commands (`bin/adr`, v0.32.0+)**: local `propose`, `accept`, `supersede`, `reject`, and `document` commands update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated README index.
 - **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then verify strict lint, quality, and human readiness. The default `assist` mode reports eligibility without mutating; acceptance requires `--confirm` after the engineer reviews the packet. Existing projects that intentionally require the legacy automatic transition can explicitly configure `lifecycle.auto_accept.mode: "auto"`.
 - **Retirement audit (`/adr-kit:retire`, `bin/adr-retire`)**: ranks Accepted ADRs for retirement using four deterministic signals (status age, technology removal, supersession, policy drift). Read-only; a recommendation always needs a human.
@@ -642,10 +642,11 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
 
 You can keep every diff on your own machine. There are two ways to do that.
 
-**No model at all.** Set `judge.llm_enabled: false` in `.adr-kit.json`, or
-export `ADR_KIT_NO_LLM=1`. Enforcement is then fully deterministic and runs
-offline: the declarative rules, `adr-lint`, readiness and the MCP tools never
-call a model.
+**No model at all.** Export `ADR_KIT_NO_LLM=1`: it stops every pass that
+calls a model (the judge, `adr-suggest` and `adr-substance`). For a whole
+project, set both `judge.llm_enabled: false` and `suggest.enabled: false` in
+`.adr-kit.json`. Enforcement is then fully deterministic and runs offline: the
+declarative rules, `adr-lint`, readiness and the MCP tools never call a model.
 
 **A local model.** Point the LLM passes at any command that reads the prompt
 on stdin and writes the answer to stdout. A local runtime such as
@@ -685,7 +686,7 @@ directly after a full-history checkout:
 - uses: actions/checkout@v4
   with:
     fetch-depth: 0
-- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@main
+- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.59.1
   with:
     adr-dir: docs/adr
 ```

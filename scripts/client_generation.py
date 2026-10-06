@@ -69,8 +69,7 @@ def _same_content(actual: bytes | None, expected: bytes) -> bool:
     Only the EOL dimension is relaxed. Content is still compared byte for byte,
     so a single changed character is still drift.
 
-    Binary outputs (the prebuilt native hooks under hooks/bin/) are compared
-    byte-exactly and never normalised: a 0x0D 0x0A pair inside a binary is data,
+    A binary output would be compared byte-exactly and never normalised: a 0x0D 0x0A pair inside a binary is data,
     not a line ending, and collapsing it would make two genuinely different
     binaries compare equal. A NUL byte on either side is the binary signal --
     the same heuristic git itself uses.
@@ -140,9 +139,7 @@ def generate(
 
     for relative in HOOK_RUNTIME_FILES:
         source = source_root / relative
-        content = read(source, stats)
-        if source.suffix.casefold() not in {".exe", ".dll"}:
-            content = content.replace(b"\r\n", b"\n")
+        content = read(source, stats).replace(b"\r\n", b"\n")
         suffix = relative.removeprefix("hooks/")
         mode = stat.S_IMODE(source.stat().st_mode)
         for client_dir in GENERATED_CLIENTS.values():

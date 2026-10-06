@@ -4,7 +4,42 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `ADR_KIT_NO_LLM=1` now stops every model call, not only the judge's. The
+  suggestion pass (`adr-suggest`, on by default) and the substance check
+  (`adr-substance`) resolved their backend without looking at it, so a user who
+  exported it to keep diffs off any model still had `adr-suggest` call one on
+  every commit. The switch is now checked in the shared resolver and outranks
+  `--llm-cmd` and `ADR_KIT_LLM_CMD`. If you set it and relied on the nudge, the
+  nudge is now off too.
+- The `adr-judge` and `adr-index-check` workflow templates, and the readiness
+  examples in the README and the grilling guide, pin the action to a release
+  instead of `@main`, like the readiness template already did. They are
+  registered version sites, so each release moves them.
+
 ### Fixed
+
+- `build-client-adapters.py` and `sync-agent-plugins.py` no longer fail with
+  `ModuleNotFoundError` in an installed plugin. `client_certification.py`
+  imports `client_support_matrix.py`, which the release allowlist did not ship;
+  a test now checks that every shipped script's sibling imports ship too.
+- The project guide installed as `.claude/adr-kit-guide.md` describes the edit
+  tier as it works: the plugin's hook injects the governing ADRs before an edit
+  and repeats the lookup after it, with `inject.enabled` / `watch.enabled` as
+  the switches. It named `bin/adr-watch`, which no hook runs, and listed three
+  of the seven MCP tools.
+- `adr-suggest --help` and the config schema give the suggestion pass's real
+  default timeout, 30 s; both said 120.
+- `adr-doctor --deep` describes its probes as native registration, MCP and hook
+  latency; it no longer mentions a model probe that was retired with ADR-036,
+  and neither do the README and TROUBLESHOOTING.md.
+- The CLI latency corpus no longer budgets the retired `adr-embed` and
+  `adr-context-vector`, budgets `adr-watch` instead of excluding it as a
+  long-running watcher (every mode exits), and a test now rejects a budget
+  for a name that is not in `bin/`.
+- `clients/capabilities.json` lists the three hook registration files as
+  generated, which they are, instead of hand-authored.
 
 - The guardian's SessionStart entry (`templates/cc-settings/guardian-hook-entry.json`)
   no longer depends on GNU `sort -V` to pick the newest installed plugin. Where

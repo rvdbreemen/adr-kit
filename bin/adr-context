@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """adr-context: find relevant ADRs for a given task query.
 
-Uses heuristic scoring with 5 weighted signals. Returns top N ranked ADRs.
+Scores the generated index's weighted metadata fields (adr_query.FIELD_WEIGHTS).
+Returns top N ranked ADRs.
 
 Usage:
   adr-context "cache invalidation strategy"

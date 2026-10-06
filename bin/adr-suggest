@@ -657,8 +657,9 @@ def main() -> int:
         "--llm-timeout",
         type=int,
         default=None,
-        help="Per-call timeout for the LLM pass in seconds. Default 120 (or "
-        "suggest.llm_timeout_seconds / judge.llm_timeout_seconds in .adr-kit.json).",
+        help="Per-call timeout for the LLM pass in seconds. Default: "
+        "suggest.llm_timeout_seconds, then judge.llm_timeout_seconds in .adr-kit.json, "
+        "then 30.",
     )
     p.add_argument(
         "--json",

@@ -311,9 +311,13 @@ def resolve_llm_backend(
 ) -> Tuple[Optional[LLMBackend], List[str]]:
     """Pick the backend for this run and collect anything the user should know.
 
-    Precedence, highest first: --llm-cmd, ADR_KIT_LLM_CMD, judge.backend. The
-    first two are operator-controlled and therefore unrestricted; the third is
-    a key looked up in the code-side BACKENDS table and can introduce nothing.
+    Precedence, highest first: ADR_KIT_NO_LLM=1 (no backend at all), --llm-cmd,
+    ADR_KIT_LLM_CMD, judge.backend. The switch is checked here, not in each
+    caller, so it holds for every pass that calls a model: the judge, the
+    suggestion pass and the substance check (TASK-221). --llm-cmd and
+    ADR_KIT_LLM_CMD are operator-controlled and therefore unrestricted;
+    judge.backend is a key looked up in the code-side BACKENDS table and can
+    introduce nothing.
 
     Warnings are returned rather than printed so --show-config can render them
     without a judging run, and so the caller controls ordering.
@@ -326,6 +330,9 @@ def resolve_llm_backend(
     # (adr_config.REMOVED_KEYS, ADR-036), so a validated cfg cannot carry one.
     warnings: List[str] = []
 
+    if env.get("ADR_KIT_NO_LLM") == "1":
+        warnings.append("ADR_KIT_NO_LLM=1: no model is called; the LLM pass is skipped.")
+        return None, warnings
     if cli_cmd:
         return SubprocessBackend(_split_cmd(cli_cmd), source="flag"), warnings
     if env.get("ADR_KIT_LLM_CMD"):

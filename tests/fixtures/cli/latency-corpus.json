@@ -29,13 +29,6 @@
       "hard_timeout_ms": 2000,
       "kind": "workload"
     },
-    "adr-context-vector": {
-      "p50_ms": 400,
-      "p95_ms": 500,
-      "hard_timeout_ms": 500,
-      "note": "The query-embedding path on the 500 ms events (ADR-020). Measured with a stub embedder, so this bounds the kit's own work -- store read, cosine over the corpus, reorder -- and not the backend round trip, which is network-bound and carries its own 2 s timeout. Budgeting the round trip here would make the number a property of whoever ran it.",
-      "kind": "workload"
-    },
     "adr": {
       "kind": "startup",
       "p50_ms": 350,
@@ -65,12 +58,6 @@
       "kind": "startup",
       "p50_ms": 550,
       "p95_ms": 550,
-      "hard_timeout_ms": 2000
-    },
-    "adr-embed": {
-      "kind": "startup",
-      "p50_ms": 450,
-      "p95_ms": 450,
       "hard_timeout_ms": 2000
     },
     "adr-generate-scripts": {
@@ -162,6 +149,12 @@
       "p50_ms": 350,
       "p95_ms": 450,
       "hard_timeout_ms": 2000
+    },
+    "adr-watch": {
+      "kind": "startup",
+      "p50_ms": 300,
+      "p95_ms": 300,
+      "hard_timeout_ms": 2000
     }
   },
   "evidence": {
@@ -251,7 +244,6 @@
     "startup": "measured with --help: the interpreter-plus-import floor every invocation pays before any work. Used where the real cost is data-dependent and a single number would describe one repository rather than the tool."
   },
   "excluded": {
-    "adr-watch": "long-running file watcher; it has no terminating invocation to budget",
     "adr-mcp": "long-running stdio server; same reason",
     "bump-version": "maintainer-only release tool, withheld from the client mirrors by COPY_EXCLUSIONS",
     "adr-judge-precommit": "ignores argv and reads a staged diff; exercised through the pre-commit path, not as a CLI"
