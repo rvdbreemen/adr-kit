@@ -4,6 +4,6 @@
   "_remove_marker": "adr-guardian-session-start",
   "_wrapper_version": "0.59.1",
   "type": "command",
-  "command": "ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1) && [ -n \"$ADR_KIT\" ] && _PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
+  "command": "_PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | \"$_PY\" -c 'import re, sys; d = [l.strip() for l in sys.stdin if l.strip()]; k = lambda p: [int(x) for x in re.findall(r\"\\d+\", p.rstrip(\"/\").rsplit(\"/\", 1)[-1])]; sys.stdout.write(max(d, key=k) if d else \"\")' 2>/dev/null) && [ -n \"$ADR_KIT\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
   "timeout": 10
 }
