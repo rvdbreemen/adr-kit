@@ -4,6 +4,16 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The guardian's SessionStart entry (`templates/cc-settings/guardian-hook-entry.json`)
+  no longer depends on GNU `sort -V` to pick the newest installed plugin. Where
+  `sort` has no version mode the pipeline yielded nothing, and the entry's
+  `|| true` chain then skipped the guardian check on every session start
+  without a word. The pick now runs on the Python the entry already finds.
+  The same class of defect as #155; existing projects pick it up through
+  `/adr-kit:upgrade`, which replaces the entry.
+
 
 ## [0.59.1] - 2026-10-05
 
