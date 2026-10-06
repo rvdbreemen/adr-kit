@@ -44,8 +44,10 @@ which are ready to retire, so the decision log stays worth reading instead of
 becoming another folder of dead markdown.
 
 The engines are deterministic, stdlib-only Python 3.10+: no build step, no
-service, no API key on any default path. LLM passes exist, are opt-in, cost
-nothing until you enable them, and never run in a hook hot path.
+service, no API key on any default path. The LLM passes run on the model of
+the coding agent you already use, never in a hook hot path, and can be switched
+off or pointed at a model on your own machine; see
+[LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice).
 
 <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/c99f81eb-6424-4463-8c1d-4aa8a017aa61" />
 
@@ -210,12 +212,11 @@ python scripts/setup-project.py --project-root /path/to/project
 ```
 
 Settings also cover verified stable updates, trigger/frequency, offline and
-pinned operation, per-client opt-outs, doctor repair/check-only policy, and
-local versus paid/cloud judgment. No provider or model tag is a fallback
-default. `--probe-models` performs a bounded local identity check without
-invoking a model; zero or multiple candidates remain visibly unavailable or
-ambiguous. Paid/cloud judgment remains explicit opt-in, and no model runs in a
-hook hot path.
+pinned operation, per-client opt-outs, and doctor repair/check-only policy.
+Which model judges is not a setting: the LLM passes use your coding agent's own
+CLI, or a command you choose on your own machine (see
+[LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice)). No
+model runs in a hook hot path.
 
 ### Claude Code
 
@@ -613,12 +614,12 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
   role parsing.
 - Per-file markers for one-off grandfathering: `<!-- adr-kit-lint: skip -->`, `skip <gate>[, ...]`, or `advisory` anywhere in an ADR.
 
-### LLM passes: always opt-in, never surprise cost
+### LLM passes: on your agent's model by default, local by choice
 
 ```json
 {
-  "judge":   { "llm_enabled": false, "llm_model": "claude-sonnet-4-6", "llm_timeout_seconds": 120 },
-  "suggest": { "enabled": false },
+  "judge":   { "llm_enabled": true, "llm_timeout_seconds": 120, "llm_pass_timeout_seconds": 600 },
+  "suggest": { "enabled": true },
   "guardian": {
     "enabled": true,
     "drift_stale_days": 1,
@@ -630,10 +631,46 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
 }
 ```
 
-- The pre-commit hook's declarative pass is always on and free. The LLM judge pass is opt-in (`judge.llm_enabled`, or `ADR_KIT_LLM=1` per commit; `ADR_KIT_NO_LLM=1` to suppress). A flock guard serializes LLM passes across parallel commits.
+- The pre-commit hook's declarative pass is always on and free.
+- The LLM judge pass is **on by default** (`judge.llm_enabled: true`), but it only runs where a host client is recorded. The installer records one when it installs exactly one client (Claude Code, Codex or Copilot CLI); with several it records none and prints the command to choose. The pass then runs through that client's own CLI (`claude -p`, `codex exec` or `copilot -p`, ADR-036), on your existing subscription: no API key, no adr-kit service. Your staged diff and the governing ADRs go to that client's model, one isolated call per ADR whose `llm_judge: true` scope the diff touches, so a commit can take a minute or more. Each call is capped by `judge.llm_timeout_seconds` and the whole pass by `judge.llm_pass_timeout_seconds`. A clear `VIOLATION` verdict blocks the commit like a declarative one (set `judge.advisory_only: true` to report instead); an answer the judge cannot parse degrades to the declarative result instead of blocking.
+- Turn it off for one commit with `ADR_KIT_NO_LLM=1`, or for the project with `judge.llm_enabled: false`. A flock guard serializes LLM passes across parallel commits.
 - `suggest.enabled` defaults to `true` (ADR-035): the advisory missing-decision nudge runs on the same terms as the judge, resolving through the shared backend registry with no pinned model. It never blocks and silently skips on any failure. Set `suggest.enabled: false` to switch it off per project, or export `ADR_KIT_SUGGEST_DISABLE=1` for a single run; `ADR_KIT_SUGGEST=1` still re-enables it per commit for a project that has set it false.
 - The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo).
 - `watch` tunes the in-flight nudges; `cooldown_hours: 0` disables the cooldown, `enabled: false` silences the watcher.
+
+#### Working locally (opt-in)
+
+You can keep every diff on your own machine. There are two ways to do that.
+
+**No model at all.** Set `judge.llm_enabled: false` in `.adr-kit.json`, or
+export `ADR_KIT_NO_LLM=1`. Enforcement is then fully deterministic and runs
+offline: the declarative rules, `adr-lint`, readiness and the MCP tools never
+call a model.
+
+**A local model.** Point the LLM passes at any command that reads the prompt
+on stdin and writes the answer to stdout. A local runtime such as
+[Ollama](https://ollama.com) works out of the box:
+
+```bash
+export ADR_KIT_LLM_CMD="ollama run qwen3.5:4b --think=false"
+```
+
+- **Scope.** The override applies to the judge, the missing-decision nudge
+  (`adr-suggest`) and the guardian's substance check (`adr-substance`). It
+  outranks the recorded host client. Use `--llm-cmd` instead for a single run.
+- **Where it can be set.** Only per machine, as an environment variable or a
+  flag. `.adr-kit.json` is committed, so it can select a backend but never
+  introduce a command (ADR-025): `llm_cmd` and `llm_model` keys are refused.
+- **Diagnostics.** `ADR_KIT_DEBUG=1` shows a failing command's stderr.
+
+Expect a small local model to be slower and less consistent than your agent's
+model. In a test on this repository, `qwen3.5:4b` gave a usable verdict for
+4 of 7 ADRs once thinking was disabled, and for 2 of 7 with it on. The other
+verdicts degraded to the declarative result, as designed: an answer the judge
+cannot parse costs you a check rather than blocking the commit. A clear but
+wrong `VIOLATION` does block, so read a small model's findings critically, or
+set `judge.advisory_only: true` while you evaluate one. A larger model, or
+raising `judge.llm_timeout_seconds`, narrows the gap.
 
 State lives in `docs/adr/.adr-kit-state.json`: gitignored, per-machine, atomic writes, safe across parallel sessions.
 
@@ -774,7 +811,7 @@ the same notices; none of them applies a migration. See the
 
 **Does enforcement need an API key?**
 
-No. The default enforcement path (pre-commit hook, CI action, pre-commit framework, MCP server) is fully declarative and key-free. Only the explicitly opt-in LLM passes shell out, to the host agent's own CLI (`claude -p`, `codex exec` or `copilot -p`, ADR-036), and those degrade to a skip, never a block, when it is absent.
+No. The default enforcement path (pre-commit hook, CI action, pre-commit framework, MCP server) is fully declarative and key-free. The LLM passes are on by default where a host client is recorded and shell out to that agent's own CLI (`claude -p`, `codex exec` or `copilot -p`, ADR-036), which carries its own authentication; they degrade to a skip, never a block, when it is absent. Switch them off with `ADR_KIT_NO_LLM=1` or `judge.llm_enabled: false`, or point them at a local model with `ADR_KIT_LLM_CMD` (see [LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice)).
 
 **My team has parallel agents creating ADRs. What about number collisions?**
 
@@ -798,7 +835,7 @@ A plain ADR template gives you a markdown file with sections to fill in. What `a
 | Acceptance bar | "fill it in" | four named verification gates before Proposed flips to Accepted |
 | Finding the relevant decision | read the folder, or do not | query a generated index; ranked, explained, authority-aware shortlist |
 | While coding | absent | context injection per task plus in-flight file nudges |
-| Enforcement | absent | declarative rules vs every commit and PR, key-free; opt-in LLM judge |
+| Enforcement | absent | declarative rules vs every commit and PR, key-free; LLM judge on your agent's own model, or a local one |
 | Aging | absent | guardian (drift, missing, stale), retirement audit, trend history, coverage KPI |
 | Team workflows | absent | CI sweeps with tracking issue, collision-safe numbering, audited overrides, guided supersession |
 | Tool integration | none | Claude Code, OpenAI Codex, GitHub Copilot CLI, and OpenCode integrations plus a 7-tool MCP server |

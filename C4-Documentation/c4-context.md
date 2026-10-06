@@ -41,9 +41,8 @@ stdlib-only Python and needs no API key or service. The passes that call a
 language model run only on the host agent's own CLI (ADR-036): the judge's
 LLM pass runs by default once a host client is recorded, which the installer
 does for a single-client install, and `ADR_KIT_NO_LLM=1` or
-`judge.llm_enabled: false` turns it off. The README still describes these
-passes as opt-in ("Security notes on the LLM passes"); that wording predates
-the installer recording the host client.
+`judge.llm_enabled: false` turns it off. Running them on a local model is
+opt-in, per machine, through `ADR_KIT_LLM_CMD` (README, "Working locally").
 
 ## 2. Personas
 
