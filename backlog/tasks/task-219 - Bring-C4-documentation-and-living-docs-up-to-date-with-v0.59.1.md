@@ -1,10 +1,10 @@
 ---
 id: TASK-219
 title: Bring C4 documentation and living docs up to date with v0.59.1
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-06 10:36'
-updated_date: '2026-10-06 12:44'
+updated_date: '2026-10-06 13:06'
 labels:
   - docs
   - c4
@@ -33,4 +33,12 @@ C4-Documentation/ was last revised at v0.52.0 (2026-08-18). Since then: the nati
 
 <!-- SECTION:NOTES:BEGIN -->
 Fact sheet built from primary sources (bin/, live MCP tools/list, hooks/manifest.json, 13 workflows, ADRs, config keys). C4 revised top-down by sequential single-file passes (context+container, overview, then the seven components), each verifying claims against code and validating its Mermaid diagram (all valid). Besides ADR-029 (native host) the passes found a second retired layer still documented: ADR-036 (0.48.0) removed embeddings and the HTTP judge backends. Dozens of counts and file:line anchors re-verified; retired c4-code-*.md links turned into labels (TASK-149). Living docs: client docs (seven MCP tools, 17 skills, Python-only host), README (skill counts, host-CLI FAQ, What's new rows 0.53.0/0.57.0/0.58.0), docs/README.md (C4 and OpenCode links, RELEASING as the spec release.py implements, background docs marked as dated). The LLM-judge default conflict (README says opt-in; code runs it by default after a single-client install, TASK-169) is described factually in C4 and left in README for the maintainer to decide. Code drift found along the way is in TASK-220 (guardian sort -V) and TASK-221. Adapters --check changed=0. Full suite 1965 passed / 12 skipped (two foreground halves, 2026-10-06).
+
+Third commit (maintainer decision): README describes the LLM passes as they behave (on by default where a host client is recorded, host CLI only, ceilings, VIOLATION blocks / unparseable degrades, how to switch off) and adds 'Working locally (opt-in)': no model at all, or a local model via ADR_KIT_LLM_CMD. Local path verified live with qwen3.5:4b through Ollama: 4/7 ADRs judged with --think=false (7 s warm), 2/7 with thinking on (349 s); unusable verdicts degraded as designed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+C4-Documentation brought from v0.52.0 to v0.59.1 (all 10 files, every Mermaid diagram validated, counts and anchors re-verified, two retired layers removed: native hook host ADR-029 and embeddings/HTTP backends ADR-036). Living docs corrected (client docs, README, docs index); README now describes the default-on LLM judge truthfully and documents opt-in local work via ADR_KIT_LLM_CMD, tested with a local Ollama model. Merged via PR #184 (66076a8) with 14/14 CI checks green and the full suite 1965 passed / 12 skipped locally. Follow-ups: TASK-220 (guardian sort -V), TASK-221 (12 code/config drift items).
+<!-- SECTION:FINAL_SUMMARY:END -->
