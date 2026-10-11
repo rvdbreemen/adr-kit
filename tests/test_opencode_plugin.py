@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -300,3 +301,79 @@ console.log(JSON.stringify({{ before, after }}));
     for session in ("before", "after"):
         system = "\n".join(payload[session]["system"])
         assert "<adr-kit-context>" in system and "ADR-001" in system, session
+
+
+def _run_plugin(project: Path, tmp_path: Path, options: dict, env: dict) -> dict:
+    """Load the plugin, register its config, and make one edit."""
+    plugin_url = (ROOT / "opencode" / "plugin.ts").as_uri()
+    script = f"""
+const mod = await import({json.dumps(plugin_url)});
+const hooks = await mod.default(
+  {{ directory: {json.dumps(str(project))}, worktree: {json.dumps(str(project))} }},
+  {json.dumps({"root": str(ROOT), **options})}
+);
+const config = {{}};
+await hooks.config(config);
+await hooks["tool.execute.before"](
+  {{ tool: "edit", sessionID: "interpreter" }}, {{ args: {{ filePath: "src/thing.py" }} }}
+);
+const system = {{ system: [] }};
+await hooks["experimental.chat.system.transform"]({{ sessionID: "interpreter" }}, system);
+console.log(JSON.stringify({{ command: config.mcp["adr-kit"].command, system }}));
+"""
+    harness = tmp_path / "opencode-plugin-interpreter.mjs"
+    harness.write_text(script, encoding="utf-8")
+    result = subprocess.run(
+        [BUN, "run", str(harness)],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout)
+
+
+# macOS and most Linux distributions ship python3 and no python, and the python3
+# of macOS's Command Line Tools is 3.9 (DEF-35). The stand-in for a too-old
+# interpreter fails the version probe the way 3.9 would.
+@pytest.mark.skipif(os.name == "nt", reason="builds a POSIX PATH from symlinks")
+@pytest.mark.parametrize(
+    ("present", "expected"),
+    [
+        ({"python3": "current"}, "python3"),
+        ({"python": "current"}, "python"),
+        ({"python3": "too-old", "python": "current"}, "python"),
+    ],
+    ids=["python3-only", "python-only", "python3-too-old"],
+)
+def test_native_plugin_finds_an_interpreter_that_runs_the_kit(tmp_path, present, expected):
+    project = _project(tmp_path / "project", SCOPED_ADR)
+    path = tmp_path / "path"
+    path.mkdir()
+    for name, kind in present.items():
+        if kind == "current":
+            (path / name).symlink_to(sys.executable)
+        else:
+            (path / name).write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            (path / name).chmod(0o755)
+    env = {key: value for key, value in os.environ.items() if key != "ADR_KIT_PYTHON"}
+    env["PATH"] = str(path)
+
+    payload = _run_plugin(project, tmp_path, {}, env)
+
+    assert Path(payload["command"][0]).name == expected
+    assert "ADR-001" in "\n".join(payload["system"]["system"]), "the edit hook did not run"
+
+
+def test_native_plugin_takes_adr_kit_python_before_its_python_option(tmp_path):
+    project = _project(tmp_path / "project", SCOPED_ADR)
+    env = {**os.environ, "ADR_KIT_PYTHON": sys.executable}
+
+    payload = _run_plugin(project, tmp_path, {"python": str(tmp_path / "missing")}, env)
+
+    assert payload["command"][0] == sys.executable

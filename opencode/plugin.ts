@@ -107,6 +107,31 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
+// ADR-044's order: ADR_KIT_PYTHON, then the interpreter this plugin was
+// configured with (an installer's pin), then the first of python3, python and,
+// on Windows, py -3 that runs Python 3.10 or newer. A bare python is missing on
+// macOS and most Linux distributions, and macOS's own python3 is 3.9.
+function resolvePython(options: PluginOptions): string[] {
+  const pinned = process.env.ADR_KIT_PYTHON || options.python
+  if (pinned) return [pinned]
+  const candidates = [["python3"], ["python"]]
+  if (process.platform === "win32") candidates.push(["py", "-3"])
+  for (const [name, ...args] of candidates) {
+    const executable = Bun.which(name)
+    if (!executable) continue
+    try {
+      const probe = Bun.spawnSync(
+        [executable, ...args, "-c", "import sys; sys.exit(sys.version_info < (3, 10))"],
+        { stdout: "ignore", stderr: "ignore", timeout: 5000 },
+      )
+      if (probe.exitCode === 0) return [executable, ...args]
+    } catch {
+      // Not runnable here; try the next candidate.
+    }
+  }
+  return [candidates[0][0]]
+}
+
 function bounded(value: unknown, limit: number): string {
   return typeof value === "string" ? value.slice(0, limit) : ""
 }
@@ -179,7 +204,7 @@ function normalizeAutoGrillCommand(context: string): string {
 
 async function runHook(
   runtimeRoot: string | undefined,
-  python: string,
+  python: string[],
   cwd: string,
   event: string,
   sessionID: string | undefined,
@@ -193,7 +218,7 @@ async function runHook(
   let child: ReturnType<typeof Bun.spawn>
   try {
     child = Bun.spawn(
-      [python, hook, "--client", "claude-code-cli", "--event", event],
+      [...python, hook, "--client", "claude-code-cli", "--event", event],
       { cwd, stdin: "pipe", stdout: "pipe", stderr: "ignore" },
     )
     child.stdin.write(JSON.stringify({
@@ -286,7 +311,7 @@ export default async function AdrKitOpenCodePlugin(
 ) {
   const options = rawOptions as PluginOptions
   const runtimeRoot = findRuntimeRoot(options.root, input.directory, input.worktree)
-  const python = options.python || process.env.ADR_KIT_PYTHON || "python"
+  const python = resolvePython(options)
   const sessions = new Map<string, SessionState>()
 
   return {
@@ -322,7 +347,7 @@ export default async function AdrKitOpenCodePlugin(
         if (!config.mcp["adr-kit"]) {
           config.mcp["adr-kit"] = {
             type: "local",
-            command: [python, join(runtimeRoot, "bin", "adr-mcp"), "--root", input.directory],
+            command: [...python, join(runtimeRoot, "bin", "adr-mcp"), "--root", input.directory],
             cwd: input.directory,
             enabled: true,
             timeout: 60000,
