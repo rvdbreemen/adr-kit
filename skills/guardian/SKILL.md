@@ -17,7 +17,7 @@ You are running the ADR-set health sweep. Your job is to run whichever tier(s) a
 Resolve the plugin bin path (same resolver used in /adr-kit:judge and /adr-kit:init):
 
 ```bash
-ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
 ```
 
 If `ADR_KIT` is empty (plugin not installed), fall back to a local checkout:

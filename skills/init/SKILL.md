@@ -381,8 +381,8 @@ Then ask: `LLM pass? [1] on (host CLI)  [2] off (1)`
 Apply the answer with the kit's own command — do **not** hand-write the JSON, because the command validates what it wrote and refuses an incomplete choice. Resolve the plugin path first if it is not already in scope from step 1a:
 
 ```bash
-ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
-[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
 ```
 
 - **on** — you know which client you are running in, because you are reading this client's copy of this skill. Pass that id:
@@ -455,8 +455,8 @@ Ask the user: "Generate standalone validation scripts for CI/CD pipelines? (Y/n)
 If yes:
 
 ```bash
-ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
-[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
 "$ADR_KIT/bin/adr-generate-scripts" --lang shell --output .generated/
 ```
 

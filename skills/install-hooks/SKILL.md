@@ -22,8 +22,8 @@ You install or uninstall the adr-kit pre-commit hook in the project the user is 
 ### Step 1 — Resolve the plugin's hook template
 
 ```bash
-ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
-[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
 TEMPLATE="$ADR_KIT/templates/githooks/pre-commit"
 ```
 
@@ -87,8 +87,8 @@ When the user asks to add the guardian hook to the project's `.claude/settings.j
 4. Append the hook object the plugin ships in its template to `hooks.SessionStart[0].hooks` (create the array path if absent):
 
    ```bash
-   ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
-   [ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
+   ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+   [ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
    ENTRY="$ADR_KIT/templates/cc-settings/guardian-hook-entry.json"
    ```
 

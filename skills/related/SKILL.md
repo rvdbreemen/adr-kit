@@ -24,8 +24,8 @@ never edits ADRs.
    root:
 
    ```bash
-   ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
-   [ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
+   ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+   [ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
    python "$ADR_KIT/bin/adr-related" ADR-NNN --format json
    ```
 

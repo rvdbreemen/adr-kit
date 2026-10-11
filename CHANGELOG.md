@@ -70,10 +70,14 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   without a word. The pick now runs on the Python the entry already finds.
   The same class of defect as #155; existing projects pick it up through
   `/adr-kit:upgrade`, which replaces the entry.
-- The ten Claude skills that run a bundled tool find the kit wherever it is
-  installed, a `--plugin-dir` checkout included. They looked only in Claude's
-  marketplace cache, through a pipeline that needs GNU `sort -V`; they now take
-  the plugin root that Claude Code substitutes into a plugin skill (ADR-044).
+- The ten skills that run a bundled tool find the kit wherever it is
+  installed. In Claude Code that includes a `--plugin-dir` checkout, and the
+  fix also covers OpenCode, which loads the same skills. They looked only in
+  Claude's marketplace cache, through a pipeline that needs GNU `sort -V`. Now
+  they take `ADR_KIT_ROOT` when it is set, which the OpenCode plugin does for
+  its shell, and otherwise the plugin root that Claude Code substitutes into
+  the skill (ADR-044). When neither yields a root, the skill stops with one
+  line saying so.
 - `/adr-kit:install-hooks` adds the project-scoped guardian hook from
   `templates/cc-settings/guardian-hook-entry.json` instead of an inline copy.
   The copy still used `sort -V`, which the template no longer does (see the
