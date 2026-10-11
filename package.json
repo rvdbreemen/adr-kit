@@ -1,6 +1,6 @@
 {
   "name": "@rvdbreemen/adr-kit-opencode",
-  "version": "0.59.1",
+  "version": "0.60.0",
   "description": "Native OpenCode plugin for ADR Kit, backed by the shared deterministic Python engines.",
   "type": "module",
   "main": "./opencode/plugin.ts",

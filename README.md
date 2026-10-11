@@ -318,7 +318,7 @@ For another project, use the published package:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.59.1"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.60.0"]
 }
 ```
 
@@ -687,7 +687,7 @@ directly after a full-history checkout:
 - uses: actions/checkout@v4
   with:
     fetch-depth: 0
-- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.59.1
+- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.60.0
   with:
     adr-dir: docs/adr
 ```
@@ -715,7 +715,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.59.1
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.60.0
         with:
           adr-dir: docs/adr/
 ```
@@ -729,7 +729,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.59.1
+    rev: v0.60.0
     hooks:
       - id: adr-judge
 ```
