@@ -8,10 +8,12 @@ license: MIT
 # Audit ADRs and code
 
 Select `adr-kit:audit` from `/skills`, or ask Copilot to use the `audit` ADR Kit skill.
-Resolve `<plugin-root>` from this installed skill. Use only bundled,
-local ADR Kit tools and follow this canonical workflow:
+Resolve `<plugin-root>` from this installed skill, and `<python>` to the
+first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10
+or newer. Use only bundled, local ADR Kit tools and follow this canonical
+workflow:
 
-1. Run `python <plugin-root>/bin/adr-audit --whole-codebase --adr-dir docs/adr --repo-root .`, or `--diff -` with a piped unified diff for the hook and pull-request case.
+1. Run `<python> <plugin-root>/bin/adr-audit --whole-codebase --adr-dir docs/adr --repo-root .`, or `--diff -` with a piped unified diff for the hook and pull-request case.
 2. Read the exit code before the output: 0 clean, 1 the code violates an Accepted ADR, 3 the ADR set fails its own gates, 4 both, 2 the audit could not run.
 3. Report the two failures separately and name their owners; never collapse a code violation and an ADR-quality failure into one verdict, and never present exit 2 as a pass.
 4. Add `--llm` only with explicit user confirmation, because it spends money per opted-in ADR.

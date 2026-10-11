@@ -288,9 +288,12 @@ function addContext(sessions: Map<string, SessionState>, sessionID: string | und
   state.contextKind = kind
 }
 
-function commandTemplate(root: string, workflow: AnyRecord): string {
+function commandTemplate(root: string, python: string[], workflow: AnyRecord): string {
+  const interpreter = python.map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(" ")
   const procedure = Array.isArray(workflow.procedure)
-    ? workflow.procedure.map((item) => `- ${String(item).replaceAll("<plugin-root>", root)}`).join("\n")
+    ? workflow.procedure
+      .map((item) => `- ${String(item).replaceAll("<plugin-root>", root).replaceAll("<python>", interpreter)}`)
+      .join("\n")
     : "- Follow the ADR Kit documentation and use the adr-kit MCP tools."
   return [
     `Run the ADR Kit '${workflow.id}' workflow in OpenCode.`,
@@ -366,7 +369,7 @@ export default async function AdrKitOpenCodePlugin(
             if (config.command[name]) continue
             config.command[name] = {
               description: `ADR Kit: ${workflow.description || workflow.title || workflow.id}`,
-              template: commandTemplate(runtimeRoot, workflow),
+              template: commandTemplate(runtimeRoot, python, workflow),
             }
           }
         }

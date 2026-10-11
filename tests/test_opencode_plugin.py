@@ -319,7 +319,7 @@ await hooks["tool.execute.before"](
 );
 const system = {{ system: [] }};
 await hooks["experimental.chat.system.transform"]({{ sessionID: "interpreter" }}, system);
-console.log(JSON.stringify({{ command: config.mcp["adr-kit"].command, system }}));
+console.log(JSON.stringify({{ command: config.mcp["adr-kit"].command, system, lint: config.command["adr-kit-lint"].template }}));
 """
     harness = tmp_path / "opencode-plugin-interpreter.mjs"
     harness.write_text(script, encoding="utf-8")
@@ -368,6 +368,10 @@ def test_native_plugin_finds_an_interpreter_that_runs_the_kit(tmp_path, present,
 
     assert Path(payload["command"][0]).name == expected
     assert "ADR-001" in "\n".join(payload["system"]["system"]), "the edit hook did not run"
+    # The command templates run what the plugin resolved, not the procedure's
+    # placeholder or a bare python (DEF-34).
+    assert f"{payload['command'][0]} {ROOT}" in payload["lint"]
+    assert "<python>" not in payload["lint"]
 
 
 def test_native_plugin_takes_adr_kit_python_before_its_python_option(tmp_path):

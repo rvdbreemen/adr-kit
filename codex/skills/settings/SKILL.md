@@ -8,10 +8,12 @@ license: MIT
 # Show or change a setting
 
 Invoke explicitly with `$adr-kit:settings` when needed.
-Resolve `<plugin-root>` from this installed skill. Use only bundled,
-local ADR Kit tools and follow this canonical workflow:
+Resolve `<plugin-root>` from this installed skill, and `<python>` to the
+first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10
+or newer. Use only bundled, local ADR Kit tools and follow this canonical
+workflow:
 
-1. Run `python <plugin-root>/bin/adr-settings --adr-dir docs/adr` and report every value with its provenance: project, machine-local, environment override, or code default.
+1. Run `<python> <plugin-root>/bin/adr-settings --adr-dir docs/adr` and report every value with its provenance: project, machine-local, environment override, or code default.
 2. Name the environment override explicitly when one is present, because a config value that is not taking effect is the question a settings screen exists to answer.
 3. On a change, run `--set KEY=VALUE`; the value is typed and validated against the schema before it lands, and a refused write leaves no file behind.
 4. State which file the write landed in: team decisions in the tracked config, personal or machine-specific facts in the gitignored local one.
