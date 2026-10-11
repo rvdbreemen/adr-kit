@@ -4,6 +4,44 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.60.0] - 2026-10-12
+
+A minor release with two behaviour changes and the fixes of the 2026-10-11
+defect sweep. The headline: the LLM layers now actually run on a default
+install, on the coding assistant the plugin is installed in, and the user is
+asked once whether to keep them. Before this release the common install route
+(`/plugin install`) never recorded a host client, so the judge's LLM pass, the
+`adr-suggest` nudge and the guardian's LLM tier silently did nothing.
+
+What you will notice. The first session in a project records the client it
+runs in as the judge host, and the next prompt asks, per layer, whether to keep
+it on (recommended) or turn it off for this machine. The question repeats at
+most once a day until it is answered. From that first session on, a commit's
+diff goes to that client's own model: the same assistant that already sees the
+code, with no API key and no pinned model. An "off" answer is written to the
+gitignored `.adr-kit.local.json` and stays on your machine; it no longer
+switches a layer off for the whole team. ADR-035 and ADR-049, which record
+these defaults, are Accepted.
+
+Upgrade notes.
+
+- To keep every diff away from any model, export `ADR_KIT_NO_LLM=1`. It now
+  stops every model call, including the suggestion pass, which it did not
+  before. If you relied on the nudge while it was set, the nudge is off too.
+- The pre-commit hook is a copy in each project. Re-run
+  `/adr-kit:install-hooks` and choose `replace` to get the fixes that make a
+  refused commit print its report and find the engine where Copilot CLI and
+  OpenCode install it. The old hook is kept as a timestamped backup.
+- Run `/adr-kit:upgrade` to replace the project-scoped guardian entry, which
+  no longer needs GNU `sort -V`. An entry added by an older
+  `/adr-kit:install-hooks` has no version stamp: remove it with
+  `/adr-kit:install-hooks` and add it again.
+- Codex runs a plugin's hooks only after you review them in `/hooks`;
+  `adr-doctor --deep` now says so when they are unreviewed.
+- On macOS and Linux, OpenCode now finds a Python 3.10 or newer itself. If it
+  reported the MCP server as failed, it should start after this upgrade.
+
 ### Added
 
 - The LLM layers are on by default on every install route, on the coding
@@ -23,7 +61,6 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   `adr-substance` then calls no model and the tier is never due.
 - `adr-settings --set <switch>=<value> --local` writes one of the four LLM
   switches for this machine only.
-
 - ADR-043 restores the two rules that guarded the host-model-only judge: no
   entry point may pin a vendor model, and none may carry its own default
   command vector. ADR-017 enforced them until ADR-036 superseded it without an
@@ -3396,7 +3433,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...v0.58.0
