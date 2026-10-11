@@ -173,14 +173,23 @@ fi
 # don't fan out concurrent `claude -p` processes. We take a non-blocking advisory
 # lock; if another adr-judge already holds it, we keep the cheap declarative pass
 # but suppress the LLM passes for THIS commit (via ADR_KIT_NO_LLM). The lockfile
-# lives under .git/ so it's never committed. flock is absent on bare Windows
-# cmd.exe; there we degrade to no-lock (same behaviour as before).
+# lives in git's common directory, so it's never committed and every linked
+# worktree shares it. flock is absent on bare Windows cmd.exe; there we degrade
+# to no-lock (same behaviour as before), and so we do when the lock cannot be
+# opened.
+#
+# The 2>/dev/null stays inside the group. A bare `exec` with redirections
+# applies them to the shell itself: written on the exec line, it sent stderr to
+# /dev/null for the rest of this hook, and a refused commit printed nothing,
+# not even the judge's report (DEF-01).
 _NO_LLM_OVERRIDE=""
 if command -v flock >/dev/null 2>&1; then
-  exec 9>"$ROOT/.git/adr-kit-judge.lock" 2>/dev/null || true
-  if ! flock -n 9 2>/dev/null; then
-    echo "[adr-kit] another ADR judge is running; declarative-only for this commit (LLM gate skipped)." >&2
-    _NO_LLM_OVERRIDE=1
+  _LOCK_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
+  if [ -n "$_LOCK_DIR" ] && { exec 9>"$_LOCK_DIR/adr-kit-judge.lock"; } 2>/dev/null; then
+    if ! flock -n 9 2>/dev/null; then
+      echo "[adr-kit] another ADR judge is running; declarative-only for this commit (LLM gate skipped)." >&2
+      _NO_LLM_OVERRIDE=1
+    fi
   fi
 fi
 
