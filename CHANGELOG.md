@@ -25,6 +25,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
     again, as an amendment of ADR-036: at most two per response, filling only
     the slots under the limit. The engine already behaves this way. The cap was
     decided in ADR-014, which has been superseded since 2026-08-01.
+- ADR-048 is Accepted. It amends ADR-010: a native client is certified per
+  platform, from a real run on that platform, and the documents claim only
+  what a current record shows. Windows is no longer the only certifiable
+  platform, and certification stays optional for a release. The validator,
+  the support matrix and the new records land in a later release.
 
 ### Changed
 
@@ -85,7 +90,40 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   reported it as present but never as stale and `/adr-kit:upgrade` left it in
   place. To replace an entry added with the copy, remove the guardian hook with
   `/adr-kit:install-hooks` and add it again.
-
+- A commit the judge refuses prints the violation report. Wherever `flock`
+  exists, the hook's concurrency lock sent its stderr to `/dev/null` for the
+  rest of the hook, so the commit failed without a word. In a linked worktree
+  the same lock could not be opened and the hook reported a rival judge that
+  did not exist.
+- The commit hook finds the engine where Copilot CLI 1.0.81 and later loads
+  it, from the installer's payload, and where OpenCode installs it, in the
+  project's or OpenCode's cache `node_modules`. It also takes `ADR_KIT_ROOT`.
+  For those installs the hook found nothing and let a violating commit land.
+- Codex and OpenCode edits get their governing ADRs before and after the edit.
+  Both clients edit through `apply_patch`, which names its files only inside
+  the patch. The hook looked for a file path, so neither ever got edit-time
+  context, and the OpenCode plugin did not call the hook for such an edit.
+- The pull-request guard runs when `gh pr create` follows another shell
+  command, as in commit, push, PR. The hook took every shell command in a
+  session for a repeat of the previous one and dropped it before the guard ran.
+  The commit hook and CI were not affected.
+- `adr-doctor --deep` reports Codex hooks that nobody has reviewed. Codex runs
+  a plugin's hooks only after a review in `/hooks`, so a fresh install read
+  healthy while none of them ran. The probe also no longer reports a trust
+  problem for any client with a plugin whose name contains "review", such as
+  `code-review`.
+- `adr-doctor --deep` checks each client's registered MCP command, the way the
+  client starts it. It started the server with its own interpreter, so it said
+  healthy for a server the client could not start.
+- The OpenCode plugin finds a Python 3.10 or newer: `ADR_KIT_PYTHON`, then its
+  `python` option, then the first of `python3`, `python` and, on Windows,
+  `py -3` that runs 3.10 or newer. It ran `python`, which macOS and most Linux
+  distributions do not have, so OpenCode reported the MCP server as failed
+  and every hook did nothing.
+- The Codex and Copilot skills and the OpenCode commands name an interpreter
+  that exists, in the same order, instead of a bare `python`. The Codex and
+  Copilot trees now ship `scripts/setup-project.py`, which their setup skill
+  runs and neither tree had.
 
 ## [0.59.1] - 2026-10-05
 
