@@ -73,10 +73,10 @@ Use the governed source path for all edits.
 """
 
 
-def _project(tmp_path: Path) -> Path:
+def _project(tmp_path: Path, adr: str = ADR) -> Path:
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
-    (adr_dir / "ADR-001-governed-source-path.md").write_text(ADR, encoding="utf-8")
+    (adr_dir / "ADR-001-governed-source-path.md").write_text(adr, encoding="utf-8")
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "thing.py").write_text("# governed\n", encoding="utf-8")
     result = subprocess.run(
@@ -236,3 +236,67 @@ def test_native_plugin_translates_automatic_grill_to_its_command_surface(tmp_pat
     assert "AUTO_GRILL_PENDING" in system
     assert "/adr-kit-grill ADR-001" in system
     assert "/adr-kit:grill ADR-001" not in system
+
+
+# ADR's frontmatter lists are flow style, which the index drops (adr-lint
+# rejects them), and its Enforcement block scopes nothing. An edit alone
+# retrieves nothing from it: the smoke above sees ADR-001 after its edit only
+# because the prompt put it there. This ADR is scoped to src/**, so only the
+# edit can bring it in.
+SCOPED_ADR = ADR.replace(
+    '"forbid_pattern": []',
+    '"forbid_pattern": [{"pattern": "UNGOVERNED", "path_glob": "src/**", '
+    '"message": "Keep src governed (ADR-001)."}]',
+)
+PATCH = "\n".join(
+    ["*** Begin Patch", "*** Update File: src/thing.py", "@@",
+     "-# governed", "+# still governed", "*** End Patch"]
+)
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("edit", {"filePath": "src/thing.py"}),
+        # OpenCode 1.19.0 edits through apply_patch, with the patch in
+        # args.patchText and no file path, whenever its write tool is off (DEF-38).
+        ("apply_patch", {"patchText": PATCH}),
+    ],
+)
+def test_native_plugin_brings_in_the_decisions_for_the_file_an_edit_touches(
+    tmp_path, tool, args
+):
+    project = _project(tmp_path / "project", SCOPED_ADR)
+    plugin_url = (ROOT / "opencode" / "plugin.ts").as_uri()
+    script = f"""
+const mod = await import({json.dumps(plugin_url)});
+const hooks = await mod.default(
+  {{ directory: {json.dumps(str(project))}, worktree: {json.dumps(str(project))} }},
+  {{ root: {json.dumps(str(ROOT))}, python: {json.dumps(sys.executable)} }}
+);
+const args = {json.dumps(args)};
+await hooks["tool.execute.before"]({{ tool: {json.dumps(tool)}, sessionID: "before" }}, {{ args }});
+await hooks["tool.execute.after"]({{ tool: {json.dumps(tool)}, sessionID: "after", args }});
+const before = {{ system: [] }};
+await hooks["experimental.chat.system.transform"]({{ sessionID: "before" }}, before);
+const after = {{ system: [] }};
+await hooks["experimental.chat.system.transform"]({{ sessionID: "after" }}, after);
+console.log(JSON.stringify({{ before, after }}));
+"""
+    harness = tmp_path / "opencode-plugin-edit.mjs"
+    harness.write_text(script, encoding="utf-8")
+    result = subprocess.run(
+        [BUN, "run", str(harness)],
+        cwd=project,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    for session in ("before", "after"):
+        system = "\n".join(payload[session]["system"])
+        assert "<adr-kit-context>" in system and "ADR-001" in system, session

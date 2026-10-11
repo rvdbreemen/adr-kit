@@ -244,6 +244,12 @@ function toolPath(args: AnyRecord): string {
   return ""
 }
 
+// apply_patch names no file path: its files are in the patch's header lines,
+// which the hook core reads from patchText.
+function editsFiles(args: AnyRecord): boolean {
+  return Boolean(toolPath(args)) || typeof args.patchText === "string"
+}
+
 function hookTimeout(options: PluginOptions, fallback: number): number {
   const configured = options.hookTimeoutMs
   if (!Number.isInteger(configured)) return fallback
@@ -417,7 +423,7 @@ export default async function AdrKitOpenCodePlugin(
         if (result.denied) throw new Error(result.reason || "ADR Kit blocked this pull-request command.")
         return
       }
-      if (!WRITE_TOOLS.has(normalized) || !toolPath(args)) return
+      if (!WRITE_TOOLS.has(normalized) || !editsFiles(args)) return
       const result = await runHook(
         runtimeRoot,
         python,
@@ -435,7 +441,7 @@ export default async function AdrKitOpenCodePlugin(
     ) => {
       if (options.hooks === false) return
       const normalized = toolName(hookInput.tool)
-      if (!WRITE_TOOLS.has(normalized) || !toolPath(hookInput.args || {})) return
+      if (!WRITE_TOOLS.has(normalized) || !editsFiles(hookInput.args || {})) return
       const result = await runHook(
         runtimeRoot,
         python,
