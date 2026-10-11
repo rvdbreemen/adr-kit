@@ -1,8 +1,8 @@
 ---
 id: "ADR-035"
 title: "Run the Suggestion Pass by Default on the Same Terms as the Judge"
-status: "Proposed"
-date: "2026-08-06"
+status: "Accepted"
+date: "2026-10-11"
 binding: false
 gate: null
 documents_shipped: false
@@ -35,7 +35,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-08-06.
+Accepted, 2026-10-11.
 
 ## Status History
 
@@ -60,6 +60,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-024
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "Accepted after review: the default-on suggestion pass has shipped since fca6d43 and ADR-049 builds on it"
     changed_via: adr-kit lifecycle
 ```
 

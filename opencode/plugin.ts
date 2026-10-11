@@ -219,7 +219,15 @@ async function runHook(
   try {
     child = Bun.spawn(
       [...python, hook, "--client", "claude-code-cli", "--event", event],
-      { cwd, stdin: "pipe", stdout: "pipe", stderr: "ignore" },
+      {
+        cwd,
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "ignore",
+        // The hook renders Claude-shaped output for this plugin, but the LLM
+        // layers must run on OpenCode's own model (ADR-049, TASK-233).
+        env: { ...process.env, ADR_KIT_HOST_CLIENT: "opencode-cli" },
+      },
     )
     child.stdin.write(JSON.stringify({
       cwd,

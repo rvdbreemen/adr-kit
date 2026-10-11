@@ -2032,7 +2032,9 @@ def build_config_report(
         _entry(
             "judge.llm_enabled",
             bool(judge_cfg.get("llm_enabled", True)),
-            "project" if "llm_enabled" in judge_cfg else "default",
+            "machine-local"
+            if _adr_config.machine_override_source(local_cfg, "judge", "llm_enabled")
+            else ("project" if "llm_enabled" in judge_cfg else "default"),
         ),
         _entry(
             "judge.backend",
@@ -2187,18 +2189,10 @@ def write_local_judge_value(adr_dir: Path, key: str, value: str) -> Path:
 
     The tracked config may select a backend; it may never introduce an endpoint
     or a credential, because anyone with commit access writes it. A host client
-    and a base URL are both facts about this machine.
+    is a fact about this machine. The writer lives in adr_llm so the
+    SessionStart hook writes the file the same way (ADR-049).
     """
-    path = adr_dir / LOCAL_CONFIG_NAME
-    document = _adr_config.load_json_config(path)
-    judge_block = document.get("judge")
-    if not isinstance(judge_block, dict):
-        judge_block = {}
-    judge_block[key] = value
-    document["judge"] = judge_block
-    _atomic_write_json(path, document)
-    _register_git_exclude(adr_dir, LOCAL_CONFIG_NAME)
-    return path
+    return Path(_adr_llm.write_local_judge_value(adr_dir, key, value))
 
 
 def write_local_host_client(adr_dir: Path, client: str) -> Path:
@@ -2206,49 +2200,8 @@ def write_local_host_client(adr_dir: Path, client: str) -> Path:
     return write_local_judge_value(adr_dir, "host_client", client)
 
 
-def _atomic_write_json(path: Path, document: Dict) -> None:
-    payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
-    temporary = path.with_name(f".{path.name}.tmp")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(temporary, "w", encoding="utf-8", newline="\n") as out:
-        out.write(payload)
-        out.flush()
-        os.fsync(out.fileno())
-    os.replace(temporary, path)
-
-
-def _register_git_exclude(adr_dir: Path, name: str) -> None:
-    """Best-effort .git/info/exclude entry, mirroring the override log.
-
-    .gitignore is committed and belongs to the project; .git/info/exclude is
-    per-clone and belongs to this machine, which is the right scope for a file
-    that records one operator's client choice. Every failure is silent: a
-    missing exclude entry is untidy, not unsafe.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(adr_dir), "rev-parse", "--git-dir"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0:
-            return
-        git_dir = Path(result.stdout.strip())
-        if not git_dir.is_absolute():
-            git_dir = (adr_dir / git_dir).resolve()
-        exclude = git_dir / "info" / "exclude"
-        entry = (adr_dir / name).resolve()
-        try:
-            relative = entry.relative_to(git_dir.parent.resolve()).as_posix()
-        except ValueError:
-            relative = name
-        existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
-        if relative in existing.splitlines():
-            return
-        exclude.parent.mkdir(parents=True, exist_ok=True)
-        with open(exclude, "a", encoding="utf-8", newline="\n") as out:
-            out.write(("" if existing.endswith("\n") or not existing else "\n") + relative + "\n")
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return
+_atomic_write_json = _adr_llm.atomic_write_json
+_register_git_exclude = _adr_llm.register_git_exclude
 
 
 SCOPE_CHECK_LIMITS = (
@@ -2592,7 +2545,10 @@ def main() -> int:
         adr_dir = Path(args.adr_dir).resolve()
         config_path = Path(args.config) if args.config else (adr_dir / ".adr-kit.json")
         cfg = load_config(config_path)
-        judge_cfg = cfg.get("judge") or {}
+        local_cfg = load_local_config(adr_dir)
+        # This machine's LLM switch wins over the team's (TASK-233, ADR-025):
+        # an "off" answered at init or upgrade lives in the gitignored file.
+        judge_cfg = _adr_config.apply_machine_overrides(cfg, local_cfg).get("judge") or {}
         skip_files = judge_cfg.get("skip_files") or []
         advisory_only = bool(judge_cfg.get("advisory_only", False))
         # Two workloads, two budgets. judge.max_diff_bytes is the commit-path
@@ -2631,7 +2587,6 @@ def main() -> int:
             or bool(judge_cfg.get("llm_enabled", True))
         ) and not env_no_llm
 
-        local_cfg = load_local_config(adr_dir)
         llm_backend, backend_warnings = resolve_llm_backend(
             judge_cfg, local_cfg, args.llm_cmd, dict(os.environ)
         )

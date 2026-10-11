@@ -179,3 +179,30 @@ def test_the_precommit_wrapper_gives_up_on_a_hung_judge(tmp_path):
     assert elapsed < 20, f"wrapper waited {elapsed:.1f}s"
     assert proc.returncode == 2
     assert "timed out" in proc.stderr
+
+
+def test_a_cmd_shim_on_path_is_found(tmp_path, monkeypatch):
+    """npm installs a Windows CLI as `<name>.cmd`; Popen alone cannot find it.
+
+    Codex, Copilot and OpenCode installed through npm on Windows are .cmd
+    shims, and the LLM pass then failed with FileNotFoundError and degraded
+    silently (TASK-233). run_cli resolves the name the way a shell would.
+    """
+    import shutil as _shutil
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    script = bindir / "fakeclient.py"
+    script.write_text("import sys\nsys.stdout.write(sys.stdin.read().upper())\n", encoding="utf-8")
+    if os.name == "nt":
+        shim = bindir / "fakeclient.cmd"
+        shim.write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
+    else:
+        shim = bindir / "fakeclient"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n', encoding="utf-8")
+        shim.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
+    assert _shutil.which("fakeclient")
+    result = adr_llm.run_cli(["fakeclient"], "ping", 30)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "PING"

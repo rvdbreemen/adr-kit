@@ -40,10 +40,10 @@ that does not apply here.
 | **MCP Server** | `bin/adr-mcp` (1,233 lines) — a hand-rolled, dual-era Model Context Protocol (MCP) server that wraps seven of the CLI Toolkit's tools for direct agent invocation. | Long-lived, persistent stdio process (`for line in sys.stdin:`) | Python 3 standard library, zero runtime dependencies (ADR-016) |
 | **Hook Runtime** | `hooks/` — per-client lifecycle adapters (`hooks/adapters/{claude,codex,copilot}.py`) over a shared core (`hooks/adr_hook_core.py`, `hooks/adr_pr_guard.py`), entered through `hooks/adr-hook.py` and `hooks/run-hook.cmd`. | Short-lived subprocess, invoked by the host client on a lifecycle event | Python 3, the only hook host. The native `adr-hook.exe` host was retired in 0.55.1 (ADR-029); ADR-030 recalibrated the latency budgets to the Python host that ships |
 | **Native OpenCode Plugin** | `opencode/plugin.ts` plus the root `package.json` and `opencode.json` — an additive OpenCode plugin adapter that discovers the shared runtime, registers skills/instructions/references/commands/MCP, and delegates hook work to the Python Hook Runtime. | Host-loaded plugin inside the OpenCode process; child subprocesses for shared hooks and MCP | TypeScript executed by Bun/OpenCode, Python 3 for the shared engines, stdio JSON-RPC for MCP |
-| **Pre-commit Gate** | `templates/githooks/pre-commit`, installed by `/adr-kit:install-hooks` into a consuming project's own `.githooks/pre-commit` (this repository dogfoods its own copy at `.githooks/pre-commit`). Chains any pre-existing hook, then runs the declarative judge always and the LLM pass on `llm_judge:true` ADRs by default (ADR-017). | Shell script invoked by `git commit`, outside any agent host | Bash (with a `perl` timing fallback for macOS), probing for a Python >= 3.10 interpreter (0.59.1) and subprocessing into the CLI Toolkit |
+| **Pre-commit Gate** | `templates/githooks/pre-commit`, installed by `/adr-kit:install-hooks` into a consuming project's own `.githooks/pre-commit` (this repository dogfoods its own copy at `.githooks/pre-commit`). Chains any pre-existing hook, then runs the declarative judge always and the LLM pass on `llm_judge:true` ADRs by default (ADR-017, kept by ADR-036). | Shell script invoked by `git commit`, outside any agent host | Bash (with a `perl` timing fallback for macOS), probing for a Python >= 3.10 interpreter (0.59.1) and subprocessing into the CLI Toolkit |
 | **Instruction & Skill Corpus** | `skills/` (17 canonical-rich `SKILL.md` files), `instructions/` (`ADR-guide.md`, `adr.coding.md`, `adr.review.md`), `prompts/claude-code-cli/`, and `agents/adr-generator.md` (the one subagent) — plus their generated counterparts `codex/skills/`, `copilot/skills/`, `prompts/codex-cli/`, `prompts/github-copilot-cli/`. Not executable; content consumed by each client's native skill/prompt discovery, including the OpenCode plugin's additive path registration. | Declarative content (Markdown + JSON front matter), no runtime process | Markdown, rendered per-workflow by the generation toolchain for the two non-canonical certified clients; canonical content is registered directly by OpenCode |
 | **Client Generation & Release Toolchain** | `scripts/build-client-adapters.py` (and its `client_generation*.py`, `client_certification.py`, `client_evidence.py` support modules), `scripts/install-agent-envs.py`, `scripts/setup-project.py`, `scripts/settings.py`, `scripts/sync-agent-plugins.py`, plus the release-only driver `scripts/release.py` (with `release_phases.py`, `release_shell.py`, `release_npm.py`; ADR-042) and `scripts/bump-version.py` / `scripts/check-release-version.py` / `scripts/check-branch-sync.py`, reading `packaging/*.json`. Produces the two generated certified mirrors, validates the native OpenCode package version, enforces version consistency, and drives per-machine installs. | Command-line build/release tooling — some of it distributed to installed clients, some maintainer/CI-only (see Distribution) | Python 3 |
-| **Generated Client Mirrors** | `codex/` and `copilot/` — deterministic projections of the CLI Toolkit, MCP Server, Hook Runtime and Instruction & Skill Corpus, produced by the Client Generation Toolchain, each carrying its own hand-authored plugin manifest, `.mcp.json` and `hooks.json`. | Generated distribution trees, drift-checked, never hand-edited | Identical technology to the containers they mirror; generation and validation logic in Python |
+| **Generated Client Mirrors** | `codex/` and `copilot/` — deterministic projections of the CLI Toolkit, MCP Server, Hook Runtime and Instruction & Skill Corpus, produced by the Client Generation Toolchain, each carrying its own hand-authored plugin manifest and `.mcp.json`, plus a generated `hooks.json`. | Generated distribution trees, drift-checked, never hand-edited | Identical technology to the containers they mirror; generation and validation logic in Python |
 
 Claude Code needs no mirror: its plugin source is the repository root itself
 (`./`, per `docs/RELEASING.md`'s marketplace table), so it runs the CLI
@@ -81,7 +81,12 @@ the moment the host client fires a native lifecycle event (session start, a
 prompt, a tool call, plan exit, pull-request creation, a subagent start, or
 a context compaction). This is the container ADR-004's fail-open context
 tiers describe, and the one place where a strict wall-clock budget is a
-first-class design constraint (see Interfaces, below).
+first-class design constraint (see Interfaces, below). Under ADR-049
+(Accepted 2026-10-11) it also writes once per machine: on a session-scoped event it
+records the session's client as the judge's host in the gitignored
+`docs/adr/.adr-kit.local.json` when none is recorded, and on a real prompt it
+asks, at most once a day until `llm.confirmed` is set, whether to keep each LLM
+layer on.
 
 ### Native OpenCode Plugin
 
@@ -106,7 +111,10 @@ the system.
 Teaches each client's agent *how* to use adr-kit — the skill and prompt text
 an agent reads to decide which CLI or MCP tool to invoke and in what order.
 It carries no logic of its own; every workflow it describes bottoms out in a
-CLI Toolkit or MCP Server call.
+CLI Toolkit or MCP Server call. Ten canonical skills locate that toolkit as
+`${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}` and stop with one line when it is
+empty, and the shared procedures in `clients/workflows.json` name the
+interpreter as `<python>`, which each client resolves (ADR-044).
 
 ### Client Generation & Release Toolchain
 
@@ -114,7 +122,7 @@ Turns one canonical semantic source (`clients/workflows.json`,
 `clients/capabilities.json`, `hooks/manifest.json`, and the CLI
 Toolkit/Hook Runtime/Instruction Corpus files themselves) into two
 byte-verified, client-native trees, and keeps every version-bearing site in
-the repository — seventeen entries across fifteen files, per
+the repository — twenty-one entries across eighteen files, per
 `packaging/version-sites.json` — equal to the version being released
 (ADR-013). Its release driver, `scripts/release.py`, runs the whole release
 from the maintainer's machine as resumable phases (ADR-042).
@@ -137,7 +145,7 @@ parallel with this one, so this section links rather than restates.
 | CLI Toolkit | [c4-component-decision-engine.md](./c4-component-decision-engine.md), [c4-component-enforcement-engine.md](./c4-component-enforcement-engine.md), [c4-component-retrieval-and-injection.md](./c4-component-retrieval-and-injection.md), [c4-component-health-and-lifecycle.md](./c4-component-health-and-lifecycle.md) | This container is the union of four components' `bin/` surfaces: what an ADR *means* (decision-engine), what *blocks* a commit (enforcement-engine), what makes a decision *findable* (retrieval-and-injection), and the *time dimension* of an ADR set — status, health, doctor (health-and-lifecycle). |
 | MCP Server | [c4-component-agent-integration.md](./c4-component-agent-integration.md) | One of three surfaces this component owns; the component document's own count attributes exactly one `bin/` file to `agent-integration` — `bin/adr-mcp`. |
 | Hook Runtime | [c4-component-agent-integration.md](./c4-component-agent-integration.md) | A second surface of the same component, described there as "a lifecycle-hook runtime that pushes context unasked." |
-| Pre-commit Gate | [c4-component-contracts-and-distribution.md](./c4-component-contracts-and-distribution.md) | The template is one of the eleven copy-out templates that document attributes to this component; at commit time it calls into enforcement-engine (`bin/adr-judge`) as an external caller, not as a dependency of it. |
+| Pre-commit Gate | [c4-component-contracts-and-distribution.md](./c4-component-contracts-and-distribution.md) | The template is one of the fourteen copy-out templates that document attributes to this component; at commit time it calls into enforcement-engine (`bin/adr-judge`) as an external caller, not as a dependency of it. |
 | Instruction & Skill Corpus | [c4-component-agent-integration.md](./c4-component-agent-integration.md) | The third surface of the same component: "an instruction corpus of skills/prompts/one subagent." |
 | Client Generation & Release Toolchain | [c4-component-contracts-and-distribution.md](./c4-component-contracts-and-distribution.md) | The release half of this component, which the component document itself flags as spanning both ends of the dependency stack — it reads the other components' outputs and also writes their mirrored copies. |
 | Generated Client Mirrors | [c4-component-contracts-and-distribution.md](./c4-component-contracts-and-distribution.md) | The output artifact of the same component's release half. |
@@ -154,14 +162,11 @@ documented exception: `hooks/hook_benchmark.py` reads
 dependency of the Hook Runtime's deep-diagnostic path despite being excluded
 from distribution.
 
-**A note on `bin/adr-audit` and staleness.** `C4-Documentation/c4-component.md`
-currently describes `bin/adr-audit` as "a deterministic missing-ADR
-candidate scanner" belonging to no component. That description predates
-ADR-026 (Accepted 2026-08-04): the file it describes is now
-`bin/adr-discover`, and `bin/adr-audit` (493 lines, verified by direct read)
-is the combined lint-and-judge command with the five-way exit contract
-documented under Interfaces below. Both files exist side by side today in
-the CLI Toolkit; this document describes the current, post-rename state.
+**A note on `bin/adr-audit`.** Since ADR-026 (Accepted 2026-08-04) the old
+missing-ADR candidate scanner lives on as `bin/adr-discover`, and `bin/adr-audit`
+(493 lines) is the combined lint-and-judge command with the five-way exit
+contract documented under Interfaces below, consistent with the "Coverage gap"
+section of `C4-Documentation/c4-component.md`.
 
 ## Interfaces
 
@@ -222,7 +227,7 @@ again since ADR-036 removed the query embedder.
 | `subagent-start` | — | task-context | 600 / 800 ms | 1600 ms | `SubagentStart` | `SubagentStart` | *(none)* |
 | `pre-compact` | — | lifecycle | 650 / 1000 ms | 2000 ms | `PreCompact` | `PreCompact` | *(none)* |
 
-`session-start` and `pr-create` additionally carry `runner_timeout_sec: 5` —
+`session-start`, `user-prompt-submit` and `pr-create` additionally carry `runner_timeout_sec: 5` —
 a process kill timeout, a different quantity from the latency budget above
 it (ADR-031 makes this distinction explicit after the two were once
 conflated).
@@ -292,11 +297,15 @@ documented callback object and never becomes a second ADR engine.
 | `experimental.chat.system.transform` | Adds bounded static ADR instructions and the retrieved session context once. |
 | `experimental.session.compacting` | Carries the current ADR context and enforcement-floor reminder across compaction. |
 | `tool.definition` | Adds an advisory MCP reminder to write-tool descriptions. |
-| `tool.execute.before` / `tool.execute.after` | Delegates edit and shell/pull-request checks to the shared hook runtime; an explicit shared deny may reject a shell call. |
+| `tool.execute.before` / `tool.execute.after` | Delegates edit (including `apply_patch`, whose paths the hook core reads from `patchText`) and shell/pull-request checks to the shared hook runtime; an explicit shared deny may reject a shell call. |
 | `event` / `dispose` | Creates, removes, and clears session-local context state. |
 
 The plugin uses `Bun.spawn` with bounded timeouts and fails open for normal
-context and edit hooks. It can surface the shared pull-request guard's explicit
+context and edit hooks. It resolves one interpreter for hooks and MCP in
+ADR-044's order (`resolvePython`: `ADR_KIT_PYTHON`, the `python` option, then
+the first of `python3`, `python` and on Windows `py -3` that reports Python
+3.10 or newer), and runs each hook with `ADR_KIT_HOST_CLIENT=opencode-cli` so
+the LLM layers use OpenCode's own model (ADR-049). It can surface the shared pull-request guard's explicit
 deny result, but deterministic pre-commit and CI judging remain the normal
 enforcement floor. Focused evidence lives in
 `tests/test_opencode_package.py` and `tests/test_opencode_plugin.py` and does
@@ -308,14 +317,14 @@ not enter the three-client certification bundle.
 | --- | --- | --- |
 | CLI Toolkit | ADR Markdown files (`docs/adr/*.md`), `ADR-INDEX.json`, `.adr-kit.json`/`.adr-kit-state.json` | File system read/write |
 | CLI Toolkit | `git` CLI | Subprocess (diffs, staged content, refs) |
-| CLI Toolkit | Host model CLI (`claude -p`, `codex exec`, `copilot -p`, chosen by `judge.host_client`, or an operator's `ADR_KIT_LLM_CMD`) | Subprocess only — LLM judge, suggest, substance and guardian passes, never on the hot path; ADR-036 retired the HTTP backends and `bin/adr_llm.py` cannot open a socket |
+| CLI Toolkit | Host model CLI (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`, chosen by `judge.host_client`, or an operator's `ADR_KIT_LLM_CMD`) | Subprocess only — LLM judge, suggest, substance and guardian passes, never on the hot path; ADR-036 retired the HTTP backends and `bin/adr_llm.py` cannot open a socket |
 | MCP Server | CLI Toolkit (`adr-context`, `adr-judge`, `adr-status`, `adr-quality`, `adr-readiness`, `adr-lint`, `adr-related`) | Subprocess, one call per tool invocation, `PYTHONIOENCODING=utf-8` forced on the child |
 | MCP Server | Agent host (Claude Code, Codex, Copilot, OpenCode) | Long-lived stdio JSON-RPC — certified hosts launch the process via `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json`; OpenCode synthesizes the local entry through `opencode/plugin.ts` |
-| Hook Runtime | CLI Toolkit (`adr-context`, `adr-judge`, retrieval helpers) | Subprocess and, for `hooks/adr_hook_core.py`, a direct Python import of `query_adr_context` (the one documented exception to "surfaces only subprocess") |
+| Hook Runtime | CLI Toolkit (`adr-context`, `adr-judge`, retrieval helpers) | Subprocess (the `pr-create` guard) and, for `hooks/adr_hook_core.py`, direct Python imports: `query_adr_context`, `bin/adr_index_core.py` for the index refresh (ADR-021), and `bin/adr_llm.py` to record the host client and `llm.asked_at` in `docs/adr/.adr-kit.local.json` (ADR-049, Accepted 2026-10-11) |
 | Hook Runtime | Agent host | Native lifecycle event dispatch (host calls the hook command synchronously and reads stdout/exit code) |
 | Native OpenCode Plugin | OpenCode host runtime, Bun, Hook Runtime, MCP Server | Host plugin callbacks plus bounded child subprocesses; no independent ADR semantics |
 | Hook Runtime | `.adr-kit-readiness.json` | File read — written by `adr-guardian refresh-readiness`, read by the hook runtime for pull-request-moment context |
-| Pre-commit Gate | CLI Toolkit (`adr-judge`, `adr-suggest`), installed client plugin caches (to resolve the latest `adr-judge`) | Subprocess; git invokes the wrapper synchronously at `pre-commit` time |
+| Pre-commit Gate | CLI Toolkit (`adr-judge`, `adr-suggest`), resolved from ADR-044's candidate roots: `ADR_KIT_ROOT`, the Claude Code and Codex plugin caches, the installer's prepared marketplace payloads, OpenCode's npm package locations, Copilot's installed plugins, and the checkout itself, ranked by manifest version (ADR-008); when none resolves it still exits 0 | Subprocess; git invokes the wrapper synchronously at `pre-commit` time |
 | Instruction & Skill Corpus | none (declarative content) | — (consumed, not calling out) |
 | Client Generation & Release Toolchain | CLI Toolkit, Hook Runtime, Instruction & Skill Corpus, `clients/*.json`, `hooks/manifest.json`, `packaging/*.json` | File read (verbatim copy for `COPY_ROOTS`/`HOOK_RUNTIME_FILES`/`RUNTIME_SUPPORT_FILES`; per-workflow rendering for skills/prompts via `render_skill`/`render_prompt`) |
 | Client Generation & Release Toolchain | `git` CLI, GitHub Actions runners | Subprocess / CI job |
@@ -333,7 +342,7 @@ not enter the three-client certification bundle.
 | Native OpenCode Plugin | `opencode.json` / `package.json` | `package.json` `/version` plus the shared release registry | `tests/test_opencode_package.py`, focused Bun smoke, and `scripts/check-release-version.py`; not part of generated mirror drift or three-client certification |
 | Pre-commit Gate | None — not marketplace-declared; installed into a *consuming* project's own `.githooks/` by `/adr-kit:install-hooks`, outside any plugin manifest | `templates/githooks/pre-commit` (`ADR_KIT_WRAPPER_VERSION` stamp), `.githooks/pre-commit` (this repository's own dogfooded copy of the same stamp), `templates/cc-settings/guardian-hook-entry.json` (`/_wrapper_version`) | `scripts/build-client-adapters.py --check`, because `templates/` is one of the four verbatim `COPY_ROOTS` |
 | Instruction & Skill Corpus | `.claude-plugin/plugin.json` (skills are plugin content, not separately manifested) | `templates/adr-kit-guide.md` (`<!-- adr-kit-guide vX.Y.Z -->` stamp); `skills/`/`prompts/` themselves carry no per-file stamp — they are regenerated wholesale each release | `scripts/build-client-adapters.py --check`, which also asserts every canonical-rich skill exists before rendering the generated ones (`client_generation.py`: `"missing canonical rich skill: {workflow['id']}"`) |
-| Client Generation & Release Toolchain | Not itself plugin-declared | None directly — it is the thing that enforces the other sites via `packaging/version-sites.json` | `tests/test_version_sites.py` keeps the registry itself honest; **partially distributed**: `packaging/public-artifacts.json` names 14 specific `scripts/*.py` files in its public-archive `include_roots` (`build-client-adapters.py`, `client_generation*.py`, `client_certification.py`, `client_evidence.py`, `install-agent-envs.py`, `project_setup.py`, `settings.py`, `setup-project.py`, `sync-agent-plugins.py`, `benchmark-client-generation.py`, `adr_settings.py`) — these are live probes other containers call (e.g. `clients/capabilities.json` points `disable` at `scripts/settings.py` and `install`/`update`/`rollback`/`remove` at `scripts/install-agent-envs.py`). The release-cutting scripts (`release.py` and its `release_*.py` modules, `bump-version.py`, `check-release-version.py`, `check-branch-sync.py`) are **not** in that allowlist — maintainer/CI-only, present in the git-source checkout but never resolved as part of any client's plugin source |
+| Client Generation & Release Toolchain | Not itself plugin-declared | None directly — it is the thing that enforces the other sites via `packaging/version-sites.json` | `tests/test_version_sites.py` keeps the registry itself honest; **partially distributed**: `packaging/public-artifacts.json` names 15 specific `scripts/*.py` files in its public-archive `include_roots` (`build-client-adapters.py`, `client_generation*.py`, `client_certification.py`, `client_support_matrix.py`, `client_evidence.py`, `install-agent-envs.py`, `project_setup.py`, `settings.py`, `setup-project.py`, `sync-agent-plugins.py`, `benchmark-client-generation.py`, `adr_settings.py`) — these are live probes other containers call (e.g. `clients/capabilities.json` points `disable` at `scripts/settings.py` and `install`/`update`/`rollback`/`remove` at `scripts/install-agent-envs.py`). `setup-project.py`, `project_setup.py` and `adr_settings.py` additionally travel inside `codex/scripts/` and `copilot/scripts/` as `RUNTIME_SUPPORT_FILES` (`scripts/client_generation_model.py:71`), because the setup workflow runs `<plugin-root>/scripts/setup-project.py` from each installed tree. The release-cutting scripts (`release.py` and its `release_*.py` modules, `bump-version.py`, `check-release-version.py`, `check-branch-sync.py`) are **not** in that allowlist — maintainer/CI-only, present in the git-source checkout but never resolved as part of any client's plugin source |
 | Generated Client Mirrors | `.agents/plugins/marketplace.json` + `codex/.codex-plugin/plugin.json` (Codex); `.github/plugin/marketplace.json` + `copilot/plugin.json` (Copilot) | `codex/.codex-plugin/plugin.json` `/version`, `copilot/plugin.json` `/version`, `.github/plugin/marketplace.json` `/plugins/0/version`. `.claude-plugin/marketplace.json` `/plugins/0/version` also applies (Claude Code reads the repo root directly, not a mirror). `.agents/plugins/marketplace.json` is declared to **carry no version** (`must_not_carry_version` in the registry) because it points at the local `./codex` source and inherits the version from the Codex plugin manifest | `scripts/build-client-adapters.py --check` — the entire purpose of this gate; `scripts/check-release-version.py` additionally fails a release on any of the version sites above disagreeing with the git tag |
 
 Both consumption paths named in `docs/RELEASING.md` apply across every
@@ -408,8 +417,8 @@ flowchart TB
     BUILD -.->|"--check: drift gate"| COPM
 
     REL -->|writes declared version sites<br/>packaging/version-sites.json| SRC
-    REL -->|writes 2 mirrored manifests| CODEXM
-    REL -->|writes 2 mirrored manifests| COPM
+    REL -->|writes its plugin manifest version| CODEXM
+    REL -->|writes its plugin manifest version| COPM
     REL -->|"release PR merged to main"| GHA
     GHA -.->|"creates the vX.Y.Z tag on the merged commit,<br/>GitHub Release, staged npm package"| SRC
 
@@ -419,7 +428,7 @@ flowchart TB
     OPENCODE -->|"plugin source ./<br/>opencode.json + package.json"| OC
 
     PC -.->|subprocess, git commit time| CLI
-    HOOK -.->|subprocess + 1 import| CLI
+    HOOK -.->|subprocess + in-process imports| CLI
     MCP -.->|subprocess, 1 call per tool| CLI
 ```
 

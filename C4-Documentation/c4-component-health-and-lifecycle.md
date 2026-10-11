@@ -18,8 +18,8 @@
   `importlib.machinery.SourceFileLoader` / `spec_from_file_location`, and every production
   consumer reaches them as a **subprocess**. The 9 `.py` siblings are ordinary flat modules
   importable once `bin/` is on `sys.path`.
-- **Size**: 19 files, 8,145 lines (re-measured with `wc -l` at v0.59.1). Largest single file:
-  `bin/adr` (1,679 lines), then `bin/adr-guardian` (1,263).
+- **Size**: 19 files, 8,329 lines (re-measured with `wc -l` at commit 17f2ac7 plus TASK-234; the manifest still
+  reads 0.59.1). Largest single file: `bin/adr` (1,679 lines), then `bin/adr-guardian` (1,272).
 
 ---
 
@@ -114,15 +114,18 @@ not reach a model.
 
 ### Staleness detection and the health ledger
 
-- **Two-tier due-date cadence** — `_compute_due_tiers` (`bin/adr-guardian:499`) computes
+- **Two-tier due-date cadence** — `_compute_due_tiers` (`bin/adr-guardian:501`) computes
   `(cheap_due, llm_due)` from independent per-tier clocks against `drift_stale_days` (default 1)
-  and `llm_stale_days` (default 14). Never having run counts as due.
+  and `llm_stale_days` (default 14). Never having run counts as due. When `guardian.llm_enabled`
+  (default true, [Unreleased], ADR-049, Accepted 2026-10-11) is false it returns `(cheap_due, False)`,
+  so the LLM tier is never due; `check` reads that switch with this machine's
+  `.adr-kit.local.json` override applied (`adr_config.apply_machine_overrides`).
 - **Non-blocking SessionStart nudge** — `adr-guardian check` prints either nothing or exactly one
   JSON line carrying an `[adr-guardian]` `additionalContext` block. It is read-only on ADRs,
   spawns nothing, runs no model, and always exits 0. Two in-process steps go beyond counting
-  files: `_stale_index_lines` (`bin/adr-guardian:460`) asks `adr_index_core` whether the three
+  files: `_stale_index_lines` (`bin/adr-guardian:462`) asks `adr_index_core` whether the three
   generated index artefacts still match the ADRs and adds a STALE line if not, and
-  `_refresh_queue_if_stale` (`:415`) rebuilds the Proposed work queue cache through
+  `_refresh_queue_if_stale` (`:417`) rebuilds the Proposed work queue cache through
   `adr_readiness.build_readiness_report` when the cache is missing or past its `expires_at` — so
   the queue that feeds the grill nudge and ADR-041's automatic handoff exists on a fresh clone
   without waiting for a sweep. Both fail silent. A cwd-guard silences `check` entirely when no
@@ -137,7 +140,7 @@ not reach a model.
 - **Sweep handoff channel** — `stamp --retire-seen '<json array>'` records which retirement
   candidates the in-session sweep already reported; the `/adr-kit:guardian` skill reads it back
   through `adr-guardian state` to suppress repeat nudges. The detector itself never reads it.
-- **Copied-artifact staleness** — `_artifact_report` (`bin/adr-guardian:379`) compares the
+- **Copied-artifact staleness** — `_artifact_report` (`bin/adr-guardian:381`) compares the
   `ADR_KIT_WRAPPER_VERSION="X.Y.Z"` stamp in `.githooks/pre-commit` and `.git/hooks/pre-commit`,
   and the `_wrapper_version` on the guardian entry inside `.claude/settings.json`, against the
   installed plugin version. A stale artefact is itself a due item, so it surfaces even when both
@@ -217,7 +220,7 @@ not reach a model.
   or holds an adr-kit placeholder, but "TBD", "see above" or three sentences of generic prose read
   as written to all of them. For each Proposed ADR with written, non-placeholder required
   sections it makes **one isolated call** to the host model, resolved through
-  `adr_llm.resolve_llm_backend` (`bin/adr-substance:254`) — the same host-only registry the judge
+  `adr_llm.resolve_llm_backend` (`bin/adr-substance:269`) — the same host-only registry the judge
   uses (ADR-036) — with `judge.llm_timeout_seconds` per call. The model must quote the vacuous
   text; a quote not found in the section is dropped, so every finding points at the author's own
   words.
@@ -225,19 +228,28 @@ not reach a model.
   tier and adds its `--estimate` line (call count, nothing spent) to the tier's cost prompt.
   It is deliberately kept out of `adr-readiness` (byte-stable, key-free report), out of the MCP
   server, and out of `adr-lint`.
-- **Advisory and fail-open.** No recorded backend, a missing CLI or an unusable answer marks the
-  run `degraded` and lists the unanswered ADRs; the exit code stays 0.
+- **Advisory and fail-open.** No recorded backend, `ADR_KIT_NO_LLM=1`, a missing CLI or an
+  unusable answer marks the run `degraded` and lists the unanswered ADRs; the exit code stays 0.
+  With `guardian.llm_enabled` false (project or machine-local, [Unreleased]) it calls no model,
+  prints `skipped: guardian.llm_enabled is false` (the same message in the JSON `degraded` field)
+  and exits 0 (`bin/adr-substance:255-266`); `--estimate` runs before that check and still counts.
 
 ### Settings
 
 - **`bin/adr-settings` is the one place to read and change every knob** behind
   `/adr-kit:settings`. Each row carries its provenance — project setting, machine-local setting,
   environment override (`ADR_KIT_NO_LLM`, `ADR_KIT_LLM_CMD`) or code default. Writes are routed
-  by key: `lifecycle.signer` and `judge.host_client` (`LOCAL_KEYS`) go to the gitignored
+  by key: `llm.confirmed`, `lifecycle.signer` and `judge.host_client` (`LOCAL_KEYS`; the
+  `host_client` enum now includes `opencode-cli`) go to the gitignored
   `docs/adr/.adr-kit.local.json`, everything else to the tracked `.adr-kit.json`, through a
   temp-file + `fsync` + `os.replace` write, after validation against
-  `schemas/adr-kit-config.schema.json`. The default view lists the `FEATURED` keys, which include
-  `grill.auto_start` (ADR-041's project-wide opt-out, 0.54.0) and the guardian cadence knobs.
+  `schemas/adr-kit-config.schema.json`. `--local` ([Unreleased], ADR-049, Accepted 2026-10-11) sends
+  one of the four `adr_config.MACHINE_OVERRIDABLE` switches (`judge.llm_enabled`,
+  `suggest.enabled`, `guardian.llm_enabled`, `guardian.llm_autorun`) to the local file for this
+  machine only and refuses any other team key (`_target_name`); a local value shows as
+  `machine-local` and wins. The default view lists the `FEATURED` keys, which include
+  `grill.auto_start` (ADR-041's project-wide opt-out, 0.54.0), the guardian cadence knobs and,
+  since this change, `suggest.enabled`, `guardian.llm_enabled` and `guardian.llm_autorun`.
   Not to be confused with `scripts/adr_settings.py`, the separate settings resolver the doctor
   imports.
 - **Shell-quoting and injection hardening** — the grill-signal `normalize_path` scrubs control
@@ -257,7 +269,7 @@ not reach a model.
   consistency gate), `retrieval_probe_config` and `retrieval_probe` (a configured probe errored or
   failed), and `selective_context_metadata` at `FAIL` level. It escalates to a full
   `bin/adr-discover --root <repo_root>` subprocess (the deterministic missing-ADR candidate
-  scanner; `adr_doctor_core.py:216`, still called through a function named `run_audit`) when a
+  scanner; `adr_doctor_core.py:216`, `run_discover`, `:186`; its result still lands in the report's `audit` key) when a
   finding's type is in `MATERIAL_DRIFT_TYPES = {"accepted_evidence_changed", "missing_gate"}`. **The resulting exit code reports findings, not repair success**
   (`bin/adr_doctor_core.py:304`: `1 if index_code != 0 or lint_code != 0 or findings else 0`) — a
   bare `adr-doctor` run first regenerates the index (so `index_code` returns to 0) and can still
@@ -276,11 +288,11 @@ not reach a model.
   `codex/codex/.mcp.json`, a distinction whose absence used to make the doctor report six failures
   against paths that were never meant to exist. The owning client's checks run for real; the other
   two report `unsupported`, not `failed` — not broken, simply not installed there. `run_client_checks`
-  (`bin/adr_doctor_checks.py:314`) consumes both through every `check_mcp_launcher`/
+  (`bin/adr_doctor_checks.py:320`) consumes both through every `check_mcp_launcher`/
   `check_hook_package` call. The generated-adapters check is the sharpest edge: because the doctor's
   default mode repairs, and a mirror carries no canonical inputs to diff, `_generated_check`
-  (`bin/adr_doctor_checks.py:223`) returns `unsupported` **before** importing the generator at all —
-  `client_generation` is imported lazily (`:239`), only once a canonical root is confirmed,
+  (`bin/adr_doctor_checks.py:229`) returns `unsupported` **before** importing the generator at all —
+  `client_generation` is imported lazily (`:245`), only once a canonical root is confirmed,
   specifically so a repair-mode run in `codex/` or `copilot/` can never write into the tree it is
   inspecting.
 - **Fast local client tier** — `adr_doctor_checks.run_client_checks` emits, in order:
@@ -291,7 +303,7 @@ not reach a model.
   `hooks/adr-hook.py` (plus `hooks/run-hook.cmd` outside Copilot) and nothing else.
 - **Enumerated safe repairs** — default mode regenerates the index and, **only in an installed
   payload**, the client adapters. Since 0.59.0 a payload root that is a git checkout
-  (`(plugin_root / ".git").exists()`, `bin/adr_doctor_checks.py:257`) gets adapter drift reported
+  (`(plugin_root / ".git").exists()`, `bin/adr_doctor_checks.py:263`) gets adapter drift reported
   as `stale` with the `scripts/build-client-adapters.py` command instead of a rewrite — repair
   mode used to rewrite this repository's own `codex/` and `copilot/` from every test that ran the
   doctor without `--check`. `--fix` additionally authorises backed-up managed-guidance rewrites
@@ -299,20 +311,27 @@ not reach a model.
   every mutation suppressed.
 - **Bounded deep probes** — `--deep` adds a 10 s native `<cli> plugin list` (through
   `clients.installer.bounded.run_bounded`, stdin closed), a 15 s four-message stdio MCP handshake
-  against `bin/adr-mcp` that must see exactly the seven-tool set (0.53.0), and a 5-sample
+  per client (`mcp-live`, `_registered_mcp_live`, `bin/adr_doctor_probes.py:206`) that starts the
+  server with the argv that client registered in its `.mcp.json`, as `mcp-launcher` resolved it,
+  and must see exactly the seven-tool set (0.53.0), and a 5-sample
   hook-latency harness via `hooks.hook_benchmark.measure`. The local model probe and its
   `.adr-kit/model-health.json` cache left the doctor with ADR-036's removal of the non-host judge
   backends; the doctor no longer judges model health at all. Every probe failure becomes a check,
-  never an exception. The `hook-latency-extension` check (`bin/adr_doctor_probes.py:199`) reports
+  never an exception. The `hook-latency-extension` check (`bin/adr_doctor_probes.py:286`) reports
   `healthy` when `all_targets_met`, else `degraded`, `required: false`, and `unsupported` when the
-  reference corpus is absent (`:166`) — which is every installed payload, since `tests/` is not
+  reference corpus is absent (`:251`) — which is every installed payload, since `tests/` is not
   shipped. Its budgets are ADR-030's, calibrated to the Python host that ships (below). Re-run live
   on this checkout after the recalibration: `adr-doctor --check --deep` reported
   `hook-latency-extension: healthy` with every event's p50/p95/hard-timeout target met — and the
   run's `overall_status` was still `failed`, from an unrelated `native-registration claude:
   trust-pending` (this machine's Claude CLI plugin needing a trust prompt). That is the signal
   ADR-030 restores: a specific, actionable finding about one client, not a permanent red that
-  taught nobody to look.
+  taught nobody to look. That run is historical: the probe then matched the words "trust" or
+  "review" in the `plugin list` output. Since the 2026-10-11 fix round (TASK-229) only Codex can
+  report `trust-pending`, read from `$CODEX_HOME/config.toml` (default `~/.codex`): the
+  `native-registration codex` check is `trust-pending` when no ADR Kit
+  `hooks.state."adr-kit@…:hooks/hooks.json:<event>:…"` table carries a `trusted_hash`
+  (`_codex_trusted_hooks`, `bin/adr_doctor_probes.py:48`).
 - **Versioned report and single exit code** — `adr_doctor_models.check()` is the sole producer of
   the ten-key check object. Each check carries two independent axes: a `status` on an eight-value
   ladder (`STATUS_ORDER`, `bin/adr_doctor_models.py:10`, worst-to-best) — `failed` > `stale` >
@@ -323,7 +342,7 @@ not reach a model.
   `exit_code = 1 if adr_exit_code or any required check is failed|stale`. `FAILURE_STATUSES =
   {failed, stale}` is deliberately a two-value set: `trust-pending` and `degraded` can turn
   `overall_status` red without ever failing the exit code, which is what lets ADR-032's
-  `unsupported` sit two rungs *below* `failed` on the same ladder rather than needing a separate
+  `unsupported` sit six rungs *below* `failed`, one above `healthy`, on the same ladder rather than needing a separate
   vocabulary — "not applicable here" and "broken" are different points on one ordering, not
   different types.
 
@@ -333,7 +352,7 @@ not reach a model.
 
 The code-level documents were retired under TASK-149; their names are kept below as cluster
 labels, not links. Every count and anchor in this document was re-measured against source at
-v0.59.1.
+commit 17f2ac7 (manifest version 0.59.1).
 
 | Cluster | Role in this component |
 |---|---|
@@ -341,8 +360,8 @@ v0.59.1.
 | `c4-code-bin-lib-doctor.md` | The whole of `adr-doctor`'s logic in four flat modules: `adr_doctor_core` (ADR-set health, index/lint/staleness/retrieval, escalation to `adr-discover`), `adr_doctor_checks` (fast local client tier + enumerated safe repairs), `adr_doctor_probes` (bounded deep tier: native CLI, MCP handshake, hook latency), `adr_doctor_models` (the versioned JSON contract, `check()`/`build_report()`/`render_human()` and the exit-code rule). |
 | `c4-code-bin-cli-readiness.md` | The three thin readiness entry points: `bin/adr-readiness` (human/JSON/GitHub renderer and the component's de-facto internal RPC), `bin/adr-readiness-ci` (the CI merge gate — the only exit-1-on-findings path here), `bin/adr-grill-signal` (index-only fail-open hook advisories). 453 lines total; all classification lives in the libraries. |
 | `c4-code-bin-lib-readiness-grill.md` | The deterministic engine behind readiness and grilling: `adr_readiness` (seven-class model + implementation-link evidence + placeholder findings), `adr_readiness_ci` (GitHub Step Summary, annotations, step outputs, escaping), `adr_grill_signal` (bounded index-only advisories), `adr_guardian_queue` (ranked Proposed queue + 24 h TTL cache), `adr_retrieval_health` (probe validation + selective-metadata findings, the pass/fail/degraded trichotomy). |
-| [`bin/adr-substance`](../bin/adr-substance) | The guardian's LLM-tier section-substance check (310 lines). No code-level document ever covered it; placed here by `c4-component.md`'s census because the guardian skill is its only caller. |
-| [`bin/adr-settings`](../bin/adr-settings) | The settings screen behind `/adr-kit:settings` (400 lines). Likewise placed here by the census. |
+| [`bin/adr-substance`](../bin/adr-substance) | The guardian's LLM-tier section-substance check (325 lines). No code-level document ever covered it; placed here by `c4-component.md`'s census because the guardian skill is its only caller. |
+| [`bin/adr-settings`](../bin/adr-settings) | The settings screen behind `/adr-kit:settings` (451 lines). Likewise placed here by the census. |
 
 ---
 
@@ -374,13 +393,13 @@ v0.59.1.
 
 - **Protocol**: CLI, plus a **host lifecycle-hook stdout contract**. Wired into a project through
   a `SessionStart` entry in `.claude/settings.json`, installed from
-  `templates/cc-settings/guardian-hook-entry.json` — a shell one-liner that picks the newest
-  `~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/` directory with
-  `ls -d … | sort -V | tail -1`, probes `command -v python3 || python || py`, runs `check`, and
-  swallows everything with `|| true` (timeout 10 s). If that pipeline yields nothing, the
-  `[ -n "$ADR_KIT" ]` guard fails and the guardian silently does not run. GNU `sort -V` is the
-  portability defect 0.59.1 removed from `templates/githooks/pre-commit` only; this entry still
-  uses it, tracked as open bug TASK-220.
+  `templates/cc-settings/guardian-hook-entry.json` — a shell one-liner that probes
+  `command -v python3 || python || py`, picks the newest
+  `~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/` directory by piping `ls -d …` into that
+  interpreter (a numeric-key `max`, not GNU `sort -V`; TASK-220, Done), runs `check`, and
+  swallows everything with `|| true` (timeout 10 s). If either step yields nothing, its
+  `[ -n … ]` guard fails and the guardian silently does not run. `/adr-kit:install-hooks` now
+  installs this file rather than an inline copy.
 - **Description**: Read-only staleness detection and the write side of the sweep ledger.
 - **Operations**: `check`, `stamp <cheap|llm> [--violations N] [--retire N] [--retire-seen JSON]
   [--lint STR] [--suggest N] [--audit N] [--coverage PCT] [--state-dir DIR]`, `state`,
@@ -390,7 +409,7 @@ v0.59.1.
   `{"suppressOutput":true,"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"[adr-guardian] …"}}`;
   otherwise the flat `{"suppressOutput":true,"additionalContext":"…"}`.
 - **Exit codes**: **always 0** for every subcommand (a blanket `except Exception: return 0` at
-  `bin/adr-guardian:1254-1257`); 2 only when no subcommand is given.
+  `bin/adr-guardian:1263-1266`); 2 only when no subcommand is given.
 
 ### 3. `bin/adr-status` — dashboard CLI and JSON contract
 
@@ -466,7 +485,7 @@ v0.59.1.
 
 ### 8. `bin/adr-grill-signal` — git-hook stdout line contract
 
-- **Protocol**: CLI, invoked from `templates/githooks/pre-commit:317-322`, which pipes its output
+- **Protocol**: CLI, invoked from `templates/githooks/pre-commit:345-350`, which pipes its output
   through `grep -aE "^\[adr-grill\] (STRONG|ADVISORY) "` to stderr and discards the exit status
   with `|| true`.
 - **Operations**: `adr-grill-signal [--repo-root PATH] [--index PATH] [--staged]
@@ -492,21 +511,28 @@ v0.59.1.
 ### 10. MCP *client* interface (doctor deep probe)
 
 - **Protocol**: JSON-RPC 2.0 over stdio, this component acting as the **client**.
-- **Description**: `adr_doctor_probes._mcp_deep` spawns `python bin/adr-mcp` and drives a
-  four-message session with a 15 s timeout: `initialize` (protocolVersion `2025-06-18`, clientInfo
+- **Description**: `adr_doctor_probes._mcp_deep(root, argv, *, client, required)`
+  (`bin/adr_doctor_probes.py:116`) starts the server with the argv each client registered in its
+  `.mcp.json` (as `check_mcp_launcher` resolved it; `resolve_launcher_target` now returns
+  `(resolved, targets, argv)`), once per client, and drives a four-message session with a 15 s
+  timeout: `initialize` (protocolVersion `2025-06-18`, clientInfo
   `adr-doctor/1`), `notifications/initialized`, `tools/list`, `tools/call adr_status`.
 - **Contract**: `healthy` requires exit 0, a non-error tool result, and a tool set **exactly equal**
   to `{adr_context, adr_judge, adr_status, adr_quality, adr_readiness, adr_lint, adr_related}` —
   set equality, not containment, so the probe fails on a missing *or* an unexpected tool. The
-  installer smoke test checks the same seven-tool set (0.53.0).
+  installer smoke test checks the same seven-tool set (0.53.0). A client whose launcher did not
+  resolve gets an `mcp-live` `failed` naming the registered command instead of a probe; each
+  `mcp-live` inherits that client's `mcp-launcher` `required` flag. Before the 2026-10-11 fix
+  round (TASK-232) the probe started `bin/adr-mcp` with the doctor's own interpreter, so it could
+  pass for a server the client itself could not start.
 
 ### 11. JSON file contracts on disk
 
 | File | Producer | Consumers | Shape / bounds |
 |---|---|---|---|
 | `docs/adr/.adr-kit-state.json` (+ `.lock` sibling; gitignored, per-machine) | `adr-guardian stamp`, `check` (only `last_nudged`) | `adr-guardian check`/`state`, the `/adr-kit:guardian` skill | `{cheap_tier{last_run,drift_violations,retire_candidates,lint}, llm_tier{last_run,suggest_hits,audit_findings}, retire_seen[], last_nudged, trend[≤52]}` |
-| `docs/adr/.adr-kit-readiness.json` (gitignored) | `adr-guardian refresh-readiness`, and `adr-guardian check` when the cache is missing or expired → `adr_guardian_queue.write_queue_cache` | `hooks/adr_hook_core.py:238` (`_load_queue_payload`, feeding the SessionStart queue context and ADR-041's `AUTO_GRILL_PENDING` handoff), `adr-guardian check`'s own expiry test, `adr_guardian_queue.load_queue_actions` (tests only) | `schema_version 1`, ≤3 actions, 24 h TTL, ≤256 KiB, `"authoritative": false`, commands matched against `^/adr-kit:grill ADR-\d{3,4}$` |
-| `docs/adr/.adr-kit.local.json` (gitignored, per-machine) | `adr-settings --set` for `LOCAL_KEYS` (`lifecycle.signer`, `judge.host_client`), `bin/adr signer --set` | `bin/adr`'s signer resolution, `adr-substance` through `adr_llm`, `adr-settings` | Nested JSON in the same layout as `.adr-kit.json`; ADR-025 keeps machine facts out of the tracked file. |
+| `docs/adr/.adr-kit-readiness.json` (gitignored) | `adr-guardian refresh-readiness`, and `adr-guardian check` when the cache is missing or expired → `adr_guardian_queue.write_queue_cache` | `hooks/adr_hook_core.py:262` (`_load_queue_payload`, feeding the SessionStart queue context and ADR-041's `AUTO_GRILL_PENDING` handoff), `adr-guardian check`'s own expiry test, `adr_guardian_queue.load_queue_actions` (tests only) | `schema_version 1`, ≤3 actions, 24 h TTL, ≤256 KiB, `"authoritative": false`, commands matched against `^/adr-kit:grill ADR-\d{3,4}$` |
+| `docs/adr/.adr-kit.local.json` (gitignored, per-machine) | `adr-settings --set` for `LOCAL_KEYS` (`llm.confirmed`, `lifecycle.signer`, `judge.host_client`) and, with `--local`, the four LLM switches; `bin/adr signer --set`; outside this component `adr-judge` and, since ADR-049 (Accepted 2026-10-11), the hook runtime's first-session onboarding through `adr_llm` (`judge.host_client`, `llm.asked_at`) | `bin/adr`'s signer resolution, `adr-substance` (host client plus the machine overrides), `adr-guardian check` (machine overrides), `adr-settings`; outside it the judge, `adr-suggest` and the hook runtime | Nested JSON in the same layout as `.adr-kit.json`; ADR-025 keeps machine facts out of the tracked file. Only the four `MACHINE_OVERRIDABLE` booleans may override a team value. |
 | `docs/adr/adr-context-probes.json` | hand-authored per project | `adr_retrieval_health.load_probes` | [`schemas/adr-context-probes.schema.json`](../schemas/adr-context-probes.schema.json), `schema_version` const 1, ≤100 probes, ≤20 expectations each |
 
 ### 12. Configuration contract — `docs/adr/.adr-kit.json`
@@ -515,7 +541,8 @@ Validated against [`schemas/adr-kit-config.schema.json`](../schemas/adr-kit-conf
 Blocks this component reads:
 
 - `guardian`: `enabled` (true), `drift_stale_days` (1), `llm_stale_days` (14),
-  `nudge_cooldown_hours` (24), `llm_autorun` (false)
+  `nudge_cooldown_hours` (24), `llm_autorun` (false), `llm_enabled` (true; new, read by
+  `adr-guardian check` and `adr-substance`)
 - `retirement`: `threshold_days` (90), `check_supersession`, `check_tech_removal`,
   `check_policy_mismatch`
 - `lifecycle.auto_accept`: `mode` (`assist`), `quality_threshold` (0.70)
@@ -528,7 +555,9 @@ Blocks this component reads:
   there but read by the hook runtime, not by this component
 
 `bin/adr-guardian` reads it through the **fail-open** `adr_config.load_json_config` (returns `{}`
-on any problem), not the fail-closed `load_validated_config` the pre-commit judge uses.
+on any problem), not the fail-closed `load_validated_config` the pre-commit judge uses, and then
+lays the `.adr-kit.local.json` LLM switches over it with `adr_config.apply_machine_overrides`
+(`bin/adr-guardian:779`); `adr-substance` does the same (`bin/adr-substance:255`).
 
 ### 13. Importable Python surface
 
@@ -545,7 +574,7 @@ require `<root>` and `<root>/scripts` on the path because they import from `scri
   Namespace**, not keyword arguments
 - `adr_doctor_checks.{run_client_checks, check_mcp_launcher, check_hook_package, resolve_launcher_target}`
 - `adr_doctor_probes.run_deep_extensions` (plus `_mcp_deep` and `_native_deep`, imported by
-  `tests/test_client_doctor.py:26` despite the underscore)
+  `tests/test_client_doctor.py:27` despite the underscore)
 - `adr_doctor_models.{check, benchmark_extension, build_report, render_human, generated_tree_owner, client_root}`
 
 The 10 extensionless entry points expose `main()` (and `build_parser()` in `bin/adr-readiness`)
@@ -562,19 +591,22 @@ in form only. Tests reach `extract_status`, `compute_summary`, `find_retirement_
   count and spends nothing.
 - **JSON shape**: `{checked[], findings[{adr, heading, quote, reason}], unanswered[], degraded}`.
   No schema file.
-- **Exit codes**: 0 whenever it ran, including with findings or degraded for want of a backend;
-  2 on a configuration or input error. **Advisory only.**
+- **Exit codes**: 0 whenever it ran, including with findings, degraded for want of a backend, or
+  skipped because `guardian.llm_enabled` is false; 2 on a configuration or input error.
+  **Advisory only.**
 - **Caller**: the `/adr-kit:guardian` skill's LLM tier. Nothing in a commit path calls it.
 
 ### 15. `bin/adr-settings` — settings CLI
 
 - **Protocol**: CLI + optional JSON on stdout; writes `.adr-kit.json` or `.adr-kit.local.json`.
 - **Operations**: `adr-settings [--adr-dir DIR] [--format text|json] [--all] [--list]
-  [--set KEY=VALUE | --unset KEY]`.
+  [--set KEY=VALUE | --unset KEY] [--local]`. `--local` applies only to the four LLM switches.
 - **JSON shape**: `{adr_dir, settings[]}` for the view, `{result[]}` for a write.
-- **Exit codes**: 0 on success, 2 on an unknown key, invalid value, `--set`/`--unset` together, or
-  an unwritable config (`SettingsError`).
-- **Caller**: the `/adr-kit:settings` skill.
+- **Exit codes**: 0 on success, 2 on an unknown key, invalid value, `--set`/`--unset` together,
+  `--local` on a team key that is not an LLM switch, or an unwritable config (`SettingsError`).
+- **Caller**: the `/adr-kit:settings` skill; since ADR-049 (Accepted 2026-10-11) also the commands the
+  init/upgrade skills and the first-session question name (`--set <switch>=false --local`,
+  `--set llm.confirmed=<date> --local`).
 
 ---
 
@@ -588,19 +620,19 @@ in form only. Tests reach `extract_status`, `compute_summary`, `find_retirement_
 | Dependency | Mechanism | What is used |
 |---|---|---|
 | `bin-lib-semantic-core` (Semantic Core) | **Python import** | `adr_format` (`SUPPORTED_PROFILES`, `profile_catalog`, `profile_template_path`, `configured_profile`, `normalize_profile`, `unresolved_open_questions`, `section_text`); `adr_schema` (`migrate_text`, `parse_frontmatter`, `render_frontmatter`, `split_frontmatter`); `adr_catalog` (`adr_status`, `ENFORCEMENT_BLOCK_RE`, `ADR_FILENAME_RE`, `load_adr_records`, `build_relationships`, `normalize_adr_id`); `adr_query` (`load_index_graph`, `query_records`, `IndexQueryError`) via `adr_retrieval_health`. `bin/adr-status` imports `adr_catalog.adr_status` **specifically so the dashboard reports the same status `adr-judge` acts on**. |
-| `bin-lib-runtime` (Runtime Safety) | **Python import** | `adr_config.load_json_config` (fail-open config read) and `adr_state.{find_project_adr_dir, load_state, update_state}` (advisory-locked, fsync'd, atomically replaced state transactions). `adr-substance` additionally loads `adr_llm` (`enforcement-engine`), the host-only backend registry of ADR-036, so its model calls resolve exactly as the judge's do. |
+| `bin-lib-runtime` (Runtime Safety) | **Python import** | `adr_config.load_json_config` (fail-open config read), `adr_config.apply_machine_overrides` (the machine-local LLM switches, read by `adr-guardian check` and `adr-substance`; `adr-settings` reads `MACHINE_OVERRIDABLE` to route `--local`) and `adr_state.{find_project_adr_dir, load_state, update_state}` (advisory-locked, fsync'd, atomically replaced state transactions). `adr-substance` additionally loads `adr_llm` (`enforcement-engine`), the host-only backend registry of ADR-036, so its model calls resolve exactly as the judge's do. |
 | `bin-cli-gates` (Verification Gates) | **Subprocess** (`sys.executable`), plus one **direct Python import** | `bin/adr-lint --strict --gates schema,completeness,audit,evidence,clarity,consistency,policy` for acceptance (`bin/adr:724`) and `--strict` for the doctor's ADR tier; `bin/adr-quality --format json` for the `accept --auto` threshold, both under the 120 s lifecycle timeout. Separately, `adr_readiness.py` imports `adr_quality_core.{QUALITY_THRESHOLD, score_path}` directly to populate the `quality`/`below_threshold` fields of its own JSON report — the one place in this component that reaches a gates module in-process rather than through a subprocess. |
 | `bin-cli-retrieval` (Retrieval and Context) | **Subprocess**, plus one **in-process import** | `bin/adr-index` inside every lifecycle transaction (`run_index`, `bin/adr:478`) and in the doctor's default mode; the doctor's `adr-index --check` freshness gate. `adr-guardian check` loads `adr_index_core` in-process for its read-only stale-index nudge. `bin/adr-grill-signal` and `adr_retrieval_health` **read the artefact** this component produces: `docs/adr/ADR-INDEX.json`. |
 | `bin-cli-enforcement` (Enforcement Floor) | **Subprocess, orchestrated by the agent** | `bin/adr-judge` is the cheap-tier drift tool and, with `--llm`, the LLM-tier audit tool. This component never spawns it: the `/adr-kit:guardian` skill runs it and reports counts back through `adr-guardian stamp --violations N` / `--audit N`. |
-| `bin-cli-mcp` (MCP Server) | **Subprocess, bidirectional** | *Outbound*: `adr_doctor_probes._mcp_deep` spawns `bin/adr-mcp` as an MCP client. *Inbound*: `bin/adr-mcp` spawns `bin/adr-readiness` and `bin/adr-status` to serve two of its seven tools. Coupling is purely process-level in both directions. |
-| `hooks` (Hook Integration) | **Python import + JSON file on disk** | *Import*: `adr_doctor_probes` does `from hooks.hook_benchmark import measure` for the latency extension. *File*: `hooks/adr_hook_core.py:238` (`_load_queue_payload`) **independently re-implements a reader** for this component's `.adr-kit-readiness.json` queue cache, and turns its top action into the SessionStart queue context and ADR-041's automatic grill handoff. |
+| `bin-cli-mcp` (MCP Server) | **Subprocess, bidirectional** | *Outbound*: `adr_doctor_probes._mcp_deep` starts `bin/adr-mcp` through each client's registered launcher argv and talks to it as an MCP client. *Inbound*: `bin/adr-mcp` spawns `bin/adr-readiness` and `bin/adr-status` to serve two of its seven tools. Coupling is purely process-level in both directions. |
+| `hooks` (Hook Integration) | **Python import + JSON file on disk** | *Import*: `adr_doctor_probes` does `from hooks.hook_benchmark import measure` for the latency extension. *File*: `hooks/adr_hook_core.py:262` (`_load_queue_payload`) **independently re-implements a reader** for this component's `.adr-kit-readiness.json` queue cache, and turns its top action into the SessionStart queue context and ADR-041's automatic grill handoff. |
 | `agent-surface` (Agent Instruction Surface) | **Prose orchestration** | `skills/guardian/SKILL.md` is the in-session smart sweep: it reads `adr-guardian state`, runs the due tier's tools across four components, diffs fresh retire candidates against `retire_seen`, then calls `adr-guardian stamp` and `adr-guardian refresh-readiness`; in the LLM tier it also runs `adr-substance` after folding its `--estimate` line into the cost prompt. `skills/settings` drives `adr-settings`. `clients/workflows.json` (the grill workflow) instructs agents to run `bin/adr-readiness` before asking a question. |
-| `packaging-ci` (Packaging and Release) | **Python import — a layering inversion** | `bin/adr_doctor_checks.py` imports `scripts/adr_settings.py` (`resolve_settings`, `SettingsError`), `scripts/client_generation.py` (`generate`, `GenerationError`, imported lazily at `bin/adr_doctor_checks.py:239`) and `scripts/project_setup.py` (`validate_markers`, `collect_changes`, `apply_changes`, `SetupError`). `bin/` depending on `scripts/` is inverted layering, made possible only by `bin/adr-doctor:56-58` appending the repository root and `scripts/` to `sys.path` (and masking its own `bin/` entry during the import block). |
+| `packaging-ci` (Packaging and Release) | **Python import — a layering inversion** | `bin/adr_doctor_checks.py` imports `scripts/adr_settings.py` (`resolve_settings`, `SettingsError`), `scripts/client_generation.py` (`generate`, `GenerationError`, imported lazily at `bin/adr_doctor_checks.py:245`) and `scripts/project_setup.py` (`validate_markers`, `collect_changes`, `apply_changes`, `SetupError`). `bin/` depending on `scripts/` is inverted layering, made possible only by `bin/adr-doctor:56-58` appending the repository root and `scripts/` to `sys.path` (and masking its own `bin/` entry during the import block). |
 | `clients-installer` (Client Installation) | **Python import** | `clients/installer/detection.py` (`detect_clients`), `clients/installer/contracts.py` (`CLIENT_IDS = ("claude","codex","copilot")`) and `clients/installer/bounded.py` (`run_bounded`, the deep tier's `plugin list` runner). The doctor is the *measurement* surface for what the installer *builds*. |
 | `schemas-templates` (Contracts and Templates) | **Data files read at runtime** | `schemas/adr-readiness.schema.json`, `schemas/adr-context-probes.schema.json`, `schemas/adr-kit-config.schema.json`, `schemas/doctor-output.schema.json` (declared, unenforced); `templates/cc-settings/guardian-hook-entry.json` (the SessionStart wiring this component's `check` is installed by); `templates/githooks/pre-commit` (the wrapper whose `ADR_KIT_WRAPPER_VERSION` stamp `adr-guardian artifacts` reads); `templates/adr-template.{madr,nygard,canonical}.md` (instantiated by `adr new`). |
-| `generated-distributions` (Generated Client Payloads) | **Drift check** | All 19 files of this component exist as byte-identical generated mirrors under `codex/bin/` and `copilot/bin/` (all 19 verified with `cmp` at v0.59.1). The doctor's `generated-adapters` check verifies those copies — so the check is **self-referential**: the doctor confirms its own copies match itself, and any edit here requires re-running `scripts/build-client-adapters.py`. The compare ignores line-ending differences in text files (TASK-57). |
-| `tests` (Test and Certification Suite) | **Import + subprocess, inbound** | This is the component's *only* mechanical guard: `tests/test_cli_performance.py` enforces the ADR-015 latency budget for `adr-retire`, and `tests/test_adr_retrieval_health.py` is named in ADR-014's `verified_in`. See *Measurement honesty* 1. |
-| **`bin/adr-discover`** | **Subprocess** | `adr_doctor_core.run_audit` shells out to `bin/adr-discover --root <repo_root>` on material drift (`bin/adr_doctor_core.py:216`). `bin/adr-discover` (546 lines, the deterministic missing-ADR candidate scanner that used to be named `adr-audit`) is claimed by no component document; `c4-component.md` lists it in its census gap. The current `bin/adr-audit` is a different tool — the lint-plus-judge "are we still on course" run — and this component does not call it. |
+| `generated-distributions` (Generated Client Payloads) | **Drift check** | All 19 files of this component exist as byte-identical generated mirrors under `codex/bin/` and `copilot/bin/` (all 19 verified with `cmp` at commit 17f2ac7). The doctor's `generated-adapters` check verifies those copies — so the check is **self-referential**: the doctor confirms its own copies match itself, and any edit here requires re-running `scripts/build-client-adapters.py`. The compare ignores line-ending differences in text files (TASK-57). |
+| `tests` (Test and Certification Suite) | **Import + subprocess, inbound** | Apart from ADR-043's two declarative rules on `bin/adr-substance`, this is the component's *only* mechanical guard: `tests/test_cli_performance.py` enforces the ADR-015 latency budget for `adr-retire`, and `tests/test_adr_retrieval_health.py` is named in ADR-014's `verified_in`. See *Measurement honesty* 1. |
+| **`bin/adr-discover`** | **Subprocess** | `adr_doctor_core.run_discover` shells out to `bin/adr-discover --root <repo_root>` on material drift (`bin/adr_doctor_core.py:216`). `bin/adr-discover` (546 lines, the deterministic missing-ADR candidate scanner that used to be named `adr-audit`) is claimed by no component document; `c4-component.md` lists it in its census gap. The current `bin/adr-audit` is a different tool — the lint-plus-judge "are we still on course" run — and this component does not call it. |
 
 ### External systems
 
@@ -624,8 +656,9 @@ in form only. Tests reach `extract_status`, `compute_summary`, `find_retirement_
 - **`claude` / `codex` / `copilot` CLIs, two roles** — the doctor detects them and probes
   `plugin list` (10 s) under `--deep` only; all three are optional, and absence yields
   `unsupported`, not failure. Separately, `adr-substance` runs the recorded host client's
-  non-interactive entry point (`claude -p`, `codex exec` or `copilot -p`, from
-  `judge.host_client` or `ADR_KIT_LLM_CMD`/`--llm-cmd`) once per checked ADR. **No file in this
+  non-interactive entry point (`claude -p`, `codex exec`, `copilot -p` or, since ADR-049
+  (Accepted 2026-10-11), `opencode run --pure`, from `judge.host_client` or `ADR_KIT_LLM_CMD`/`--llm-cmd`)
+  once per checked ADR. The doctor still probes only the three certified CLIs. **No file in this
   component opens a network socket itself**; whatever network the host CLI uses is the host's.
 - **Agent host runtimes** (Claude Code CLI, Codex CLI, GitHub Copilot CLI) — consume
   `adr-guardian check`'s SessionStart envelope and the `[adr-grill]` stderr lines.
@@ -636,10 +669,12 @@ in form only. Tests reach `extract_status`, `compute_summary`, `find_retirement_
   component that asks a model anything, and only when the guardian skill's LLM tier runs it. The
   guardian's "LLM tier" is otherwise a *cadence label*: the detector says the tier is due, and the
   in-session model runs `adr-suggest`, `adr-judge --llm` and `adr-substance` itself. `bin/adr-guardian`,
-  the readiness engine, the doctor and the lifecycle writer invoke no model. `ADR_KIT_NO_LLM` is
-  read by the pre-commit template and the judge, and only *displayed* here by `adr-settings`;
-  `adr-substance` does not check it (verified: neither `bin/adr-substance` nor
-  `adr_llm.resolve_llm_backend` reads it), so turning the tier off is the guardian skill's call.
+  the readiness engine, the doctor and the lifecycle writer invoke no model. `ADR_KIT_NO_LLM=1`
+  reaches `adr-substance` through `adr_llm.resolve_llm_backend` (`bin/adr_llm.py:346`), which then
+  returns no backend, so the run is `degraded` and exits 0; `adr-settings` only *displays* it.
+  Turning the tier off durably is `guardian.llm_enabled: false` (project, or this machine with
+  `adr-settings --local`): `check` stops reporting the tier due and `adr-substance` skips, and the
+  guardian skill reads the effective value before its cost prompt.
 
 ---
 
@@ -650,10 +685,12 @@ Verified against the ADR sources and every Enforcement block in `docs/adr/`.
 | ADR | Status | How it governs | Mechanically enforced here? |
 |---|---|---|---|
 | **ADR-002** — ADR Guardian: SessionStart Staleness Detector with Two-Tier Cadence | Accepted 2026-05-31, `binding: false` | Names `bin/adr-guardian check` as the dumb SessionStart detector plus in-session smart sweep, and names `adr-retire`/`adr-lint`/`adr-status` as the cheap-tier tools (ADR-002:54, :64, :74). Defines `.adr-kit-state.json` as gitignored per-machine state with independent tier clocks. Its cadence is also what bounds `adr-substance`: semantic checks run in the LLM tier, never per commit. | No. Enforcement block present with empty rule arrays. |
-| **ADR-004** — Layered ADR Context Injection for Agent Work | Accepted | Its **session tier *is*** `bin/adr-guardian check` (ADR-004:67). Its three fail-open tiers / one fail-closed floor model is why every read path here exits 0 and why the floor lives in `bin/adr-judge` instead. The three enforcement-floor buckets `adr-status` reports are this ADR's model. Its "pin canonical fields" clause fixes the `entries[-1]` status reconciliation the readers use. | No. Enforcement block present with empty rule arrays. |
-| **ADR-010** — Certify Three Native CLI Clients Through One Outcome Contract | Accepted 2026-07-23, `binding: true`, gate `three-client-release` | Names `bin/adr-doctor` as the measurement surface (ADR-010:73, :413) and dictates the doctor almost clause by clause: fast tier uses local files and cached health only; both tiers may repair an enumerated set of safe ADR-Kit-owned state; `--check` is the same diagnosis without mutation; `--fix` adds backed-up managed rewrites; deep probes must be bounded; a missing/ambiguous/unreachable/rejected model must never read as successful judgment (the doctor now satisfies that clause by not judging model health at all). Requires that the per-event hook latency budgets the `hook-latency-extension` checks be honest numbers — ADR-030 is the ADR that made them so. | No — its `require_pattern`s glob `schemas/client-capabilities.schema.json`, not `bin/`. |
+| **ADR-004** — Layered ADR Context Injection for Agent Work | Accepted | Its **session tier *is*** `bin/adr-guardian check` (ADR-004:85). Its three fail-open tiers / one fail-closed floor model is why every read path here exits 0 and why the floor lives in `bin/adr-judge` instead. The three enforcement-floor buckets `adr-status` reports are this ADR's model. Its "pin canonical fields" clause fixes the `entries[-1]` status reconciliation the readers use. | No. Enforcement block present with empty rule arrays. |
+| **ADR-010** — Certify Three Native CLI Clients Through One Outcome Contract | Accepted 2026-07-23, `binding: true`, gate `three-client-release` | Names `bin/adr-doctor` as the measurement surface (ADR-010:79, :419) and dictates the doctor almost clause by clause: fast tier uses local files and cached health only; both tiers may repair an enumerated set of safe ADR-Kit-owned state; `--check` is the same diagnosis without mutation; `--fix` adds backed-up managed rewrites; deep probes must be bounded; a missing/ambiguous/unreachable/rejected model must never read as successful judgment (the doctor now satisfies that clause by not judging model health at all). Requires that the per-event hook latency budgets the `hook-latency-extension` checks be honest numbers — ADR-030 is the ADR that made them so. ADR-048 (Accepted 2026-10-11) amends it to per-OS certification records; its validator and support matrix are not implemented yet and touch no file here. | No — its `require_pattern`s glob `schemas/client-capabilities.schema.json`, not `bin/`. |
+| **ADR-043** — Forbid a pinned model or a default LLM command in every model-calling entry point | Accepted 2026-10-06, `binding: true` | Widened the two host-model-only rules of ADR-036 from the judge and `adr-suggest` to every model-calling entry point, explicitly to close the hole that left `bin/adr-substance` outside them. | **Yes — the only one.** Two `forbid_pattern` rules (`--model … claude`, `DEFAULT_LLM_CMD =`) whose glob `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}` matches `bin/adr-substance` and its mirrors. |
+| **ADR-049** — Record the judge host client at the first session and ask per LLM layer at upgrade | **Accepted** 2026-10-11 (proposed 2026-10-06), `binding: true`, gate `adr-llm-default-on-v1` | Its code is on the branch ([Unreleased]): the new `guardian.llm_enabled` switch that `_compute_due_tiers` and `adr-substance` honour, the machine-local override of the four LLM switches that `adr-guardian check` and `adr-substance` apply, and `adr-settings --local` plus the `llm.confirmed` local key. | No. Its `require_pattern`s glob `hooks/adr_hook_core.py` and `opencode/plugin.ts`, outside this component; since the acceptance they are live there; `tests/test_machine_llm_overrides.py` holds the readers here. |
 | **ADR-011** — Adopt Deterministic Readiness and Human-Gated Grilling | Accepted 2026-07-20, `binding: false` | Directly defines the readiness boundary: a shared stdlib-only read-only engine, the seven classification values implemented verbatim in `READINESS_CLASSES`, stable ordering under an injected date, hooks emitting only short fail-open advisories with an exact grill command, CI needing "no secret or model", and CI blocking **only** on explicit inspectable evidence of a linked implemented Proposed ADR. Its warm p95 targets: 500 ms single-record CLI, 1 s all-Proposed over 50 records, ≤100 ms MCP adapter overhead, ≤5 s PR action overhead. | Only indirectly — its `require_pattern`s glob `clients/workflows.json` and `bin/adr-mcp`. Nothing guards the read-only or fail-open posture of the readiness files themselves. |
-| **ADR-014** — Use the Generated ADR Graph as the Selective-Context Query Engine | Accepted 2026-07-23, `binding: true`, gate `index-first-retrieval` | Governs `adr_retrieval_health.py`: probes run through the one shared engine, a historical-authority result is itself a failure, and the `degraded` status implements ADR-014's "missing, invalid, unsupported or stale graph handling will be explicit and observable". Its `verified_in` names `tests/test_adr_retrieval_health.py` directly. Also governs `adr_grill_signal`'s index-only posture. | No — its declarative rule arrays are deliberately empty; the gate is enforced by tests. |
+| **ADR-014** — Use the Generated ADR Graph as the Selective-Context Query Engine | **Superseded** (chain ADR-014 → ADR-018 → ADR-020 → ADR-036), `binding: true`, gate `index-first-retrieval` | Historical lineage, not a live governing decision: it is where `adr_retrieval_health.py`'s design comes from. Probes run through the one shared engine, a historical-authority result is itself a failure, and the `degraded` status implements ADR-014's "missing, invalid, unsupported or stale graph handling will be explicit and observable". Its `verified_in` names `tests/test_adr_retrieval_health.py` directly. Also the origin of `adr_grill_signal`'s index-only posture. | No — its declarative rule arrays are deliberately empty; the gate is enforced by tests. |
 | **ADR-015** — Enforce a Two-Second Deterministic Latency Budget as a Test Fixture Contract | Accepted 2026-07-26, `binding: true`, gate `adr-kit-cli-latency-v1` | Its frontmatter `components` lists **`adr-retire`** and its `symbols` list `resolve_present_terms` and `_WALK_CACHE` — both in this component. `tests/fixtures/cli/latency-corpus.json` carries the measured budget `adr-retire: p50 800 ms / p95 1200 ms / hard 2000 ms`, with the recorded root cause "walked the full repository once per ADR from `detect_tech_removal`; now one memoized walk plus one single-pass term resolution per run". Its 2000 ms ceiling is also the constraint every ADR-030 hook budget below stays under. | Not by the judge — its `require_pattern` globs the fixture file, so the budget is guarded by `tests/test_cli_performance.py`. |
 | **ADR-027** — Derive the Lifecycle Signer From a Person-Named Git Identity, Announced | Accepted 2026-08-04, `binding: true`, gate `adr-signer-derivation-v1` | Governs `bin/adr`'s signer machinery directly: `resolve_signer`'s four-step order, the mandatory stderr announcement of a derived name, the machine-identity denylist in `person_shaped`, the machine-local (never repository-tracked) `lifecycle.signer`, and the `signer --suggest` read-only proposal. It is also why `--confirm` matters: acceptance most often signs with a *derived* name, which is exactly the value a human has not yet agreed to. | No Enforcement block in the ADR at all — the invariants are held by `tests/test_adr_signer_discovery.py` alone. |
 | **ADR-030** — Recalibrate the Hook Latency Budgets to the Python Host That Actually Ships | Accepted 2026-08-05, `binding: true`, gate `adr-hook-python-budgets-v1` | Rewrites every `latency` block in `hooks/manifest.json` from measurement against the Python host, replacing budgets calibrated for the native binary ADR-029 retired. Directly names the visible cost this component carries: `bin/adr_doctor_probes.py`'s `hook-latency-extension` check reported `degraded` on every platform, every run, before this ADR, because three events declared a 100 ms hard timeout against a measured 182.6 ms bare-interpreter floor (`MEASURED_INTERPRETER_FLOOR_MS`, `hooks/hook_benchmark.py:51`) — no hook-side optimisation could ever have met them. | No — empty rule arrays; guarded by `tests/test_hook_performance.py` against the recorded corpus. |
@@ -689,7 +726,7 @@ that exist.
    is the most architecturally surprising thing in the component.
 2. **Two independent SessionStart producers, neither aware of the other.** The plugin-level hook
    routes SessionStart to `hooks/adr-hook.py`, which reads *this component's* readiness queue cache
-   itself (`hooks/adr_hook_core.py:238`) and emits Proposed-ADR advisories and, at the next
+   itself (`hooks/adr_hook_core.py:262`) and emits Proposed-ADR advisories and, at the next
    user-visible prompt, ADR-041's automatic grill handoff. The `[adr-guardian]`
    health nudge can only come from `bin/adr-guardian check`, reached via a **project-scoped**
    `.claude/settings.json` entry. Zero files under `hooks/` reference `adr-guardian`. Both feed the
@@ -698,7 +735,7 @@ that exist.
    project-scoped entry gets neither the nudge nor the automatic refresh.
 3. **One JSON contract, three independent readers.** The queue cache is read by
    `adr_guardian_queue.load_queue_actions` (**no production consumer — tests only**), by
-   `hooks/adr_hook_core.py:238` (`_load_queue_payload`, which also enforces `schema_version` and
+   `hooks/adr_hook_core.py:262` (`_load_queue_payload`, which also enforces `schema_version` and
    the 256 KiB ceiling), and by `adr-guardian check`'s own expiry test before it decides to
    rebuild. All three now honour the payload's own `expires_at`, so the freshness rule is single;
    the parsing is still three separate implementations of one contract.
@@ -741,11 +778,14 @@ that exist.
    caught there. Because that JSON is the de-facto internal RPC
    of three subprocess consumers, a readiness-schema change surfaces in the default human renderer
    as a traceback instead of the clean exit-2 path.
- 2. **`--deep` raises the required bar.** `_mcp_deep` and `_native_deep` build their checks with
-   `check()`'s default `required=True`, while their fast-tier counterparts are `required=False`.
+ 2. **`--deep` raises the required bar.** `_native_deep` builds its checks with `check()`'s
+   default `required=True`, while its fast-tier counterpart, `native-client`, is `required=False`.
    A native CLI whose `plugin list` output lacks `adr-kit` yields `stale` + `required` → exit 1 under
    `--deep` where fast mode exited 0. `trust-pending` is deliberately excluded from
-   `FAILURE_STATUSES`, so a trust prompt does not block.
+   `FAILURE_STATUSES`, so a trust prompt does not block. The `mcp-live` probe no longer belongs to
+   this finding: since TASK-232 each one inherits its client's `mcp-launcher` `required` flag, so
+   it is exactly as blocking as the fast-tier launcher check (required in a set-up project, see
+   finding 3).
  3. **The fast doctor tier fails on integrations the user never installed — in a canonical root.**
    `mcp-launcher` and `hook-package` run for every non-disabled client regardless of whether the CLI
    is present — `detected.get(name)` feeds only the `native-client` check. `hook-package` is always
@@ -761,7 +801,7 @@ that exist.
     `bin/adr-doctor:133` forces `args.fix_index = bool(args.fix_index or not args.check)`, so default
     mode regenerates `ADR-INDEX.{md,json}` as a side effect of a health check. Adapter repair is
     narrower than it was: only an installed payload is rewritten; a git checkout gets the drift
-    reported instead (`bin/adr_doctor_checks.py:257`). But `_generated_check` builds that drift
+    reported instead (`bin/adr_doctor_checks.py:263`). But `_generated_check` builds that drift
     result with `status="stale"` and no `required=`, so the default `required=True` applies and
     `stale ∈ FAILURE_STATUSES` → **adapter drift exits 1 in fast mode, without `--deep`** — under
     `--check` anywhere, and now in default mode too when the payload root is a git checkout.
@@ -770,16 +810,21 @@ that exist.
 ### Measurement honesty
 
  1. **No ADR Enforcement `path_glob` covers a single file in this component.** Verified by parsing
-    every Enforcement block in `docs/adr/` at v0.59.1: the 14 distinct globs are
+    every Enforcement block in `docs/adr/` at commit 17f2ac7: the 17 distinct globs are
     `schemas/adr-kit-config.schema.json`, `docs/adr/ADR-INDEX.json`, `templates/githooks/pre-commit`,
     `bin/adr-lint`, `bin/adr_query.py`, `hooks/adr_hook_core.py`,
     `schemas/client-capabilities.schema.json`, `clients/workflows.json`, `bin/adr-mcp`,
     `{bin,codex/bin,copilot/bin}/adr-mcp`, `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,_llm.py}`,
+    `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}` (ADR-043),
+    `skills/**/SKILL.md` (ADR-044), `opencode/plugin.ts` (ADR-049),
     `.github/workflows/release-publish.yml`, `tests/fixtures/cli/latency-corpus.json` and
-    `tests/test_adr_mcp.py`. None matches any of this component's 19 files. **The
-    component that runs the gates is itself entirely unguarded by the fail-closed floor.** Its
-    invariants — read-only readiness, fail-open hooks, no lifecycle mutation over MCP, the 2-second
-    budget — are held by the test suite alone. A regression here passes `bin/adr-judge` untouched.
+    `tests/test_adr_mcp.py`. Exactly one of this component's 19 files is matched: ADR-043's glob
+    covers `bin/adr-substance` with two `forbid_pattern` rules (no `--model … claude`, no
+    `DEFAULT_LLM_CMD =`). The earlier claim that no glob matches was wrong from the day ADR-043 was
+    accepted. **Apart from that, the component that runs the gates is unguarded by the fail-closed
+    floor.** Its invariants — read-only readiness, fail-open hooks, no lifecycle mutation over MCP,
+    the 2-second budget — are held by the test suite alone. A regression in any of the other 18
+    files passes `bin/adr-judge` untouched.
  2. **`age_days` measures time since the last status transition, not authoring age.**
     `bin/adr-status:270 parse_adr` never strips frontmatter, so `extract_date` returns the
     frontmatter `date:` field — and `bin/adr:453 mutate_status` rewrites `data["date"]` on **every**
@@ -833,7 +878,7 @@ that exist.
     referenced only by tests. `adr_doctor_core.main()` is a second, still-working standalone CLI with
     `prog="adr-doctor"` that nothing invokes. The `text`-with-no-checks branch at
     `bin/adr-doctor:158-159` is unreachable because `run_client_checks` always appends at least three
-    checks. `run_deep_extensions` accepts a `checks` keyword that its body never reads.
+    checks.
     `ADR_FILENAME_RE` in `adr_doctor_core.py` is compiled and unused. And one live path is fragile
     rather than dead: `adr_readiness_ci.py:71` detects the empty state with `if len(lines) == 4`,
     coupling the "No ADR readiness findings." message to the exact four-line header length — adding
@@ -843,7 +888,7 @@ that exist.
     `deprecate`/`amend` subcommand, yet `adr-status`'s `CANONICAL_STATUSES` recognises both and
     `find_retirement_candidates` treats `deprecated` as high-confidence. Those states can only arrive
     by hand-editing or an external writer.
- 4. **`adr-guardian check --adr-dir` only works for one layout.** `bin/adr-guardian:1236-1237` steers
+ 4. **`adr-guardian check --adr-dir` only works for one layout.** `bin/adr-guardian:1245-1246` steers
     discovery by mutating `os.environ["CLAUDE_PROJECT_DIR"] = Path(args.adr_dir).resolve().parent.parent`,
     so the flag works only when the ADR directory is exactly `<root>/docs/adr`. Any other layout
     resolves elsewhere, the cwd-guard trips, and `check` exits 0 in silence.
@@ -950,7 +995,7 @@ flowchart TB
         FS[("filesystem — mtime is a signal<br/>flock/msvcrt, os.replace, os.walk")]
         RUNNER[/"GITHUB_STEP_SUMMARY · GITHUB_OUTPUT<br/>::error / ::notice"/]
         GHCLI["gh CLI — tracking issues"]
-        NATIVE["claude · codex · copilot CLIs<br/>plugin list 10s · host model calls"]
+        NATIVE["claude · codex · copilot CLIs<br/>plugin list 10s · host model calls<br/>+ opencode run --pure, host calls only"]
     end
 
     IDX[("docs/adr/ADR-INDEX.json<br/>generated, schema v2")]
@@ -1011,7 +1056,7 @@ flowchart TB
     DCHECKS --> INST
     DPROBES --> INST
     DPROBES -->|"import hook_benchmark.measure"| HOOKS
-    DPROBES -->|"MCP client, stdio, 15s<br/>exactly 7 tools"| MCPC
+    DPROBES -->|"MCP client per client's registered argv<br/>stdio, 15s, exactly 7 tools"| MCPC
     DPROBES --> NATIVE
 
     RDY --> LRDY

@@ -11,7 +11,7 @@
   into three certified marketplace payloads plus a native OpenCode package source; one command,
   `python scripts/release.py X.Y.Z`, drives the release end to end (ADR-042); thirteen GitHub Actions
   workflows and three composite actions gate the result. The `codex/` and `copilot/` trees are the
-  generated output: 114 tracked files each, of which 111 are a deterministic projection of declared
+  generated output: 115 tracked files each, of which 112 are a deterministic projection of declared
   source and 3 are hand-maintained inputs. The OpenCode package remains at the repository root.
 - **Type**: Declarative contract layer + build/release CLI toolchain + generated distribution
   payloads. No long-running process, no service. The only thing here that runs during normal
@@ -38,12 +38,12 @@ docstrings in `scripts/` carry that detail now.
 | `schemas/` (11), `templates/` (14) | **owned** | this document; schema `description` fields and template headers |
 | `instructions/` (3) | **shared** — authored in the agent surface, *mirrored* here as one of the four `COPY_ROOTS` | authored: [`c4-component-agent-integration.md`](./c4-component-agent-integration.md); mirrored: this document |
 | `packaging/` (8), `scripts/` (27), `.github/workflows/` (13) + 3 composite actions | **owned** | this document; `docs/RELEASING.md` for the release procedure |
-| `codex/`, `copilot/` (114 tracked files each) | **owned** (111 generated) | this document |
+| `codex/`, `copilot/` (115 tracked files each) | **owned** (112 generated) | this document |
 | `opencode/`, `opencode.json`, `package.json`, `.npmignore` | **owned** native package source | [`docs/clients/opencode.md`](../docs/clients/opencode.md) and ADR-039 |
 | `bin/` — 48 tracked files, 47 mirrored verbatim | **consumed** | [`c4-component-decision-engine.md`](./c4-component-decision-engine.md), [`c4-component-enforcement-engine.md`](./c4-component-enforcement-engine.md), [`c4-component-retrieval-and-injection.md`](./c4-component-retrieval-and-injection.md), [`c4-component-health-and-lifecycle.md`](./c4-component-health-and-lifecycle.md) |
 | `clients/capabilities.json`, `workflows.json`, `exceptions.json`, `clients/fixtures/`, plus the 5 `clients/` runtime-support modules mirrored verbatim | **consumed** as generator inputs | [`c4-component-agent-integration.md`](./c4-component-agent-integration.md) |
 | `hooks/manifest.json` + the 9 `HOOK_RUNTIME_FILES` | **consumed** as generator inputs | [`c4-component-agent-integration.md`](./c4-component-agent-integration.md) |
-| `CHANGELOG.md` — the canonical version oracle | **consumed** (read at `client_generation_model.py:168`) | `packaging/version-sites.json` `canonical` |
+| `CHANGELOG.md` — the canonical version oracle | **consumed** (read at `client_generation_model.py:172`) | `packaging/version-sites.json` `canonical` |
 | `docs/adr/**`, `tests/**` | **consumed** as validation targets | [`c4-component-quality-assurance.md`](./c4-component-quality-assurance.md) |
 
 One relationship runs the other way: `clients/installer` **consumes this component's payload** at
@@ -66,7 +66,7 @@ the mechanisms is the component-level insight:
 | Mechanism | Verified hole |
 |---|---|
 | **11 JSON Schemas** pin the shape of every machine-readable artefact | Only **4** ever have an instance evaluated by a real schema engine — `ajv` in `validate.yml:43,46,49,52` covers `plugin.json`, `marketplace.json`, `ADR-INDEX.json`, `adr-context-probes.json`. `adr-frontmatter.schema.json` and `doctor-output.schema.json` have **zero** consumers in `bin/`, `hooks/`, `scripts/`, `clients/`, `tests/` or `.github/`; `bin/adr_schema.py:48-85` is the operative frontmatter contract. |
-| **One version registry** (`packaging/version-sites.json`) writes 17 declared version sites across 15 files — all three certified-client sub-clusters, the OpenCode package, the templates, this repository's own dogfooded copies, README pins and the CHANGELOG compare link — from one declarative table | The `<!-- adr-kit-guide vX.Y.Z -->` stamp is written at three sites and has **no code reader**: `bin/adr-guardian` carries only the two wrapper-stamp detectors (`_WRAPPER_STAMP_RE` at `:267`, `_wrapper_version` at `:344`), and `adr-doctor`'s guidance check tests only that the guide exists. Guide staleness is left to the prose of `skills/upgrade/SKILL.md:50`. |
+| **One version registry** (`packaging/version-sites.json`) writes 21 declared version sites across 18 files — all three certified-client sub-clusters, the OpenCode package, the templates, this repository's own dogfooded copies, README pins and the CHANGELOG compare link — from one declarative table | The `<!-- adr-kit-guide vX.Y.Z -->` stamp is written at three sites and has **no code reader**: `bin/adr-guardian` carries only the two wrapper-stamp detectors (`_WRAPPER_STAMP_RE` at `:269`, `_wrapper_version` at `:346`), and `adr-doctor`'s guidance check tests only that the guide exists. Guide staleness is left to the prose of `skills/upgrade/SKILL.md:51`. |
 | **The generator** makes both mirrors a byte-deterministic function of declared source; `--check` is gated in CI and in the release driver's `verify` phase | The comparison ignores line-ending style only (`_same_content`, `client_generation.py:57-84`, the TASK-57 fix), so `--check` now passes on a git-clean `core.autocrlf=true` Windows checkout. What it does **not** cover is the canonical `skills/` tree Claude Code reads: the generator checks that each rich `SKILL.md` exists and never drift-checks its content. |
 
 The rest of this document is that table, expanded.
@@ -75,7 +75,7 @@ The rest of this document is that table, expanded.
 
 - **Artefact shape contracts.** Eleven schemas covering the ADR `## Enforcement` rule language, ADR
   frontmatter, the generated ADR graph (`schema_version: const 2`), the project policy file
-  `.adr-kit.json` (14 top-level blocks, 389 lines, doubling as reference documentation for the config surface),
+  `.adr-kit.json` (14 top-level blocks, 394 lines, doubling as reference documentation for the config surface),
   retrieval probes, readiness reports, doctor output, three-client capability and certification
   evidence, and the two Claude plugin manifests.
 - **Closed-by-construction certified client roster.** `client-capabilities.schema.json` encodes the three
@@ -92,9 +92,15 @@ The rest of this document is that table, expanded.
   and the only blocking mechanism this component installs. It finds a Python 3.10 or newer by asking
   each candidate interpreter for its own `sys.version_info` and keeps searching past an older one,
   ranks candidate engine roots by manifest version with `_version_ge()` running on that Python (no GNU
-  `sort` dependency, since 0.59.1) — including the current git checkout, per ADR-008 — takes a
-  non-blocking `flock`, and pipes `git diff --cached` into `bin/adr-judge`. Deliberately fail-open in
-  five places; only the judge's own exit code propagates.
+  `sort` dependency, since 0.59.1). The candidates follow ADR-044's order: an explicit `ADR_KIT_ROOT`,
+  the Claude Code and Codex plugin caches, the installer's prepared payloads under
+  `${XDG_DATA_HOME:-~/.local/share}/adr-kit/marketplaces/`, OpenCode's npm package in the project and in
+  `${XDG_CACHE_HOME:-~/.cache}/opencode/packages/`, Copilot's installed plugins, and the current git
+  checkout (ADR-008). It takes a non-blocking `flock` on a lock file in `git rev-parse --git-common-dir`,
+  so linked worktrees share one lock and an unopenable lock degrades to no lock, and pipes
+  `git diff --cached` into `bin/adr-judge`. Deliberately fail-open in five places; only the judge's own
+  exit code propagates. When no root resolves it still exits 0: ADR-044's fail-closed refusal is not
+  implemented yet.
 - **Deterministic client-tree generation.** `client_generation.generate()` builds a single
   `expected: dict[relpath, (bytes, mode)]` map covering **both** mirrors in one pass, compares it
   against disk with ≤16-thread bounded pools, writes only deltas, then sweeps orphans out of the
@@ -102,12 +108,14 @@ The rest of this document is that table, expanded.
   on `(size, mtime_ns, mode)` stamps plus a SHA-256 fingerprint of the whole expected map.
   `adr-doctor` runs the same check, and repairs drift only in an installed payload: in a git checkout
   it reports `stale` and names the build command instead of rewriting `codex/` and `copilot/`
-  (`bin/adr_doctor_checks.py:252-266`, 0.59.0).
-- **Per-client projection with a minimal transform surface.** Of the 111 generated files per mirror,
-  the only genuine transformations are 17 rendered thin skills, one hook config, and one prepended
-  provenance line. Everything else — 47 `bin/` files, 11 schemas, 14 templates, 3 instructions, the 9
-  `HOOK_RUNTIME_FILES` and the 9 `RUNTIME_SUPPORT_FILES` (the `clients/`, `hooks/` and `scripts/`
-  modules that mirrored `bin/` entrypoints import from outside `bin/`) — is
+  (`bin/adr_doctor_checks.py:258-272`, 0.59.0).
+- **Per-client projection with a minimal transform surface.** Of the 112 generated files per mirror,
+  the only genuine transformations are 17 rendered thin skills (whose preamble also defines the
+  `<python>` placeholder when the workflow's procedure uses it, ADR-044), one hook config, and one
+  prepended provenance line. Everything else — 47 `bin/` files, 11 schemas, 14 templates, 3 instructions, the 9
+  `HOOK_RUNTIME_FILES` and the 10 `RUNTIME_SUPPORT_FILES` (the `clients/`, `hooks/` and `scripts/`
+  modules that mirrored `bin/` entrypoints import from outside `bin/`, plus `scripts/setup-project.py`,
+  which the setup workflow runs from each installed tree) — is
   `content.replace(b"\r\n", b"\n")` and nothing more, with source mode preserved.
 - **Single-registry version propagation.** `version_sites.py` implements a write protocol over
   heterogeneous file formats driven by one declarative table. `bump-version.py` is the only
@@ -142,12 +150,11 @@ The rest of this document is that table, expanded.
   entrypoint, shared release registry, public-artifact allowlist, and explicit exclusion of generated
   certified-client trees; `test_opencode_plugin.py` exercises the callback surface with Bun when
   available. These checks are deliberately separate from the three-client certification bundle.
-- **Release-payload allowlisting.** `packaging/public-artifacts.json` (49 `include_roots`, 10
-  `forbidden_segments`, 5 `forbidden_globs`) splits this component in half: 14 of the 27
+- **Release-payload allowlisting.** `packaging/public-artifacts.json` (50 `include_roots`, 10
+  `forbidden_segments`, 5 `forbidden_globs`) splits this component in half: 15 of the 27
   `scripts/*.py` ship, the release toolchain (`release*.py`, `bump-version.py`,
   `check-release-version.py`, `check-changelog-sections.py`, `check-branch-sync.py`) does not.
-  The shipped subset is **not** import-closed — see finding 3. `.github/workflows/**` is a forbidden
-  glob, so this repo's own CI never ships; `templates/github-workflows/` is the shipped downstream variant.
+  `.github/workflows/**` is a forbidden glob, so this repo's own CI never ships; `templates/github-workflows/` is the shipped downstream variant.
 - **Zero-runtime-dependency enforcement.** `dependencies()` refuses to emit
   `packaging/dependencies.json` unless `runtime` stays empty and the budget stays zero; an exact pin
   requires five evidence keys including an ADR reference.
@@ -204,7 +211,7 @@ Importable surface (the test suite is the primary consumer): `client_generation.
 `project_setup.{collect_changes, apply_changes, plan_uninstall, validate_markers, marker_block}`,
 `adr_settings.{resolve_settings, write_setting}`, and `release_phases.PHASES`.
 Underscore prefixes are **not** module boundaries here: `client_evidence.py:16` imports
-`client_certification._all_true` across a module boundary, and `client_generation.py:50-54` re-exports
+`client_certification._all_true` across a module boundary, and `client_generation.py:51-55` re-exports
 five functions under underscore aliases to preserve the surface the tests import.
 
 ### 2. The release driver (ADR-042)
@@ -266,10 +273,11 @@ file's newline convention and BOM, and refusing outright to replace a user-owned
 
 `.githooks/pre-commit` runs on every `git commit`:
 `git diff --cached --unified=0 | "$ADR_JUDGE" --diff - --adr-dir "$ROOT/docs/adr/" --repo-root "$ROOT" --snapshot staged [--llm]`
-(`templates/githooks/pre-commit:269`).
+(`templates/githooks/pre-commit:297`).
 Exit codes pass through from `bin/adr-judge`: 0 clean, 1 violation, 2 config/runtime error. Knobs:
 `ADR_KIT_HOOK_DISABLE`, `ADR_KIT_LLM`, `ADR_KIT_NO_LLM`, `ADR_KIT_SUGGEST`,
-`ADR_KIT_SUGGEST_DISABLE`, `ADR_KIT_OVERRIDE`, `CODEX_HOME`, `COPILOT_HOME`, plus
+`ADR_KIT_SUGGEST_DISABLE`, `ADR_KIT_OVERRIDE`, `ADR_KIT_ROOT`, `CODEX_HOME`, `COPILOT_HOME`,
+`XDG_DATA_HOME`, `XDG_CACHE_HOME`, plus
 `judge.pre_commit_timeout_ms` for the non-blocking slow-commit warning. Fail-open at five
 points by design: no Python 3.10+, no engine root, empty staged diff, `flock` contention (declarative
 pass kept, LLM suppressed), and both advisory passes.
@@ -286,7 +294,8 @@ Three composite actions are the CI interface:
   `conclusion` ∈ `{blocked, advisory-or-clean}`.
 - `./.github/actions/adr-index-check` — inputs `adr-dir`, `python-version`; output `conclusion` ∈
   `{fresh, stale}` for `docs/adr/README.md`, `ADR-INDEX.md` and `ADR-INDEX.json`. Only
-  `adr-readiness` is in the public allowlist; the other two are consumed by their `@main` ref.
+  `adr-readiness` is in the public allowlist; the other two are pinned at `@vX.Y.Z` by the
+  downstream workflow templates, as registered version sites.
 
 Thirteen workflow files:
 
@@ -315,7 +324,7 @@ independently retained evidence commit while refusing a bundle path that escapes
 ### 7. Version-site write protocol
 
 `packaging/version-sites.json` declares 1 `canonical` source (the top `## [x.y.z]` heading in
-`CHANGELOG.md`), 17 site entries across 15 files, and 1 `must_not_carry_version` rule
+`CHANGELOG.md`), 21 site entries across 18 files, and 1 `must_not_carry_version` rule
 (`.agents/plugins/marketplace.json`). The sites span the three certified-client sub-clusters, the
 OpenCode package, templates, this repository's own dogfooded copies, and README pins — which is what
 makes the registry the thread that ties them together:
@@ -324,7 +333,7 @@ makes the registry the thread that ties them together:
 |---|---|
 | `json` (RFC 6901 pointer subset) | `.claude-plugin/plugin.json`, `codex/.codex-plugin/plugin.json`, `copilot/plugin.json`, `.claude-plugin/marketplace.json`, `.github/plugin/marketplace.json`, `templates/cc-settings/guardian-hook-entry.json` |
 | `regex` | `package.json` (the OpenCode package version), `templates/githooks/pre-commit` and `.githooks/pre-commit` (the `ADR_KIT_WRAPPER_VERSION` stamp), `templates/adr-kit-guide.md`, `instructions/ADR-guide.md` and `.adr-kit/ADR-guide.md` (the guide stamp), the `CHANGELOG.md` `[Unreleased]` compare link |
-| `regex_all` | `README.md` ×3 — the composite-action pin, the `rev:` pre-commit pin and the OpenCode npm pin — and the `adr-readiness@v` action pin in `templates/github-workflows/adr-readiness.yml` (a registered site since 0.56.0) |
+| `regex_all` | `README.md` ×4 — the `adr-judge` composite-action pin, the `adr-readiness@v` action pin, the `rev:` pre-commit pin and the OpenCode npm pin — the `adr-readiness@v` pin in `docs/adr-grilling.md`, and the action pins in all three workflow templates: `templates/github-workflows/adr-readiness.yml` (a registered site since 0.56.0), `adr-judge.yml` and `adr-index-check.yml` |
 
 Registering `.githooks/pre-commit` and `.adr-kit/ADR-guide.md` keeps this repository's own
 dogfooded copies on the released version; since 0.59.0 a test also keeps both equal to their sources
@@ -394,7 +403,9 @@ evidence bundle.
 - **Filesystem and OS** — `os.replace` atomic rename everywhere, `O_CREAT|O_EXCL` locking,
   `fsync`, POSIX file modes (`expected_mode` in `executables.json`), the system temp directory for
   the generator warm-state cache, and platform-specific plugin cache globbing
-  (`~/.claude`, `${CODEX_HOME:-~/.codex}`, `${COPILOT_HOME:-~/.copilot}`) in the hook template.
+  (`~/.claude`, `${CODEX_HOME:-~/.codex}`, `${COPILOT_HOME:-~/.copilot}`, the installer's
+  `${XDG_DATA_HOME:-~/.local/share}/adr-kit/marketplaces/*` and OpenCode's
+  `${XDG_CACHE_HOME:-~/.cache}/opencode/packages/`) in the hook template.
 - **Node 20 + `ajv-cli` + `ajv-formats`** — CI only; the only real JSON Schema engine anywhere in
   the project.
 - **`pre-commit` (PyPI)** — installed only by `install-smoke.yml` to exercise `.pre-commit-hooks.yaml`.
@@ -402,10 +413,11 @@ evidence bundle.
   validation when present. Declared in neither `runtime` nor `development`.
 - **`jq`, `awk`, `flock`, `perl`, `grep`, `date`, `cmd.exe`, PowerShell, `python3|python|py`** —
   shell utilities the templates and workflow steps depend on; `flock` and `perl` are optional
-  fallbacks that degrade cleanly. `templates/cc-settings/guardian-hook-entry.json` additionally
-  picks the newest cached plugin with GNU `ls … | sort -V | tail -1`, which BSD/macOS `sort` lacks;
-  the pre-commit template dropped that dependency in 0.59.1, this entry has not (TASK-220, open).
-- **Host agent CLIs** (`claude -p`, `codex exec`, `copilot -p`) — reached only transitively through
+  fallbacks that degrade cleanly. `templates/cc-settings/guardian-hook-entry.json` picks the newest
+  cached plugin by piping `ls -d` into the resolved Python and taking the maximum of each directory
+  name's numeric components, so like the pre-commit template it no longer needs GNU `sort -V`
+  (TASK-220, done; `/adr-kit:install-hooks` now copies this template instead of an inline entry).
+- **Host agent CLIs** (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`) — reached only transitively through
   `bin/adr-judge --llm`, `bin/adr-suggest` and `probe-client-events.py`. **No workflow in this
   component invokes a model.**
 
@@ -419,12 +431,16 @@ in `docs/adr/` to produce the first one.
 | ADR | Rule | Target | State |
 |---|---|---|---|
 | **ADR-005** — Selectable agent-friendly ADR formats | `require_pattern` `"default"\s*:\s*"madr"` | `schemas/adr-kit-config.schema.json` | satisfied at line 121 |
-| **ADR-008** — Resolve the enforcement engine from a version-ranked root set including the checkout | `require_pattern` `_self_root` | `templates/githooks/pre-commit` | satisfied at lines 116–119 |
+| **ADR-008** — Resolve the enforcement engine from a version-ranked root set including the checkout | `require_pattern` `_self_root` | `templates/githooks/pre-commit` | satisfied at line 101 (assignment) and lines 136–138 (candidate append) |
 | **ADR-010** — Certify three native CLI clients through one outcome contract | `require_pattern` on `schema_version const 1` and the three client ids | `schemas/client-capabilities.schema.json` | satisfied at lines 22–23 and 34–37 |
 | **ADR-042** — Drive the release from the maintainer's machine and create the tag from the merge | `require_pattern` on the `push:` trigger | `.github/workflows/release-publish.yml` | satisfied — the workflow keeps `push` on `main` and on `v*` tags |
 
 ADR-016 (Accepted) also globs into this component's output: its five rules target
 `{bin,codex/bin,copilot/bin}/adr-mcp`, so the mirrored copies are judged alongside the source.
+ADR-043 (Accepted) does the same for the model-calling entry points: its two rules target
+`{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}`. ADR-049 (Accepted) adds a
+`require_pattern` for `ADR_KIT_HOST_CLIENT: "opencode-cli"` on `opencode/plugin.ts`, satisfied at
+line 229.
 
 ### Prose-governing — verified by ADR body text, not by enforcement scope
 
@@ -435,6 +451,7 @@ ADR-016 (Accepted) also globs into this component's output: its five rules targe
 | **ADR-039** — Add a Native OpenCode Plugin Without Expanding the Certified CLI Gate | The root `opencode/plugin.ts` package source, `opencode.json`, and `package.json` are versioned and release-visible, but OpenCode is not added to the certified capability schema, generated mirrors, installer, or native evidence bundle. |
 | **ADR-013** — Declare version sites in one registry and bump by writing | Names `packaging/version-sites.json`, `scripts/version_sites.py`, `scripts/bump-version.py` directly. The strongest textual link in the cluster. |
 | **ADR-010** (broader) | One outcome contract across three clients; *"generated artifacts must stay byte-deterministic while clean and unchanged generation remain fast on Windows"*; hooks stay local, bounded, model-free and fail-open; the zero-runtime-dependency baseline holds. `binding: true`, `gate: three-client-release`. Sets the 300/400-line module budgets that `tests/test_release_allowlist.py` enforces on `scripts/`. |
+| **ADR-048** — Certify each native client on every platform it runs on | Amends ADR-010: a native record certifies the platform it ran on (`tests/certification/<client>/<os>-native.json`), Windows is no longer the only certifiable baseline, and OpenCode stays outside per ADR-039. Accepted but not yet implemented: `client_evidence.py:21-23` still assembles only `{claude,codex,copilot}/windows-native.json`, and the validator and support matrix change in a later release. |
 | **ADR-006** — Prepare platform-local marketplaces for native installs | Governs `install-agent-envs.py`: build a prepared, version-pinned, per-user payload from a validated source and patch only the copy, never the checkout. |
 | **ADR-004** — Layered ADR context injection | Defines the injection tiers the generated `hooks.json` files wire up, and locates the fail-closed floor at `bin/adr-judge` plus the CI action — client-independent, which is why Copilot's missing `PreToolUse` costs advice, not enforcement. ADR-004 explicitly *rejects* a fail-closed `PreToolUse` gate. |
 | **ADR-001** / **ADR-002** | Cited in `adr-guardian-audit.yml:3,:9` as the reason the CI sweep is cheap-tier-only, report-only and never invokes an LLM. |
@@ -484,7 +501,7 @@ flowchart TB
         CERT["scripts/ certification<br/>client_evidence +<br/>client_certification"]
         INST["scripts/ install + setup<br/>install-agent-envs,<br/>project_setup, adr_settings"]
         CI[".github/workflows/ — 13<br/>+ 3 composite actions"]
-        DIST["codex/ + copilot/<br/>114 tracked each<br/>111 generated, 3 inputs"]
+        DIST["codex/ + copilot/<br/>115 tracked each<br/>112 generated, 3 inputs"]
         OC["opencode/<br/>package.json · opencode.json<br/>native package source"]
     end
 
@@ -504,7 +521,7 @@ flowchart TB
     REG -->|"version-sites table:<br/>json pointer / regex / regex_all"| VER
     VER -->|"writes declared sites incl.<br/>certified manifests + OpenCode package"| DIST
     VER -->|"writes package version"| OC
-    VER -->|"writes 4 template stamps"| TPL
+    VER -->|"writes 6 template stamps"| TPL
 
     MAINT -->|"python scripts/release.py X.Y.Z"| REL
     REL -->|"prepare: bump-version<br/>verify: --expect"| VER
@@ -544,7 +561,8 @@ flowchart TB
 ## Carried-Forward Findings
 
 Findings that survive to component level, ordered by consequence. Each was re-verified against the
-repository at v0.59.1 (2026-10-06) unless marked otherwise.
+repository at v0.59.1 (2026-10-06) unless marked otherwise; the mirror counts and anchors in
+findings 3 and 8 were re-checked on 2026-10-11 against the branch carrying ADR-049.
 
 1. **Seven of eleven schemas never have an instance evaluated by a schema engine.** `ajv` covers
    exactly four. `adr-frontmatter.schema.json` and `doctor-output.schema.json` have zero consumers of
@@ -564,29 +582,25 @@ repository at v0.59.1 (2026-10-06) unless marked otherwise.
    be installed. Every *other* schema already leans on `$ref`/`$defs`/`const`/`contains` and so
    cannot be checked by the always-on path at all.
 
-3. **The shipped `scripts/` subset is not import-closed.** `scripts/client_certification.py` is in
-   `packaging/public-artifacts.json`, and its line 153 unconditionally imports
-   `client_support_matrix`, which is not. Copying exactly the 14 allowlisted scripts into an empty
-   directory and running `python build-client-adapters.py --help` there fails with
-   `ModuleNotFoundError: No module named 'client_support_matrix'` (reproduced in a scratch directory,
-   2026-10-06). The installer's `_copy_public_payload` builds the prepared per-user payload from those
-   same roots, so `build-client-adapters.py` and `client_evidence.py` cannot import inside it. The
-   generated mirrors are unaffected (they carry no `scripts/` beyond `adr_settings.py` and
-   `project_setup.py`), and `test_release_allowlist.py` budgets `client_support_matrix.py`'s line count
-   without checking that it ships. Whether anyone runs the generator from an installed payload was
-   not established.
+3. **Closed: the shipped `scripts/` subset is import-closed.** An earlier version of this document
+   found that `scripts/client_certification.py` imported `client_support_matrix`, which the release
+   allowlist did not ship, so `build-client-adapters.py` failed with `ModuleNotFoundError` in an
+   installed payload. TASK-221 (`425be6f`) added `scripts/client_support_matrix.py` to
+   `packaging/public-artifacts.json`, and `test_shipped_scripts_import_only_shipped_siblings` in
+   `tests/test_release_allowlist.py` now guards import closure. Copying the 15 allowlisted scripts
+   into an empty directory and running `python build-client-adapters.py --help` there exits 0.
 
 4. **Version-stamp asymmetry — the guide stamp is written three times and read by no code.** The
    registry declares the `<!-- adr-kit-guide vX.Y.Z -->` stamp at `templates/adr-kit-guide.md`,
    `instructions/ADR-guide.md` and `.adr-kit/ADR-guide.md`; `bin/adr-guardian` detects staleness only
    for the two wrapper stamps, and `adr-doctor`'s `_guidance_check` tests only that
    `.adr-kit/ADR-guide.md` exists. A deployed guide's staleness is caught only if an agent follows
-   `skills/upgrade/SKILL.md:50`. Two earlier gaps are closed: the `adr-readiness@v` pin in
+   `skills/upgrade/SKILL.md:51`. Two earlier gaps are closed: the `adr-readiness@v` pin in
    `templates/github-workflows/adr-readiness.yml` is a registered site since 0.56.0 and now reads
    `v0.59.1`, and this repository's own `.githooks/pre-commit` and `.adr-kit/ADR-guide.md` are
-   registered sites, kept equal to their sources by a test since 0.59.0. Still unregistered: `templates/github-workflows/adr-judge.yml` and
-   `adr-index-check.yml` pin their composite actions at `@main`, so downstream copies track the
-   moving branch rather than a release.
+   registered sites, kept equal to their sources by a test since 0.59.0. Since TASK-221 (`425be6f`) all three workflow templates —
+   `adr-readiness.yml`, `adr-judge.yml` and `adr-index-check.yml` — pin a release tag rather than
+   `@main`, each as a registered version site.
 
 5. **The certification executable baseline is tautological *and* wrong.**
    `client_evidence._shared_inventory` (`scripts/client_evidence.py:91-92`) hardcodes
@@ -599,9 +613,9 @@ repository at v0.59.1 (2026-10-06) unless marked otherwise.
    from the code.
 
 6. **Rich/thin skill asymmetry — the largest *functional* consequence of the distribution design, and
-   invisible from file counts.** Claude Code reads the canonical `skills/` tree (3,786 lines across 17
-   `SKILL.md` files; `skills/adr/SKILL.md` alone is 780). Codex and Copilot each receive **320 lines
-   total** — an 11.8× overall reduction, 37× for the flagship `adr` workflow (780 → 21 lines).
+   invisible from file counts.** Claude Code reads the canonical `skills/` tree (3,837 lines across 17
+   `SKILL.md` files; `skills/adr/SKILL.md` alone is 780). Codex and Copilot each receive **341 lines
+   total** — an 11.3× overall reduction, 34× for the flagship `adr` workflow (780 → 23 lines).
    `clients/workflows.json` marks this deliberately (`skill_mode: "canonical-rich"` vs `"generated"`)
    and `generate()` *refuses* to render a thin skill for Claude. ADR-010 requires equal **outcomes**,
    not identical instructions, so this is by design — but the three clients are at parity on tooling,

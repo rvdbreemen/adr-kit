@@ -229,6 +229,46 @@ def test_public_classifications_are_stable(
     assert expected in READINESS_CLASSES
 
 
+@pytest.mark.parametrize(
+    ("status", "superseded_by", "command"),
+    [
+        # Finished: status and successor agree, so nothing is left to do.
+        ("Superseded", "ADR-002", None),
+        # A successor named on a record whose status never followed.
+        ("Proposed", "ADR-002", "/adr-kit:grill --revalidate ADR-001"),
+        # Superseded, but by nothing.
+        ("Superseded", None, "/adr-kit:grill --revalidate ADR-001"),
+    ],
+)
+def test_revalidate_is_suggested_only_for_an_inconsistent_supersession(
+    status, superseded_by, command
+):
+    """A consistently superseded record is finished work, not a queue item (TASK-234).
+
+    ADR-011 fixes the seven classes, so the label stays; only the suggested
+    command distinguishes a record that needs revalidation from one that is done.
+    """
+    record = {
+        "adr_id": "ADR-001",
+        "title": "Choice",
+        "path": "ADR-001-choice.md",
+        "status": status,
+        "format": "madr",
+        "decision_text": "Choose local.",
+        "open_questions": [],
+        "documents_shipped": False,
+        "verified_in": [],
+        "scope": [],
+        "superseded_by": superseded_by,
+        "metadata_findings": [],
+    }
+
+    report = readiness_for_record(record, evaluated_on=date(2026, 7, 20))
+
+    assert report["classification"] == "supersession-required"
+    assert report["next_command"] == command
+
+
 def test_not_an_adr_classification_remains_public_for_non_record_input():
     record = {
         "adr_id": "ADR-001",

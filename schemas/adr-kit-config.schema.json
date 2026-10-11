@@ -366,6 +366,11 @@
           "minimum": 0,
           "default": 24
         },
+        "llm_enabled": {
+          "type": "boolean",
+          "description": "When false, the guardian's LLM tier (adr-substance and the full audit) is never due and calls no model. Defaults to true. An init or upgrade answer sets it for this machine only in .adr-kit.local.json (TASK-233); the cheap tier is unaffected.",
+          "default": true
+        },
         "llm_autorun": {
           "type": "boolean",
           "description": "When false (default), the /adr-kit:guardian skill always asks the user to confirm cost before running the LLM tier (adr-suggest + full audit). Set true only if you want the LLM tier to run without an interactive confirmation \u2014 consistent with ADR-001's opt-in posture, this defaults to false. The cheap tier (drift + retire + lint) is always free and unaffected by this flag.",

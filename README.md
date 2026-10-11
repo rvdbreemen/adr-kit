@@ -420,7 +420,7 @@ Three layers, each with a clear path:
 
 ### Maintain the decision log (decisions age; the kit notices)
 
-- **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart reads only that local 24-hour cache and offers at most three next actions; it never scans or starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
+- **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart offers at most three next actions from that local 24-hour cache; the plugin hook only reads it. When the project-scoped guardian hook (`/adr-kit:install-hooks`) is installed, `adr-guardian check` rebuilds a missing or expired cache in-process from the ADR files (no model, no spawn) for the next read. It never starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
   - **Team mode (v0.22.0+)**: a weekly CI cron sweep maintains a single "ADR guardian audit" tracking issue (created on findings, updated, closed when clean) so the whole team sees ADR health, not just whoever opened a session today. Copy `templates/github-workflows/adr-guardian-audit.yml` into your repo.
   - **Trend history (v0.29.0+)**: every sweep appends to a 52-entry trend log, and the nudge shows the delta: `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`. A KPI with memory, not a snapshot.
   - **Sections that say nothing (v0.58.0+)**: in the LLM tier, `bin/adr-substance` asks the model whether each written section of a Proposed ADR answers its heading, and reports "TBD", "see above" and generic prose with the author's own words quoted. One call per Proposed ADR, counted in the cost prompt; advisory only.
@@ -632,10 +632,10 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
 ```
 
 - The pre-commit hook's declarative pass is always on and free.
-- The LLM judge pass is **on by default** (`judge.llm_enabled: true`), but it only runs where a host client is recorded. The installer records one when it installs exactly one client (Claude Code, Codex or Copilot CLI); with several it records none and prints the command to choose. The pass then runs through that client's own CLI (`claude -p`, `codex exec` or `copilot -p`, ADR-036), on your existing subscription: no API key, no adr-kit service. Your staged diff and the governing ADRs go to that client's model, one isolated call per ADR whose `llm_judge: true` scope the diff touches, so a commit can take a minute or more. Each call is capped by `judge.llm_timeout_seconds` and the whole pass by `judge.llm_pass_timeout_seconds`. A clear `VIOLATION` verdict blocks the commit like a declarative one (set `judge.advisory_only: true` to report instead); an answer the judge cannot parse degrades to the declarative result instead of blocking.
-- Turn it off for one commit with `ADR_KIT_NO_LLM=1`, or for the project with `judge.llm_enabled: false`. A flock guard serializes LLM passes across parallel commits.
+- The LLM judge pass is **on by default** (`judge.llm_enabled: true`), and runs on the coding assistant the plugin is installed in. The first session in a project records that client as the judge's host (Claude Code, Codex, Copilot CLI or OpenCode; a recorded choice is never replaced), and the next prompt asks you once whether to keep each LLM layer on or turn it off for your machine (ADR-049); `/adr-kit:init` and `/adr-kit:upgrade` ask the same per layer. The pass runs through that client's own CLI (`claude -p`, `codex exec`, `copilot -p` or `opencode run`, ADR-036), on your existing subscription: no API key, no adr-kit service. Your staged diff and the governing ADRs go to that client's model, one isolated call per ADR whose `llm_judge: true` scope the diff touches, so a commit can take a minute or more. Each call is capped by `judge.llm_timeout_seconds` and the whole pass by `judge.llm_pass_timeout_seconds`. A clear `VIOLATION` verdict blocks the commit like a declarative one (set `judge.advisory_only: true` to report instead); an answer the judge cannot parse degrades to the declarative result instead of blocking.
+- Turn it off for one commit with `ADR_KIT_NO_LLM=1`, for your machine with `adr-settings --set judge.llm_enabled=false --local` (the gitignored `.adr-kit.local.json`; your teammates keep it on), or for the whole project with `judge.llm_enabled: false` in `.adr-kit.json`. A flock guard serializes LLM passes across parallel commits.
 - `suggest.enabled` defaults to `true` (ADR-035): the advisory missing-decision nudge runs on the same terms as the judge, resolving through the shared backend registry with no pinned model. It never blocks and silently skips on any failure. Set `suggest.enabled: false` to switch it off per project, or export `ADR_KIT_SUGGEST_DISABLE=1` for a single run; `ADR_KIT_SUGGEST=1` still re-enables it per commit for a project that has set it false.
-- The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo).
+- The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo). `guardian.llm_enabled: false` switches the LLM tier off entirely.
 - `watch` tunes the in-flight nudges; `cooldown_hours: 0` disables the cooldown, `enabled: false` silences the watcher.
 
 #### Working locally (opt-in)
@@ -644,8 +644,9 @@ You can keep every diff on your own machine. There are two ways to do that.
 
 **No model at all.** Export `ADR_KIT_NO_LLM=1`: it stops every pass that
 calls a model (the judge, `adr-suggest` and `adr-substance`). For a whole
-project, set both `judge.llm_enabled: false` and `suggest.enabled: false` in
-`.adr-kit.json`. Enforcement is then fully deterministic and runs offline: the
+project, set `judge.llm_enabled`, `suggest.enabled` and `guardian.llm_enabled`
+to `false` in `.adr-kit.json`; for your machine only, set them with
+`adr-settings --set <switch>=false --local`. Enforcement is then fully deterministic and runs offline: the
 declarative rules, `adr-lint`, readiness and the MCP tools never call a model.
 
 **A local model.** Point the LLM passes at any command that reads the prompt
@@ -812,7 +813,7 @@ the same notices; none of them applies a migration. See the
 
 **Does enforcement need an API key?**
 
-No. The default enforcement path (pre-commit hook, CI action, pre-commit framework, MCP server) is fully declarative and key-free. The LLM passes are on by default where a host client is recorded and shell out to that agent's own CLI (`claude -p`, `codex exec` or `copilot -p`, ADR-036), which carries its own authentication; they degrade to a skip, never a block, when it is absent. Switch them off with `ADR_KIT_NO_LLM=1` or `judge.llm_enabled: false`, or point them at a local model with `ADR_KIT_LLM_CMD` (see [LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice)).
+No. The default enforcement path (pre-commit hook, CI action, pre-commit framework, MCP server) is fully declarative and key-free. The LLM passes are on by default where a host client is recorded and shell out to that agent's own CLI (`claude -p`, `codex exec`, `copilot -p` or `opencode run --pure`, ADR-036), which carries its own authentication; they degrade to a skip, never a block, when it is absent. Switch them off with `ADR_KIT_NO_LLM=1` or `judge.llm_enabled: false`, or point them at a local model with `ADR_KIT_LLM_CMD` (see [LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice)).
 
 **My team has parallel agents creating ADRs. What about number collisions?**
 

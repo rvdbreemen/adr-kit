@@ -4,11 +4,13 @@
 
 - **Name**: Quality Assurance (`quality-assurance`)
 - **Description**: The single pytest suite plus the fixture, corpus and
-  certification-evidence families that sit around it — 107 `test_*.py`
-  modules, 1,410 `def test_` functions and 36,763 lines, larger than `bin/`
-  itself. The full suite last ran green locally on 2026-10-06 at 1,965 passed
-  and 12 skipped, run in two halves (960 passed + 4 skipped, 1,005 passed + 8
-  skipped). It is dominated by black-box subprocess tests that invoke the extensionless
+  certification-evidence families that sit around it — 116 `test_*.py`
+  modules, 1,485 `def test_` functions and 38,369 lines, larger than `bin/`
+  itself (25,878 lines). The full suite last ran green locally on 2026-10-06 at
+  1,965 passed and 12 skipped, run in two halves (960 passed + 4 skipped, 1,005
+  passed + 8 skipped); that run predates the six modules and 61 test functions
+  added since (ADR-044, ADR-049, the 2026-10-11 defect fixes and TASK-234), and no full run
+  is recorded after them. It is dominated by black-box subprocess tests that invoke the extensionless
   `bin/adr-*` CLIs and assert on their JSON contracts and exit codes,
   supplemented by white-box tests that load those same scripts through
   `importlib.machinery.SourceFileLoader` or `runpy.run_path`, and by a large
@@ -20,8 +22,9 @@
   verified exception (see [Interfaces](#8-hook-latency-method-fixture--the-one-inbound-runtime-dependency)).
 - **Technology**: Python 3.10+ with `pytest` as the sole third-party dependency;
   JSON fixtures; Markdown ADR control fixtures; one GPLv3 licence text. One
-  single-fixture `tests/conftest.py`, two plain helper modules
-  (`tests/adr_fixtures.py`, `tests/generated_tree_imports.py`); no
+  single-fixture `tests/conftest.py`, three plain helper modules
+  (`tests/adr_fixtures.py`, `tests/generated_tree_imports.py`,
+  `tests/_precommit_project.py`); no
   `tests/__init__.py`, no fixture package.
 - **Location**: [`tests/`](../tests) — [`tests/fixtures/`](../tests/fixtures),
   [`tests/certification/`](../tests/certification),
@@ -56,9 +59,12 @@ It carries three distinct jobs that are usually separate concerns:
    that the three shipped template version stamps equal `plugin.json`'s version,
    that a composite action contains no `ANTHROPIC`/`API_KEY` string, that 51
    `SKILL.md` files (17 workflows × 3 clients) carry a non-empty English description (with a Dutch-word
-   regex guarding against the maintainer's first language leaking in). Because
-   no ADR `Enforcement` `path_glob` covers `skills/`, `prompts/`,
-   `instructions/`, `templates/` or `.github/`, **this suite is the only gate on
+   regex guarding against the maintainer's first language leaking in). ADR
+   `Enforcement` reaches these surfaces only through a few literal rules —
+   ADR-008 on `templates/githooks/pre-commit`, ADR-042 on
+   `.github/workflows/release-publish.yml`, and ADR-044's two `forbid_pattern`
+   rules on `skills/**/SKILL.md` (no plugin-cache path, no `sort -V`) — and not
+   at all on `prompts/` or `instructions/`, so **this suite is the main gate on
    those surfaces** — and the consequence is that editing documentation can
    break tests. `test_docs_claims.py` extends this to the claims a reader acts
    on: README counts, version literals and action pins in shipped templates.
@@ -80,8 +86,8 @@ mode is a red CI leg rather than a broken user workflow.
 
 | Feature | Description |
 | --- | --- |
-| **Ten-family test taxonomy** | The 107 modules group into quality gates, enforcement/judge, lifecycle & status, retrieval & index, readiness & grilling, guardian/hooks/runtime-config, clients/packaging/release, formats & migration, performance budgets, and runtime-env/MCP/generators/corpus. Per-family counts are not maintained. Filenames are unreliable — `test_documentation_contracts.py` and `test_docs_claims.py` test prose, not code. |
-| **Extensionless-script loading layer** | Four idioms substitute for packaging: `SourceFileLoader` + `spec_from_loader` (30 modules, because `bin/adr-status` has no `.py` suffix), `spec_from_file_location` (20), `runpy.run_path` (5, to reach module constants like `ENFORCEMENT_BLOCK_RE`), and `sys.path.insert` + plain import (35). 72 of 107 modules carry at least one. |
+| **Ten-family test taxonomy** | The 116 modules group into quality gates, enforcement/judge, lifecycle & status, retrieval & index, readiness & grilling, guardian/hooks/runtime-config, clients/packaging/release, formats & migration, performance budgets, and runtime-env/MCP/generators/corpus. Per-family counts are not maintained. Filenames are unreliable — `test_documentation_contracts.py` and `test_docs_claims.py` test prose, not code. |
+| **Extensionless-script loading layer** | Four idioms substitute for packaging: `SourceFileLoader` + `spec_from_loader` (31 modules, because `bin/adr-status` has no `.py` suffix), `spec_from_file_location` (20), `runpy.run_path` (5, to reach module constants like `ENFORCEMENT_BLOCK_RE`), and `sys.path.insert` + plain import (39). 76 of 116 modules carry at least one. |
 | **Key-free LLM certification** | The whole LLM surface (`adr-judge --llm`, `adr-suggest`) is exercised without a network call or an API key: a generated fake Python `claude` is injected via `--llm-cmd`. A capturing variant records the constructed prompt so the content-derived SHA-256 prompt fences can be asserted. A counter file proves N `llm_judge` ADRs cost exactly one invocation. |
 | **Bidirectional fail-open / fail-closed pinning** | Every advisory path is asserted to exit `0` (guardian `check`, `adr-watch`, `adr-suggest`, all hooks — *always* 0, even on corrupt state). Every fail-closed path is asserted **not to silently skip**: an oversize diff must say "enforcement was not performed" and must not say "skipping"; a killed ReDoS regex becomes a `violation`; a staged delete under `require_pattern` fails closed. |
 | **Adversarial-input battery** | Prompt injection with forged sentinels, ReDoS patterns authored *by the ADR under evaluation*, `../outside.py` path escapes, `::error::` and `%0A` injection into GitHub annotations, hostile shell metacharacters quoted for both posix and PowerShell, `<script>` in ADR titles, and a maintainer-home-directory leak scanner that ships its own meta-test to prove it is not vacuously passing. |
@@ -91,7 +97,7 @@ mode is a red CI leg rather than a broken user workflow.
 | **Frozen real-world corpus** | 169 ADRs / 1,946,079 bytes from `rvdbreemen/OTGW-firmware`, sha256-pinned per file in `manifest.json`, with `.gitattributes` `-text` so Windows checkouts cannot rewrite the hashed bytes. Every corpus test re-computes the hashes afterwards; migration writes only into `tmp_path` copies. |
 | **Windows-first honest skips** | Platform behaviour is `skipif`-guarded, never branched: `sys.platform == "win32"` for exec bits, `os.name == "nt"` for the polyglot wrapper, and a *usability* probe rather than mere presence for bash (Windows ships a `bash.exe` stub that exists but cannot run). |
 | **Retired-artefact absence checks** | Since ADR-029 the suite asserts that no compiled hook host comes back: `test_adr_hook_dispatch_matrix.py:283` and `test_client_adapter_generation.py:388` scan for `adr-hook.exe`, `ADR_KIT_NATIVE_HOOK` and `hooks/bin/` tokens, and `test_client_adapter_generation.py:211` asserts no hook tree carries a binary. |
-| **Shell-template portability** | `test_pre_commit_portability.py` (0.59.1) cuts the interpreter probe and version comparison out of the real `templates/githooks/pre-commit` and runs them against stub interpreters: a Python older than 3.10 is skipped, and the comparison must not use GNU `sort -V`. Bash-gated by the same usability idea. |
+| **Shell-template portability** | `test_pre_commit_portability.py` (0.59.1) cuts the interpreter probe and version comparison out of the real `templates/githooks/pre-commit` and runs them against stub interpreters: a Python older than 3.10 is skipped, and the comparison must not use GNU `sort -V`. Bash-gated by the same usability idea. Two later modules run the whole hook in a throwaway repository built by `tests/_precommit_project.py`: `test_pre_commit_engine_roots.py` (6, TASK-226: `ADR_KIT_ROOT`, installer payloads under `XDG_DATA_HOME`, the Copilot payload and both OpenCode package locations are candidates, and the not-found message says where it looked) and `test_pre_commit_reports_refusals.py` (2, TASK-225: the flock lock no longer silences the hook's stderr). Their gate is cruder — `os.name != "nt"` plus `shutil.which` presence of `bash`, `git` (and `flock`) — so both skip on every Windows runner. |
 | **Release-artefact test modules** | Six test modules are named in CI's file-existence check and are therefore shipped-release artefacts in their own right: deleting or renaming one fails CI before pytest runs. |
 | **Native OpenCode package contract** | `test_opencode_package.py` validates the root package entrypoint, public-artifact allowlist, shared version registry, canonical skills, and explicit exclusion from the certified three-client registry. `test_opencode_plugin.py` runs the callback/config smoke with Bun when available and skips honestly when Bun is absent. |
 | **Developer-machine isolation** | The installer tests probe a temporary directory, never the developer's live Copilot plugin; before 0.58.0 three Copilot tests renamed the real install aside and back (TASK-191, guarded in `test_agent_installer.py`). |
@@ -118,7 +124,8 @@ the repository — including one that a shipped runtime command actually reads.
 **Protocol**: command-line invocation.
 [`pytest.ini`](../pytest.ini) supplies `pythonpath = .` — which is what makes
 `hooks.hook_benchmark`, `clients.installer.*` and the one shared test helper
-importable — and declares `slow` as the only marker.
+importable — and declares two markers: `slow` and `tree_snapshot` (the latter
+used with the `tree_snapshot` fixture in `tests/conftest.py`).
 
 ```bash
 python -m pytest -q                               # full suite, ~11 minutes; 1,965 passed / 12 skipped on 2026-10-06
@@ -225,7 +232,18 @@ for `adr_context` and `adr_readiness`.
 `{suppressOutput: true, hookSpecificOutput: {hookEventName, additionalContext}}`
 under Claude (`CLAUDE_PLUGIN_ROOT` set) and top-level `additionalContext`
 otherwise; Copilot's `PreToolUse` correctly yields `{}` while its `PostToolUse`
-carries context. There is one host to pin: when 0.55.1 retired the native hook
+carries context. The same module (16 tests) pins edit-tier path extraction
+for patch tools: a Codex `apply_patch` `command` and an OpenCode `patchText`
+yield every added, updated, deleted or moved file, header-like lines inside a
+hunk and paths outside the workspace are dropped, and only a repeated event is
+deduplicated (TASK-227, TASK-228). ADR-049's first-session behaviour is pinned
+in-process through `adr_hook_core.evaluate` by
+[`tests/test_llm_onboarding_hook.py`](../tests/test_llm_onboarding_hook.py)
+(14 tests, gate `adr-llm-default-on-v1` of the ADR, Accepted 2026-10-11): the host
+client is recorded once per project and never overwritten, nothing is written
+without `docs/adr` or with the judge pass off, OpenCode records
+`opencode-cli`, and the per-layer question repeats after the cooldown until
+`llm.confirmed` is set. There is one host to pin: when 0.55.1 retired the native hook
 binary (ADR-029), the parity tests against it went too, including three
 parity-from-source tests in `test_adr_hook_result_limit.py`.
 
@@ -236,11 +254,11 @@ parity-from-source tests in `test_adr_hook_result_limit.py`.
 
 [`tests/fixtures/cli/latency-corpus.json`](../tests/fixtures/cli/latency-corpus.json)
 declares `method_id: "adr-kit-cli-latency-v1"`, `process_startup_included: true`,
-`ci_variance_percent: 20`, `python_floor_ms_p50: 124`, 24 per-tool
+`ci_variance_percent: 20`, `python_floor_ms_p50: 124`, 23 per-tool
 `{p50_ms, p95_ms, hard_timeout_ms}` rows each tagged `kind: workload` (doing
 the tool's real work) or `kind: startup` (`--help`, the interpreter-plus-import
-floor), an `excluded` map naming four entrypoints that cannot be budgeted
-(`adr-watch`, `adr-mcp`, `bump-version`, `adr-judge-precommit`) with the reason,
+floor), an `excluded` map naming three entrypoints that cannot be budgeted
+(`adr-mcp`, `bump-version`, `adr-judge-precommit`) with the reason,
 and a `known_over_ceiling` record for two whole-repository commands
 (`adr-audit --whole-codebase`, `adr-doctor --check`) excepted by ADR-033.
 `adr-lint` (1200/1600/2000) and `adr-retire` (800/1200/2000) keep their
@@ -250,14 +268,9 @@ worktrees) and 16/50/100-ADR scaling.
 Consumed by [`tests/test_cli_performance.py`](../tests/test_cli_performance.py)
 (structural guards and live smoke for `adr-lint` and `adr-retire`) and
 [`tests/test_cli_corpus_coverage.py`](../tests/test_cli_corpus_coverage.py)
-(9 tests, TASK-126), which fails on any `bin/` entrypoint that is neither
-budgeted nor excluded, on an exclusion that names no entrypoint, and on a
-budget row above the 2000 ms ceiling.
-
-**Known stale:** two budget rows, `adr-embed` and `adr-context-vector`, name
-tools that no longer exist since ADR-036 retired the vector layer. They pass
-because the coverage test checks `excluded` against the entrypoints
-(`test_cli_corpus_coverage.py:63-65`) but never checks `budgets` the same way.
+(10 tests, TASK-126), which fails on any `bin/` entrypoint that is neither
+budgeted nor excluded, on an exclusion or a budget row that names no
+entrypoint, and on a budget row above the 2000 ms ceiling.
 
 ### 8. Hook latency method fixture — the one inbound runtime dependency
 
@@ -276,14 +289,14 @@ records a 300-sample probe of a 3,072-byte no-CRT executable measuring the
 irreducible Windows process-creation floor (p50 18.1 ms, p95 25.9 ms), keeping
 one 144.6 ms scheduling outlier visible rather than smoothing it away.
 
-Verified budgets (in `hooks/manifest.json`): eight per-event triples with
-`hard_timeout_ms` between 900 ms (`user-prompt-submit`) and 2000 ms
-(`pre-compact`), plus 5000 ms for `pr-create`, which runs the judge.
+Verified budgets (in `hooks/manifest.json`): eight per-event triples: seven
+with `hard_timeout_ms` between 900 ms (`user-prompt-submit`) and 2000 ms
+(`pre-compact`), and 5000 ms for `pr-create`, which runs the judge.
 
 This is the component's only **inbound** edge from shipped code:
 `hooks/hook_benchmark.py:115-118` resolves
 `plugin_root / "tests" / "fixtures" / "hooks" / "reference-corpus.json"` and
-`json.loads` it, and `bin/adr_doctor_probes.py:13,174` calls
+`json.loads` it, and `bin/adr_doctor_probes.py:14,261` calls
 `measure()` during `adr-doctor --deep`. See the corresponding finding below.
 The qualifier *shipped* is load-bearing and exact: the only other inbound edge
 is `scripts/refresh-otgw-corpus.py`, which writes the OTGW corpus manifest but
@@ -308,7 +321,7 @@ reaches a distributed tree.
   nygard 11 / unknown 73, action counts deterministic-preview 79 /
   guided-migration 90, `metadata_dry_run` `exit_code: 2`, `changed: 152`,
   `failed: 17`).
-- [`clients/fixtures/*.json`](../clients/fixtures) — three degradation records
+- [`clients/fixtures/*.json`](../clients/fixtures) — four degradation records
   referenced by `clients/exceptions.json`; `test_client_adapter_generation.py:174`
   asserts every declared exception has a `rationale`, a `user_effect` and an
   existing fixture whose `exception_id` matches, so **a client degradation
@@ -321,6 +334,8 @@ reaches a distributed tree.
 | `ADR_KIT_RUN_PERF=1` | set | opts into the absolute cold-process p95 gate (release certification only) |
 | `ADR_KIT_NO_LLM=1` | set | forces declarative-only; asserted to beat an explicit `--llm` |
 | `ADR_KIT_SUGGEST=1` | set | opts into the advisory suggest pass |
+| `ADR_KIT_HOST_CLIENT` | set | `test_llm_onboarding_hook.py` sets `opencode-cli` to prove the hook records the host the OpenCode plugin names, not the envelope's client |
+| `ADR_KIT_ROOT` | popped, then selectively set | popped (with `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `CODEX_HOME`, `COPILOT_HOME` and every `GIT_*`) by `_precommit_project.py` so the pre-commit candidate search sees only the fixture's engines; set deliberately in `test_pre_commit_engine_roots.py` and `test_skill_resolver.py` to prove an explicit root is a candidate and wins |
 | `ADR_KIT_OVERRIDE` | set *and* popped | the `"ADR-NNN: reason"` audit-trail contract in one module; **popped** by other judge modules so a developer's local override cannot skew results |
 | `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, `CURSOR_PLUGIN_ROOT`, `COPILOT_CLI` | popped, then selectively set | popped so tests never pick up the checkout's own `docs/adr/`; `CLAUDE_PLUGIN_ROOT` then set deliberately to select the hook output envelope |
 | `PATH` | rewritten | pointed at an empty directory to simulate a missing Python, or prepended with a fake `codex` executable |
@@ -333,11 +348,16 @@ status="Proposed", open_questions="None.", verified_in=None, references=...) -> 
 imported by `test_adr_open_questions.py`, `test_adr_readiness_ci.py`,
 `test_adr_guardian_queue.py`, `test_adr_auto_grill.py` and
 `test_adr_substance.py` — **shared by importing another test module**,
-which works only because `pythonpath = .` puts `tests/` on `sys.path`. Two
-plain helper modules sit beside it: `tests/adr_fixtures.py` (`isolated_copy`,
-which neutralises a borrowed ADR's cross-references; 4 importers) and
-`tests/generated_tree_imports.py` (first-party import closure inside a
-generated tree; 2 importers).
+which works only because `pythonpath = .` puts `tests/` on `sys.path`. The
+pattern recurs: `_load_judge_module` from `test_adr_judge_llm.py`,
+`_adr_dir`/`_fake_cli` from `test_adr_substance.py` and `CODE_DIFF` from
+`test_llm_kill_switch.py` are imported the same way, most recently by
+`test_machine_llm_overrides.py`. Three plain helper modules sit beside it:
+`tests/adr_fixtures.py` (`isolated_copy`, which neutralises a borrowed ADR's
+cross-references; 4 importers), `tests/generated_tree_imports.py` (first-party
+import closure inside a generated tree; 2 importers) and
+`tests/_precommit_project.py` (a throwaway repository with the real pre-commit
+hook and linkable engine roots; 2 importers).
 
 Everything else the suite imports comes from outside the component, reached by
 `sys.path` manipulation rather than packaging: roughly 40 symbols from
@@ -360,8 +380,8 @@ Code-phase cluster slugs it comprises, which are the verified identifiers.
 | `bin-cli-gates`, `bin-cli-enforcement`, `bin-cli-lifecycle`, `bin-cli-retrieval`, `bin-cli-migration`, `bin-cli-readiness`, `bin-cli-mcp` | **subprocess** — `[sys.executable, <bin script>, …]` for the 26 entrypoints, plus **module load** via `SourceFileLoader` / `runpy.run_path` to call pure functions and read module constants in-process |
 | `bin-lib-semantic-core` | **import** after `sys.path.insert` — `adr_schema`, `adr_catalog`, `adr_format`, `adr_query` (`query_adr_context`, `IndexQueryError`) |
 | `bin-lib-readiness-grill` | **import** — `adr_readiness`, `adr_readiness_ci`, `adr_retrieval_health`, `adr_guardian_queue`, `adr_grill_signal` |
-| `bin-lib-runtime` | **import** — `adr_state` (`atomic_save_state`, `update_state`), `adr_regex` (`RegexEvaluator`, `RegexTimeoutError`) |
-| `bin-lib-doctor` | **import** — `adr_doctor_checks` (`check_mcp_launcher`, `check_hook_package`), `adr_doctor_models` (`benchmark_extension`), `adr_doctor_probes` (`classify_model_probe`, and the underscore-private `_mcp_deep`, making it de facto public API) |
+| `bin-lib-runtime` | **import** — `adr_state` (`atomic_save_state`, `update_state`), `adr_regex` (`RegexEvaluator`, `RegexTimeoutError`), `adr_llm` (`run_cli`, including a `.cmd` shim found through `shutil.which`), `adr_config` (`apply_machine_overrides`, ADR-049's four per-machine LLM switches) |
+| `bin-lib-doctor` | **import** — `adr_doctor_checks` (`check_mcp_launcher`, `check_hook_package`), `adr_doctor_models` (`benchmark_extension`), `adr_doctor_probes` (`run_deep_extensions`, and the underscore-private `_mcp_deep` and `_native_deep`, making them de facto public API; `_mcp_deep` now takes the client's registered argv, and the Codex native probe is fed a `$CODEX_HOME/config.toml`) |
 | `hooks` | **import** (`adr_hook_core`, the `adapters/` package, `hook_benchmark`), **subprocess** (`adr-hook.py`, `run-hook.cmd`), and **JSON file read** (`hooks/manifest.json`, `hooks/hooks.json`) |
 | `clients-installer` | **import** of all eleven `clients/installer/*.py` submodules (including `native.py` and `judge_backend.py`, both imported by `test_agent_installer.py:18`) and **module load** of `scripts/install-agent-envs.py` |
 | `packaging-ci` | **import / module load** of `scripts/release.py` and its phase modules (`test_release_driver.py`), `scripts/client_generation.py`, `client_certification.py`, `client_evidence.py`, `project_setup.py`, `adr_settings.py`, `settings.py`, `version_sites.py`, `check-branch-sync.py`, `build-client-adapters.py`, and **text assertions** on `.github/workflows/*.yml` and `packaging/*.json`. Plus one **inbound write**: `scripts/refresh-otgw-corpus.py:24,186` regenerates `tests/testsets/otgw-firmware/manifest.json` including the 169 `sha256` entries that `test_otgw_corpus.py` then asserts are byte-unchanged — the corpus refresher is the only writer into this component. The edge therefore runs three ways: CI gates the suite, the suite gates CI's own files, and one release script owns a corpus the suite guards |
@@ -373,9 +393,9 @@ Code-phase cluster slugs it comprises, which are the verified identifiers.
 
 | System | How it is used |
 | --- | --- |
-| **`git` CLI** | Invoked by about 26 modules: `init`, `add`, `commit`, `mv`, `rm`, `tag`, `branch`, `checkout --detach`, `clone --depth`, `rev-parse`, `ls-files --stage`, `write-tree`, `archive`. Only `test_adr_judge_override.py:216` and `test_adr_git_diff_semantics.py:202` skip when git is absent; the rest assume it |
+| **`git` CLI** | Invoked by about 26 modules: `init`, `add`, `commit`, `mv`, `rm`, `tag`, `branch`, `checkout --detach`, `clone --depth`, `rev-parse`, `ls-files --stage`, `write-tree`, `archive`. Only `test_adr_judge_override.py:216`, `test_adr_git_diff_semantics.py:202` and the two pre-commit modules (`test_pre_commit_engine_roots.py`, `test_pre_commit_reports_refusals.py`, through `_precommit_project.tools_present`) skip when git is absent; the rest assume it |
 | **Filesystem / OS** | `tmp_path` throwaway trees throughout; POSIX exec bits and `chmod`; `utime` for staleness; process spawning; file locking through `clients/installer`'s `client_lock` |
-| **`bash` / `sh`** | `test_python_check.py`, `test_pre_commit_portability.py` and two `test_adr_generate_scripts.py` tests, guarded by a *usability* probe (`_find_usable_bash`, `_usable_bash`) rather than mere `shutil.which` presence |
+| **`bash` / `sh`** | `test_python_check.py`, `test_pre_commit_portability.py`, `test_guardian_entry_portability.py`, `test_skill_resolver.py`, guarded by a *usability* probe (`_find_usable_bash`, `_usable_bash`) rather than mere `shutil.which` presence; the one bash test in `test_adr_generate_scripts.py` (`:598-600`), `test_pre_commit_engine_roots.py` and `test_pre_commit_reports_refusals.py` instead skip on Windows and check presence only |
 | **`cmd.exe`** | `test_packaging_contract.py:117` — the Windows polyglot-wrapper quietness contract (`stderr == ""`) |
 | **GitHub Actions** | The runner matrix, branch protection (only `validate` required on `dev`), `pip install pytest`, and the `$GITHUB_STEP_SUMMARY` / `$GITHUB_OUTPUT` sinks that `test_adr_readiness_ci.py` simulates |
 | **PyPI** | `pytest` only, installed by CI. `packaging/dependencies.json` declares `runtime: []`, `development: ["pytest"]`, and `tests/certification/simulated-pass.json` records `development_in_runtime: false` — two tests assert exactly that, so the dependency is self-declaring |
@@ -393,7 +413,7 @@ re-checked against the v0.59.1 tree.
    but lives in a directory the release allowlist excludes.**
    `hooks/hook_benchmark.py:115-118` reads
    `plugin_root/tests/fixtures/hooks/reference-corpus.json`;
-   `bin/adr_doctor_probes.py:13,174` calls it during `adr-doctor --deep`;
+   `bin/adr_doctor_probes.py:14,261` calls it during `adr-doctor --deep`;
    `bin/adr-doctor:116` defaults `--plugin-root` to the adr-kit installation root.
    But no distributed tree contains that fixture, by two independent mechanisms:
    `tests` is absent from `packaging/public-artifacts.json`'s `include_roots`
@@ -403,24 +423,24 @@ re-checked against the v0.59.1 tree.
    `hooks` *is* an `include_root`, so `hook_benchmark.py` itself does ship. The
    shipped module points at an unshipped fixture. The `FileNotFoundError` is caught
    by the `except (OSError, ValueError, subprocess.SubprocessError)` handler at
-   `adr_doctor_probes.py:213` and reported as
+   `adr_doctor_probes.py:300` and reported as
    `hook-latency-extension: failed, required=False` — non-blocking, but it means
    **the deep hook-latency probe can only actually measure inside a development
    checkout**. Mechanically implied from the read paths and the allowlist, not
    reproduced against an installed payload.
 
-2. **ADR-015's "every deterministic path has a budget entry" clause is now
-   checked one way only.** ADR-015's Decision Contract Must clause
+2. **ADR-015's "every deterministic path has a budget entry" clause is
+   checked in both directions, but re-timed for two tools only.** ADR-015's Decision Contract Must clause
    (`docs/adr/ADR-015…md:144-145`) reads *"Every deterministic user-facing CLI
    or hook path keeps a p50/p95/hard-budget entry in a committed latency
    fixture with measured evidence."* `test_cli_corpus_coverage.py` (TASK-126)
-   enforces the forward direction: every `bin/` entrypoint must be budgeted or
-   excluded by name. The reverse is unchecked, which is how the `adr-embed` and
-   `adr-context-vector` rows outlived their tools. And the corpus numbers are
+   enforces both directions: every `bin/` entrypoint must be budgeted or
+   excluded by name, and every budget row and exclusion must name a `bin/`
+   entrypoint (TASK-221). But the corpus numbers are
    recorded, not re-measured: only `adr-lint` and `adr-retire` are timed by the
    suite, because **both layers of `test_cli_performance.py` hardcode that
    pair** — `:39` iterates the literal tuple `("adr-lint", "adr-retire")` and
-   `:300` a hardcoded `(tool, argv)` list. The other 22 rows carry measured
+   `:300` a hardcoded `(tool, argv)` list. The other 21 rows carry measured
    evidence from 2026-08-05 (`cli_measured`) but no test re-times them.
 
 3. **Two latency methods with budgets in different places, plus a third budget
@@ -438,11 +458,11 @@ re-checked against the v0.59.1 tree.
    2026-07-26) — ADR-015 generalised a discipline the hook harness already
    practised.
 
-4. **CI does not use `-m "not slow"`, contradicting `pytest.ini`.** The marker
-   docstring says `slow` tests are *"skipped in fast CI with `-m "not slow"`"*,
-   but `validate.yml:214` runs `python -m pytest -q --strict-markers` with no
-   marker filter, so all four wall-clock tests execute on all six matrix legs.
-   The docstring is stale documentation. Further latency assertions live in
+4. **CI runs every `slow` test (resolved).** The `pytest.ini` marker docstring
+   now reads *"deselect locally with `-m "not slow"` (CI runs them all)"*,
+   which agrees with `validate.yml:214`: `python -m pytest -q --strict-markers`
+   with no marker filter, so all four wall-clock tests execute on all six
+   matrix legs. Further latency assertions live in
    modules counted in other families and carry no marker at all, so
    `-m "not slow"` would not skip them either.
 
@@ -457,9 +477,9 @@ re-checked against the v0.59.1 tree.
 
 6. **Little shared test infrastructure.** `tests/conftest.py` holds one
    fixture (`tree_snapshot`, TASK-128) and says it should stay single-purpose;
-   two plain helper modules (`adr_fixtures.py`, `generated_tree_imports.py`)
-   carry one concern each; no `tests/__init__.py`, no fixture package. Loader
-   boilerplate is duplicated across 72 modules in four idioms, and distinct
+   three plain helper modules (`adr_fixtures.py`, `generated_tree_imports.py`,
+   `_precommit_project.py`) carry one concern each; no `tests/__init__.py`, no
+   fixture package. Loader boilerplate is duplicated across 76 modules in four idioms, and distinct
    ADR-writing helpers with different signatures are reimplemented per module.
    The most widely shared helper, `_write_adr`, is exported by importing
    another test module. This is the
@@ -574,6 +594,16 @@ ADR-039 (native OpenCode package) has an empty `verified_in`;
 `test_opencode_package.py` and `test_opencode_plugin.py` are its focused
 evidence in practice, and neither changes the certified three-client gate.
 
+The 2026-10-11 ADRs also have an empty `verified_in` but name tests in their
+prose. ADR-049 (Accepted 2026-10-11, `binding: true`) makes
+`tests/test_llm_onboarding_hook.py` its gate `adr-llm-default-on-v1` and names
+`tests/test_machine_llm_overrides.py`; ADR-047 cites a test in
+`tests/test_adr_query.py`. ADR-048 lists `tests/certification` among its
+`components` and moves native evidence to per-OS records
+(`tests/certification/<client>/<os>-native.json`); that validator and the new
+records are not implemented yet, so the tree still holds only the three
+`windows-native.json` files.
+
 ADR-004 is referenced by name inside `test_adr_status_coverage.py` and
 `test_adr_watch.py` assertions, but does not scope `tests/`. No other ADR
 applies.
@@ -584,8 +614,8 @@ applies.
 flowchart TB
     subgraph QA["Quality Assurance (quality-assurance)"]
         direction TB
-        subgraph SUITE["pytest suite — 107 modules · 1,410 test functions"]
-            LOAD["module-loading layer<br/>SourceFileLoader · spec_from_file_location<br/>runpy.run_path · sys.path.insert<br/><i>duplicated in 72 modules</i>"]
+        subgraph SUITE["pytest suite — 116 modules · 1,485 test functions"]
+            LOAD["module-loading layer<br/>SourceFileLoader · spec_from_file_location<br/>runpy.run_path · sys.path.insert<br/><i>duplicated in 76 modules</i>"]
             BEHAV["behavioural certification<br/>CLIs · hooks · MCP · installer · generator · release driver · OpenCode package"]
             ARTE["artefact-contract tests<br/>README · docs claims · workflows · SKILL.md · schemas · templates"]
             PERF["performance budgets<br/>two-layer: structural + live smoke<br/>+ corpus coverage gate"]
@@ -593,7 +623,7 @@ flowchart TB
         end
         subgraph FIX["fixtures &amp; corpora"]
             LINTFIX["fixtures/ — 11 lint control dirs<br/>+ madr|nygard (+ -migrated)"]
-            CLILAT["fixtures/cli/latency-corpus.json<br/><b>adr-kit-cli-latency-v1</b> · 2000 ms<br/>24 budget rows · 4 excluded"]
+            CLILAT["fixtures/cli/latency-corpus.json<br/><b>adr-kit-cli-latency-v1</b> · 2000 ms<br/>23 budget rows · 3 excluded"]
             HOOKLAT["fixtures/hooks/reference-corpus.json<br/><b>adr-kit-hook-latency-v1</b> · method only<br/>+ windows-process-floor.json"]
             NATFIX["fixtures/{claude,codex,copilot}/<br/>native-contract.json"]
             GRILLFIX["fixtures/grill/*.json"]
