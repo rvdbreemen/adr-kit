@@ -14,6 +14,7 @@ related:
   - "ADR-006"
   - "ADR-008"
   - "ADR-045"
+  - "ADR-048"
 topics:
   - "engine resolution"
   - "python interpreter"
@@ -78,6 +79,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-045
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-048
     changed_via: adr-kit lifecycle
 ```
 

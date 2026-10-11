@@ -408,7 +408,7 @@
       "path": "ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-26",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce...",
       "topics": [
         "client parity",
@@ -2072,7 +2072,7 @@
       "path": "ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-26",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi...",
       "topics": [
         "client compatibility",
@@ -2626,6 +2626,70 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-048",
+      "title": "Certify each native client on every platform it runs on",
+      "path": "ADR-048-certify-each-native-client-on-every-platform-it-runs-on.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: certify each client on every platform it runs on, from a real run on that platform, because a claim ca...",
+      "topics": [
+        "client versions",
+        "native certification",
+        "platform support",
+        "release evidence"
+      ],
+      "aliases": [
+        "linux-native.json",
+        "release_eligible",
+        "Windows native release baseline",
+        "windows-native.json"
+      ],
+      "components": [
+        "scripts/client_certification.py",
+        "scripts/client_evidence.py",
+        "scripts/client_support_matrix.py",
+        "tests/certification"
+      ],
+      "symbols": [
+        "assemble_native_bundle",
+        "CERTIFICATION_MAX_AGE_DAYS",
+        "NATIVE_EVIDENCE_PATHS",
+        "validate"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Certify a client only on a platform where a native record for that platform passes every required outcome, binds to the candidate, and is at most 30 days old.",
+          "State, for every client and platform, either the certification or the record's actual state with its reason.",
+          "Read every stated client version from the evidence."
+        ],
+        "must_not": [
+          "Record an outcome as passing that was not measured on that platform.",
+          "Let a record for one platform certify another, or let an incomplete record certify anything.",
+          "Pin a client version in a test or document outside the evidence.",
+          "Claim certification in a release for a client and platform without a record that is fresh at that release's commit."
+        ],
+        "exceptions": [
+          "The simulated fixture (tests/certification/simulated-pass.json) stays a generator test input. It never certifies a client."
+        ],
+        "verification": [
+          "tests/testclientcertification.py and tests/testnativeclientpackages.py, extended with the implementation."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2878,6 +2942,12 @@
     {
       "source": "ADR-010",
       "target": "ADR-042",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-048",
       "type": "related",
       "resolved": true
     },
@@ -3674,6 +3744,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-039",
+      "target": "ADR-048",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-040",
       "target": "ADR-011",
       "type": "related",
@@ -3806,6 +3882,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-044",
+      "target": "ADR-048",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-045",
       "target": "ADR-004",
       "type": "related",
@@ -3874,6 +3956,24 @@
     {
       "source": "ADR-047",
       "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-048",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-048",
+      "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-048",
+      "target": "ADR-044",
       "type": "related",
       "resolved": true
     }
