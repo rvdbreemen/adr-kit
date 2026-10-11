@@ -39,8 +39,10 @@ SKILLS = {
     "github-copilot-cli": REPO_ROOT / "copilot" / "skills" / "setup" / "SKILL.md",
 }
 
+TREES = {"codex-cli": REPO_ROOT / "codex", "github-copilot-cli": REPO_ROOT / "copilot"}
+
 DOCUMENTED = re.compile(
-    r"python\s+<plugin-root>/scripts/setup-project\.py\s+(?P<args>[^`\n]+)"
+    r"<python>\s+<plugin-root>/scripts/setup-project\.py\s+(?P<args>[^`\n]+)"
 )
 
 
@@ -73,6 +75,32 @@ def test_the_command_each_skill_documents_actually_runs(client, tmp_path):
         f"the command {client}'s setup skill documents exits "
         f"{result.returncode}:\n{result.stderr}"
     )
+
+
+@pytest.mark.parametrize("client", ["codex-cli", "github-copilot-cli"])
+def test_the_documented_command_runs_from_the_tree_the_skill_ships_in(client, tmp_path):
+    """An installed skill's <plugin-root> is its own tree, not a checkout.
+
+    The test above runs the checkout's script, so it never saw that codex/ and
+    copilot/ did not ship one (DEF-34).
+    """
+    match = DOCUMENTED.search(SKILLS[client].read_text(encoding="utf-8"))
+    assert match, f"{client} setup skill no longer documents the command"
+    argv = (
+        match.group("args")
+        .replace("<client-id>", client)
+        .replace("<workspace>", str(tmp_path))
+        .split("`")[0]
+        .split()
+    )
+    script = TREES[client] / "scripts" / "setup-project.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), *argv, "--dry-run"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize(

@@ -17,7 +17,7 @@ You are running the ADR-set health sweep. Your job is to run whichever tier(s) a
 Resolve the plugin bin path (same resolver used in /adr-kit:judge and /adr-kit:init):
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1)
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
 ```
 
 If `ADR_KIT` is empty (plugin not installed), fall back to a local checkout:
@@ -159,13 +159,15 @@ Enforcement coverage percent (from 2c) in the append-only trend log.
 
 ## Step 3 — LLM tier (suggest + audit) — ALWAYS confirm cost first
 
-**MANDATORY cost confirmation gate.** Before running this tier, read `docs/adr/.adr-kit.json`:
+**MANDATORY cost confirmation gate.** Before running this tier, read the effective settings with `"$ADR_KIT/bin/adr-settings" --adr-dir docs/adr` (a value in the gitignored `.adr-kit.local.json` wins over `.adr-kit.json` for the LLM switches):
+
+- If `guardian.llm_enabled` is `false`, skip this tier and stop at Step 4: the user switched it off (for the project or this machine).
 
 - If `guardian.llm_autorun` is `false` (default), print:
 
   ```
-  [adr-guardian] LLM tier: adr-suggest + full audit will invoke claude-sonnet-4-6.
-  Estimated cost: ~$0.10–0.30. Run now? (y/N)
+  [adr-guardian] LLM tier: adr-suggest + full audit will run on this client's own model
+  (the recorded judge host; no model is pinned, ADR-036/ADR-043). Run now? (y/N)
   ```
 
   Before printing it, run `"$ADR_KIT/bin/adr-substance" --estimate` and add

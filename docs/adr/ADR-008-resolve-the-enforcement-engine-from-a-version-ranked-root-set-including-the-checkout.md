@@ -10,7 +10,8 @@ verified_in:
   - "tests/test_packaging_contract.py"
 supersedes: []
 superseded_by: null
-format: "madr"
+related:
+  - "ADR-044"
 topics:
   - "enforcement engine"
   - "root resolution"
@@ -22,6 +23,7 @@ aliases:
 components:
   - "githooks"
   - "adr-judge"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -55,6 +57,11 @@ status_history:
     status: Accepted
     changed_by: Codex
     reason: Reverified checkout-engine packaging coverage after native plugin-root hook migration; decision unchanged
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-044 amends ADR-008: adds ADR_KIT_ROOT and a setup-recorded root to the version-ranked candidate set"
     changed_via: adr-kit lifecycle
 ```
 

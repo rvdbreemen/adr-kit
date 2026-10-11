@@ -58,10 +58,16 @@ DEFAULT_BACKEND = BACKEND_HOST
 # GitHub Copilot CLI 1.0.71. Deliberately NO model flag in any row -- each CLI
 # then resolves whatever model its own user configured, which is the entire
 # point of the host backend.
+#
+# OpenCode (1.18.28, verified 2026-10-06) reads the prompt on stdin and writes
+# the answer to stdout. `--pure` skips external plugins: run inside a project
+# with adr-kit's own OpenCode plugin, a judging call would otherwise trigger
+# that plugin's hooks. It is a host here, not a certified client (ADR-039).
 HOST_COMMANDS = {
     "claude-code-cli": ["claude", "-p"],
     "codex-cli": ["codex", "exec"],
     "github-copilot-cli": ["copilot", "-p"],
+    "opencode-cli": ["opencode", "run", "--pure"],
 }
 
 # Machine-local, gitignored sibling of .adr-kit.json. Neither entry point can
@@ -184,6 +190,13 @@ def run_cli(cmd: List[str], input_text: str, timeout_s: float) -> subprocess.Com
     `subprocess.TimeoutExpired` on timeout, like `subprocess.run`.
     """
     session = {"start_new_session": True} if os.name != "nt" else {}
+    # Resolve the name the way a shell would. On Windows an npm-installed CLI
+    # (codex, copilot, opencode) is a `<name>.cmd` shim that CreateProcess only
+    # finds by its full path, so the bare name failed with FileNotFoundError and
+    # the LLM pass degraded silently (TASK-233).
+    resolved = shutil.which(cmd[0]) if cmd else None
+    if resolved:
+        cmd = [resolved, *cmd[1:]]
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=out, stderr=err, **session
@@ -311,9 +324,13 @@ def resolve_llm_backend(
 ) -> Tuple[Optional[LLMBackend], List[str]]:
     """Pick the backend for this run and collect anything the user should know.
 
-    Precedence, highest first: --llm-cmd, ADR_KIT_LLM_CMD, judge.backend. The
-    first two are operator-controlled and therefore unrestricted; the third is
-    a key looked up in the code-side BACKENDS table and can introduce nothing.
+    Precedence, highest first: ADR_KIT_NO_LLM=1 (no backend at all), --llm-cmd,
+    ADR_KIT_LLM_CMD, judge.backend. The switch is checked here, not in each
+    caller, so it holds for every pass that calls a model: the judge, the
+    suggestion pass and the substance check (TASK-221). --llm-cmd and
+    ADR_KIT_LLM_CMD are operator-controlled and therefore unrestricted;
+    judge.backend is a key looked up in the code-side BACKENDS table and can
+    introduce nothing.
 
     Warnings are returned rather than printed so --show-config can render them
     without a judging run, and so the caller controls ordering.
@@ -326,6 +343,9 @@ def resolve_llm_backend(
     # (adr_config.REMOVED_KEYS, ADR-036), so a validated cfg cannot carry one.
     warnings: List[str] = []
 
+    if env.get("ADR_KIT_NO_LLM") == "1":
+        warnings.append("ADR_KIT_NO_LLM=1: no model is called; the LLM pass is skipped.")
+        return None, warnings
     if cli_cmd:
         return SubprocessBackend(_split_cmd(cli_cmd), source="flag"), warnings
     if env.get("ADR_KIT_LLM_CMD"):
@@ -391,3 +411,158 @@ def credential_refusal_message(path, offenders: List[str]) -> str:
         f"while the key is in it. Then rotate the key: it is already in "
         f"your git history."
     )
+
+
+# ---------- the machine-local judge config (ADR-025, ADR-049) ----------
+#
+# One writer for the gitignored companion of .adr-kit.json, shared by
+# `adr-judge --set-backend/--record-host-client` and the SessionStart hook, so
+# both write atomically and both keep the file out of version control the same
+# way.
+
+
+def atomic_write_json(path, document: Dict) -> None:
+    from pathlib import Path
+
+    path = Path(path)
+    payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    temporary = path.with_name(f".{path.name}.tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(temporary, "w", encoding="utf-8", newline="\n") as out:
+        out.write(payload)
+        out.flush()
+        os.fsync(out.fileno())
+    os.replace(temporary, path)
+
+
+def register_git_exclude(adr_dir, name: str) -> None:
+    """Best-effort .git/info/exclude entry for a machine-local file.
+
+    .gitignore is committed and belongs to the project; .git/info/exclude is
+    per-clone and belongs to this machine, which is the right scope for a file
+    that records one operator's client choice. Every failure is silent: a
+    missing exclude entry is untidy, not unsafe.
+    """
+    from pathlib import Path
+
+    adr_dir = Path(adr_dir)
+    try:
+        located = _locate_git(adr_dir)
+        if located is None:
+            return
+        work_tree, common_dir = located
+        exclude = common_dir / "info" / "exclude"
+        entry = (adr_dir / name).resolve()
+        try:
+            relative = entry.relative_to(work_tree).as_posix()
+        except ValueError:
+            relative = name
+        existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+        if relative in existing.splitlines():
+            return
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        with open(exclude, "a", encoding="utf-8", newline="\n") as out:
+            out.write(("" if existing.endswith("\n") or not existing else "\n") + relative + "\n")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _locate_git(start):
+    """(work tree, common git dir) for `start`, found by walking up; or None.
+
+    No `git` subprocess: the SessionStart hook writes through this and has a
+    1000 ms budget (ADR-030), which one process spawn on a cold Windows machine
+    can eat. A `.git` directory is the common dir itself; a `.git` file (a linked
+    worktree) points at its own git dir, whose `commondir` names the shared one,
+    and info/exclude lives there.
+    """
+    from pathlib import Path
+
+    current = Path(start).resolve()
+    for candidate in (current, *current.parents):
+        dot_git = candidate / ".git"
+        if dot_git.is_dir():
+            return candidate, dot_git
+        if dot_git.is_file():
+            text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+            if not text.startswith("gitdir:"):
+                return None
+            git_dir = Path(text[len("gitdir:"):].strip())
+            if not git_dir.is_absolute():
+                git_dir = (candidate / git_dir).resolve()
+            common_file = git_dir / "commondir"
+            if common_file.is_file():
+                common = Path(common_file.read_text(encoding="utf-8").strip())
+                git_dir = common if common.is_absolute() else (git_dir / common).resolve()
+            return candidate, git_dir
+    return None
+
+
+def _read_json_object(path) -> Optional[Dict]:
+    """The object in `path`, {} when the file is absent, None when unusable."""
+    from pathlib import Path
+
+    path = Path(path)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_local_value(adr_dir, block: str, key: str, value):
+    """Record one `block.key` value machine-locally, atomically, and untracked."""
+    from pathlib import Path
+
+    path = Path(adr_dir) / LOCAL_CONFIG_NAME
+    document = _read_json_object(path) or {}
+    section = document.get(block)
+    if not isinstance(section, dict):
+        section = {}
+    section[key] = value
+    document[block] = section
+    atomic_write_json(path, document)
+    register_git_exclude(adr_dir, LOCAL_CONFIG_NAME)
+    return path
+
+
+def write_local_judge_value(adr_dir, key: str, value: str):
+    """Record one judge value machine-locally, atomically, and keep it untracked."""
+    return write_local_value(adr_dir, "judge", key, value)
+
+
+def record_host_client_if_absent(adr_dir, client: str) -> Optional[str]:
+    """Record `client` as the judge host when nothing has been decided yet.
+
+    ADR-049: a default install should leave the LLM passes able to run, and the
+    common install route (a client's own plugin install) never runs the
+    installer that used to record the host. The session knows which client it
+    runs in, so the first session records it. Returns the recorded id, or None
+    when it wrote nothing:
+
+    * the client has no host command (an id outside `HOST_COMMANDS`);
+    * the project switched the pass off (`judge.llm_enabled: false`);
+    * a host client is already recorded -- a person's choice is never replaced;
+    * either config file exists but cannot be read -- never clobber it.
+    """
+    from pathlib import Path
+
+    if client not in HOST_COMMANDS:
+        return None
+    adr_dir = Path(adr_dir)
+    tracked = _read_json_object(adr_dir / ".adr-kit.json")
+    local = _read_json_object(adr_dir / LOCAL_CONFIG_NAME)
+    if tracked is None or local is None:
+        return None
+    tracked_judge = tracked.get("judge") if isinstance(tracked.get("judge"), dict) else {}
+    local_judge = local.get("judge") if isinstance(local.get("judge"), dict) else {}
+    # The effective switch: this machine's value wins over the team's (TASK-233).
+    enabled = local_judge.get("llm_enabled", tracked_judge.get("llm_enabled", True))
+    if enabled is False:
+        return None
+    if local_judge.get("host_client"):
+        return None
+    write_local_judge_value(adr_dir, "host_client", client)
+    return client

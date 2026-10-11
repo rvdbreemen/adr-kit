@@ -136,7 +136,7 @@
       "path": "ADR-004-layered-adr-context-injection.md",
       "format": "canonical",
       "status": "Accepted",
-      "date": "2026-08-03",
+      "date": "2026-10-11",
       "decision_summary": "Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo...",
       "topics": [
         "context injection",
@@ -228,7 +228,7 @@
       "path": "ADR-006-prepare-platform-local-marketplaces-for-native-installs.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-18",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository...",
       "topics": [
         "installation",
@@ -316,7 +316,7 @@
       "path": "ADR-008-resolve-the-enforcement-engine-from-a-version-ranked-root-set-including-the-checkout.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-20",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: add the checkout as another candidate root, ranked by manifest version like every other root, because...",
       "topics": [
         "enforcement engine",
@@ -408,7 +408,7 @@
       "path": "ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-26",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce...",
       "topics": [
         "client parity",
@@ -1112,7 +1112,7 @@
       "path": "ADR-023-record-the-pull-request-guard-as-a-fail-closed-tier.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-06",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b...",
       "topics": [
         "enforcement",
@@ -1832,8 +1832,8 @@
       "title": "Run the Suggestion Pass by Default on the Same Terms as the Judge",
       "path": "ADR-035-run-the-suggestion-pass-by-default-on-the-same-terms-as-the-judge.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-06",
+      "status": "Accepted",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied...",
       "topics": [
         "cost control",
@@ -1887,7 +1887,7 @@
       "path": "ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-09",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: retire definitively; host model plus operator escape hatch.",
       "topics": [
         "backend selection",
@@ -2072,7 +2072,7 @@
       "path": "ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-26",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi...",
       "topics": [
         "client compatibility",
@@ -2200,7 +2200,7 @@
       "path": "ADR-041-automatically-hand-off-unfinished-proposed-adrs-to-interactive-grilling.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-20",
+      "date": "2026-10-06",
       "decision_summary": "Chosen option: automatic interactive handoff at the next user-visible prompt, because it closes the completion gap wi...",
       "topics": [
         "auto grilling",
@@ -2322,6 +2322,439 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-043",
+      "title": "Forbid a pinned model or a default LLM command in every model-calling entry point",
+      "path": "ADR-043-forbid-a-pinned-model-or-a-default-llm-command-in-every-model-calling-entry-point.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-06",
+      "decision_summary": "Chosen option: carry the two rules in a new ADR and widen their scope to every model-calling entry point, because it...",
+      "topics": [
+        "enforcement",
+        "host model",
+        "llm judge",
+        "model selection"
+      ],
+      "aliases": [
+        "--model claude",
+        "DEFAULT_LLM_CMD",
+        "pinned model"
+      ],
+      "components": [
+        "bin/adr_llm.py"
+      ],
+      "symbols": [
+        "HOST_COMMANDS",
+        "resolve_llm_backend"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every entry point that calls a model resolves its backend through bin/adrllm.py (resolvellmbackend), the only place a command vector may live (HOSTCOMMANDS).",
+          "A new model-calling entry point is added to this ADR's pathglob in the same change; the gate test fails until it is."
+        ],
+        "must_not": [
+          "Pass a model flag that pins a vendor model (--model ... claude) from any entry point in scope.",
+          "Define a DEFAULTLLMCMD constant (or any equivalent default command vector) in an entry point."
+        ],
+        "exceptions": [
+          "None. An operator selects a different model per machine through ADRKITLLMCMD or --llm-cmd, which are environment and flag inputs, not code in an entry point (ADR-025)."
+        ],
+        "verification": [
+          "tests/testnopinnedmodelgate.py (gate adr-no-pinned-model-v1).",
+          "The two forbidpattern rules below, applied by bin/adr-judge to every staged diff that touches a file in scope."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-no-pinned-model-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-044",
+      "title": "Resolve the interpreter and the engine through one resolver at every entry point",
+      "path": "ADR-044-resolve-the-interpreter-and-the-engine-through-one-resolver-at-every-entry-point.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: one resolver, used by every entry point, with the failure behaviour set by that entry point's ADR-004...",
+      "topics": [
+        "commit gate",
+        "engine resolution",
+        "fail closed",
+        "mcp launcher",
+        "python interpreter"
+      ],
+      "aliases": [
+        "adr-judge binary not found in plugin cache",
+        "ADR_KIT_ROOT",
+        "Executable not found in $PATH",
+        "python3 only"
+      ],
+      "components": [
+        ".mcp.json",
+        "hooks/run-hook.cmd",
+        "scripts/project_setup.py",
+        "templates/githooks/pre-commit"
+      ],
+      "symbols": [
+        "_patch_mcp_python",
+        "_plugin_roots"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every entry point resolves the interpreter and the engine root through the shared order above.",
+          "The commit gate refuses with a named reason, the repair command and the escape when a project with an Accepted Enforcement block has no resolvable interpreter or engine.",
+          "Setup records the engine root machine-locally only."
+        ],
+        "must_not": [
+          "Ship a launcher configuration that needs a command literally named python.",
+          "Hard-code a client plugin-cache path, or use sort -V, in a skill.",
+          "Write an interpreter or engine path into tracked configuration."
+        ],
+        "exceptions": [
+          "A project without an Accepted Enforcement block keeps exit 0 when nothing resolves, because it has nothing to enforce."
+        ],
+        "verification": [
+          "tests/testprecommite2e.py and tests/testskillresolver.py, both added with the implementation.",
+          "tests/testpackagingcontract.py and the client certification tests.",
+          "The two forbidpattern rules below, once this record is Accepted."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "skills/**/SKILL.md"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-045",
+      "title": "Let the judge acquire its own diff and give every diff shape an explicit verdict",
+      "path": "ADR-045-let-the-judge-acquire-its-own-diff-and-give-every-diff-shape-an-explicit-verdict.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: the judge owns one canonical diff invocation, and every diff shape gets an explicit verdict, because a...",
+      "topics": [
+        "binary files",
+        "deleted files",
+        "diff acquisition",
+        "fail closed",
+        "renamed files"
+      ],
+      "aliases": [
+        "--no-ext-diff",
+        "Binary files differ",
+        "color.ui",
+        "diff.external",
+        "git mv bypass"
+      ],
+      "components": [
+        ".github/actions/adr-judge/action.yml",
+        "bin/adr-judge",
+        "hooks/adr_pr_guard.py",
+        "templates/githooks/pre-commit"
+      ],
+      "symbols": [
+        "parse_diff"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every call site that feeds the judge uses the shared invocation.",
+          "The parser refuses, with a named reason, input that it cannot attribute to files.",
+          "Each diff shape has the verdict stated above, with a test for each.",
+          "A requirepattern rule with \"mustexist\": true refuses the deletion of a file it governs, and the policy gate accepts the key only on requirepattern rules."
+        ],
+        "must_not": [
+          "Let a user's color.ui, diff.external, diff.mnemonicPrefix, diff.renames or diff attribute change a verdict.",
+          "Report \"no violations\" for a non-empty diff that the parser could not read."
+        ],
+        "exceptions": [
+          "--max-diff-bytes and judge.maxdiffbytes still bound the input. A diff over the budget is refused as it is today."
+        ],
+        "verification": [
+          "tests/testjudgediffacquisition.py, added with the implementation.",
+          "A guard test over the ten call sites."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-046",
+      "title": "Match every path_glob in the judge's dialect wherever it is read",
+      "path": "ADR-046-match-every-path-glob-in-the-judge-s-dialect-wherever-it-is-read.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: the judge's dialect everywhere, through one shared module, because the judge is the authority whose ve...",
+      "topics": [
+        "context injection",
+        "glob dialect",
+        "path_glob",
+        "scope matching"
+      ],
+      "aliases": [
+        "**/*.py",
+        "brace expansion",
+        "fnmatch",
+        "glob_to_regex"
+      ],
+      "components": [
+        "bin/adr-judge",
+        "bin/adr_query.py",
+        "hooks/adr_hook_core.py"
+      ],
+      "symbols": [
+        "fnmatchcase",
+        "glob_to_regex"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every reader of pathglob matches through the shared module.",
+          "The dialect is the one stated in this record and tested by one matrix.",
+          "A hook maps the editor's path to git's recorded spelling before it matches."
+        ],
+        "must_not": [
+          "Match a pathglob with fnmatch or any second implementation.",
+          "Change the set of files the judge enforces for an existing glob. The answers to Open Questions 2 and 3 keep the judge's current behaviour.",
+          "Treat [ or ] as a character class."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "tests/testglobdialect.py, added with the implementation, run against all readers."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-047",
+      "title": "Cap supporting ADRs per response and let them fill only the slots left under the limit",
+      "path": "ADR-047-cap-supporting-adrs-per-response-and-let-them-fill-only-the-slots-left-under-the-limit.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: record the cap the engine has, as an amendment of ADR-036, because that behaviour is what the 2026-07-...",
+      "topics": [
+        "relationship expansion",
+        "retrieval ranking",
+        "selective context",
+        "supporting ADRs"
+      ],
+      "aliases": [
+        "issue 190",
+        "MAX_SUPPORTING_RESULTS",
+        "one-hop supporting ADR"
+      ],
+      "components": [
+        "bin/adr_query.py"
+      ],
+      "symbols": [
+        "_related_ids",
+        "MAX_SUPPORTING_RESULTS",
+        "query_adr_context"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "The query engine caps supporting ADRs at two per response.",
+          "Supporting ADRs only fill slots left under limit.",
+          "Supporting ADRs carry score 0 and the match reason \"one-hop supporting ADR\"."
+        ],
+        "must_not": [
+          "Let a supporting ADR displace a scored match, or make a response longer than limit.",
+          "Read the superseded ADR-014's sentence \"A primary result may expand to at most two one-hop supporting ADRs\" as the rule in force."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "The three tests named under Confirmation."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-048",
+      "title": "Certify each native client on every platform it runs on",
+      "path": "ADR-048-certify-each-native-client-on-every-platform-it-runs-on.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: certify each client on every platform it runs on, from a real run on that platform, because a claim ca...",
+      "topics": [
+        "client versions",
+        "native certification",
+        "platform support",
+        "release evidence"
+      ],
+      "aliases": [
+        "linux-native.json",
+        "release_eligible",
+        "Windows native release baseline",
+        "windows-native.json"
+      ],
+      "components": [
+        "scripts/client_certification.py",
+        "scripts/client_evidence.py",
+        "scripts/client_support_matrix.py",
+        "tests/certification"
+      ],
+      "symbols": [
+        "assemble_native_bundle",
+        "CERTIFICATION_MAX_AGE_DAYS",
+        "NATIVE_EVIDENCE_PATHS",
+        "validate"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Certify a client only on a platform where a native record for that platform passes every required outcome, binds to the candidate, and is at most 30 days old.",
+          "State, for every client and platform, either the certification or the record's actual state with its reason.",
+          "Read every stated client version from the evidence."
+        ],
+        "must_not": [
+          "Record an outcome as passing that was not measured on that platform.",
+          "Let a record for one platform certify another, or let an incomplete record certify anything.",
+          "Pin a client version in a test or document outside the evidence.",
+          "Claim certification in a release for a client and platform without a record that is fresh at that release's commit."
+        ],
+        "exceptions": [
+          "The simulated fixture (tests/certification/simulated-pass.json) stays a generator test input. It never certifies a client."
+        ],
+        "verification": [
+          "tests/testclientcertification.py and tests/testnativeclientpackages.py, extended with the implementation."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-049",
+      "title": "Record the judge host client at the first session and ask per LLM layer at upgrade",
+      "path": "ADR-049-record-the-judge-host-client-at-the-first-session-and-ask-per-llm-layer-at-upgrade.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: record the host client at the first session, confirm through the session model, and keep every answer...",
+      "topics": [
+        "default install",
+        "host client",
+        "llm layers",
+        "onboarding"
+      ],
+      "aliases": [
+        "ADR_KIT_HOST_CLIENT",
+        "llm.confirmed",
+        "machine-local override"
+      ],
+      "components": [
+        "bin/adr_llm.py",
+        "hooks/adr_hook_core.py"
+      ],
+      "symbols": [
+        "apply_machine_overrides",
+        "llm_onboarding",
+        "record_host_client_if_absent"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Record the host client only when none is recorded and the effective judge.llmenabled is not false.",
+          "Ask the user before treating the default as settled, and record the answer in llm.confirmed.",
+          "Write an \"off\" answer to .adr-kit.local.json, never to .adr-kit.json.",
+          "Name the host a client actually runs on, through ADRKITHOSTCLIENT where a client borrows another client's hook shape."
+        ],
+        "must_not": [
+          "Replace a recorded host client, or a value the user did not answer.",
+          "Pass a model flag or record a credential (ADR-036, ADR-043).",
+          "Write from an edit-tier hook (PreToolUse, PostToolUse)."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "tests/testllmonboardinghook.py (gate adr-llm-default-on-v1).",
+          "tests/testmachinellmoverrides.py and tests/testadrllmbounded.py.",
+          "The two requirepattern rules below."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "hooks/adr_hook_core.py",
+          "opencode/plugin.ts"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-llm-default-on-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -2380,6 +2813,24 @@
       "resolved": true
     },
     {
+      "source": "ADR-004",
+      "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-004",
+      "target": "ADR-045",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-004",
+      "target": "ADR-046",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-005",
       "target": "ADR-001",
       "type": "related",
@@ -2418,6 +2869,12 @@
     {
       "source": "ADR-006",
       "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-006",
+      "target": "ADR-044",
       "type": "related",
       "resolved": true
     },
@@ -2466,6 +2923,12 @@
     {
       "source": "ADR-008",
       "target": "ADR-006",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-008",
+      "target": "ADR-044",
       "type": "related",
       "resolved": true
     },
@@ -2544,6 +3007,12 @@
     {
       "source": "ADR-010",
       "target": "ADR-042",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-048",
       "type": "related",
       "resolved": true
     },
@@ -2968,6 +3437,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-023",
+      "target": "ADR-045",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-024",
       "target": "ADR-017",
       "type": "related",
@@ -3232,6 +3707,30 @@
       "resolved": true
     },
     {
+      "source": "ADR-036",
+      "target": "ADR-043",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-046",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-047",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-049",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-037",
       "target": "ADR-011",
       "type": "related",
@@ -3316,6 +3815,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-039",
+      "target": "ADR-048",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-040",
       "target": "ADR-011",
       "type": "related",
@@ -3370,6 +3875,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-041",
+      "target": "ADR-049",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-042",
       "target": "ADR-010",
       "type": "related",
@@ -3390,6 +3901,192 @@
     {
       "source": "ADR-042",
       "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-043",
+      "target": "ADR-017",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-043",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-043",
+      "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-006",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-008",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-045",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-048",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-023",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-030",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-018",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-048",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-048",
+      "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-048",
+      "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-021",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-041",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-043",
       "type": "related",
       "resolved": true
     }

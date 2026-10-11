@@ -110,9 +110,12 @@ python bin/adr-guardian refresh-readiness \
 
 The command writes `docs/adr/.adr-kit-readiness.json` atomically. The file is
 gitignored, non-authoritative, expires after 24 hours by default, and may be
-deleted safely. SessionStart reads only this cache and offers at most three
-commands such as `/adr-kit:grill ADR-042`; it never calculates readiness or
-starts an interview inside the hook.
+deleted safely. SessionStart offers at most three commands such as
+`/adr-kit:grill ADR-042` from this cache; the plugin hook only reads it. When the
+project-scoped guardian hook (`/adr-kit:install-hooks`) is installed,
+`adr-guardian check` rebuilds a missing or expired cache in-process from the ADR
+files (no model, no spawn) for the next read. Without that hook, nothing
+rebuilds the cache at SessionStart. Neither hook ever starts an interview.
 
 During the next user-visible prompt, the first eligible queue item is handed to
 the active client through an `AUTO_GRILL_PENDING` instruction. The client starts
@@ -215,7 +218,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@main
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.60.0
         with:
           adr-dir: docs/adr
 ```

@@ -8,14 +8,17 @@ license: MIT
 # Initialize ADR Kit (the adopt mode of setup)
 
 Select `adr-kit:init` from `/skills`, or ask Copilot to use the `init` ADR Kit skill.
-Resolve `<plugin-root>` from this installed skill. Use only bundled,
-local ADR Kit tools and follow this canonical workflow:
+Resolve `<plugin-root>` from this installed skill, and `<python>` to the
+first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10
+or newer. Use only bundled, local ADR Kit tools and follow this canonical
+workflow:
 
 1. Run the setup workflow, preview legacy ADR migration, and audit the workspace.
 2. Create selected reconstruction candidates as Proposed and present them in small batches.
 3. Use a compact confirmation grill only when the chosen decision, rationale, alternatives, and consequences have direct cited evidence; otherwise use the full grill and confirm each ADR separately.
 4. Install the ADR Kit-owned pre-commit gate, then state plainly that the declarative gate is free and always on while the LLM pass is on by default and costs one model call per `llm_judge: true` ADR on every commit touching its scope, linear in their number and nothing at all until an author opts one in.
 5. Record the host backend with `adr-judge --set-backend host --host-client <this client's id>` rather than by writing JSON (the host model is the only backend, ADR-036; operators can override per run with ADR_KIT_LLM_CMD), never prompt for or store an API key, and add docs/adr/.adr-kit.local.json to .gitignore.
-6. Finish with `adr-doctor --fix-index docs/adr/`.
+6. Ask the user about the LLM layers, one at a time, showing each layer's current value from `<python> <plugin-root>/bin/adr-settings --adr-dir docs/adr`: keep it on (the default and the recommendation) or turn it off for this machine. The layers are the per-commit judge pass (`judge.llm_enabled`; can block a commit; one model call per in-scope `llm_judge: true` ADR), the missing-decision nudge (`suggest.enabled`; never blocks) and the guardian's LLM tier (`guardian.llm_enabled`; asks before each run). All three run on this client's own model; no API key is involved. Apply each 'off' with `<python> <plugin-root>/bin/adr-settings --adr-dir docs/adr --set <switch>=false --local`, never change a value the user did not answer, and record the answer, also when everything stays on, with `--set llm.confirmed=<YYYY-MM-DD> --local` (ADR-049).
+7. Finish with `adr-doctor --fix-index docs/adr/`.
 
 Do not contact another model or mutate user-owned instructions.

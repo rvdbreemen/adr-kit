@@ -8,10 +8,12 @@ license: MIT
 # Lint ADRs
 
 Select `adr-kit:lint` from `/skills`, or ask Copilot to use the `lint` ADR Kit skill.
-Resolve `<plugin-root>` from this installed skill. Use only bundled,
-local ADR Kit tools and follow this canonical workflow:
+Resolve `<plugin-root>` from this installed skill, and `<python>` to the
+first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10
+or newer. Use only bundled, local ADR Kit tools and follow this canonical
+workflow:
 
-1. Run `python <plugin-root>/bin/adr-lint --strict <path-or-docs/adr>`.
+1. Run `<python> <plugin-root>/bin/adr-lint --strict <path-or-docs/adr>`.
 2. Report PASS, ADVISORY, FAIL, Open Questions, and migration notices separately with file and line citations; do not edit ADRs.
 3. For a Proposed ADR, translate actionable findings into the next client-native grill invocation.
 

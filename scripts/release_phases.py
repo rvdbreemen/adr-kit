@@ -49,7 +49,7 @@ from release_shell import (  # noqa: E402
 )
 
 
-# --- phase 0: preflight -----------------------------------------------------
+# --- step 0: preflight ------------------------------------------------------
 
 
 def preflight_done(ctx: Context) -> bool:
@@ -109,7 +109,7 @@ def preflight(ctx: Context) -> List[str]:
     return notes
 
 
-# --- phase 1: prepare the version and the release notes ---------------------
+# --- step 1: prepare the version and the release notes ----------------------
 
 
 def prepare_done(ctx: Context) -> bool:
@@ -165,7 +165,7 @@ def prepare(ctx: Context) -> List[str]:
     return notes
 
 
-# --- phase 2: the gates CI will run anyway ----------------------------------
+# --- step 2: the gates CI will run anyway -----------------------------------
 
 
 def verify_done(ctx: Context) -> bool:
@@ -204,7 +204,7 @@ def verify(ctx: Context) -> List[str]:
     return notes
 
 
-# --- phase 3: land on main --------------------------------------------------
+# --- step 3: land on main ---------------------------------------------------
 
 
 def land_done(ctx: Context) -> bool:
@@ -252,7 +252,7 @@ def land(ctx: Context) -> List[str]:
     return notes
 
 
-# --- phase 4: the tag the workflow creates ----------------------------------
+# --- step 3: the tag the workflow creates -----------------------------------
 
 
 def verify_tag_done(ctx: Context) -> bool:
@@ -277,7 +277,7 @@ def verify_tag(ctx: Context) -> List[str]:
     return [f"{ctx.tag} resolves to {peeled[:7]}, equal to origin/main"]
 
 
-# --- phase 5: merge back into dev -------------------------------------------
+# --- step 4: merge back into dev --------------------------------------------
 
 
 def syncback_done(ctx: Context) -> bool:
@@ -311,7 +311,7 @@ def syncback(ctx: Context) -> List[str]:
     return [f"sync pull request #{number} opened and armed"]
 
 
-# --- phase 6: this machine's prepared-directory marketplace -----------------
+# --- step 6: this machine's prepared-directory marketplace ------------------
 
 
 

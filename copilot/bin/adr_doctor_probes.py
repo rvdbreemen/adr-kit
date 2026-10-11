@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
-import sys
 from pathlib import Path
 
 from adr_doctor_models import benchmark_extension, check
@@ -29,6 +30,44 @@ def _command(values: list[str], *, cwd: Path, timeout: float) -> subprocess.Comp
     )
 
 
+# Codex runs a plugin's hooks only after the user reviews them with /hooks, and
+# records each hook it trusts as a table in config.toml (observed with 0.162.1):
+#   [hooks.state."adr-kit@<marketplace>:hooks/hooks.json:<event>:<group>:<handler>"]
+#   trusted_hash = "sha256:..."
+# Before that review there is no such table. Read with patterns rather than
+# tomllib, which is 3.11+ against a floor of 3.10.
+_TOML_TABLE = re.compile(r"^[ \t]*\[([^\[\]\n]+)\][ \t]*$", re.MULTILINE)
+_CODEX_ADR_KIT_HOOK = re.compile(
+    r'hooks\.state\."adr-kit@[^":]+:hooks/hooks\.json:([a-z_]+):\d+:\d+"'
+)
+_TRUSTED_HASH = re.compile(
+    r'^[ \t]*trusted_hash[ \t]*=[ \t]*"sha256:[0-9a-f]+"', re.MULTILINE
+)
+
+
+def _codex_trusted_hooks() -> list[str]:
+    """The ADR Kit hook events this user's Codex has trusted, sorted.
+
+    The file says whether a review happened, not whether the hooks still match
+    it: a hook an update changed needs a new review, and only the app-server's
+    experimental hooks/list can tell that apart.
+    """
+    home = os.environ.get("CODEX_HOME")
+    config = (Path(home) if home else Path.home() / ".codex") / "config.toml"
+    try:
+        text = config.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return []
+    tables = list(_TOML_TABLE.finditer(text))
+    events = set()
+    for index, table in enumerate(tables):
+        hook = _CODEX_ADR_KIT_HOOK.fullmatch(table.group(1).strip())
+        end = tables[index + 1].start() if index + 1 < len(tables) else len(text)
+        if hook and _TRUSTED_HASH.search(text, table.end(), end):
+            events.add(hook.group(1))
+    return sorted(events)
+
+
 def _native_deep(root: Path, name: str, executable: str) -> dict:
     command = (
         [executable, "plugin", "list", "--json"]
@@ -42,25 +81,45 @@ def _native_deep(root: Path, name: str, executable: str) -> dict:
             "native-registration", client=name, status="failed",
             summary=f"native list probe failed: {exc}",
         )
+    # No client prints its trust state in this listing. Looking for the words
+    # "trust" or "review" in it found Codex's untrusted hooks never, and found
+    # any plugin whose id or path carries one, such as code-review.
     output = (result.stdout + result.stderr).lower()
-    if "trust" in output or "review" in output:
-        status = "trust-pending"
-    elif result.returncode:
+    if result.returncode:
         status = "failed"
     elif "adr-kit" not in output:
         status = "stale"
     else:
         status = "healthy"
+    evidence = {"command": command, "returncode": result.returncode}
+    actions = (
+        [{"detail": f"Review or reinstall ADR Kit in {name}."}]
+        if status != "healthy" else []
+    )
+    summary = f"bounded native plugin-list probe returned {status}"
+    if name == "codex" and status == "healthy":
+        evidence["trusted_hooks"] = _codex_trusted_hooks()
+        if not evidence["trusted_hooks"]:
+            status = "trust-pending"
+            summary = "Codex has not trusted ADR Kit's hooks, so none of them runs"
+            actions = [{"detail": (
+                "Open Codex and review ADR Kit's hooks with /hooks. Codex runs "
+                "a plugin's hooks only after that review, and asks again when "
+                "an update changes them."
+            )}]
     return check(
         "native-registration", client=name, status=status,
-        summary=f"bounded native plugin-list probe returned {status}",
-        evidence=[{"command": command, "returncode": result.returncode}],
-        actions=[{"detail": f"Review or reinstall ADR Kit in {name}."}]
-        if status != "healthy" else [],
+        summary=summary, evidence=[evidence], actions=actions,
     )
 
 
-def _mcp_deep(root: Path, plugin_root: Path) -> dict:
+def _mcp_deep(root: Path, argv: list[str], *, client: str, required: bool = True) -> dict:
+    """Initialize, list and call the server the way the client starts it.
+
+    `argv` is the client's registered command as the launcher check resolved
+    it. This probe used to start bin/adr-mcp with the doctor's own interpreter,
+    so it said healthy for a server the client could not start (DEF-33).
+    """
     messages = [
         {
             "jsonrpc": "2.0",
@@ -86,7 +145,7 @@ def _mcp_deep(root: Path, plugin_root: Path) -> dict:
     ]
     try:
         result = subprocess.run(
-            [sys.executable, str(plugin_root / "bin" / "adr-mcp")],
+            argv,
             input="\n".join(json.dumps(item) for item in messages) + "\n",
             cwd=str(root),
             capture_output=True,
@@ -123,22 +182,50 @@ def _mcp_deep(root: Path, plugin_root: Path) -> dict:
         TypeError,
     ) as exc:
         return check(
-            "mcp-live", status="failed",
+            "mcp-live", client=client, status="failed", required=required,
             summary=f"MCP initialize/list/call probe failed: {exc}",
+            evidence=[{"argv": argv}],
             actions=[{"detail": "Run adr-doctor --deep after reinstalling ADR Kit."}],
         )
     return check(
-        "mcp-live", status="healthy" if healthy else "failed",
+        "mcp-live", client=client, status="healthy" if healthy else "failed",
+        required=required,
         summary=(
             "MCP initialize, tools/list, and adr_status call passed"
             if healthy else "MCP handshake returned an incomplete result"
         ),
         evidence=[{
+            "argv": argv,
             "returncode": result.returncode,
             "tools": sorted(tools),
             "call_ok": called,
         }],
     )
+
+
+def _registered_mcp_live(root: Path, checks: list[dict]) -> list[dict]:
+    """One live check per client whose MCP launcher the doctor examined."""
+    live = []
+    for item in checks:
+        if item.get("id") != "mcp-launcher" or item.get("status") == "unsupported":
+            continue
+        client, required = item["client"], item["required"]
+        evidence = (item.get("evidence") or [{}])[0]
+        argv = evidence.get("argv") if item.get("status") == "healthy" else None
+        if argv:
+            live.append(_mcp_deep(root, argv, client=client, required=required))
+            continue
+        command = evidence.get("command", "the registered command")
+        live.append(check(
+            "mcp-live", client=client, status="failed", required=required,
+            summary=(
+                f"{client} cannot start the MCP server: {command} does not "
+                "resolve, or the payload it runs is missing"
+            ),
+            evidence=[{"command": command}],
+            actions=item.get("actions") or [],
+        ))
+    return live
 
 
 def run_deep_extensions(
@@ -153,7 +240,7 @@ def run_deep_extensions(
         _native_deep(root, name, client.executable)
         for name, client in detect_clients().items()
     ]
-    extensions.append(_mcp_deep(root, plugin_root))
+    extensions.extend(_registered_mcp_live(root, checks))
     # The harness reads plugin_root/tests/fixtures/hooks/reference-corpus.json,
     # and `tests` is a forbidden segment in the public payload -- so the fixture
     # is absent from EVERY installed payload, not only from a generated client

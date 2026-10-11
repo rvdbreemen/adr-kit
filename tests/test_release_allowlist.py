@@ -228,3 +228,36 @@ def test_home_directory_scanner_flags_real_leaks_and_spares_placeholders():
     )
     for sample in redacted:
         assert not developer_home_leaks(sample), f"false positive: {sample}"
+
+
+def test_shipped_scripts_import_only_shipped_siblings():
+    """Every `scripts/` module the allowlist ships can import its siblings.
+
+    `client_certification.py` imported `client_support_matrix` after an ADR-010
+    split, but the allowlist never gained the new module, so the installed
+    payload's `build-client-adapters.py` and `sync-agent-plugins.py` died with
+    ModuleNotFoundError (TASK-221). Checked statically, so a future split is
+    caught at the commit that makes it.
+    """
+    import ast
+
+    shipped = {r for r in ALLOWLIST["include_roots"] if r.startswith("scripts/")}
+    local = {p.stem for p in (ROOT / "scripts").glob("*.py")}
+    missing = []
+    for relative in sorted(shipped):
+        path = ROOT / relative
+        if path.suffix != ".py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                names = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                names = [node.module.split(".")[0]]
+            else:
+                continue
+            missing += [
+                f"{relative} imports scripts/{name}.py"
+                for name in names
+                if name in local and f"scripts/{name}.py" not in shipped
+            ]
+    assert not missing, "shipped scripts import modules the allowlist omits: " + "; ".join(missing)

@@ -1047,7 +1047,7 @@ def test_no_host_command_carries_a_model_flag():
     """
     aj = _load_judge_module()
     assert set(aj.HOST_COMMANDS) == {
-        "claude-code-cli", "codex-cli", "github-copilot-cli"
+        "claude-code-cli", "codex-cli", "github-copilot-cli", "opencode-cli"
     }
     for client, command in aj.HOST_COMMANDS.items():
         flags = [token for token in command if token.startswith("-")]

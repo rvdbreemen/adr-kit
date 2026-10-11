@@ -376,20 +376,40 @@ already signed in to. An unavailable backend degrades to declarative-only and
 never blocks a commit.
 ```
 
-Then ask: `LLM pass? [1] on (host CLI)  [2] off (1)`
-
-Apply the answer with the kit's own command — do **not** hand-write the JSON, because the command validates what it wrote and refuses an incomplete choice. Resolve the plugin path first if it is not already in scope from step 1a:
+The LLM layers are **on by default** (ADR-049) and run on the model of the client you are in. Confirm that with the user, one layer at a time. Resolve the plugin path first if it is not already in scope from step 1a, with ADR-044's resolver (`ADR_KIT_ROOT` first, which OpenCode sets, then the root Claude Code substitutes for this skill):
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
 ```
 
-- **on** — you know which client you are running in, because you are reading this client's copy of this skill. Pass that id:
-  ```bash
-  "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend host --host-client claude-code-cli
-  ```
-  Each client's copy of this skill names its own id: this one is `claude-code-cli`. The judge cannot work this out at commit time — a `git commit` happens whether or not any agent is running — which is why it is recorded now, into the gitignored `docs/adr/.adr-kit.local.json`, while it is known with certainty.
-- **off** — merge `{"judge": {"llm_enabled": false}}` into `docs/adr/.adr-kit.json`. Say plainly that the declarative gate still runs and that `/adr-kit:judge` still gives LLM review on demand.
+**1. Record the host client.** You know which client you are running in. Pass its id: `claude-code-cli` in Claude Code, `opencode-cli` in OpenCode (Codex and Copilot CLI have their own copy of this workflow). The judge cannot work this out at commit time, because a `git commit` happens whether or not an agent is running, so it is recorded now into the gitignored `docs/adr/.adr-kit.local.json`:
+
+```bash
+"$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend host --host-client claude-code-cli
+```
+
+**2. Ask per layer.** Show the current values with `"$ADR_KIT/bin/adr-settings" --adr-dir docs/adr`, then ask, one question per layer, "keep on (recommended) or turn off for this machine?":
+
+| Layer | Switch | What it costs |
+|---|---|---|
+| Per-commit judge pass | `judge.llm_enabled` | one model call per in-scope `llm_judge: true` ADR; a `VIOLATION` blocks the commit |
+| Missing-decision nudge (`adr-suggest`) | `suggest.enabled` | one bounded call per commit with code; never blocks |
+| Guardian LLM tier (`adr-substance` + audit) | `guardian.llm_enabled` | runs about every 14 days and asks before each run |
+
+Apply each "off" for this machine only (TASK-233: one person's answer must not switch the layers off for the team), and never change a value the user did not answer:
+
+```bash
+"$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set judge.llm_enabled=false --local
+```
+
+Then record the answer, also when everything stays on, so the session stops asking:
+
+```bash
+"$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set llm.confirmed=$(date +%F) --local
+```
+
+Say plainly that the declarative gate always runs, that `/adr-kit:judge` still gives LLM review on demand when the pass is off, and that `ADR_KIT_LLM_CMD` can point the layers at a local model instead (README, "Working locally").
 
 Ignore the local file in version control (idempotent):
 
@@ -454,7 +474,8 @@ Ask the user: "Generate standalone validation scripts for CI/CD pipelines? (Y/n)
 If yes:
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
 "$ADR_KIT/bin/adr-generate-scripts" --lang shell --output .generated/
 ```
 
@@ -494,6 +515,6 @@ Suggest a first commit staging exactly what was written: `git add docs/adr/ .adr
   it demands `documents_shipped: true` and a `verified_in` pointer before it
   will run. A decision that is *not* already shipped is a new decision: it goes
   through `/adr-kit:grill` and ordinary acceptance, never `--auto`.
-- **Resolve the plugin path dynamically.** The kit lives at `~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/<version>/`. Use the `ls | sort -V | tail -1` resolver above; do not hardcode a version.
+- **Resolve the plugin path from this installed skill.** Use the resolver above: Claude Code fills in the root of the plugin this skill was loaded from, wherever it is installed. Do not hardcode a version or a plugin-cache path.
 - **Preserve user CLAUDE.md content.** Only the marked stub block (or a v0.11-style `## ADR Kit Rules` section being replaced) may be modified. Everything else stays byte-exact.
 - **Re-runnable.** A second invocation on a project where init already succeeded should detect the existing footprint and either skip or refresh, not regenerate.

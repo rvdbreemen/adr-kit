@@ -89,6 +89,18 @@
     {
       "path": "README.md",
       "kind": "regex_all",
+      "pattern": "(adr-readiness@v)(\\d+\\.\\d+\\.\\d+)",
+      "label": "README readiness action pin"
+    },
+    {
+      "path": "docs/adr-grilling.md",
+      "kind": "regex_all",
+      "pattern": "(adr-readiness@v)(\\d+\\.\\d+\\.\\d+)",
+      "label": "grilling guide readiness action pin"
+    },
+    {
+      "path": "README.md",
+      "kind": "regex_all",
       "pattern": "(rev: v)(\\d+\\.\\d+\\.\\d+)",
       "label": "README pre-commit rev pin"
     },
@@ -97,6 +109,18 @@
       "kind": "regex_all",
       "pattern": "(adr-readiness@v)(\\d+\\.\\d+\\.\\d+)",
       "label": "readiness workflow template action pin"
+    },
+    {
+      "path": "templates/github-workflows/adr-judge.yml",
+      "kind": "regex_all",
+      "pattern": "(adr-judge@v)(\\d+\\.\\d+\\.\\d+)",
+      "label": "judge workflow template action pin"
+    },
+    {
+      "path": "templates/github-workflows/adr-index-check.yml",
+      "kind": "regex_all",
+      "pattern": "(adr-index-check@v)(\\d+\\.\\d+\\.\\d+)",
+      "label": "index-check workflow template action pin"
     },
     {
       "path": "README.md",

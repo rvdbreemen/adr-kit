@@ -8,11 +8,13 @@ license: MIT
 # ADR authoring
 
 Invoke explicitly with `$adr-kit:adr` when needed.
-Resolve `<plugin-root>` from this installed skill. Use only bundled,
-local ADR Kit tools and follow this canonical workflow:
+Resolve `<plugin-root>` from this installed skill, and `<python>` to the
+first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10
+or newer. Use only bundled, local ADR Kit tools and follow this canonical
+workflow:
 
 1. Query the generated ADR index for relevant Accepted ADRs before writing, open only returned sources, and report conflicts.
-2. Run `python <plugin-root>/bin/adr profiles --format json`; use only a returned profile with `available: true`.
+2. Run `<python> <plugin-root>/bin/adr profiles --format json`; use only a returned profile with `available: true`.
 3. Use `madr` as the default; support `nygard` and `canonical` only when returned as available, and never invent a profile or template.
 4. Qualify `<subject>` as a consequential, difficult-to-reverse decision before creating a record; do not create an ADR for an ordinary reversible implementation choice.
 5. Create a Proposed record, then follow the canonical grill protocol for context, decision, alternatives, consequences, risks, mitigations, evidence, scope, ownership, conflicts, and Open Questions.

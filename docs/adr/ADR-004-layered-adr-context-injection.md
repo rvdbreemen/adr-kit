@@ -11,6 +11,9 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-023"
+  - "ADR-044"
+  - "ADR-045"
+  - "ADR-046"
 topics:
   - "context injection"
   - "fail open"
@@ -52,6 +55,21 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: ADR-023 narrows ADR-004's only-mechanism-that-blocks claim
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-046 makes ADR-004 section 3 precise: one glob dialect for every path_glob reader"
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-045
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-044
     changed_via: adr-kit lifecycle
 ```
 

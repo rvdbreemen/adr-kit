@@ -42,6 +42,7 @@
     "scripts/client_generation_model.py",
     "scripts/client_generation_state.py",
     "scripts/client_certification.py",
+    "scripts/client_support_matrix.py",
     "scripts/client_evidence.py",
     "scripts/install-agent-envs.py",
     "scripts/project_setup.py",

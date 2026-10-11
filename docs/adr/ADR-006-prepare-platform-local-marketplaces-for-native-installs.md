@@ -9,7 +9,8 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
-format: "madr"
+related:
+  - "ADR-044"
 topics:
   - "installation"
   - "marketplace"
@@ -21,6 +22,7 @@ aliases:
 components:
   - "install-agent-envs"
   - "marketplace manifests"
+format: "madr"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -44,6 +46,11 @@ status_history:
     status: Accepted
     changed_by: Robert van den Breemen
     reason: Human approval for the v0.34.0 release; the three-platform installer ships this surface
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-044
     changed_via: adr-kit lifecycle
 ```
 

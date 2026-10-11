@@ -13,6 +13,7 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-042"
+  - "ADR-048"
 topics:
   - "client parity"
   - "release certification"
@@ -61,6 +62,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-042
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-048 amends ADR-010: every platform is certifiable from a real run on it, certification stays optional per release, and claims follow the evidence"
     changed_via: adr-kit lifecycle
 ```
 

@@ -52,7 +52,7 @@ set -e
 # freezes at install time. adr-guardian compares this stamp against the
 # installed plugin version and nudges /adr-kit:upgrade when the wrapper lags.
 # Maintained by scripts/bump-version.py; do not edit by hand.
-ADR_KIT_WRAPPER_VERSION="0.59.1"
+ADR_KIT_WRAPPER_VERSION="0.60.0"
 
 if [ "${ADR_KIT_HOOK_DISABLE:-0}" = "1" ]; then
   echo "[adr-kit] hook disabled for this commit (ADR_KIT_HOOK_DISABLE=1)" >&2
@@ -98,10 +98,30 @@ ADR_JUDGE=""
 ADR_SUGGEST=""
 ADR_GRILL_SIGNAL=""
 _plugin_roots=()
+_self_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+_cache_home="${XDG_CACHE_HOME:-${HOME}/.cache}"
+
+# ADR-044's candidate set, in its order: an explicit ADR_KIT_ROOT, the client
+# installs, then this checkout. Every candidate competes on manifest version
+# below (ADR-008), so the order only settles a tie.
+if [ -n "${ADR_KIT_ROOT:-}" ]; then
+  _plugin_roots+=("$ADR_KIT_ROOT")
+fi
 shopt -s nullglob
 _plugin_roots+=(
   "${HOME}/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit"/*
   "${CODEX_HOME:-${HOME}/.codex}/plugins/cache/rvdbreemen-adr-kit-codex/adr-kit"/*
+  # The payloads the installer prepares. Copilot CLI 1.0.81 and later loads a
+  # directory marketplace from here live, and no longer copies it into
+  # installed-plugins (DEF-29).
+  "${_data_home}/adr-kit/marketplaces"/*/copilot
+  "${_data_home}/adr-kit/marketplaces"/*/codex
+  "${_data_home}/adr-kit/marketplaces"/*
+  # OpenCode installs the kit as an npm package: for the project with npm, or
+  # in its own cache, one directory per spec (@0.59.1, @latest, ...) (DEF-30).
+  "${_self_root}/node_modules/@rvdbreemen/adr-kit-opencode"
+  "${_cache_home}/opencode/packages/@rvdbreemen"/adr-kit-opencode@*/node_modules/@rvdbreemen/adr-kit-opencode
 )
 shopt -u nullglob
 _copilot_root="${COPILOT_HOME:-${HOME}/.copilot}/installed-plugins/rvdbreemen-adr-kit-copilot/adr-kit"
@@ -113,7 +133,6 @@ fi
 # by the engine it currently ships rather than by an older installed release.
 # It competes on manifest version like any other root, so an installed plugin
 # still wins when the checkout is behind.
-_self_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
 if [ -n "$_self_root" ] && [ -f "$_self_root/bin/adr-judge" ] &&
    [ -f "$_self_root/.claude-plugin/plugin.json" ]; then
   _plugin_roots+=("$_self_root")
@@ -159,7 +178,7 @@ done
 
 if [ -z "$ADR_JUDGE" ] || [ ! -f "$ADR_JUDGE" ]; then
   echo "[adr-kit] adr-judge binary not found in plugin cache; skipping pre-commit ADR check." >&2
-  echo "[adr-kit] Re-install ADR Kit for Claude Code, Codex, or Copilot CLI." >&2
+  echo "[adr-kit] Install ADR Kit for Claude Code, Codex, Copilot CLI or OpenCode, or set ADR_KIT_ROOT to an ADR Kit checkout." >&2
   exit 0
 fi
 
@@ -173,14 +192,23 @@ fi
 # don't fan out concurrent `claude -p` processes. We take a non-blocking advisory
 # lock; if another adr-judge already holds it, we keep the cheap declarative pass
 # but suppress the LLM passes for THIS commit (via ADR_KIT_NO_LLM). The lockfile
-# lives under .git/ so it's never committed. flock is absent on bare Windows
-# cmd.exe; there we degrade to no-lock (same behaviour as before).
+# lives in git's common directory, so it's never committed and every linked
+# worktree shares it. flock is absent on bare Windows cmd.exe; there we degrade
+# to no-lock (same behaviour as before), and so we do when the lock cannot be
+# opened.
+#
+# The 2>/dev/null stays inside the group. A bare `exec` with redirections
+# applies them to the shell itself: written on the exec line, it sent stderr to
+# /dev/null for the rest of this hook, and a refused commit printed nothing,
+# not even the judge's report (DEF-01).
 _NO_LLM_OVERRIDE=""
 if command -v flock >/dev/null 2>&1; then
-  exec 9>"$ROOT/.git/adr-kit-judge.lock" 2>/dev/null || true
-  if ! flock -n 9 2>/dev/null; then
-    echo "[adr-kit] another ADR judge is running; declarative-only for this commit (LLM gate skipped)." >&2
-    _NO_LLM_OVERRIDE=1
+  _LOCK_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
+  if [ -n "$_LOCK_DIR" ] && { exec 9>"$_LOCK_DIR/adr-kit-judge.lock"; } 2>/dev/null; then
+    if ! flock -n 9 2>/dev/null; then
+      echo "[adr-kit] another ADR judge is running; declarative-only for this commit (LLM gate skipped)." >&2
+      _NO_LLM_OVERRIDE=1
+    fi
   fi
 fi
 

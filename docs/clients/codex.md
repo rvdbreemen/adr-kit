@@ -9,8 +9,9 @@ are discoverable skills; invoke them explicitly with names such as
 are not advertised as a plugin command surface. Project setup adds a concise
 managed `AGENTS.md` block and keeps the detailed guide separate.
 
-The package exposes the five key-free MCP tools `adr_context`, `adr_judge`,
-`adr_status`, `adr_quality`, and read-only `adr_readiness`. The
+The package exposes the seven key-free, read-only MCP tools `adr_context`,
+`adr_judge`, `adr_status`, `adr_quality`, `adr_readiness`, `adr_lint`, and
+`adr_related` (ADR-040). The
 [ADR Grilling user guide](../adr-grilling.md) documents the complete
 Proposed-to-Accepted flow.
 
@@ -32,3 +33,15 @@ disable/re-enable when no native toggle is available. Rollback restores the
 previous healthy cache. Removal never edits unrelated Codex config. Windows
 native certification uses Codex CLI 0.144.6; macOS/Linux are best-effort and
 were not run in this Windows pass.
+
+## LLM layers
+
+The per-commit judge pass, the `adr-suggest` nudge and the guardian's LLM
+tier are on by default and run on Codex's own model through
+`codex exec`: no API key and no pinned model (ADR-036, ADR-043).
+SessionStart in a project records `codex-cli` as the judge's host when
+none is recorded; a recorded choice is never replaced. The next prompt then
+asks once whether to keep each layer on or turn it off for this machine,
+and `/adr-kit:init` and `/adr-kit:upgrade` ask the same per layer. An "off"
+goes to the gitignored `.adr-kit.local.json`, so teammates keep the layers
+on (ADR-049). `ADR_KIT_NO_LLM=1` switches every layer off for a run.

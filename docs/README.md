@@ -52,8 +52,8 @@ Three invariants hold across all of them:
   support matrix. It separates native certification from simulated contract
   coverage, and states which lifecycle events each client actually supports.
 - [clients/claude.md](clients/claude.md), [clients/codex.md](clients/codex.md),
-  [clients/copilot.md](clients/copilot.md): per-client package layout, setup,
-  and recovery steps.
+  [clients/copilot.md](clients/copilot.md), [clients/opencode.md](clients/opencode.md):
+  per-client package layout, setup, and recovery steps.
 
 ### Decisions and direction
 
@@ -61,6 +61,8 @@ Three invariants hold across all of them:
   - [adr/ADR-INDEX.md](adr/ADR-INDEX.md): compact one-row-per-ADR session map.
   - [adr/ADR-INDEX.json](adr/ADR-INDEX.json): schema-v2 agent metadata and
     relationship graph. Both are generated; do not edit either by hand.
+- [../C4-Documentation/](../C4-Documentation/c4-context.md): the architecture in
+  C4 layers, from system context through containers to the seven components.
 - [../ROADMAP.md](../ROADMAP.md): direction, v1.0.0 criteria, deliberate
   non-goals.
 - [../CHANGELOG.md](../CHANGELOG.md): full release history.
@@ -69,9 +71,10 @@ Three invariants hold across all of them:
 
 - [../CONTRIBUTING.md](../CONTRIBUTING.md): dev loop, adding a workflow, code
   style, and verification expectations.
-- [RELEASING.md](RELEASING.md): the authoritative three-marketplace release
-  runbook, including the version registry, the consistency gate, and the
-  `main` → `dev` merge-back step.
+- [RELEASING.md](RELEASING.md): the three-marketplace release specification
+  that `python scripts/release.py X.Y.Z` implements end to end (ADR-042),
+  including the version registry, the consistency gate, the tag created from
+  the merge, and the `main` → `dev` merge-back step.
 - [hook-performance.md](hook-performance.md): the hook latency certification
   method and its budgets.
 - [../SECURITY.md](../SECURITY.md): reporting policy and the security posture
@@ -80,7 +83,9 @@ Three invariants hold across all of them:
 ## Background and evidence
 
 Design dossiers, research, and audit records. Useful when you want to know
-*why* something works the way it does; not required to use ADR Kit.
+*why* something works the way it does; not required to use ADR Kit. These are
+dated records: they describe the code as it was when they were written, and
+are not updated as it changes. The current behaviour is in the guides above.
 
 - [research/adr-format-evaluation.md](research/adr-format-evaluation.md): the
   weighted evaluation behind MADR as the default.

@@ -44,8 +44,10 @@ which are ready to retire, so the decision log stays worth reading instead of
 becoming another folder of dead markdown.
 
 The engines are deterministic, stdlib-only Python 3.10+: no build step, no
-service, no API key on any default path. LLM passes exist, are opt-in, cost
-nothing until you enable them, and never run in a hook hot path.
+service, no API key on any default path. The LLM passes run on the model of
+the coding agent you already use, never in a hook hot path, and can be switched
+off or pointed at a model on your own machine; see
+[LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice).
 
 <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/c99f81eb-6424-4463-8c1d-4aa8a017aa61" />
 
@@ -100,8 +102,11 @@ patch releases, is in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | What landed | Why it matters |
 | --- | --- | --- |
+| **0.58.0** | `adr-substance` asks the host model, in the guardian's LLM tier, whether each written section of a Proposed ADR actually says something. `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR whose `path_glob` matches no tracked file, and the judge's LLM pass gets a ceiling it keeps (`judge.llm_pass_timeout_seconds`, default 600). | The deterministic gates stop at markers: "TBD" or three vacuous sentences read as written to them. A rule whose scope matches nothing guards nothing, and a commit no longer waits without end on a slow host CLI. |
+| **0.57.0** | One command drives a release: `python scripts/release.py X.Y.Z` runs every step of [docs/RELEASING.md](docs/RELEASING.md), and `release-publish.yml` creates the tag from the merged `main` commit ([ADR-042](docs/adr/ADR-042-drive-the-release-from-the-maintainer-s-machine-and-create-the-tag-from-the-merge.md)). | A hand-typed tag on the wrong commit destroyed `v0.55.0`; the tag is now derived from the merge, the driver is safe to re-run, and only the npm approval is left to a person. |
 | **0.55.1** | [ADR-029](docs/adr/ADR-029-retire-the-native-hook-binary-rather-than-maintain-a-second-retrieval-engine.md) is carried out: the committed `adr-hook.exe`, its Rust sources, the dispatcher branch that preferred it and the `ADR_KIT_NATIVE_HOOK` opt-in are gone from all three client trees, so Python is the only hook host on every platform. `adr-mcp` now rejects malformed JSON-RPC frames instead of answering them. | The binary was measurably wrong, not merely untested: against the Python oracle it returned one of four governing ADRs on an edit event, and the parity test that should have caught it read a constant out of the Rust source instead of running the build. One retrieval engine means the hook answers what the CLI answers. On the MCP side, a server that answers a malformed frame hides a client defect the client cannot see in its own logs. |
 | **0.54.0** | Automatic interactive ADR grilling ([ADR-041](docs/adr/ADR-041-automatically-hand-off-unfinished-proposed-adrs-to-interactive-grilling.md)) hands one unfinished Proposed decision to the native grill workflow at the next user-visible prompt. `/adr-kit:upgrade` materializes `grill.auto_start: true` while preserving explicit opt-outs. | Incomplete decisions reach the human while their implementation context is still available, without starting interviews in CI, pre-commit, background, or unattended lifecycle paths. |
+| **0.53.0** | The MCP server gains `adr_lint` and `adr_related`, for seven read-only deterministic tools; [ADR-040](docs/adr/ADR-040-grow-the-mcp-tool-surface-only-with-read-only-deterministic-cycle-tools.md) records the admission rule. | An agent can lint the decision set and walk its dependency graph without shelling out, and the tool surface grows only with tools that cannot change anything. |
 | **0.52.0** | Native [OpenCode](docs/clients/opencode.md) support through a separate TypeScript plugin, backed by the shared deterministic engines and MCP server ([ADR-039](docs/adr/ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md)). The certified Claude Code, Codex, and Copilot CLI registry and release gate remain unchanged. | OpenCode gets its documented native configuration, skills, commands, context, compaction, edit, shell, and MCP integration without weakening the existing certification boundary. |
 | **0.48.0** | Retrieval is lexical scoring over the generated index plus one-hop graph neighbours, and the LLM judge runs on the CLI you are already signed in to ([ADR-036](docs/adr/ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md)): the vector subsystem, `bin/adr-embed` and the openrouter/ollama/openai backends are gone, and eight retired config keys now fail validation by name. The guardian records a verdict per ADR and prints it as the sweep lands ([ADR-037](docs/adr/ADR-037-keep-per-adr-judge-verdicts-in-the-advisory-per-machine-guardian-state.md)). | Two subsystems were carrying their own credentials, install paths and failure modes to answer questions the index already answers. A sweep is also long enough to be interrupted, so a per-sweep timestamp discarded everything it had established; per-ADR verdicts keep it. |
 | **0.44.0** | `/adr-kit:audit` answers "are we still on course?" by linting the decisions and judging the code in one run, over a diff or the whole codebase (the init scanner is now `bin/adr-discover`). A local precomputed vector layer for retrieval ([ADR-018](docs/adr/ADR-018-add-a-local-precomputed-vector-layer-for-adr-retrieval.md), retired in 0.48.0 by ADR-036), `adr relate` writing a cross-reference on both sides at once, `adr answer` keeping a grilling question with its answer, a configurable signer, `/adr-kit:settings`, and a pre-PR branch guard. | A clean judge over vague ADRs proves nothing, and a sharp ADR set nobody checks the code against is documentation rather than governance. Whole-codebase mode reaches files no recent diff touched, which is where a rule added after the code was written has never applied. |
@@ -207,12 +212,11 @@ python scripts/setup-project.py --project-root /path/to/project
 ```
 
 Settings also cover verified stable updates, trigger/frequency, offline and
-pinned operation, per-client opt-outs, doctor repair/check-only policy, and
-local versus paid/cloud judgment. No provider or model tag is a fallback
-default. `--probe-models` performs a bounded local identity check without
-invoking a model; zero or multiple candidates remain visibly unavailable or
-ambiguous. Paid/cloud judgment remains explicit opt-in, and no model runs in a
-hook hot path.
+pinned operation, per-client opt-outs, and doctor repair/check-only policy.
+Which model judges is not a setting: the LLM passes use your coding agent's own
+CLI, or a command you choose on your own machine (see
+[LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice)). No
+model runs in a hook hot path.
 
 ### Claude Code
 
@@ -271,7 +275,7 @@ copilot mcp list
 This targets `@github/copilot` invoked as `copilot`, not `gh copilot` or VS
 Code agent mode. The separate `copilot/` distribution follows GitHub's
 [Copilot plugin contract](https://docs.github.com/en/copilot/concepts/agents/about-plugins)
-and installs 15 skills plus the same key-free MCP server.
+and installs 17 skills plus the same key-free MCP server.
 Open `/skills` inside Copilot CLI to discover ADR Kit workflows. Its lower-camel
 hook package supplies proactive session/task context and PostToolUse; pre-commit
 remains the edit-enforcement backstop.
@@ -314,7 +318,7 @@ For another project, use the published package:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.59.1"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.60.0"]
 }
 ```
 
@@ -416,7 +420,7 @@ Three layers, each with a clear path:
 
 ### Maintain the decision log (decisions age; the kit notices)
 
-- **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart reads only that local 24-hour cache and offers at most three next actions; it never scans or starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
+- **The Guardian (`bin/adr-guardian`, `/adr-kit:guardian`)**: a session-start staleness detector with two tiers. The cheap tier (daily, free) checks for code drift against Enforcement rules, retirement candidates, lint health, and refreshes a bounded Proposed-ADR work queue. SessionStart offers at most three next actions from that local 24-hour cache; the plugin hook only reads it. When the project-scoped guardian hook (`/adr-kit:install-hooks`) is installed, `adr-guardian check` rebuilds a missing or expired cache in-process from the ADR files (no model, no spawn) for the next read. It never starts an interview in the hook. The LLM tier (bi-weekly, asks before spending) hunts for missing ADRs and runs the full model-reviewed audit. Findings get mixed responses by type: drift is surfaced loudly with file:line, missing decisions are offered for authoring, stale ADRs get a retirement draft for review. Never runs in the background, never spends without asking.
   - **Team mode (v0.22.0+)**: a weekly CI cron sweep maintains a single "ADR guardian audit" tracking issue (created on findings, updated, closed when clean) so the whole team sees ADR health, not just whoever opened a session today. Copy `templates/github-workflows/adr-guardian-audit.yml` into your repo.
   - **Trend history (v0.29.0+)**: every sweep appends to a 52-entry trend log, and the nudge shows the delta: `trend: drift 2 -> 0, retire 1 -> 2, coverage 40% -> 45%`. A KPI with memory, not a snapshot.
   - **Sections that say nothing (v0.58.0+)**: in the LLM tier, `bin/adr-substance` asks the model whether each written section of a Proposed ADR answers its heading, and reports "TBD", "see above" and generic prose with the author's own words quoted. One call per Proposed ADR, counted in the cost prompt; advisory only.
@@ -424,7 +428,7 @@ Three layers, each with a clear path:
 - **Health dashboard (`adr-audit status`)**: totals, status breakdown, average age, enforcement health, retirement candidates, retrieval probe results, Accepted-binding metadata completeness, and the **Enforcement coverage percentage** of your Accepted ADRs. JSON, markdown, or table.
 - **Quality scoring (`adr-audit quality`)**: grades every ADR A to D across the four gates (Completeness 40%, Evidence 20%, Clarity 20%, Consistency 20%), with per-gate issue codes. Exits 1 below grade B, so you can gate CI on ADR quality.
 - **Generated index refresh (`bin/adr-index docs/adr/`)**: atomically rebuilds the sentinel-owned `docs/adr/README.md` block plus `ADR-INDEX.md` and `ADR-INDEX.json`. `--check` exits non-zero when any generated view is missing or stale, or duplicate ADR ids exist. Use `--format graph --adr-dir docs/adr` to inspect the graph without writing.
-- **Local doctor (`adr-audit doctor`)**: fast mode checks ADR/index state, retrieval probes and metadata completeness, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, MCP launchers, and cached model health without login or model invocation. Probe failures block; metadata completeness is advisory unless configured strict. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
+- **Local doctor (`adr-audit doctor`)**: fast mode checks ADR/index state, retrieval probes and metadata completeness, settings, generated artifacts, managed guidance, Claude/Codex/Copilot identity, and MCP launchers without login or model invocation. Probe failures block; metadata completeness is advisory unless configured strict. Default mode repairs only deterministic ADR Kit-owned drift; `--check` is read-only, `--fix` permits backed-up managed rewrites, and `--deep` adds bounded native, MCP, and local-model probes. See [troubleshooting](TROUBLESHOOTING.md).
 - **Lifecycle commands (`bin/adr`, v0.32.0+)**: local `propose`, `accept`, `supersede`, `reject`, and `document` commands update frontmatter, the Status section, append-only Status History, reciprocal supersession links, and then refresh the generated README index.
 - **After-the-fact acceptance (`bin/adr document` + `bin/adr accept --auto`)**: mark already-shipped behavior with `documents_shipped:true` and local `verified_in` pointers, then verify strict lint, quality, and human readiness. The default `assist` mode reports eligibility without mutating; acceptance requires `--confirm` after the engineer reviews the packet. Existing projects that intentionally require the legacy automatic transition can explicitly configure `lifecycle.auto_accept.mode: "auto"`.
 - **Retirement audit (`/adr-kit:retire`, `bin/adr-retire`)**: ranks Accepted ADRs for retirement using four deterministic signals (status age, technology removal, supersession, policy drift). Read-only; a recommendation always needs a human.
@@ -610,12 +614,12 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
   role parsing.
 - Per-file markers for one-off grandfathering: `<!-- adr-kit-lint: skip -->`, `skip <gate>[, ...]`, or `advisory` anywhere in an ADR.
 
-### LLM passes: always opt-in, never surprise cost
+### LLM passes: on your agent's model by default, local by choice
 
 ```json
 {
-  "judge":   { "llm_enabled": false, "llm_model": "claude-sonnet-4-6", "llm_timeout_seconds": 120 },
-  "suggest": { "enabled": false },
+  "judge":   { "llm_enabled": true, "llm_timeout_seconds": 120, "llm_pass_timeout_seconds": 600 },
+  "suggest": { "enabled": true },
   "guardian": {
     "enabled": true,
     "drift_stale_days": 1,
@@ -627,10 +631,48 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
 }
 ```
 
-- The pre-commit hook's declarative pass is always on and free. The LLM judge pass is opt-in (`judge.llm_enabled`, or `ADR_KIT_LLM=1` per commit; `ADR_KIT_NO_LLM=1` to suppress). A flock guard serializes LLM passes across parallel commits.
+- The pre-commit hook's declarative pass is always on and free.
+- The LLM judge pass is **on by default** (`judge.llm_enabled: true`), and runs on the coding assistant the plugin is installed in. The first session in a project records that client as the judge's host (Claude Code, Codex, Copilot CLI or OpenCode; a recorded choice is never replaced), and the next prompt asks you once whether to keep each LLM layer on or turn it off for your machine (ADR-049); `/adr-kit:init` and `/adr-kit:upgrade` ask the same per layer. The pass runs through that client's own CLI (`claude -p`, `codex exec`, `copilot -p` or `opencode run`, ADR-036), on your existing subscription: no API key, no adr-kit service. Your staged diff and the governing ADRs go to that client's model, one isolated call per ADR whose `llm_judge: true` scope the diff touches, so a commit can take a minute or more. Each call is capped by `judge.llm_timeout_seconds` and the whole pass by `judge.llm_pass_timeout_seconds`. A clear `VIOLATION` verdict blocks the commit like a declarative one (set `judge.advisory_only: true` to report instead); an answer the judge cannot parse degrades to the declarative result instead of blocking.
+- Turn it off for one commit with `ADR_KIT_NO_LLM=1`, for your machine with `adr-settings --set judge.llm_enabled=false --local` (the gitignored `.adr-kit.local.json`; your teammates keep it on), or for the whole project with `judge.llm_enabled: false` in `.adr-kit.json`. A flock guard serializes LLM passes across parallel commits.
 - `suggest.enabled` defaults to `true` (ADR-035): the advisory missing-decision nudge runs on the same terms as the judge, resolving through the shared backend registry with no pinned model. It never blocks and silently skips on any failure. Set `suggest.enabled: false` to switch it off per project, or export `ADR_KIT_SUGGEST_DISABLE=1` for a single run; `ADR_KIT_SUGGEST=1` still re-enables it per commit for a project that has set it false.
-- The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo).
+- The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo). `guardian.llm_enabled: false` switches the LLM tier off entirely.
 - `watch` tunes the in-flight nudges; `cooldown_hours: 0` disables the cooldown, `enabled: false` silences the watcher.
+
+#### Working locally (opt-in)
+
+You can keep every diff on your own machine. There are two ways to do that.
+
+**No model at all.** Export `ADR_KIT_NO_LLM=1`: it stops every pass that
+calls a model (the judge, `adr-suggest` and `adr-substance`). For a whole
+project, set `judge.llm_enabled`, `suggest.enabled` and `guardian.llm_enabled`
+to `false` in `.adr-kit.json`; for your machine only, set them with
+`adr-settings --set <switch>=false --local`. Enforcement is then fully deterministic and runs offline: the
+declarative rules, `adr-lint`, readiness and the MCP tools never call a model.
+
+**A local model.** Point the LLM passes at any command that reads the prompt
+on stdin and writes the answer to stdout. A local runtime such as
+[Ollama](https://ollama.com) works out of the box:
+
+```bash
+export ADR_KIT_LLM_CMD="ollama run qwen3.5:4b --think=false"
+```
+
+- **Scope.** The override applies to the judge, the missing-decision nudge
+  (`adr-suggest`) and the guardian's substance check (`adr-substance`). It
+  outranks the recorded host client. Use `--llm-cmd` instead for a single run.
+- **Where it can be set.** Only per machine, as an environment variable or a
+  flag. `.adr-kit.json` is committed, so it can select a backend but never
+  introduce a command (ADR-025): `llm_cmd` and `llm_model` keys are refused.
+- **Diagnostics.** `ADR_KIT_DEBUG=1` shows a failing command's stderr.
+
+Expect a small local model to be slower and less consistent than your agent's
+model. In a test on this repository, `qwen3.5:4b` gave a usable verdict for
+4 of 7 ADRs once thinking was disabled, and for 2 of 7 with it on. The other
+verdicts degraded to the declarative result, as designed: an answer the judge
+cannot parse costs you a check rather than blocking the commit. A clear but
+wrong `VIOLATION` does block, so read a small model's findings critically, or
+set `judge.advisory_only: true` while you evaluate one. A larger model, or
+raising `judge.llm_timeout_seconds`, narrows the gap.
 
 State lives in `docs/adr/.adr-kit-state.json`: gitignored, per-machine, atomic writes, safe across parallel sessions.
 
@@ -645,7 +687,7 @@ directly after a full-history checkout:
 - uses: actions/checkout@v4
   with:
     fetch-depth: 0
-- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@main
+- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.60.0
   with:
     adr-dir: docs/adr
 ```
@@ -673,7 +715,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.59.1
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.60.0
         with:
           adr-dir: docs/adr/
 ```
@@ -687,7 +729,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.59.1
+    rev: v0.60.0
     hooks:
       - id: adr-judge
 ```
@@ -771,7 +813,7 @@ the same notices; none of them applies a migration. See the
 
 **Does enforcement need an API key?**
 
-No. The default enforcement path (pre-commit hook, CI action, pre-commit framework, MCP server) is fully declarative and key-free. Only the explicitly opt-in LLM passes shell out to the `claude` CLI, and those degrade to a skip, never a block, when it is absent.
+No. The default enforcement path (pre-commit hook, CI action, pre-commit framework, MCP server) is fully declarative and key-free. The LLM passes are on by default where a host client is recorded and shell out to that agent's own CLI (`claude -p`, `codex exec`, `copilot -p` or `opencode run --pure`, ADR-036), which carries its own authentication; they degrade to a skip, never a block, when it is absent. Switch them off with `ADR_KIT_NO_LLM=1` or `judge.llm_enabled: false`, or point them at a local model with `ADR_KIT_LLM_CMD` (see [LLM passes](#llm-passes-on-your-agents-model-by-default-local-by-choice)).
 
 **My team has parallel agents creating ADRs. What about number collisions?**
 
@@ -795,7 +837,7 @@ A plain ADR template gives you a markdown file with sections to fill in. What `a
 | Acceptance bar | "fill it in" | four named verification gates before Proposed flips to Accepted |
 | Finding the relevant decision | read the folder, or do not | query a generated index; ranked, explained, authority-aware shortlist |
 | While coding | absent | context injection per task plus in-flight file nudges |
-| Enforcement | absent | declarative rules vs every commit and PR, key-free; opt-in LLM judge |
+| Enforcement | absent | declarative rules vs every commit and PR, key-free; LLM judge on your agent's own model, or a local one |
 | Aging | absent | guardian (drift, missing, stale), retirement audit, trend history, coverage KPI |
 | Team workflows | absent | CI sweeps with tracking issue, collision-safe numbering, audited overrides, guided supersession |
 | Tool integration | none | Claude Code, OpenAI Codex, GitHub Copilot CLI, and OpenCode integrations plus a 7-tool MCP server |
@@ -811,8 +853,8 @@ adr-kit/
 ├── agents/            # adr-generator subagent
 ├── hooks/             # hook config, shared fail-open runtime, per-client adapters
 ├── clients/           # canonical workflow/capability registry the client payloads generate from
-├── codex/             # generated Codex plugin: 15 skills, hooks, MCP, packaged engines
-├── copilot/           # generated Copilot CLI plugin: 15 skills, hooks, MCP, engines
+├── codex/             # generated Codex plugin: 17 skills, hooks, MCP, packaged engines
+├── copilot/           # generated Copilot CLI plugin: 17 skills, hooks, MCP, engines
 ├── opencode/          # native OpenCode TypeScript adapter over shared engines
 ├── package.json       # npm-style OpenCode plugin metadata
 ├── opencode.json      # repository-local OpenCode plugin registration

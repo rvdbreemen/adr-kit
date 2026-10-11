@@ -8,11 +8,15 @@ license: MIT
 # Upgrade ADR Kit project artifacts (the upgrade mode of setup)
 
 Invoke explicitly with `$adr-kit:upgrade` when needed.
-Resolve `<plugin-root>` from this installed skill. Use only bundled,
-local ADR Kit tools and follow this canonical workflow:
+Resolve `<plugin-root>` from this installed skill, and `<python>` to the
+first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10
+or newer. Use only bundled, local ADR Kit tools and follow this canonical
+workflow:
 
 1. Preview ADR migration without applying it.
 2. Refresh only ADR Kit-owned guide, instruction blocks, and pre-commit wrapper; preserve user-owned guidance.
-3. Finish with strict lint and report all migration notices.
+3. When no host client is recorded for this machine, record it with `adr-judge --set-backend host --host-client <this client's id>` so the LLM layers can run on this client's own model.
+4. Ask the user about the LLM layers, one at a time, showing each layer's current value from `<python> <plugin-root>/bin/adr-settings --adr-dir docs/adr`: keep it on (the default and the recommendation) or turn it off for this machine. The layers are the per-commit judge pass (`judge.llm_enabled`; can block a commit; one model call per in-scope `llm_judge: true` ADR), the missing-decision nudge (`suggest.enabled`; never blocks) and the guardian's LLM tier (`guardian.llm_enabled`; asks before each run). All three run on this client's own model; no API key is involved. Apply each 'off' with `<python> <plugin-root>/bin/adr-settings --adr-dir docs/adr --set <switch>=false --local`, never change a value the user did not answer, and record the answer, also when everything stays on, with `--set llm.confirmed=<YYYY-MM-DD> --local` (ADR-049).
+5. Finish with strict lint and report all migration notices.
 
 Do not contact another model or mutate user-owned instructions.

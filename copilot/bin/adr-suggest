@@ -657,8 +657,9 @@ def main() -> int:
         "--llm-timeout",
         type=int,
         default=None,
-        help="Per-call timeout for the LLM pass in seconds. Default 120 (or "
-        "suggest.llm_timeout_seconds / judge.llm_timeout_seconds in .adr-kit.json).",
+        help="Per-call timeout for the LLM pass in seconds. Default: "
+        "suggest.llm_timeout_seconds, then judge.llm_timeout_seconds in .adr-kit.json, "
+        "then 30.",
     )
     p.add_argument(
         "--json",
@@ -676,7 +677,11 @@ def main() -> int:
     try:
         adr_dir = Path(args.adr_dir).resolve()
         config_path = Path(args.config) if args.config else (adr_dir / ".adr-kit.json")
-        cfg = load_config(config_path)
+        # This machine's suggest.enabled wins over the team's (TASK-233): an
+        # "off" answered at init or upgrade lives in the gitignored file.
+        cfg = _adr_config.apply_machine_overrides(
+            load_config(config_path), load_local_config(adr_dir)
+        )
 
         # Default ON (ADR-035), on the same terms ADR-017 set for the judge:
         # one shared backend registry, the host CLI's own model, no pin. The

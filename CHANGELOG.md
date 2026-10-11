@@ -5,6 +5,197 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.60.0] - 2026-10-12
+
+A minor release with two behaviour changes and the fixes of the 2026-10-11
+defect sweep. The headline: the LLM layers now actually run on a default
+install, on the coding assistant the plugin is installed in, and the user is
+asked once whether to keep them. Before this release the common install route
+(`/plugin install`) never recorded a host client, so the judge's LLM pass, the
+`adr-suggest` nudge and the guardian's LLM tier silently did nothing.
+
+What you will notice. The first session in a project records the client it
+runs in as the judge host, and the next prompt asks, per layer, whether to keep
+it on (recommended) or turn it off for this machine. The question repeats at
+most once a day until it is answered. From that first session on, a commit's
+diff goes to that client's own model: the same assistant that already sees the
+code, with no API key and no pinned model. An "off" answer is written to the
+gitignored `.adr-kit.local.json` and stays on your machine; it no longer
+switches a layer off for the whole team. ADR-035 and ADR-049, which record
+these defaults, are Accepted.
+
+Upgrade notes.
+
+- To keep every diff away from any model, export `ADR_KIT_NO_LLM=1`. It now
+  stops every model call, including the suggestion pass, which it did not
+  before. If you relied on the nudge while it was set, the nudge is off too.
+- The pre-commit hook is a copy in each project. Re-run
+  `/adr-kit:install-hooks` and choose `replace` to get the fixes that make a
+  refused commit print its report and find the engine where Copilot CLI and
+  OpenCode install it. The old hook is kept as a timestamped backup.
+- Run `/adr-kit:upgrade` to replace the project-scoped guardian entry, which
+  no longer needs GNU `sort -V`. An entry added by an older
+  `/adr-kit:install-hooks` has no version stamp: remove it with
+  `/adr-kit:install-hooks` and add it again.
+- Codex runs a plugin's hooks only after you review them in `/hooks`;
+  `adr-doctor --deep` now says so when they are unreviewed.
+- On macOS and Linux, OpenCode now finds a Python 3.10 or newer itself. If it
+  reported the MCP server as failed, it should start after this upgrade.
+
+### Added
+
+- The LLM layers are on by default on every install route, on the coding
+  assistant the plugin runs in, and the user confirms them (ADR-049). The
+  layers - the per-commit judge pass, the `adr-suggest` nudge and the
+  guardian's LLM tier - only run where a judge host client is recorded, and
+  the common install route (`/plugin install`) never recorded one, so they
+  did nothing. The first session in a project now records the client it runs
+  in (never replacing a recorded choice), and the next prompt asks once whether
+  to keep each layer on or turn it off for this machine, until the answer is
+  recorded in `llm.confirmed`. `/adr-kit:init` and `/adr-kit:upgrade` ask the
+  same, one question per layer, on every run.
+- OpenCode runs the LLM layers on its own model (`opencode run --pure`). Its
+  plugin borrowed Claude Code's hook shape and would have recorded `claude -p`
+  as an OpenCode user's judge; it now names its own host.
+- `guardian.llm_enabled` (default `true`) switches the guardian's LLM tier off;
+  `adr-substance` then calls no model and the tier is never due.
+- `adr-settings --set <switch>=<value> --local` writes one of the four LLM
+  switches for this machine only.
+- ADR-043 restores the two rules that guarded the host-model-only judge: no
+  entry point may pin a vendor model, and none may carry its own default
+  command vector. ADR-017 enforced them until ADR-036 superseded it without an
+  Enforcement section, and since then no commit was checked against them. The
+  scope now also covers `bin/adr-substance`, which calls a model and was never
+  inside it; a gate test (`adr-no-pinned-model-v1`) fails when a new
+  model-calling entry point is left outside the rule.
+- ADR-044 to ADR-047, from the 2026-10-11 defect sweep, are Accepted.
+  - ADR-044 decides that every entry point finds Python and the engine through
+    one resolver. Its Enforcement block applies from this release: a skill may
+    not name a client's plugin-cache path or use `sort -V`. The skills comply
+    (see Fixed); the resolver itself lands in a later release.
+  - ADR-045 has the judge acquire its own diff and gives every diff shape an
+    explicit verdict. ADR-046 has every reader of `path_glob` match in the
+    judge's dialect. Both are implemented in a later release.
+  - ADR-047 gives the query engine's cap on supporting ADRs an Accepted record
+    again, as an amendment of ADR-036: at most two per response, filling only
+    the slots under the limit. The engine already behaves this way. The cap was
+    decided in ADR-014, which has been superseded since 2026-08-01.
+- ADR-048 is Accepted. It amends ADR-010: a native client is certified per
+  platform, from a real run on that platform, and the documents claim only
+  what a current record shows. Windows is no longer the only certifiable
+  platform, and certification stays optional for a release. The validator,
+  the support matrix and the new records land in a later release.
+
+### Changed
+
+- An LLM switch in the gitignored `.adr-kit.local.json` now wins over
+  `.adr-kit.json` for `judge.llm_enabled`, `suggest.enabled`,
+  `guardian.llm_enabled` and `guardian.llm_autorun`, so one developer's "off"
+  no longer has to switch a layer off for the whole team. Only these four
+  booleans cross over.
+- `ADR_KIT_NO_LLM=1` now stops every model call, not only the judge's. The
+  suggestion pass (`adr-suggest`, on by default) and the substance check
+  (`adr-substance`) resolved their backend without looking at it, so a user who
+  exported it to keep diffs off any model still had `adr-suggest` call one on
+  every commit. The switch is now checked in the shared resolver and outranks
+  `--llm-cmd` and `ADR_KIT_LLM_CMD`. If you set it and relied on the nudge, the
+  nudge is now off too.
+- The `adr-judge` and `adr-index-check` workflow templates, and the readiness
+  examples in the README and the grilling guide, pin the action to a release
+  instead of `@main`, like the readiness template already did. They are
+  registered version sites, so each release moves them.
+
+### Fixed
+
+- `adr-readiness` no longer suggests `/adr-kit:grill --revalidate` for an
+  ADR that is consistently superseded, so finished records stop reading as
+  open work. The `supersession-required` label stays (ADR-011 fixes the
+  classes); the command is now suggested only where status and successor
+  disagree (TASK-234).
+- On Windows, a host CLI installed through npm (Codex, Copilot CLI, OpenCode)
+  is a `.cmd` shim that the LLM pass could not start (`FileNotFoundError`), so
+  the pass degraded silently. The command is now resolved the way a shell
+  would.
+- The guardian skill no longer says its LLM tier runs a pinned
+  `claude-sonnet-4-6`; it runs on the recorded host's own model.
+- `build-client-adapters.py` and `sync-agent-plugins.py` no longer fail with
+  `ModuleNotFoundError` in an installed plugin. `client_certification.py`
+  imports `client_support_matrix.py`, which the release allowlist did not ship;
+  a test now checks that every shipped script's sibling imports ship too.
+- The project guide installed as `.claude/adr-kit-guide.md` describes the edit
+  tier as it works: the plugin's hook injects the governing ADRs before an edit
+  and repeats the lookup after it, with `inject.enabled` / `watch.enabled` as
+  the switches. It named `bin/adr-watch`, which no hook runs, and listed three
+  of the seven MCP tools.
+- `adr-suggest --help` and the config schema give the suggestion pass's real
+  default timeout, 30 s; both said 120.
+- `adr-doctor --deep` describes its probes as native registration, MCP and hook
+  latency; it no longer mentions a model probe that was retired with ADR-036,
+  and neither do the README and TROUBLESHOOTING.md.
+- The CLI latency corpus no longer budgets the retired `adr-embed` and
+  `adr-context-vector`, budgets `adr-watch` instead of excluding it as a
+  long-running watcher (every mode exits), and a test now rejects a budget
+  for a name that is not in `bin/`.
+- `clients/capabilities.json` lists the three hook registration files as
+  generated, which they are, instead of hand-authored.
+
+- The guardian's SessionStart entry (`templates/cc-settings/guardian-hook-entry.json`)
+  no longer depends on GNU `sort -V` to pick the newest installed plugin. Where
+  `sort` has no version mode the pipeline yielded nothing, and the entry's
+  `|| true` chain then skipped the guardian check on every session start
+  without a word. The pick now runs on the Python the entry already finds.
+  The same class of defect as #155; existing projects pick it up through
+  `/adr-kit:upgrade`, which replaces the entry.
+- The ten skills that run a bundled tool find the kit wherever it is
+  installed. In Claude Code that includes a `--plugin-dir` checkout, and the
+  fix also covers OpenCode, which loads the same skills. They looked only in
+  Claude's marketplace cache, through a pipeline that needs GNU `sort -V`. Now
+  they take `ADR_KIT_ROOT` when it is set, which the OpenCode plugin does for
+  its shell, and otherwise the plugin root that Claude Code substitutes into
+  the skill (ADR-044). When neither yields a root, the skill stops with one
+  line saying so.
+- `/adr-kit:install-hooks` adds the project-scoped guardian hook from
+  `templates/cc-settings/guardian-hook-entry.json` instead of an inline copy.
+  The copy still used `sort -V`, which the template no longer does (see the
+  entry above), and it had no `_wrapper_version` stamp, so the guardian
+  reported it as present but never as stale and `/adr-kit:upgrade` left it in
+  place. To replace an entry added with the copy, remove the guardian hook with
+  `/adr-kit:install-hooks` and add it again.
+- A commit the judge refuses prints the violation report. Wherever `flock`
+  exists, the hook's concurrency lock sent its stderr to `/dev/null` for the
+  rest of the hook, so the commit failed without a word. In a linked worktree
+  the same lock could not be opened and the hook reported a rival judge that
+  did not exist.
+- The commit hook finds the engine where Copilot CLI 1.0.81 and later loads
+  it, from the installer's payload, and where OpenCode installs it, in the
+  project's or OpenCode's cache `node_modules`. It also takes `ADR_KIT_ROOT`.
+  For those installs the hook found nothing and let a violating commit land.
+- Codex and OpenCode edits get their governing ADRs before and after the edit.
+  Both clients edit through `apply_patch`, which names its files only inside
+  the patch. The hook looked for a file path, so neither ever got edit-time
+  context, and the OpenCode plugin did not call the hook for such an edit.
+- The pull-request guard runs when `gh pr create` follows another shell
+  command, as in commit, push, PR. The hook took every shell command in a
+  session for a repeat of the previous one and dropped it before the guard ran.
+  The commit hook and CI were not affected.
+- `adr-doctor --deep` reports Codex hooks that nobody has reviewed. Codex runs
+  a plugin's hooks only after a review in `/hooks`, so a fresh install read
+  healthy while none of them ran. The probe also no longer reports a trust
+  problem for any client with a plugin whose name contains "review", such as
+  `code-review`.
+- `adr-doctor --deep` checks each client's registered MCP command, the way the
+  client starts it. It started the server with its own interpreter, so it said
+  healthy for a server the client could not start.
+- The OpenCode plugin finds a Python 3.10 or newer: `ADR_KIT_PYTHON`, then its
+  `python` option, then the first of `python3`, `python` and, on Windows,
+  `py -3` that runs 3.10 or newer. It ran `python`, which macOS and most Linux
+  distributions do not have, so OpenCode reported the MCP server as failed
+  and every hook did nothing.
+- The Codex and Copilot skills and the OpenCode commands name an interpreter
+  that exists, in the same order, instead of a bare `python`. The Codex and
+  Copilot trees now ship `scripts/setup-project.py`, which their setup skill
+  runs and neither tree had.
+
 ## [0.59.1] - 2026-10-05
 
 A patch release for the pre-commit hook, prompted by an external bug report
@@ -3242,7 +3433,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.57.0...v0.58.0

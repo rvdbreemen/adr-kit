@@ -472,6 +472,85 @@ def test_relationship_expansion_is_one_hop_and_capped_at_two(tmp_path):
     assert all(item["score"] == 0.0 for item in supporting)
 
 
+def test_supporting_expansion_is_capped_per_response_not_per_primary(tmp_path):
+    # ADR-047: the cap of two counts across the whole response. The second
+    # primary's neighbours stay out once the first primary has used the cap.
+    adr_dir = tmp_path / "docs" / "adr"
+    _write_adr(
+        adr_dir,
+        1,
+        "Quasar Orchestrator",
+        decision="Use the quasar orchestrator.",
+        related=["ADR-003", "ADR-004"],
+    )
+    _write_adr(
+        adr_dir,
+        2,
+        "Quasar Scheduler",
+        decision="Use the quasar scheduler.",
+        related=["ADR-005", "ADR-006"],
+    )
+    for number in (3, 4, 5, 6):
+        _write_adr(
+            adr_dir,
+            number,
+            f"Supporting Decision {number}",
+            decision=f"Supporting detail {number}.",
+        )
+    _build_index(adr_dir)
+
+    outcome = query_adr_context("quasar orchestrator", adr_dir, limit=10)
+
+    primary = [
+        item["adr_id"] for item in outcome["results"] if item["role"] != "supporting"
+    ]
+    supporting = [
+        item["adr_id"] for item in outcome["results"] if item["role"] == "supporting"
+    ]
+    assert primary == ["ADR-001", "ADR-002"]
+    assert supporting == ["ADR-003", "ADR-004"]
+
+
+def test_supporting_adrs_only_fill_the_slots_left_under_the_limit(tmp_path):
+    # ADR-047: a supporting ADR never displaces a scored match and never makes
+    # the response longer than `limit`.
+    adr_dir = tmp_path / "docs" / "adr"
+    _write_adr(
+        adr_dir,
+        1,
+        "Quasar Orchestrator",
+        decision="Use the quasar orchestrator.",
+        related=["ADR-003"],
+    )
+    _write_adr(
+        adr_dir,
+        2,
+        "Quasar Scheduler",
+        decision="Use the quasar scheduler.",
+        related=["ADR-004"],
+    )
+    for number in (3, 4):
+        _write_adr(
+            adr_dir,
+            number,
+            f"Supporting Decision {number}",
+            decision=f"Supporting detail {number}.",
+        )
+    _build_index(adr_dir)
+
+    full = query_adr_context("quasar orchestrator", adr_dir, limit=2)
+    one_free_slot = query_adr_context("quasar orchestrator", adr_dir, limit=3)
+
+    assert [item["adr_id"] for item in full["results"]] == ["ADR-001", "ADR-002"]
+    assert all(item["role"] != "supporting" for item in full["results"])
+    assert [item["adr_id"] for item in one_free_slot["results"]] == [
+        "ADR-001",
+        "ADR-002",
+        "ADR-003",
+    ]
+    assert one_free_slot["results"][-1]["role"] == "supporting"
+
+
 def test_explicit_no_match_returns_no_governing_result(tmp_path):
     adr_dir = tmp_path / "docs" / "adr"
     _write_adr(adr_dir, 1, "Local Queue", decision="Use an in-memory queue.")
