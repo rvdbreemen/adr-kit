@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from adapters import ADAPTERS
 from adr_hook_core import (
     MAX_CONTEXT_CHARS,
     MAX_INPUT_BYTES,
+    duplicate_event,
     evaluate,
     parse_payload,
 )
@@ -280,6 +282,41 @@ def test_a_patch_touching_more_files_than_the_query_takes_still_gets_context(tmp
     context, _ = _edit(project, {"command": _patch(*headers)})
 
     assert "ADR-001" in context
+
+
+def test_only_a_repeated_event_is_a_duplicate(tmp_path):
+    # The dedupe keeps the session's previous event in the OS temp directory,
+    # keyed by session id alone; it named neither the input nor the workspace.
+    project = _project(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    session = f"dedupe-{uuid.uuid4()}"
+
+    def event(target, cwd=project):
+        return parse_payload(
+            json.dumps(
+                {
+                    "cwd": str(cwd),
+                    "hook_event_name": "PreToolUse",
+                    "session_id": session,
+                    "tool_name": "apply_patch",
+                    "tool_input": {
+                        "command": _patch(f"*** Update File: {target}", "@@", "-a", "+b")
+                    },
+                }
+            ).encode(),
+            "codex-cli",
+        )
+
+    try:
+        assert not duplicate_event(event("src/hooks/runtime.py"))
+        assert duplicate_event(event("src/hooks/runtime.py"))
+        assert not duplicate_event(event("src/store/db.py"))
+        assert not duplicate_event(event("src/store/db.py", cwd=other))
+    finally:
+        (Path(tempfile.gettempdir()) / f"adr-kit-hook-{session}.seen").unlink(
+            missing_ok=True
+        )
 
 
 def test_copilot_uses_post_edit_backstop_not_false_pre_context(tmp_path):

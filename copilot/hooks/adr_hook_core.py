@@ -15,6 +15,7 @@ not a thing anyone should have to find by grepping. See `refresh_index`.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -184,17 +185,31 @@ def parse_payload(raw: bytes, client: str, event: str | None = None) -> Envelope
 
 
 def duplicate_event(envelope: Envelope) -> bool:
-    """Best-effort cross-process dedupe in OS temp; failures stay fail-open."""
+    """Best-effort cross-process dedupe in OS temp; failures stay fail-open.
+
+    Only the same event delivered twice is a duplicate, so the signature names
+    the whole tool input and the workspace. It used to name only a file path:
+    Bash has no PostToolUse hook, so `gh pr create` straight after `git push`
+    matched the push and was dropped before the PR guard ran, and so was every
+    apply_patch edit after another one, since a patch carries no file path.
+    """
     if not envelope.session_id:
         return False
-    path_value = _first(
-        envelope.tool_input, "file_path", "filePath", "path", "notebook_path"
-    )
+    tool_input = hashlib.sha256(
+        json.dumps(
+            envelope.tool_input,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
     signature = json.dumps(
         [
+            str(envelope.workspace),
             envelope.event,
             envelope.tool_name,
-            path_value,
+            tool_input,
             envelope.prompt,
             envelope.agent_id,
         ],
