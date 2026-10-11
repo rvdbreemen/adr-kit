@@ -136,7 +136,7 @@
       "path": "ADR-004-layered-adr-context-injection.md",
       "format": "canonical",
       "status": "Accepted",
-      "date": "2026-08-03",
+      "date": "2026-10-11",
       "decision_summary": "Adopt a layered ADR context injection model with three fail-open injection tiers and one fail-closed enforcement floo...",
       "topics": [
         "context injection",
@@ -228,7 +228,7 @@
       "path": "ADR-006-prepare-platform-local-marketplaces-for-native-installs.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-18",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: prepare a persistent platform-local marketplace from validated source, because it keeps the repository...",
       "topics": [
         "installation",
@@ -316,7 +316,7 @@
       "path": "ADR-008-resolve-the-enforcement-engine-from-a-version-ranked-root-set-including-the-checkout.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-07-20",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: add the checkout as another candidate root, ranked by manifest version like every other root, because...",
       "topics": [
         "enforcement engine",
@@ -1112,7 +1112,7 @@
       "path": "ADR-023-record-the-pull-request-guard-as-a-fail-closed-tier.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-06",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: record the guard as a second fail-closed tier, because the mechanism is right and only the record is b...",
       "topics": [
         "enforcement",
@@ -1887,7 +1887,7 @@
       "path": "ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-10-06",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: retire definitively; host model plus operator escape hatch.",
       "topics": [
         "backend selection",
@@ -2386,7 +2386,7 @@
       "title": "Resolve the interpreter and the engine through one resolver at every entry point",
       "path": "ADR-044-resolve-the-interpreter-and-the-engine-through-one-resolver-at-every-entry-point.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-10-11",
       "decision_summary": "Chosen option: one resolver, used by every entry point, with the failure behaviour set by that entry point's ADR-004...",
       "topics": [
@@ -2452,7 +2452,7 @@
       "title": "Let the judge acquire its own diff and give every diff shape an explicit verdict",
       "path": "ADR-045-let-the-judge-acquire-its-own-diff-and-give-every-diff-shape-an-explicit-verdict.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-10-11",
       "decision_summary": "Chosen option: the judge owns one canonical diff invocation, and every diff shape gets an explicit verdict, because a...",
       "topics": [
@@ -2515,7 +2515,7 @@
       "title": "Match every path_glob in the judge's dialect wherever it is read",
       "path": "ADR-046-match-every-path-glob-in-the-judge-s-dialect-wherever-it-is-read.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-10-11",
       "decision_summary": "Chosen option: the judge's dialect everywhere, through one shared module, because the judge is the authority whose ve...",
       "topics": [
@@ -2575,9 +2575,9 @@
       "title": "Cap supporting ADRs per response and let them fill only the slots left under the limit",
       "path": "ADR-047-cap-supporting-adrs-per-response-and-let-them-fill-only-the-slots-left-under-the-limit.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-10-11",
-      "decision_summary": "Chosen option: amend the record to the behaviour the engine has, because that behaviour is what the 2026-07-23 human...",
+      "decision_summary": "Chosen option: record the cap the engine has, as an amendment of ADR-036, because that behaviour is what the 2026-07-...",
       "topics": [
         "relationship expansion",
         "retrieval ranking",
@@ -2606,7 +2606,7 @@
         ],
         "must_not": [
           "Let a supporting ADR displace a scored match, or make a response longer than limit.",
-          "Read ADR-014's sentence \"A primary result may expand to at most two one-hop supporting ADRs\" as a cap per primary result."
+          "Read the superseded ADR-014's sentence \"A primary result may expand to at most two one-hop supporting ADRs\" as the rule in force."
         ],
         "exceptions": [
           "None."
@@ -2684,6 +2684,24 @@
       "resolved": true
     },
     {
+      "source": "ADR-004",
+      "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-004",
+      "target": "ADR-045",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-004",
+      "target": "ADR-046",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-005",
       "target": "ADR-001",
       "type": "related",
@@ -2722,6 +2740,12 @@
     {
       "source": "ADR-006",
       "target": "ADR-005",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-006",
+      "target": "ADR-044",
       "type": "related",
       "resolved": true
     },
@@ -2770,6 +2794,12 @@
     {
       "source": "ADR-008",
       "target": "ADR-006",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-008",
+      "target": "ADR-044",
       "type": "related",
       "resolved": true
     },
@@ -3272,6 +3302,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-023",
+      "target": "ADR-045",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-024",
       "target": "ADR-017",
       "type": "related",
@@ -3542,6 +3578,18 @@
       "resolved": true
     },
     {
+      "source": "ADR-036",
+      "target": "ADR-046",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-036",
+      "target": "ADR-047",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-037",
       "target": "ADR-011",
       "type": "related",
@@ -3752,6 +3800,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-044",
+      "target": "ADR-045",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-045",
       "target": "ADR-004",
       "type": "related",
@@ -3783,12 +3837,6 @@
     },
     {
       "source": "ADR-046",
-      "target": "ADR-014",
-      "type": "related",
-      "resolved": true
-    },
-    {
-      "source": "ADR-046",
       "target": "ADR-015",
       "type": "related",
       "resolved": true
@@ -3796,6 +3844,12 @@
     {
       "source": "ADR-046",
       "target": "ADR-030",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-036",
       "type": "related",
       "resolved": true
     },
@@ -3808,6 +3862,18 @@
     {
       "source": "ADR-047",
       "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-018",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-036",
       "type": "related",
       "resolved": true
     }

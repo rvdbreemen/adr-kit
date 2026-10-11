@@ -1,7 +1,7 @@
 ---
 id: "ADR-046"
 title: "Match every path_glob in the judge's dialect wherever it is read"
-status: "Proposed"
+status: "Accepted"
 date: "2026-10-11"
 binding: false
 gate: null
@@ -9,6 +9,9 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-004"
+  - "ADR-036"
 topics:
   - "path_glob"
   - "glob dialect"
@@ -36,7 +39,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-10-11.
+Accepted, 2026-10-11.
 
 ## Status History
 
@@ -47,13 +50,29 @@ status_history:
     changed_by: "User: Claude"
     reason: Initial proposal
     changed_via: adr-kit
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-046 makes ADR-004 section 3 precise: one glob dialect for every path_glob reader"
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-036
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
 
 ADR-004 section 3 pins the Enforcement `path_glob` as the canonical scope field
-for the injector, the index and the judge. ADR-014 keeps it as "the sole
-path-scope authority". The field is read in two dialects.
+for the injector, the index and the judge. ADR-014, which ADR-018 superseded on
+2026-08-01, called it "the sole path-scope authority". The field is read in two
+dialects.
 
 **The judge** uses `glob_to_regex` (`bin/adr-judge:672-738`), whose docstring
 states the dialect:
@@ -94,7 +113,7 @@ Which dialect is authoritative, and where is it implemented?
 
 ## Decision Drivers
 
-* One field has one meaning (ADR-004 section 3; ADR-014).
+* One field has one meaning (ADR-004 section 3).
 * The fail-closed floor is the authority. The injector may not claim a binding
   that the floor will not enforce, nor stay silent about one it will.
 * Existing Enforcement blocks keep their enforced meaning, because users' CI
@@ -222,8 +241,8 @@ Breemen settled all three human decisions on 2026-10-11:
 
 * Makes ADR-004 section 3 precise (Layered ADR context injection): the
   canonical scope field gets one canonical meaning.
-* ADR-014 (Use the generated ADR graph as the selective-context query engine):
-  `path_glob` remains the sole path-scope authority.
+* ADR-036 (Retire the vector layer and run the judge on the host model only):
+  its item 4 retrieval is one of the readers this record aligns.
 * ADR-015 and ADR-030: the latency budgets the shared module must meet.
 
 ## References

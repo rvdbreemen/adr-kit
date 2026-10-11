@@ -19,7 +19,8 @@ The gates below are implemented by `bin/adr-lint`; run it and report what it
 finds, rather than re-deriving every verdict by reading files:
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
 python "$ADR_KIT/bin/adr-lint" --format json docs/adr/
 ```
 

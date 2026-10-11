@@ -39,7 +39,8 @@ Continue the artifact upgrade regardless of whether notices exist.
 Resolve the plugin path and run the detector:
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
 python3 "$ADR_KIT/bin/adr-guardian" artifacts --format json
 ```
 
@@ -99,7 +100,8 @@ If so, exit with `already on v0.12; nothing to do`.
 Resolve the plugin path:
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
 ```
 
 Three migration paths for `CLAUDE.md`:

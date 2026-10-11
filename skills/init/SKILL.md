@@ -381,7 +381,8 @@ Then ask: `LLM pass? [1] on (host CLI)  [2] off (1)`
 Apply the answer with the kit's own command — do **not** hand-write the JSON, because the command validates what it wrote and refuses an incomplete choice. Resolve the plugin path first if it is not already in scope from step 1a:
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
 ```
 
 - **on** — you know which client you are running in, because you are reading this client's copy of this skill. Pass that id:
@@ -454,7 +455,8 @@ Ask the user: "Generate standalone validation scripts for CI/CD pipelines? (Y/n)
 If yes:
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
 "$ADR_KIT/bin/adr-generate-scripts" --lang shell --output .generated/
 ```
 
@@ -494,6 +496,6 @@ Suggest a first commit staging exactly what was written: `git add docs/adr/ .adr
   it demands `documents_shipped: true` and a `verified_in` pointer before it
   will run. A decision that is *not* already shipped is a new decision: it goes
   through `/adr-kit:grill` and ordinary acceptance, never `--auto`.
-- **Resolve the plugin path dynamically.** The kit lives at `~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/<version>/`. Use the `ls | sort -V | tail -1` resolver above; do not hardcode a version.
+- **Resolve the plugin path from this installed skill.** Use the resolver above: Claude Code fills in the root of the plugin this skill was loaded from, wherever it is installed. Do not hardcode a version or a plugin-cache path.
 - **Preserve user CLAUDE.md content.** Only the marked stub block (or a v0.11-style `## ADR Kit Rules` section being replaced) may be modified. Everything else stays byte-exact.
 - **Re-runnable.** A second invocation on a project where init already succeeded should detect the existing footprint and either skip or refresh, not regenerate.

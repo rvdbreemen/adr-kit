@@ -3,10 +3,10 @@ id: TASK-222
 title: >-
   Propose the ADRs the 2026-10-11 defect sweep needs, and grill the open
   decisions
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-11 13:35'
-updated_date: '2026-10-11 14:29'
+updated_date: '2026-10-11 15:40'
 labels: []
 dependencies: []
 references:
@@ -31,7 +31,7 @@ The 2026-10-11 defect sweep (26 confirmed defects, reproduced against f2f6fe2) n
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Each of B1-B9 is classified as ADR or not-an-adr, with the reason recorded
-- [ ] #2 Every needed ADR exists as a Proposed record created by bin/adr new, with links written by bin/adr relate on both sides
+- [x] #2 Every needed ADR exists as a Proposed record created by bin/adr new, with links written by bin/adr relate on both sides
 - [x] #3 No Accepted ADR's decision text is edited; amendments are new records that say Amends ADR-NNN
 - [x] #4 bin/adr-lint --strict docs/adr and bin/adr-index --check docs/adr pass
 - [x] #5 Every question put to the maintainer is recorded with its answer through bin/adr answer; unresolved ones stay as unchecked Open Questions
@@ -60,4 +60,9 @@ State: ADR-044..047 are Proposed and ready-for-confirmation; adr-lint --strict a
 AC #2 stays open on purpose: the four records exist (bin/adr new), but their declared links are deferred to acceptance, because bin/adr relate appends a status_history entry to the Accepted side. The relations are cited in prose meanwhile (ADR-028 allows that). Close AC #2 when the records are accepted and related.
 
 2026-10-11: the four Proposed records, the regenerated index and this task are committed on branch adr/defect-sweep-proposals and pushed for review as a draft PR against dev. Before the commit: adr-judge on the staged diff 0 violations; adr-lint and adr-lint --strict pass; adr-index --check changed False; adr-context --check-probes 3/3; build-client-adapters --check changed=0. Acceptance and the relate links remain open (AC #2).
+
+2026-10-11, after #191 merged: the declared links are written with bin/adr relate on both sides, as the four records are accepted under TASK-223 (AC #2 met).
+- Correction to the B9 classification above: ADR-014 is Superseded (ADR-018 on 2026-08-01, then ADR-020, then ADR-036), so 'ADR-047 amends ADR-014's wording' was wrong. The cap had no Accepted record. ADR-047 now amends ADR-036, whose item 4 keeps one-hop graph neighbours without a cap; this is its Open Question 2, answered by User: Robert van den Breemen.
+- ADR-046's references to ADR-014 are corrected the same way, and it links to ADR-036.
+- The links written are 044-008 (amends), 044-006, 044-004, 045-004, 045-023, 045-044, 046-004, 046-036 and 047-036 (amends).
 <!-- SECTION:NOTES:END -->

@@ -1,7 +1,7 @@
 ---
 id: "ADR-044"
 title: "Resolve the interpreter and the engine through one resolver at every entry point"
-status: "Proposed"
+status: "Accepted"
 date: "2026-10-11"
 binding: false
 gate: null
@@ -9,6 +9,11 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-004"
+  - "ADR-006"
+  - "ADR-008"
+  - "ADR-045"
 topics:
   - "engine resolution"
   - "python interpreter"
@@ -38,7 +43,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-10-11.
+Accepted, 2026-10-11.
 
 ## Status History
 
@@ -49,6 +54,31 @@ status_history:
     changed_by: "User: Claude"
     reason: Initial proposal
     changed_via: adr-kit
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-044 amends ADR-008: adds ADR_KIT_ROOT and a setup-recorded root to the version-ranked candidate set"
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-006
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-004
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-045
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement

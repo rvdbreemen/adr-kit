@@ -20,7 +20,8 @@ entry. Everything else lands in the new ADR.
 Resolve the plugin path once and reuse it:
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${CLAUDE_PLUGIN_ROOT}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not substituted; update Claude Code or reinstall the plugin" >&2; exit 1; }
 ```
 
 ## Step 1 - Identify the target and show its graph
