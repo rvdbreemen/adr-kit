@@ -1,7 +1,7 @@
 ---
 id: "ADR-045"
 title: "Let the judge acquire its own diff and give every diff shape an explicit verdict"
-status: "Proposed"
+status: "Accepted"
 date: "2026-10-11"
 binding: false
 gate: null
@@ -9,6 +9,10 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-004"
+  - "ADR-023"
+  - "ADR-044"
 topics:
   - "diff acquisition"
   - "renamed files"
@@ -38,7 +42,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-10-11.
+Accepted, 2026-10-11.
 
 ## Status History
 
@@ -49,6 +53,26 @@ status_history:
     changed_by: "User: Claude"
     reason: Initial proposal
     changed_via: adr-kit
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-004
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-023
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-044
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement

@@ -18,6 +18,8 @@ related:
   - "ADR-025"
   - "ADR-034"
   - "ADR-043"
+  - "ADR-046"
+  - "ADR-047"
 topics:
   - "simplification"
   - "llm judging"
@@ -95,6 +97,16 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-043
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-047 amends ADR-036: at most two one-hop supporting ADRs per response, filling only the slots under limit"
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-046
     changed_via: adr-kit lifecycle
 ```
 

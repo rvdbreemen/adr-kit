@@ -39,7 +39,8 @@ A project that ran v0.11 `/adr-kit:setup` has an inline `## ADR Kit Rules` secti
 1. **Resolve the plugin path.**
 
    ```bash
-   ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+   ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+   [ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
    ```
 
    If empty, abort: the plugin install is broken; tell the user to reinstall via `/plugin install adr-kit@rvdbreemen-adr-kit`.

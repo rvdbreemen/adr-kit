@@ -22,7 +22,8 @@ You install or uninstall the adr-kit pre-commit hook in the project the user is 
 ### Step 1 — Resolve the plugin's hook template
 
 ```bash
-ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ | sort -V | tail -1)
+ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+[ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
 TEMPLATE="$ADR_KIT/templates/githooks/pre-commit"
 ```
 
@@ -83,15 +84,15 @@ When the user asks to add the guardian hook to the project's `.claude/settings.j
 1. Read `.claude/settings.json` (create it as `{}` if missing).
 2. Check if `hooks.SessionStart` already contains an entry whose `command` contains the string `adr-guardian`. If yes: print "Already installed" and stop.
 3. If no SessionStart array exists: create it. Parse the JSON structurally — never do text substitution on a JSON file.
-4. Append the following hook object to `hooks.SessionStart[0].hooks` (create the array path if absent):
+4. Append the hook object the plugin ships in its template to `hooks.SessionStart[0].hooks` (create the array path if absent):
 
-   ```json
-   {
-     "type": "command",
-     "command": "ADR_KIT=$(ls -d ~/.claude/plugins/cache/rvdbreemen-adr-kit/adr-kit/*/ 2>/dev/null | sort -V | tail -1) && [ -n \"$ADR_KIT\" ] && _PY=$(command -v python3 || command -v python || command -v py) && [ -n \"$_PY\" ] && \"$_PY\" \"$ADR_KIT/bin/adr-guardian\" check 2>/dev/null || true",
-     "timeout": 10
-   }
+   ```bash
+   ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
+   [ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
+   ENTRY="$ADR_KIT/templates/cc-settings/guardian-hook-entry.json"
    ```
+
+   Copy the object unchanged, `_`-prefixed keys included. `adr-guardian` reads its `_wrapper_version` stamp to report the copy as stale after the plugin updates, and its command ranks the installed versions portably (TASK-220). Never retype the command from memory: a hand-written copy loses both properties.
 
 5. Write the updated JSON back. The existing `SessionStart` hooks (if any) are **preserved byte-for-byte** — only the new entry is appended.
 6. Confirm: "Guardian hook added to .claude/settings.json. It will fire at the next session start."

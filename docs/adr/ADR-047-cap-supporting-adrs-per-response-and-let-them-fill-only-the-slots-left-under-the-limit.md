@@ -1,7 +1,7 @@
 ---
 id: "ADR-047"
 title: "Cap supporting ADRs per response and let them fill only the slots left under the limit"
-status: "Proposed"
+status: "Accepted"
 date: "2026-10-11"
 binding: false
 gate: null
@@ -9,6 +9,8 @@ documents_shipped: false
 verified_in: []
 supersedes: []
 superseded_by: null
+related:
+  - "ADR-036"
 topics:
   - "supporting ADRs"
   - "relationship expansion"
@@ -34,7 +36,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-10-11.
+Accepted, 2026-10-11.
 
 ## Status History
 
@@ -45,11 +47,21 @@ status_history:
     changed_by: "User: Claude"
     reason: Initial proposal
     changed_via: adr-kit
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: "ADR-047 amends ADR-036: at most two one-hop supporting ADRs per response, filling only the slots under limit"
+    changed_via: adr-kit lifecycle
 ```
 
 ## Context and Problem Statement
 
-ADR-014's Decision Outcome says: "A primary result may expand to at most two
+ADR-014's Decision Outcome said: "A primary result may expand to at most two
 one-hop supporting ADRs." That reads as a cap per primary result. The query
 engine does something else:
 
@@ -62,6 +74,13 @@ engine does something else:
 * Only resolved `related` links expand a result. Neighbours are taken from the
   highest-ranked primary first, in ADR-number order (`_related_ids`, `:386-395`),
   and carry score 0 with the match reason "one-hop supporting ADR".
+
+ADR-014 is no longer in force. ADR-018 superseded it on 2026-08-01, ADR-020
+superseded ADR-018, and the chain ends at ADR-036, which is Accepted. ADR-036's
+item 4 keeps "lexical scoring over the generated index plus one-hop graph
+neighbours" but states no cap. Since 2026-08-01 the cap the engine enforces has
+had no Accepted record, and its only written statement, in a superseded record,
+reads differently.
 
 On 2026-10-09 an external user asked about exactly this in GitHub issue #190:
 is the limit intentional, what would widening it change, and why are lower ADR
@@ -78,33 +97,39 @@ own set at commit `f2f6fe2`:
   as primaries, and ADR-010 and ADR-011 as supporting ADRs. Those are the two
   lowest-numbered neighbours of ADR-016 that are not already shown.
 
-The record and the engine disagree. Markdown is the authority that agents and
-people read, so the disagreement misleads them. Which one is right?
+The engine enforces a rule that no Accepted record states, and the superseded
+record that does state it reads differently. Markdown is the authority that
+agents and people read, so the gap misleads them. Which reading is right, and
+which record should carry it?
 
 ## Decision Drivers
 
-* The Accepted record must describe what the engine does; agents act on the
+* An Accepted record must describe what the engine does; agents act on the
   record.
-* An Accepted ADR is never rewritten. A correction is an amending record.
+* A rule the engine enforces needs an Accepted home. ADR-014's lapsed with its
+  supersession, and ADR-036 left the cap unstated.
+* An Accepted ADR is never rewritten. A refinement is an amending record.
 * Issue #190 deserves an accurate answer.
 * Retrieval behaviour should not change without a measured reason. The
   measurement shows the current behaviour is not a constraint in practice.
 
 ## Considered Options
 
-* Amend the record to the per-response, fill-to-limit behaviour the engine has.
-* Change the engine to a cap per primary result, as the record reads.
+* Record the per-response, fill-to-limit cap the engine has, as an amendment of
+  ADR-036.
+* Change the engine to a cap per primary result, as ADR-014 read.
 * Redesign neighbour selection, ranking neighbours by relevance or allowing
   them beyond `limit`.
 * Do nothing.
 
 ## Decision Outcome
 
-Chosen option: **amend the record to the behaviour the engine has**, because
-that behaviour is what the 2026-07-23 human decision meant, and the measurement
-shows it does not withhold context in practice.
+Chosen option: **record the cap the engine has, as an amendment of ADR-036**,
+because that behaviour is what the 2026-07-23 human decision meant, the
+measurement shows it does not withhold context in practice, and ADR-036 is the
+Accepted record whose item 4 decides the one-hop expansion.
 
-The supporting expansion of ADR-014 is read as follows:
+ADR-036's one-hop graph neighbours (item 4, Retrieval) are bounded as follows:
 
 * A response contains at most two supporting ADRs in total
   (`MAX_SUPPORTING_RESULTS = 2`), whatever the number of primaries.
@@ -113,18 +138,18 @@ The supporting expansion of ADR-014 is read as follows:
 * Only resolved `related` links expand a result. Historical neighbours stay
   out unless `include_history` is set.
 * Neighbours of the highest-ranked primary come first, in ADR-number order: the
-  stable ADR-ID tie-breaker that ADR-014 names. A supporting ADR has no query
-  score; it is listed with score 0 and the match reason "one-hop supporting
-  ADR".
+  stable ADR-ID tie-breaker the engine has used since ADR-014. A supporting ADR
+  has no query score; it is listed with score 0 and the match reason "one-hop
+  supporting ADR".
 
-No engine change follows from this record. When this record is Accepted,
-ADR-014's status line reads `Amended by ADR-047`; ADR-014's decision text stays
-as it is.
+No engine change follows from this record, and ADR-036's decision text stays as
+it is.
 
 **Proposed by:** Claude (agent) at the request of User: Robert van den Breemen,
 from the 2026-10-11 defect sweep and GitHub issue #190. **Decision Maker:** User:
 Robert van den Breemen confirmed on 2026-10-11 that the 2026-07-23 decision
-meant two supporting ADRs per response (Open Question 1).
+meant two supporting ADRs per response (Open Question 1) and, once ADR-014
+turned out to be superseded, that this record amends ADR-036 (Open Question 2).
 
 ### Confirmation
 
@@ -148,8 +173,8 @@ meant two supporting ADRs per response (Open Question 1).
 
 * Let a supporting ADR displace a scored match, or make a response longer than
   `limit`.
-* Read ADR-014's sentence "A primary result may expand to at most two one-hop
-  supporting ADRs" as a cap per primary result.
+* Read the superseded ADR-014's sentence "A primary result may expand to at
+  most two one-hop supporting ADRs" as the rule in force.
 
 ### Exceptions
 
@@ -163,7 +188,8 @@ meant two supporting ADRs per response (Open Question 1).
 
 ### Positive
 
-* The record matches the engine, and issue #190 can be answered from it.
+* The cap has an Accepted record again, the record matches the engine, and
+  issue #190 can be answered from it.
 * No retrieval behaviour changes, and no project's probes move.
 
 ### Negative
@@ -176,17 +202,19 @@ meant two supporting ADRs per response (Open Question 1).
 
 ## Pros and Cons of the Options
 
-### Amend the record
+### Record the cap as an amendment of ADR-036
 
-* Good, because nothing that works changes, and the record becomes truthful.
+* Good, because nothing that works changes, and the rule gets an Accepted,
+  truthful record.
 * Bad, because the per-response cap is less generous than a per-primary reading
   would be when the limit has room.
 
 ### Change the engine to a cap per primary
 
-* Good, because the existing sentence would become literally true.
-* Bad, because it changes retrieval output without a measured need, and it
-  contradicts what the decision maker meant.
+* Good, because ADR-014's sentence would become literally true.
+* Bad, because it changes retrieval output without a measured need, it
+  contradicts what the decision maker meant, and it would rest on a superseded
+  record.
 
 ### Redesign neighbour selection
 
@@ -196,24 +224,30 @@ meant two supporting ADRs per response (Open Question 1).
 ### Do nothing
 
 * Good, because nothing changes.
-* Bad, because the Accepted record keeps telling readers something the engine
-  does not do.
+* Bad, because the cap keeps resting on a superseded record that reads
+  differently.
 
 ## Open Questions
 
 - [x] Did the 2026-07-23 human decision mean at most two supporting ADRs per response (what the engine does), or two per primary result (what ADR-014's Decision Outcome says)? — **Answered 2026-10-11 by User: Robert van den Breemen:** Two per response. The engine is right: at most two supporting ADRs per response, only in slots left under limit. ADR-014's Decision Outcome sentence is wrong, and because an Accepted ADR is not rewritten, this amending record corrects it. The answer to issue #190 explains these semantics.
+- [x] ADR-014 turned out to be Superseded: ADR-018 replaced it on 2026-08-01, and the chain ends at ADR-036, whose item 4 keeps one-hop graph neighbours without a cap. Does this record amend ADR-036 instead of ADR-014 (recommended), stand alone without an amendment, or stay Proposed? — **Answered 2026-10-11 by User: Robert van den Breemen:** Amend ADR-036. ADR-036 is the Accepted record whose item 4 decides the one-hop expansion, so the cap belongs there; ADR-014 stays cited as the record where the cap was first decided. The decision itself does not change: at most two supporting ADRs per response, filling only the slots under limit.
 
 ## Related Decisions
 
-* Amends ADR-014 (Use the generated ADR graph as the selective-context query
-  engine): corrects the reading of its supporting-expansion sentence; every
-  other part of ADR-014 is unchanged.
+* Amends ADR-036 (Retire the vector layer and run the judge on the host model
+  only): bounds the one-hop graph neighbours of its item 4 (Retrieval); every
+  other part of ADR-036 is unchanged.
+* ADR-014 (Use the generated ADR graph as the selective-context query engine),
+  Superseded by ADR-018 on 2026-08-01: where the cap was first decided, in the
+  Open Questions item answered on 2026-07-23.
 * ADR-004 (Layered ADR context injection): the injection tiers that consume
   these results.
 
 ## References
 
 * `bin/adr_query.py:45`, `:386-395`, `:548-568`.
-* ADR-014, Decision Outcome and the Open Questions item answered on 2026-07-23.
+* ADR-036, Decision Outcome item 4 (Retrieval).
+* ADR-014 (Superseded), Decision Outcome and the Open Questions item answered on
+  2026-07-23.
 * <https://github.com/rvdbreemen/adr-kit/issues/190>.
 * 2026-10-11 defect sweep (TASK-222): DEF-28.

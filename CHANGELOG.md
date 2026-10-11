@@ -13,6 +13,18 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   scope now also covers `bin/adr-substance`, which calls a model and was never
   inside it; a gate test (`adr-no-pinned-model-v1`) fails when a new
   model-calling entry point is left outside the rule.
+- ADR-044 to ADR-047, from the 2026-10-11 defect sweep, are Accepted.
+  - ADR-044 decides that every entry point finds Python and the engine through
+    one resolver. Its Enforcement block applies from this release: a skill may
+    not name a client's plugin-cache path or use `sort -V`. The skills comply
+    (see Fixed); the resolver itself lands in a later release.
+  - ADR-045 has the judge acquire its own diff and gives every diff shape an
+    explicit verdict. ADR-046 has every reader of `path_glob` match in the
+    judge's dialect. Both are implemented in a later release.
+  - ADR-047 gives the query engine's cap on supporting ADRs an Accepted record
+    again, as an amendment of ADR-036: at most two per response, filling only
+    the slots under the limit. The engine already behaves this way. The cap was
+    decided in ADR-014, which has been superseded since 2026-08-01.
 
 ### Changed
 
@@ -58,6 +70,21 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   without a word. The pick now runs on the Python the entry already finds.
   The same class of defect as #155; existing projects pick it up through
   `/adr-kit:upgrade`, which replaces the entry.
+- The ten skills that run a bundled tool find the kit wherever it is
+  installed. In Claude Code that includes a `--plugin-dir` checkout, and the
+  fix also covers OpenCode, which loads the same skills. They looked only in
+  Claude's marketplace cache, through a pipeline that needs GNU `sort -V`. Now
+  they take `ADR_KIT_ROOT` when it is set, which the OpenCode plugin does for
+  its shell, and otherwise the plugin root that Claude Code substitutes into
+  the skill (ADR-044). When neither yields a root, the skill stops with one
+  line saying so.
+- `/adr-kit:install-hooks` adds the project-scoped guardian hook from
+  `templates/cc-settings/guardian-hook-entry.json` instead of an inline copy.
+  The copy still used `sort -V`, which the template no longer does (see the
+  entry above), and it had no `_wrapper_version` stamp, so the guardian
+  reported it as present but never as stale and `/adr-kit:upgrade` left it in
+  place. To replace an entry added with the copy, remove the guardian hook with
+  `/adr-kit:install-hooks` and add it again.
 
 
 ## [0.59.1] - 2026-10-05

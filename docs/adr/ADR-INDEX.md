@@ -49,7 +49,7 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-041 | Accepted | - | Chosen option: automatic interactive handoff at the next user-visible prompt, because it closes the completion gap wi... |
 | ADR-042 | Accepted | `.github/workflows/release-publish.yml` | Chosen option: Option A, because it is the only one that both removes the failure class and adds no new long-lived cr... |
 | ADR-043 | Accepted | `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}` | Chosen option: carry the two rules in a new ADR and widen their scope to every model-calling entry point, because it... |
-| ADR-044 | Proposed | `skills/**/SKILL.md` | Chosen option: one resolver, used by every entry point, with the failure behaviour set by that entry point's ADR-004... |
-| ADR-045 | Proposed | - | Chosen option: the judge owns one canonical diff invocation, and every diff shape gets an explicit verdict, because a... |
-| ADR-046 | Proposed | - | Chosen option: the judge's dialect everywhere, through one shared module, because the judge is the authority whose ve... |
-| ADR-047 | Proposed | - | Chosen option: amend the record to the behaviour the engine has, because that behaviour is what the 2026-07-23 human... |
+| ADR-044 | Accepted | `skills/**/SKILL.md` | Chosen option: one resolver, used by every entry point, with the failure behaviour set by that entry point's ADR-004... |
+| ADR-045 | Accepted | - | Chosen option: the judge owns one canonical diff invocation, and every diff shape gets an explicit verdict, because a... |
+| ADR-046 | Accepted | - | Chosen option: the judge's dialect everywhere, through one shared module, because the judge is the authority whose ve... |
+| ADR-047 | Accepted | - | Chosen option: record the cap the engine has, as an amendment of ADR-036, because that behaviour is what the 2026-07-... |

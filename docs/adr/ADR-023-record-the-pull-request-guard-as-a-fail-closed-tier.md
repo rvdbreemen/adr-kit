@@ -15,6 +15,7 @@ related:
   - "ADR-019"
   - "ADR-024"
   - "ADR-034"
+  - "ADR-045"
 topics:
   - "hooks"
   - "enforcement"
@@ -73,6 +74,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-034
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-045
     changed_via: adr-kit lifecycle
 ```
 
