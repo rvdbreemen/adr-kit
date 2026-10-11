@@ -2380,6 +2380,252 @@
         "supersedes": [],
         "superseded_by": null
       }
+    },
+    {
+      "id": "ADR-044",
+      "title": "Resolve the interpreter and the engine through one resolver at every entry point",
+      "path": "ADR-044-resolve-the-interpreter-and-the-engine-through-one-resolver-at-every-entry-point.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: one resolver, used by every entry point, with the failure behaviour set by that entry point's ADR-004...",
+      "topics": [
+        "commit gate",
+        "engine resolution",
+        "fail closed",
+        "mcp launcher",
+        "python interpreter"
+      ],
+      "aliases": [
+        "adr-judge binary not found in plugin cache",
+        "ADR_KIT_ROOT",
+        "Executable not found in $PATH",
+        "python3 only"
+      ],
+      "components": [
+        ".mcp.json",
+        "hooks/run-hook.cmd",
+        "scripts/project_setup.py",
+        "templates/githooks/pre-commit"
+      ],
+      "symbols": [
+        "_patch_mcp_python",
+        "_plugin_roots"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every entry point resolves the interpreter and the engine root through the shared order above.",
+          "The commit gate refuses with a named reason, the repair command and the escape when a project with an Accepted Enforcement block has no resolvable interpreter or engine.",
+          "Setup records the engine root machine-locally only."
+        ],
+        "must_not": [
+          "Ship a launcher configuration that needs a command literally named python.",
+          "Hard-code a client plugin-cache path, or use sort -V, in a skill.",
+          "Write an interpreter or engine path into tracked configuration."
+        ],
+        "exceptions": [
+          "A project without an Accepted Enforcement block keeps exit 0 when nothing resolves, because it has nothing to enforce."
+        ],
+        "verification": [
+          "tests/testprecommite2e.py and tests/testskillresolver.py, both added with the implementation.",
+          "tests/testpackagingcontract.py and the client certification tests.",
+          "The two forbidpattern rules below, once this record is Accepted."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "skills/**/SKILL.md"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-045",
+      "title": "Let the judge acquire its own diff and give every diff shape an explicit verdict",
+      "path": "ADR-045-let-the-judge-acquire-its-own-diff-and-give-every-diff-shape-an-explicit-verdict.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: the judge owns one canonical diff invocation, and every diff shape gets an explicit verdict, because a...",
+      "topics": [
+        "binary files",
+        "deleted files",
+        "diff acquisition",
+        "fail closed",
+        "renamed files"
+      ],
+      "aliases": [
+        "--no-ext-diff",
+        "Binary files differ",
+        "color.ui",
+        "diff.external",
+        "git mv bypass"
+      ],
+      "components": [
+        ".github/actions/adr-judge/action.yml",
+        "bin/adr-judge",
+        "hooks/adr_pr_guard.py",
+        "templates/githooks/pre-commit"
+      ],
+      "symbols": [
+        "parse_diff"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every call site that feeds the judge uses the shared invocation.",
+          "The parser refuses, with a named reason, input that it cannot attribute to files.",
+          "Each diff shape has the verdict stated above, with a test for each.",
+          "A requirepattern rule with \"mustexist\": true refuses the deletion of a file it governs, and the policy gate accepts the key only on requirepattern rules."
+        ],
+        "must_not": [
+          "Let a user's color.ui, diff.external, diff.mnemonicPrefix, diff.renames or diff attribute change a verdict.",
+          "Report \"no violations\" for a non-empty diff that the parser could not read."
+        ],
+        "exceptions": [
+          "--max-diff-bytes and judge.maxdiffbytes still bound the input. A diff over the budget is refused as it is today."
+        ],
+        "verification": [
+          "tests/testjudgediffacquisition.py, added with the implementation.",
+          "A guard test over the ten call sites."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-046",
+      "title": "Match every path_glob in the judge's dialect wherever it is read",
+      "path": "ADR-046-match-every-path-glob-in-the-judge-s-dialect-wherever-it-is-read.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: the judge's dialect everywhere, through one shared module, because the judge is the authority whose ve...",
+      "topics": [
+        "context injection",
+        "glob dialect",
+        "path_glob",
+        "scope matching"
+      ],
+      "aliases": [
+        "**/*.py",
+        "brace expansion",
+        "fnmatch",
+        "glob_to_regex"
+      ],
+      "components": [
+        "bin/adr-judge",
+        "bin/adr_query.py",
+        "hooks/adr_hook_core.py"
+      ],
+      "symbols": [
+        "fnmatchcase",
+        "glob_to_regex"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Every reader of pathglob matches through the shared module.",
+          "The dialect is the one stated in this record and tested by one matrix.",
+          "A hook maps the editor's path to git's recorded spelling before it matches."
+        ],
+        "must_not": [
+          "Match a pathglob with fnmatch or any second implementation.",
+          "Change the set of files the judge enforces for an existing glob. The answers to Open Questions 2 and 3 keep the judge's current behaviour.",
+          "Treat [ or ] as a character class."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "tests/testglobdialect.py, added with the implementation, run against all readers."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-047",
+      "title": "Cap supporting ADRs per response and let them fill only the slots left under the limit",
+      "path": "ADR-047-cap-supporting-adrs-per-response-and-let-them-fill-only-the-slots-left-under-the-limit.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: amend the record to the behaviour the engine has, because that behaviour is what the 2026-07-23 human...",
+      "topics": [
+        "relationship expansion",
+        "retrieval ranking",
+        "selective context",
+        "supporting ADRs"
+      ],
+      "aliases": [
+        "issue 190",
+        "MAX_SUPPORTING_RESULTS",
+        "one-hop supporting ADR"
+      ],
+      "components": [
+        "bin/adr_query.py"
+      ],
+      "symbols": [
+        "_related_ids",
+        "MAX_SUPPORTING_RESULTS",
+        "query_adr_context"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "The query engine caps supporting ADRs at two per response.",
+          "Supporting ADRs only fill slots left under limit.",
+          "Supporting ADRs carry score 0 and the match reason \"one-hop supporting ADR\"."
+        ],
+        "must_not": [
+          "Let a supporting ADR displace a scored match, or make a response longer than limit.",
+          "Read ADR-014's sentence \"A primary result may expand to at most two one-hop supporting ADRs\" as a cap per primary result."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "The three tests named under Confirmation."
+        ]
+      },
+      "scope": {
+        "path_globs": []
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
     }
   ],
   "relationships": [
@@ -3472,6 +3718,96 @@
     {
       "source": "ADR-043",
       "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-006",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-008",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-044",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-009",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-023",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-045",
+      "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-014",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-015",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-046",
+      "target": "ADR-030",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-047",
+      "target": "ADR-014",
       "type": "related",
       "resolved": true
     }
