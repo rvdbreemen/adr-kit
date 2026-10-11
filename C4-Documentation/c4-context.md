@@ -40,8 +40,14 @@ recorded, and which are ready to retire. The deterministic core is
 stdlib-only Python and needs no API key or service. The passes that call a
 language model run only on the host agent's own CLI (ADR-036): the judge's
 LLM pass runs by default once a host client is recorded, which the installer
-does for a single-client install, and `ADR_KIT_NO_LLM=1` or
-`judge.llm_enabled: false` turns it off. Running them on a local model is
+does for a single-client install and, under ADR-049 (Accepted 2026-10-11), the
+first session in a project does too (a recorded choice is never replaced). The
+next prompt then asks whether to keep each LLM layer on for this machine, and
+repeats at most once a day until `llm.confirmed` is recorded
+(`ADR_KIT_NO_LLM=1` suppresses the question).
+`ADR_KIT_NO_LLM=1` or `judge.llm_enabled: false` turns the pass off, and four
+LLM switches can be overridden per machine in the gitignored
+`.adr-kit.local.json` (`adr-settings --set <switch>=false --local`). Running them on a local model is
 opt-in, per machine, through `ADR_KIT_LLM_CMD` (README, "Working locally").
 
 ## 2. Personas
@@ -66,12 +72,14 @@ The one role the toolkit is built to make accountable. ADR-027 exists
 specifically because every lifecycle command writes a `## Status History`
 entry naming who decided, that entry is immutable once written, and "an ADR
 whose history says a human accepted it when no human did is a lie that
-survives the person who told it" (ADR-027, Context). The signer must resolve
-to a person-named identity — an explicit `--changed-by "User: <name>"` flag,
-a machine-local `lifecycle.signer` setting, or a derived `git config
-user.name` that is *announced*, never assumed — and refuses outright for a
-value that names a machine (`github-actions[bot]`, `runner`, `adr-kit`
-itself, and eight other denylisted identities). Since v0.45.0, `bin/adr
+survives the person who told it" (ADR-027, Context). The signer resolves from
+an explicit `--changed-by "User: <name>"` flag, a machine-local
+`lifecycle.signer` setting, or a derived `git config user.name` that is
+*announced*, never assumed. The flag and the configured setting are taken as
+given; the derived git name must be person-shaped, and the tool refuses
+outright when it matches the machine-identity denylist (a case-insensitive
+regex in `bin/adr`, `_NON_PERSON_SIGNER_RE`, matching names such as
+`*[bot]`, `github-actions`, `runner`, `ci`, `root`, `user` and `adr-kit`). Since v0.45.0, `bin/adr
 accept` additionally requires an explicit `--confirm` flag: "an acceptance
 can no longer happen *by accident* — from a script written against an older
 interface, from a CI job, from an agent following a stale instruction"
@@ -222,9 +230,9 @@ plugin contract in ADR-039 rather than entering `clients/capabilities.json`.
    text, bounded to a token budget, *before* the file is written (ADR-004's
    edit tier). Budget: 450/550 ms, 1100 ms hard timeout. Copilot CLI has no
    such native event; the capability registry's `copilot-pretool-context-
-   limit` degradation names the consequence directly — "the same
-   deterministic guard runs proactively and PostToolUse verifies the
-   result" — and generated workflow prompts instruct the agent to look up
+   limit` degradation names the backstop directly — "Generated workflow
+   prompts require an ADR lookup before edits, postToolUse records drift,
+   and the commit tier still blocks a violation on every client." — and generated workflow prompts instruct the agent to look up
    context before editing rather than being handed it (`clients/
    capabilities.json`).
 4. **After an edit.** `PostToolUse` on the same matcher fires on all three
@@ -319,8 +327,10 @@ degrades context quality, never availability of the agent's tool loop.
 6. The signer resolves in order: an explicit `--changed-by` flag, a
    machine-local `lifecycle.signer` setting, or a derived `git config
    user.name` — announced on stderr, naming the source and how to override
-   it. A value that names a machine rather than a person is refused with the
-   rejected value named (ADR-027, Decision Outcome). `bin/adr signer
+   it. The flag and the configured setting are taken as given; a derived git
+   name that matches the machine-identity denylist (`_NON_PERSON_SIGNER_RE`
+   in `bin/adr`) is refused with the rejected value named (ADR-027, Decision
+   Outcome). `bin/adr signer
    --suggest` can propose a ranked candidate beforehand without writing
    anything.
 7. Acceptance writes the frontmatter status, the `## Status` line, and an
@@ -354,9 +364,12 @@ degrades context quality, never availability of the agent's tool loop.
 
 ### 4.5 Maintainer + CI × Guardian Health Sweep
 
-1. At `SessionStart`, `bin/adr-guardian check` reads a local 24-hour cache —
-   never scans live and never starts an interview inside the hook — and
-   offers at most three next actions to the maintainer.
+1. At `SessionStart`, the plugin hook reads the 24-hour Proposed-ADR queue
+   cache and offers at most three next actions to the maintainer; it never
+   starts an interview inside the hook. When the project-scoped guardian hook
+   (`/adr-kit:install-hooks`) is installed, `bin/adr-guardian check` rebuilds
+   a missing or expired cache in-process (no subprocess, no model) for the
+   next read; the two hooks run independently.
 2. The cheap tier (daily, free) checks code drift against `## Enforcement`
    rules, retirement candidates, and lint health.
 3. The LLM tier (bi-weekly) hunts for missing ADRs and runs the full
@@ -410,9 +423,9 @@ notes, approving the merge, and npm's 2FA.
    human approves it with npm 2FA, and the driver verifies
    `dist-tags.latest`.
 6. The syncback phase opens a PR that merges the release back into `dev` —
-   a step ADR-012's own Context paragraph exists to formalize, because
-   skipping it once left `dev` 32 commits behind `main`, still declaring the
-   old version, and missing the release machinery itself.
+   a step `docs/RELEASING.md` (sync-back step) documents because skipping it
+   once left `dev` 32 commits behind `main`, still declaring the old version,
+   and missing the release machinery itself.
 7. The install phase reads each client's installed version back. The
    maintainer separately advances any maintainer machine on the
    version-pinned local prepared-directory source
@@ -429,7 +442,7 @@ notes, approving the merge, and npm's 2FA.
 | **Host CLI (Claude Code / Codex / GitHub Copilot CLI / OpenCode)** | External application (the agent's runtime) | The process that resolves adr-kit as a plugin, dispatches native lifecycle events, and launches the MCP server. | Certified clients use native plugin managers and stdio MCP manifests; OpenCode loads `opencode/plugin.ts` through `opencode.json` / `package.json` and the OpenCode plugin API. | This is the delivery mechanism for the Coding Agent persona (§2.2) — without a host runtime, no lifecycle hook or plugin callback fires and no MCP tool is reachable. |
 | **GitHub repository `rvdbreemen/adr-kit`** | External system (source-controlled marketplace/package source) | The public repository every certified client resolves its plugin marketplace from directly and where the native OpenCode package source lives (`docs/RELEASING.md`). | Certified clients read `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.github/plugin/marketplace.json`; OpenCode reads `opencode.json` and `package.json` from a checkout or a separately published npm package. | It is the publication surface for the repository release (ADR-012); `release-publish.yml` also stages the npm package, with final publication still requiring maintainer 2FA. |
 | **GitHub Actions** | External CI runner | Executes adr-kit's own composite Actions and scheduled workflows. | Subprocess/CI job — `.github/workflows/release-publish.yml` (triggered by the release merge into `main`, where it creates the tag per ADR-042; a tag push or dispatch re-publishes), `publish-opencode-npm.yml`, `.github/actions/adr-judge`, `.github/actions/adr-readiness`, `adr-guardian-audit.yml`, `adr-retire-audit.yml`, `install-smoke.yml`, `release-candidate.yml` (ADR-010's optional native certification). | This is the concrete machinery behind the CI persona (§2.4) — every unattended gate described in §4.4 and the release gate in §4.6 runs here. |
-| **Host model CLI (`claude -p`, `codex exec`, or `copilot -p`)** | External application, used only where a host client is recorded | Reviews an ADR's more nuanced Enforcement rules when regex cannot express them; also powers the guardian's LLM tier (including `bin/adr-substance`) and `/adr-kit:grill`'s judgement passes. | Subprocess only, selected by `judge.host_client` or an operator's `ADR_KIT_LLM_CMD` / `--llm-cmd` (`bin/adr_llm.py`, `BACKENDS`); ADR-036 retired every HTTP backend (OpenRouter, Ollama, openai-compatible). `judge.llm_enabled` (default on, ADR-017) and `ADR_KIT_LLM=1` gate the pass; never on the hot path. | Some Enforcement rules are genuinely too nuanced for a regex (README); the model pass exists for exactly that case, and only that case, by design. |
+| **Host model CLI (`claude -p`, `codex exec`, `copilot -p`, or `opencode run --pure`)** | External application, used only where a host client is recorded or `ADR_KIT_LLM_CMD`/`--llm-cmd` is set | Reviews an ADR's more nuanced Enforcement rules when regex cannot express them (the judge's LLM pass); also powers `bin/adr-suggest` (the missing-decision nudge) and `bin/adr-substance` in the guardian's LLM tier. | Subprocess only, selected by `judge.host_client` or an operator's `ADR_KIT_LLM_CMD` / `--llm-cmd` (`bin/adr_llm.py`, `BACKENDS`); ADR-036 retired every HTTP backend (OpenRouter, Ollama, openai-compatible). `judge.llm_enabled` (default on, ADR-017) turns the pass on, `ADR_KIT_NO_LLM=1` forces it off, and the pre-commit hook's `ADR_KIT_LLM=1` only forces `--llm`; `guardian.llm_enabled` (default on) gates the guardian's LLM tier; never on the hot path. OpenCode is a host here, not a certified client (ADR-039). | Some Enforcement rules are genuinely too nuanced for a regex (README); the model pass exists for exactly that case, and only that case, by design. |
 | **pre-commit.com framework** | External tool, optional | An alternative to adr-kit's own git-hook wrapper for installing the commit-time judge. | The `adr-judge` hook id, installed via a `repos:` entry pointing at a pinned adr-kit tag (README, "`pre-commit` framework"). | Gives teams that already standardize on the pre-commit framework the same deterministic gate without adr-kit's own installer. |
 
 ## 6. System Context Diagram
@@ -445,14 +458,14 @@ C4Context
   System(ciGate, "CI / Automated Gate", "GitHub Actions jobs; runs unattended, no secret or model required")
 
   System_Boundary(boundary, "adr-kit") {
-    System(core, "adr-kit governance toolkit", "CLI Toolkit, MCP Server, Hook Runtime, Pre-commit Gate, Instruction Corpus — see c4-container.md")
+    System(core, "adr-kit governance toolkit", "CLI Toolkit, MCP Server, Hook Runtime, Native OpenCode Plugin, Pre-commit Gate, Instruction & Skill Corpus, Client Generation & Release Toolchain, Generated Client Mirrors — see c4-container.md")
   }
 
   System_Ext(git, "git", "Version control CLI")
   System_Ext(hostcli, "Host CLI runtimes", "Claude Code / Codex / Copilot / OpenCode processes that dispatch native plugin events")
   System_Ext(repo, "GitHub repository\nrvdbreemen/adr-kit", "Public marketplace source for three certified clients and native OpenCode package source")
   System_Ext(gha, "GitHub Actions", "Executes release, judge, readiness, install-smoke and guardian workflows; creates the release tag")
-  System_Ext(llm, "Host model CLI", "claude -p / codex exec / copilot -p subprocess — LLM judge, grill and guardian passes")
+  System_Ext(llm, "Host model CLI", "claude -p / codex exec / copilot -p / opencode run subprocess — LLM judge, adr-suggest and adr-substance passes")
   System_Ext(precommit, "pre-commit.com framework", "Optional alternate install path for the commit-time judge")
 
   Rel(maintainer, core, "Authors, grills, accepts, supersedes, retires ADRs; runs the release driver and approves the release merge")
@@ -466,7 +479,7 @@ C4Context
   Rel(core, repo, "Resolves plugin/marketplace manifests and native package source from")
   Rel(gha, repo, "Runs on pull request and push-to-main events; tags the merged release commit in")
   Rel(gha, core, "Executes composite Actions and scripts against")
-  Rel(core, llm, "Judge/grill/guardian review by subprocess, never on the hot path")
+  Rel(core, llm, "Judge, adr-suggest and adr-substance review by subprocess, never on the hot path")
   Rel(precommit, core, "Invokes adr-judge as a framework hook")
 ```
 

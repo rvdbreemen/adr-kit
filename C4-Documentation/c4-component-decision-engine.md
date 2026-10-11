@@ -42,7 +42,7 @@ true, and the exception is load-bearing:
   `adr-suggest`, `adr-watch`, `adr_doctor_core.py`, `adr_index_core.py`,
   `adr_quality_core.py`, `adr_readiness.py`, `adr_retrieval_health.py`) plus
   `hooks/adr_hook_core.py` and `scripts/benchmark-adr-grilling.py` (verified by
-  grep for `from adr_* import` / `_load_sibling("adr_*")` on 2026-10-06).
+  grep for `from adr_* import` / `_load_sibling("adr_*")`, re-checked on 2026-10-11).
   None of them parses ADR Markdown itself.
 - **`bin/adr-mcp` does not import it at all.** Verified: zero occurrences of
   `adr_catalog`/`adr_format`/`adr_schema`/`adr_query` in the file, and its
@@ -65,6 +65,8 @@ So: **every Python consumer imports it; the MCP server subprocesses to it.**
 | [ADR-007](../docs/adr/ADR-007-json-adr-graph-index-for-agent-retrieval.md) — *JSON ADR Graph Index for Agent Retrieval* | Accepted | Mandates a versioned node-and-edge graph generated "from one shared, format-aware semantic record loader". That loader **is** `adr_catalog.py`; ADR-007's References cite `bin/adr_format.py` directly. |
 | [ADR-036](../docs/adr/ADR-036-retire-the-vector-layer-and-run-the-judge-on-the-host-model-only.md) — *Retire the vector layer and run the judge on the host model only* | Accepted, `binding: true`, `gate: "adr-host-only-judge-v1"` | Decision point 4 fixes retrieval as **lexical scoring over the generated index plus one-hop graph neighbours**, with no embedding model in the path — which is exactly what `adr_query` does. It also states why `adr_catalog.public_adr_node` empties the Decision Contract of a Superseded node (`adr_catalog.py:481-489`): authority is joined from status at search time, and the empty shape keeps the graph inside the 2 KiB-per-ADR budget. |
 | [ADR-014](../docs/adr/ADR-014-use-the-generated-adr-graph-as-the-selective-context-query-engine.md) — *Use the Generated ADR Graph as the Selective-Context Query Engine* | **Superseded** (chain ADR-014 → ADR-018 → ADR-020 → ADR-036), `binding: true`, `gate: "index-first-retrieval"` | Historical source of the index-first design this component still implements. Its `verified_in` names `bin/adr_query.py:INDEX_FIRST_RETRIEVAL_GATE` — the literal string anchor at `adr_query.py:16`, still present — and `tests/test_adr_query.py` still runs the `index-first-retrieval` gate. Defined schema-v2 retrieval metadata, the three-value authority model, and the fail-open Markdown fallback posture; ADR-036 re-affirms its prohibition on embedding models in the retrieval path. |
+| [ADR-047](../docs/adr/ADR-047-cap-supporting-adrs-per-response-and-let-them-fill-only-the-slots-left-under-the-limit.md) — *Cap supporting ADRs per response and let them fill only the slots left under the limit* | Accepted 2026-10-11, `binding: false`, `gate: null` | Amends ADR-036 item 4 and records the one-hop cap the engine already had: at most `MAX_SUPPORTING_RESULTS = 2` supporting ADRs per response in total, filling only slots left under `limit`, never displacing a scored match. No engine change; it gives the cap an Accepted home after ADR-014's lapsed with its supersession. Confirmed by two added tests in `tests/test_adr_query.py`. |
+| [ADR-046](../docs/adr/ADR-046-match-every-path-glob-in-the-judge-s-dialect-wherever-it-is-read.md) — *Match every path_glob in the judge's dialect wherever it is read* | Accepted 2026-10-11, `binding: false`, **not yet implemented** | Names `bin/adr_query.py` as a component: `_path_matches` (`adr_query.py:294`, match at `:300`) uses case-insensitive `fnmatch.fnmatchcase`, a different dialect from the judge's `glob_to_regex`. The decision is one shared glob module, case-sensitive on git's path, imported by the judge, the index, the query engine and the hooks. The CHANGELOG defers it to a later release. |
 | [ADR-013](../docs/adr/ADR-013-declare-version-sites-in-one-registry-and-bump-by-writing.md) — *Declare Version Sites in One Registry and Bump by Writing* | Accepted 2026-07-22 | Names `scripts/bump-version.py` as the one bump writer; `bin/bump-version` is now a thin delegate to it. See "The `bump-version` exception" below. |
 
 **ADR-004** (layered context injection) is architecturally adjacent — it defines
@@ -77,7 +79,8 @@ as governing. Note ADR-004 describes that tier as "five weighted signals";
 glob targets `schemas/adr-kit-config.schema.json` (verified in source),
 ADR-007's targets `docs/adr/ADR-INDEX.json`, ADR-014 shipped empty rule arrays,
 and ADR-036 has no `## Enforcement` section at all (its gate is verified in
-`tests/test_adr_judge_llm.py`). The only rule that ever named a file here — ADR-018's
+`tests/test_adr_judge_llm.py`). ADR-046 and ADR-047 name `bin/adr_query.py` as
+a component but carry no Enforcement rule either. The only rule that ever named a file here — ADR-018's
 `forbid_pattern` on `bin/adr_query.py` (no network or subprocess imports) —
 belongs to a Superseded record and is no longer enforced. The semantic
 authority for the entire toolkit is therefore unguarded by the very pre-commit
@@ -92,9 +95,9 @@ adr-kit accepts three different ADR body layouts (MADR, Nygard, canonical) and
 serves them to five different kinds of reader (the `bin/` CLIs and their support
 modules, a hook runtime, an MCP server, a test suite, and CI). Without a single semantic layer, every tool would grow its
 own Markdown parser and they would disagree — which is exactly the bug class this
-component was built to close. `tests/test_adr_index.py` loads six tools side by
-side purely to assert that every status reader delegates to
-`adr_catalog.adr_status`, the fix for a forked-regex bug (PR #38) where one ADR
+component was built to close. `tests/test_adr_index.py` (`TestStatusReaderUnification`)
+runs five status readers (catalog, watch, judge, lint, retire) side by side and
+asserts they agree on every case, the guard for a forked-regex bug (PR #38) where one ADR
 read as `Accepted` by one tool and `Unknown` by another. Since 0.56.0 the
 frontmatter *writer* uses that reader too (issue #118): before, inference
 defaulted to `Proposed` on any Status shape it could not parse, and
@@ -147,7 +150,7 @@ inside `## Status History` (issue #119).
 | **Strict index reading** | `load_index_graph` validates schema version, **freshness against every `ADR-*.md` mtime**, node structure and duplicate ids, and raises `IndexQueryError`. Staleness is part of the contract, not a warning. |
 | **Index-first ranked retrieval** | `score_record` over 8 weighted fields (`path 1.0` → `decision_summary 0.40`), capped at 1.0, with an early `break` once the score saturates. Explicit filter hits score full coverage; lexical hits score `matched_tokens / query_keywords`. |
 | **Authority model** | `governing` (Accepted) / `advisory` (Proposed) / `historical`. A `Superseded` match is **not returned** but *redirects* its score to a live successor with a `successor_redirect` marker and a `redirected_from` field. Other historical statuses are dropped unless `include_history`. Ordering is `(-total, ADR-number, ADR-id)` — ADR id is the stable final tie-breaker. |
-| **Bounded one-hop expansion** | After ranking, `query_records` appends up to `MAX_SUPPORTING_RESULTS = 2` one-hop `related` ADRs (`adr_query.py:45`, enforced at `:562-565`) — ADR-014's "at most two one-hop supporting ADRs", kept by ADR-036's "one-hop graph neighbours". These carry `role="supporting"` and `score=0.0`, which is where the `role` field of the result contract gets its second value; every directly-matched ADR is `role="primary"`. A consumer of the 25-key payload must expect results it did not match on. |
+| **Bounded one-hop expansion** | After ranking, `query_records` appends up to `MAX_SUPPORTING_RESULTS = 2` one-hop `related` ADRs (`adr_query.py:45`, enforced at `:562-565`) — ADR-014's "at most two one-hop supporting ADRs", kept by ADR-036's "one-hop graph neighbours" and recorded again by ADR-047 as a cap per response in total that fills only slots left under `limit` (`:568-569`), so a supporting ADR never displaces a scored match. These carry `role="supporting"` and `score=0.0`, which is where the `role` field of the result contract gets its second value; every directly-matched ADR is `role="primary"`. A consumer of the 25-key payload must expect results it did not match on. |
 | **Visible fail-open fallback** | On `IndexQueryError`, `query_adr_context` re-raises when `strict_index=True`, else emits `[adr-context] WARN: …; using Markdown compatibility fallback` into `warnings` and rebuilds the graph from Markdown. Degradation is always observable in the payload (`source`, `engine`). |
 | **Profile migration** | `convert_profile` renames the five body roles, appends placeholder blocks for roles the target requires but the source lacks, then stamps the frontmatter discriminator. Refuses when `--from-profile` conflicts with a declared format, or when `context`/`decision`/`consequences` are missing. `adr-migrate` then reports each section that run left unfilled as `needs content: ## <heading>` — comparing *roles* before and after, each side read in its own profile, so a hole the source already had is not blamed on the conversion (0.57.0, 0.58.0) — and lists a Related Decisions section it had to add as `review: ## Related Decisions` (written as `- None.`). The report is advisory: a placeholder still passes the completeness gate by design. |
 | **LLM-judge opt-out migration** | `adr_llm_judge_migration.apply` rewrites the `## Enforcement` JSON of existing ADRs for the `llm_judge: true` default: a bare `"llm_judge": false` is treated as a leftover and removed, a `false` with `llm_judge_reason` is a recorded decision and left alone, and a rule-less block is marked no-code-surface unless force-enabled. Driven by `adr-migrate --enable-llm-judge [--except … --reason …] [--force-enable …]` from the upgrade skill. Deterministic, no prompting. |
@@ -159,10 +162,10 @@ inside `## Status History` (issue #119).
 
 ## Code Elements
 
-| Code document | Role in this component |
+| Code-phase provenance label (retired, TASK-149) | Role in this component |
 |---|---|
 | `c4-code-bin-lib-semantic-core.md` | The four importable library modules (2,686 lines) that *are* the semantic layer: `adr_format.py` (profile registry, role↔heading, status reader, section spans and unwritten-section detection), `adr_schema.py` (frontmatter subset), `adr_catalog.py` (records + graph), `adr_query.py` (index-first retrieval). No CLI surface, no exit codes — these raise. |
-| `c4-code-bin-cli-migration.md` | The identity mutators: `bin/adr-migrate` (692 lines — depends on the semantic layer) and `bin/adr-renumber` (254 lines — deliberately standalone so it keeps working while the parsing layer is mid-migration). Also carries `bin/bump-version`, which is in the cluster but outside this component's purpose — see below. `bin/adr_llm_judge_migration.py` (314 lines) is not yet claimed by a code document; it is placed here by its only caller, `bin/adr-migrate:541`. |
+| `c4-code-bin-cli-migration.md` | The identity mutators: `bin/adr-migrate` (692 lines — depends on the semantic layer) and `bin/adr-renumber` (254 lines — deliberately standalone so it keeps working while the parsing layer is mid-migration). Also carries `bin/bump-version`, which is in the cluster but outside this component's purpose — see below. `bin/adr_llm_judge_migration.py` (314 lines) has no Code-phase label; [c4-component.md](./c4-component.md)'s census places it in this component through its only caller, `bin/adr-migrate:541`. |
 
 ### Internal dependency spine
 
@@ -282,7 +285,7 @@ dependency order (`adr_format`, `adr_schema`, `adr_catalog`) without touching
 `sys.path` — the TASK-62 hardening, because inserting `bin/` ahead of the
 standard library let any file committed beside the scripts execute as code.
 `hooks/adr_hook_core.py` is the exception that still inserts `bin/` into
-`sys.path` (`:28-29`) before importing `query_adr_context` (`:31`). Several test
+`sys.path` (`:30-31`) before importing `query_adr_context` (`:33`). Several test
 files likewise load these modules by explicit path rather than by plain import.
 
 ### 2. The `docs/adr/ADR-INDEX.json` document contract
@@ -403,10 +406,11 @@ fail open (ADR-014).
 
 ## Dependencies
 
-> **Note on sibling slugs**: no component registry exists in the repository, so
-> the slugs below are inferred from the verifiable Code-phase cluster names. Each
-> entry names the `c4-code-*.md` document that resolves it, so the reference
-> holds even if a sibling document chose a different slug.
+> **Note on sibling slugs**: the component registry is
+> [c4-component.md](./c4-component.md), which fixes the seven slugs used below
+> and links each component document. The `c4-code-*.md` names in the second
+> column are historical provenance labels: those documents were retired on
+> 2026-08-09 (TASK-149) and are not live links.
 
 ### Components used
 
@@ -423,20 +427,20 @@ That inversion is the component's defining structural property: it is depended
 
 ### Components that depend on this one
 
-| Consumer (inferred slug) | Resolved by | Mechanism |
+| Consumer component | Code-phase provenance (retired) | Mechanism |
 |---|---|---|
-| `enforcement` | `c4-code-bin-cli-enforcement.md` | **Python import.** `bin/adr-judge` imports `ENFORCEMENT_BLOCK_RE`, `adr_id_from_filename`, `adr_status` from `adr_catalog` and `section_text` from `adr_format` (format-aware Decision extraction). `bin/adr-generate-scripts` imports the same enforcement extractor. |
-| `enforcement` (discovery path) | `c4-code-bin-cli-enforcement.md`, `c4-code-bin-lib-doctor.md` | **Python import + subprocess.** `bin/adr-discover:66` imports only `SUPPORTED_PROFILES, detect_profile` from `adr_format` — verified; it is a format-registry consumer, not a catalog consumer. Reached as a subprocess by `adr_doctor_core` on material drift. (Since ADR-026 the name `bin/adr-audit` belongs to the combined lint + judge command, which imports nothing from this component.) **Divergence risk touching this component's enforcement-glob semantics:** `bin/adr-discover:155` holds a duplicated `glob_to_regex` beside the judge's own (`bin/adr-judge:672`), so glob translation exists in two hand-synced copies while `adr_catalog.enforcement_globs` supplies the globs to both. |
-| `verification-gates` | `c4-code-bin-cli-gates.md` | **Python import.** `bin/adr-lint` imports from all three of format/schema/catalog; `bin/adr-quality` and `adr_quality_core.py` import `adr_format` (and the core also `adr_catalog`). |
-| `retrieval-and-injection` | `c4-code-bin-cli-retrieval.md` | **Python import + JSON file.** `bin/adr-index` and its importable generator `adr_index_core.py` call `build_graph_document`, and `bin/adr-index` **writes** the graph; `bin/adr-context` calls `query_adr_context`; `bin/adr-related`, `bin/adr-watch`, `bin/adr-suggest` import catalog/format. |
-| `lifecycle` | `c4-code-bin-cli-lifecycle.md` | **Python import.** `bin/adr` imports `adr_format` (profile catalog for `adr new --profile`, and `section_span` so status-history writes land inside `## Status History`) and `adr_schema` (frontmatter round-trip for status transitions); `adr-status`, `adr-retire` and `adr-guardian` import `adr_catalog` *specifically so reports agree with what `adr-judge` acts on*. |
-| `readiness-and-grilling` | `c4-code-bin-lib-readiness-grill.md` | **Python import.** `adr_readiness.py` imports `load_adr_records`/`build_relationships`/`normalize_adr_id` and `all_open_questions`/`placeholder_required_sections`; `adr_retrieval_health.py` imports `load_index_graph`/`query_records`/`IndexQueryError`; `bin/adr-substance` imports catalog/format. |
-| `health-diagnostics` | `c4-code-bin-lib-doctor.md` | **Python import.** `adr_doctor_core.py` imports `parse_frontmatter`/`split_frontmatter`; `bin/adr-doctor` pre-loads all four library modules in dependency order. |
-| `hook-runtime` | `c4-code-hooks.md` | **Two mechanisms.** `hooks/adr_hook_core.py:31` imports `query_adr_context` (Python) *and* `:220 load_index_records` reads `ADR-INDEX.json` with its own tolerant reader. |
-| `mcp-server` | `c4-code-bin-cli-mcp.md` | **Subprocess only — no import.** `bin/adr-mcp` spawns `bin/adr-context` etc. via `sys.executable`. Verified: zero references to any `adr_*.py` module. |
-| `contracts-and-templates` | `c4-code-schemas-templates.md` | **JSON Schema files on disk.** `adr-index.schema.json` and `adr-frontmatter.schema.json` specify this component's two data contracts; `adr_catalog.GRAPH_SCHEMA_REF` stamps the relative `$schema` pointer. |
-| `distribution` | `c4-code-generated-distributions.md`, `c4-code-packaging-ci.md` | **Verbatim byte copy.** `scripts/build-client-adapters.py` copies all four modules plus `adr_llm_judge_migration.py` and `adr-migrate`/`adr-renumber` into `codex/bin/` and `copilot/bin/` (`COPY_ROOTS` includes `bin`). `bin/bump-version` alone is excluded. |
-| `verification-suite` | `c4-code-tests.md` | **Python import + subprocess.** 17 test modules reference the four library modules by name or path (grep, 2026-10-06), plus `tests/test_adr_llm_judge_migration.py`; several load them by explicit file path, and the CLIs are driven as subprocesses. The suite is what runs the `index-first-retrieval` gate. |
+| [`enforcement-engine`](./c4-component-enforcement-engine.md) | `c4-code-bin-cli-enforcement.md` | **Python import.** `bin/adr-judge` imports `ENFORCEMENT_BLOCK_RE`, `adr_id_from_filename`, `adr_status` from `adr_catalog` and `section_text` from `adr_format` (format-aware Decision extraction). `bin/adr-generate-scripts` imports the same enforcement extractor. |
+| `bin/adr-discover` (not in any of the seven components; see the [c4-component.md gap list](./c4-component.md#coverage-gap-binadr-discover-and-binadr-audit)) | `c4-code-bin-cli-enforcement.md`, `c4-code-bin-lib-doctor.md` | **Python import + subprocess.** `bin/adr-discover:66` imports only `SUPPORTED_PROFILES, detect_profile` from `adr_format` — verified; it is a format-registry consumer, not a catalog consumer. Reached as a subprocess by `adr_doctor_core` on material drift. (Since ADR-026 the name `bin/adr-audit` belongs to the combined lint + judge command, which imports nothing from this component.) **Divergence risk touching this component's enforcement-glob semantics:** `bin/adr-discover:155` holds a duplicated `glob_to_regex` beside the judge's own (`bin/adr-judge:672`), so glob translation exists in two hand-synced copies while `adr_catalog.enforcement_globs` supplies the globs to both. A third dialect lives inside this component: `adr_query._path_matches` (`:294-302`) matches with case-insensitive `fnmatch.fnmatchcase`, where `*` crosses `/` and braces do not exist. ADR-046 (Accepted 2026-10-11, not yet implemented) decides one shared module in the judge's dialect for all of them. |
+| [`enforcement-engine`](./c4-component-enforcement-engine.md) | `c4-code-bin-cli-gates.md` | **Python import.** `bin/adr-lint` imports from all three of format/schema/catalog; `bin/adr-quality` and `adr_quality_core.py` import `adr_format` (and the core also `adr_catalog`). |
+| [`retrieval-and-injection`](./c4-component-retrieval-and-injection.md) | `c4-code-bin-cli-retrieval.md` | **Python import + JSON file.** `bin/adr-index` and its importable generator `adr_index_core.py` call `build_graph_document`, and `bin/adr-index` **writes** the graph; `bin/adr-context` calls `query_adr_context`; `bin/adr-related`, `bin/adr-watch`, `bin/adr-suggest` import catalog/format. |
+| [`health-and-lifecycle`](./c4-component-health-and-lifecycle.md) | `c4-code-bin-cli-lifecycle.md` | **Python import.** `bin/adr` imports `adr_format` (profile catalog for `adr new --profile`, and `section_span` so status-history writes land inside `## Status History`) and `adr_schema` (frontmatter round-trip for status transitions); `adr-status`, `adr-retire` and `adr-guardian` import `adr_catalog` *specifically so reports agree with what `adr-judge` acts on*. |
+| [`health-and-lifecycle`](./c4-component-health-and-lifecycle.md) | `c4-code-bin-lib-readiness-grill.md` | **Python import.** `adr_readiness.py` imports `load_adr_records`/`build_relationships`/`normalize_adr_id` and `all_open_questions`/`placeholder_required_sections`; `adr_retrieval_health.py` imports `load_index_graph`/`query_records`/`IndexQueryError`; `bin/adr-substance` imports catalog/format. |
+| [`health-and-lifecycle`](./c4-component-health-and-lifecycle.md) | `c4-code-bin-lib-doctor.md` | **Python import.** `adr_doctor_core.py` imports `parse_frontmatter`/`split_frontmatter`; `bin/adr-doctor` pre-loads all four library modules in dependency order. |
+| [`agent-integration`](./c4-component-agent-integration.md) | `c4-code-hooks.md` | **Two mechanisms.** `hooks/adr_hook_core.py:33` imports `query_adr_context` (Python) *and* `:244 load_index_records` reads `ADR-INDEX.json` with its own tolerant reader. |
+| [`agent-integration`](./c4-component-agent-integration.md) | `c4-code-bin-cli-mcp.md` | **Subprocess only — no import.** `bin/adr-mcp` spawns `bin/adr-context` etc. via `sys.executable`. Verified: zero references to any `adr_*.py` module. |
+| [`contracts-and-distribution`](./c4-component-contracts-and-distribution.md) | `c4-code-schemas-templates.md` | **JSON Schema files on disk.** `adr-index.schema.json` and `adr-frontmatter.schema.json` specify this component's two data contracts; `adr_catalog.GRAPH_SCHEMA_REF` stamps the relative `$schema` pointer. |
+| [`contracts-and-distribution`](./c4-component-contracts-and-distribution.md) | `c4-code-generated-distributions.md`, `c4-code-packaging-ci.md` | **Verbatim byte copy.** `scripts/build-client-adapters.py` copies all four modules plus `adr_llm_judge_migration.py` and `adr-migrate`/`adr-renumber` into `codex/bin/` and `copilot/bin/` (`COPY_ROOTS` includes `bin`). `bin/bump-version` alone is excluded. |
+| [`quality-assurance`](./c4-component-quality-assurance.md) | `c4-code-tests.md` | **Python import + subprocess.** 19 test modules reference the four library modules by name or path (grep, 2026-10-11), plus `tests/test_adr_llm_judge_migration.py`; several load them by explicit file path, and the CLIs are driven as subprocesses. The suite is what runs the `index-first-retrieval` gate. |
 
 ### External systems
 
@@ -478,7 +482,7 @@ flowchart TB
 
     MD[("docs/adr/ADR-NNN-*.md<br/>SOLE authoring authority")]
     IDXJSON[("docs/adr/ADR-INDEX.json<br/>generated projection<br/>schema_version 2")]
-    SCHEMAS["contracts-and-templates<br/>adr-index.schema.json<br/>adr-frontmatter.schema.json"]
+    SCHEMAS["contracts-and-distribution<br/>adr-index.schema.json<br/>adr-frontmatter.schema.json"]
 
     MD -->|"read_text"| CAT
     MIG -->|"writes frontmatter + profile"| MD
@@ -492,15 +496,15 @@ flowchart TB
     SCHEMAS -.->|"formally specifies"| IDXJSON
 
     RET["retrieval-and-injection<br/>adr-index · adr-context<br/>adr-related · adr-watch"]
-    ENF["enforcement<br/>bin/adr-judge<br/>fail-closed floor"]
-    GATES["verification-gates<br/>adr-lint · adr-quality"]
-    LIFE["lifecycle<br/>bin/adr · adr-status<br/>adr-retire · adr-guardian"]
-    READY["readiness-and-grilling<br/>+ health-diagnostics"]
-    HOOKS["hook-runtime<br/>adr_hook_core.py<br/>(only hook host)"]
-    GRILL["bin/adr-grill-signal<br/>bare json.loads"]
-    MCP["mcp-server<br/>bin/adr-mcp<br/>ZERO imports"]
-    DIST["distribution<br/>codex/bin · copilot/bin"]
-    TESTS["verification-suite<br/>runs the index-first-retrieval gate"]
+    ENF["enforcement-engine<br/>bin/adr-judge<br/>fail-closed floor"]
+    GATES["enforcement-engine<br/>adr-lint · adr-quality"]
+    LIFE["health-and-lifecycle<br/>bin/adr · adr-status<br/>adr-retire · adr-guardian"]
+    READY["health-and-lifecycle<br/>readiness · doctor"]
+    HOOKS["agent-integration<br/>adr_hook_core.py<br/>(only hook host)"]
+    GRILL["health-and-lifecycle<br/>bin/adr-grill-signal<br/>bare json.loads"]
+    MCP["agent-integration<br/>bin/adr-mcp<br/>ZERO imports"]
+    DIST["contracts-and-distribution<br/>codex/bin · copilot/bin"]
+    TESTS["quality-assurance<br/>runs the index-first-retrieval gate"]
 
     CAT -->|import| ENF
     FMT -->|import| ENF
@@ -508,7 +512,7 @@ flowchart TB
     LIB -->|import| LIFE
     LIB -->|import| READY
     QRY -->|import| HOOKS
-    IDXJSON -.->|"tolerant reader :220<br/>NO version/staleness check<br/>returns [] on any problem"| HOOKS
+    IDXJSON -.->|"tolerant reader :244<br/>NO version/staleness check<br/>returns [] on any problem"| HOOKS
     IDXJSON -.->|"2 MiB cap, no version/staleness check<br/>exit 2 if unreadable"| GRILL
     RET -->|"subprocess via sys.executable"| MCP
     LIB -->|"verbatim byte copy"| DIST
@@ -524,9 +528,11 @@ flowchart TB
     ADR007["ADR-007 Accepted<br/>JSON graph index"]
     ADR036["ADR-036 Accepted<br/>lexical index + one-hop graph<br/>no embeddings"]
     ADR014["ADR-014 Superseded<br/>gate: index-first-retrieval<br/>still run by tests"]
+    ADR047["ADR-047 Accepted<br/>amends ADR-036 item 4<br/>max 2 supporting per response"]
     ADR005 -.->|governs| FMT
     ADR007 -.->|governs| CAT
     ADR036 -.->|governs| QRY
+    ADR047 -.->|governs| QRY
     ADR014 -.->|"historical source"| QRY
 ```
 
@@ -547,7 +553,7 @@ Each was verified in source.
 
 1. **Three independent readers of `ADR-INDEX.json` at different strictness
    levels.** `adr_query.load_index_graph` validates schema version, staleness,
-   node structure and duplicate ids, and **raises**. `hooks/adr_hook_core.py:220
+   node structure and duplicate ids, and **raises**. `hooks/adr_hook_core.py:244
    load_index_records` reads the same file, caps it at 2 MiB, and returns `[]`
    on any problem — **no version check, no staleness check** (verified in
    source). `bin/adr-grill-signal:107-109` applies the same 2 MiB cap and a bare

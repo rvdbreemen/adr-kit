@@ -542,7 +542,7 @@ def record_host_client_if_absent(adr_dir, client: str) -> Optional[str]:
     runs in, so the first session records it. Returns the recorded id, or None
     when it wrote nothing:
 
-    * the client has no host command (OpenCode, an unknown id);
+    * the client has no host command (an id outside `HOST_COMMANDS`);
     * the project switched the pass off (`judge.llm_enabled: false`);
     * a host client is already recorded -- a person's choice is never replaced;
     * either config file exists but cannot be read -- never clobber it.

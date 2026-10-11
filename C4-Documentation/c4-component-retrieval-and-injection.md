@@ -25,9 +25,9 @@
   no third-party import in any of the six files, nor in `bin/adr_llm.py`, the backend
   registry `adr-suggest` loads. The five CLIs are **extension-less**
   (`#!/usr/bin/env python3`, no `.py`), so they are invoked as `python bin/<name>` and
-  imported by tests through `importlib.machinery.SourceFileLoader`. 3,104 lines total,
-  re-measured 2026-10-06 (`adr-context` 584, `adr-related` 401, `adr-index` 199,
-  `adr-watch` 674, `adr-suggest` 803, `adr_index_core.py` 443). Communication with the rest
+  imported by tests through `importlib.machinery.SourceFileLoader`. 3,110 lines total,
+  re-measured 2026-10-11 (`adr-context` 585, `adr-related` 401, `adr-index` 199,
+  `adr-watch` 674, `adr-suggest` 808, `adr_index_core.py` 443). Communication with the rest
   of the system is by **JSON files on disk**, **subprocess invocation**, **stdin pipes**, and
   one in-process import of `adr_index_core` by the hook runtime and the guardian. No member
   reaches the network itself; `adr-suggest`'s only model path is a subprocess to the host
@@ -72,18 +72,19 @@ including `--pre-edit` (PreToolUse injection) and `--hook` (PostToolUse nudge), 
 `inject`/`watch` cooldown state, and the bounded `[adr-inject] ADR-NNN (title) governs
 <path>` envelope. **But it is not the wired implementation.** Verified: nothing under
 `hooks/` invokes `adr-watch`; the only mention is a docstring at
-`hooks/adr_hook_core.py:413` recording that "no client's `hooks.json` invokes" it. The
+`hooks/adr_hook_core.py:437` recording that "no client's `hooks.json` invokes" it. The
 shipped runtime declares `PreToolUse`/`PostToolUse` on `Edit|MultiEdit|Write` in
 `hooks/hooks.json`, dispatches through `hooks/run-hook.cmd` to `hooks/adr-hook.py`, and
 lands in `hooks/adr_hook_core.py`, which **re-implements the matcher itself**
-(`_matching_path_records` at `hooks/adr_hook_core.py:653`, reading `ADR-INDEX.json`
-directly via `load_index_records` at `:220`). Python is the only hook host: a native
+(`_matching_path_records` at `hooks/adr_hook_core.py:703`, reading `ADR-INDEX.json`
+directly via `load_index_records` at `:244`). Python is the only hook host: a native
 binary that carried a third copy of the matcher was retired in 0.55.1 under ADR-029
 ("Retire the Native Hook Binary Rather Than Maintain a Second Retrieval Engine").
 
-Meanwhile `templates/adr-kit-guide.md:304`, the `[0.31.0]` CHANGELOG entry that introduced
-the edit-tier injector (`CHANGELOG.md:2549` at v0.59.1) and ADR-004 itself all still
-describe `bin/adr-watch --pre-edit` / `--hook` as the wired edit tier. So the edit-tier
+Meanwhile the `[0.31.0]` CHANGELOG entry that introduced the edit-tier injector
+(`CHANGELOG.md:2549` at v0.59.1) and ADR-004 itself still describe
+`bin/adr-watch --pre-edit` / `--hook` as the wired edit tier. (`templates/adr-kit-guide.md:304`
+no longer does: since TASK-221 it names the plugin's hook, `hooks/adr-hook.py`.) So the edit-tier
 behaviour exists in two Python places, with only the newer one actually installed, and
 the documentation points at the older one. This component owns the *specified* edit
 tier; the Hook Integration Layer ([`agent-integration`](./c4-component-agent-integration.md))
@@ -104,7 +105,7 @@ went dark with zero signal: an empty result reads exactly like "no ADR was relev
 **ADR-021** (Accepted 2026-08-04, frontmatter `components: [lifecycle hooks, adr-index]`)
 fixes this at the two events whose declared budget can absorb a render:
 `hooks/adr_hook_core.py::refresh_index` regenerates the index in-process at
-`session-start` and `user-prompt-submit` (`REFRESHING_EVENTS`, `hooks/adr_hook_core.py:490`)
+`session-start` and `user-prompt-submit` (`REFRESHING_EVENTS`, `hooks/adr_hook_core.py:514`)
 before querying. Every other event — `pre-tool-use`, `post-tool-use`, the plan-exit
 branch, and everything else `refresh_index` sees — stays read-only per ADR-021's Must
 Not clause and instead renders an actionable message: *"The generated ADR index is
@@ -125,9 +126,9 @@ it was done so a caller could ask "is the committed index still what the generat
 produce?" without spawning a subprocess, which is exactly the question ADR-021 needed
 answered from inside a hook. The hook layer therefore reuses this component's generation
 logic rather than duplicating it. It reaches the module differently from the CLIs: the
-hook core puts `bin/` on `sys.path` (`hooks/adr_hook_core.py:27-29`) and does a
+hook core puts `bin/` on `sys.path` (`hooks/adr_hook_core.py:29-31`) and does a
 function-local `from adr_index_core import ...`, where the CLIs use the
-`sys.modules`-cached `_load_sibling` loader. `bin/adr-guardian:476` is a third,
+`sys.modules`-cached `_load_sibling` loader. `bin/adr-guardian:478` is a third,
 read-only caller: it loads `adr_index_core` through `_load_sibling` to check freshness
 without a subprocess, and never regenerates.
 
@@ -145,7 +146,7 @@ Two guards keep the write bounded. Before writing, `refresh_index` compares
 trial render — against the event's own **p50** budget, read live from
 `hooks/manifest.json` by `_event_budget_ms()`: **400 ms** for `session-start`, **450 ms**
 for `user-prompt-submit`, with a **400.0 ms** fallback if the manifest can't be parsed
-(`hooks/adr_hook_core.py:579-598`). That is deliberately the p50 figure, not the event's
+(`hooks/adr_hook_core.py:603-622`). That is deliberately the p50 figure, not the event's
 declared hard timeout (`hooks/manifest.json`'s `latency_budget_ms`, which equals
 `latency.hard_timeout_ms` for all eight events: 1000 ms and 900 ms for these two) — a
 projection that exceeds p50 renders the staleness message instead of writing. A single
@@ -171,31 +172,42 @@ task tier, built on top of this component's index-reader contract and generation
 | **ADR-036** — Retire the Vector Layer and Run the Judge on the Host Model Only | Accepted 2026-08-09, `binding: true`, `gate: "adr-host-only-judge-v1"`; no `## Enforcement` block | Decision point 4 fixes retrieval as **lexical scoring over the generated index plus one-hop graph neighbours**, with no embedding model in the path — what `adr-context` delegates to `adr_query`. Decision point 3 leaves the host agent CLI as the only model backend, which is the only model `adr-suggest` can reach. Supersedes ADR-017 and ADR-020. |
 | **ADR-014** — Use the Generated ADR Graph as the Selective-Context Query Engine | **Superseded** (chain ADR-014 → ADR-018 → ADR-020 → ADR-036), `binding: true`, `gate: index-first-retrieval` | Historical source of the index-first design this component still implements: the graph as the normal runtime projection with Markdown as *visible* fallback, and relevance separated from authority (Accepted governs, Proposed advises, Superseded redirects to a live successor). This is why `adr-context` delegates all scoring to `adr_query`. ADR-036 re-affirms its prohibition on embedding models in the retrieval path. |
 | **ADR-021** — Let the Session-Scoped Hooks Regenerate a Stale ADR Index | Accepted 2026-08-04, `binding: true`, `gate: "adr-hook-index-refresh-v1"`, anchored in `tests/test_adr_hook_index_refresh.py` (the Verification section, `ADR-021:216-218`, agrees) | Frontmatter `components:` includes `adr-index` (verified). Fixes a defect in this component's own generated artefact: an agent writing `docs/adr/ADR-NNN.md` directly leaves `ADR-INDEX.json` stale, `adr_query.query_adr_context(strict_index=True)` raises, and every task-tier and edit-tier query goes dark with no message. See the subsection above and Software Features. |
+| **ADR-043** — Forbid a pinned model or a default LLM command in every model-calling entry point | Accepted 2026-10-06, `binding: true`, `gate: "adr-no-pinned-model-v1"` | The only Accepted Enforcement scope over this component's source: two `forbid_pattern` rules on `{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}` — no `--model … claude` pin and no `DEFAULT_LLM_CMD =` in `adr-suggest`, so `bin/adr_llm.py` stays the one place a command vector lives. `llm_judge: false`. |
+| **ADR-035** — Run the Suggestion Pass by Default on the Same Terms as the Judge | Accepted 2026-10-11, `binding: false`, `documents_shipped: false`; no `gate` | The record governing `adr-suggest`'s default: the pass runs unless switched off (`bin/adr-suggest:681-705`, schema `suggest.enabled` default `true`), on the same host-only backend as the judge. It has no Enforcement `path_glob`, so it adds no judge scope over this component's source. |
 
-**`adr-suggest` has no Accepted governing ADR for its default.** ADR-001 ("Make Per-Commit
+**`adr-suggest`'s default now has an Accepted governing ADR.** ADR-001 ("Make Per-Commit
 LLM Gates Opt-In", which made it opt-in, `ADR-001:101`) is Superseded by ADR-017, itself
-Superseded by ADR-036. The code now runs the pass by default and cites ADR-035 for it
-(`bin/adr-suggest:681-701`, schema `suggest.enabled` default `true`), but ADR-035 ("Run
-the Suggestion Pass by Default on the Same Terms as the Judge") is still **Proposed**, with
-`documents_shipped: false`. Reported as observed: the shipped default runs ahead of its
-decision record.
+Superseded by ADR-036. The code runs the pass by default and cites ADR-035 for it;
+ADR-035 was accepted 2026-10-11 (`## Status`: "Accepted, 2026-10-11."), so the shipped
+default and its decision record agree. An earlier revision of this document reported the
+default as running ahead of a still-Proposed ADR-035.
 
 **ADR-015 does not govern this component** — its frontmatter `components:` are
 `adr-lint`, `adr-retire`, `hooks`, `tests`, and its Enforcement `path_glob` is
 `tests/fixtures/cli/latency-corpus.json`. Its fixture contract does reach these CLIs; see
 Notable Finding 7.
 
-**No Enforcement `path_glob` of an Accepted ADR covers any of the six files.** Verified
-2026-10-06 by enumerating every `path_glob` in Accepted ADRs: the complete set is
-`bin/adr-lint`, `bin/adr-mcp`, `{bin,codex/bin,copilot/bin}/adr-mcp`,
-`clients/workflows.json`, `docs/adr/ADR-INDEX.json`, `schemas/adr-kit-config.schema.json`,
-`schemas/client-capabilities.schema.json`, `templates/githooks/pre-commit`,
-`tests/fixtures/cli/latency-corpus.json`, `tests/test_adr_mcp.py`,
-`.github/workflows/release-publish.yml`. The pre-commit judge therefore guards this
-component's *output* (via ADR-007's two `require_pattern` rules on `ADR-INDEX.json`) but
-never its *source*. Edit-tier ADR injection also never fires on these files, because no
-Accepted ADR claims them as scope — the component that narrows context for every other
-file has no ADR narrowing context for itself.
+**One Enforcement `path_glob` of an Accepted ADR covers one of the six files:
+`bin/adr-suggest`, through ADR-043.** Verified 2026-10-11 by enumerating every
+`path_glob` in Accepted ADRs: the complete set is `bin/adr-lint`, `bin/adr-mcp`,
+`{bin,codex/bin,copilot/bin}/adr-mcp`,
+`{bin,codex/bin,copilot/bin}/adr{-judge,-suggest,-substance,_llm.py}` (ADR-043),
+`clients/workflows.json`, `docs/adr/ADR-INDEX.json`, `hooks/adr_hook_core.py` and
+`opencode/plugin.ts` (ADR-049), `schemas/adr-kit-config.schema.json`,
+`schemas/client-capabilities.schema.json`, `skills/**/SKILL.md` (ADR-044),
+`templates/githooks/pre-commit`, `tests/fixtures/cli/latency-corpus.json`,
+`tests/test_adr_mcp.py`, `.github/workflows/release-publish.yml`. (An earlier revision
+of this document said no glob covered the six files; ADR-043 was already Accepted
+2026-10-06 and that claim missed it.) The pre-commit judge therefore guards this
+component's *output* (via ADR-007's two `require_pattern` rules on `ADR-INDEX.json`)
+and, of its *source*, only `adr-suggest` against a pinned model or a local default
+command. The other five files have no ADR scope. Edit-tier injection does not use
+ADR-043's scope either: the installed matcher compares with `fnmatch.fnmatchcase`
+(`hooks/adr_hook_core.py:711`), which does not expand `{a,b}` braces, so the glob the
+judge matches against `bin/adr-suggest` does not match there (checked by running both
+matchers on that path) — the divergence ADR-046 (Accepted, not yet implemented)
+addresses. The component that narrows context for every other file still gets no
+path-scoped context for itself.
 
 ## Software Features
 
@@ -250,7 +262,7 @@ file has no ADR narrowing context for itself.
   `related` ADRs returned as `role: "supporting"` with `score: 0.0` (ADR-036). No
   embedding or model call is in the path.
 - **Retrieval health probes.** `--check-probes` uses `adr_retrieval_health` (loaded at
-  module scope since TASK-62, `bin/adr-context:61`) and validates `docs/adr/adr-context-probes.json` against the
+  module scope since TASK-62, `bin/adr-context:62`) and validates `docs/adr/adr-context-probes.json` against the
   live graph (exit 1 on `fail` or `degraded`).
 
 ### Relationship-graph queries (`adr-related`)
@@ -289,9 +301,15 @@ file has no ADR narrowing context for itself.
 
 - **On by default, with two switches.** Runs unless `ADR_KIT_SUGGEST_DISABLE=1` (wins
   over everything) or `suggest.enabled: false` in `.adr-kit.json`; `ADR_KIT_SUGGEST=1`
-  re-enables it per run for a project that set `false` (`bin/adr-suggest:681-701`). The
+  re-enables it per run for a project that set `false` (`bin/adr-suggest:681-705`). The
   script reads the disable variable itself, so the switch works at the pull-request guard
-  as well as in the pre-commit wrapper. See the governing-ADR note on ADR-035 above.
+  as well as in the pre-commit wrapper. Since TASK-233, `suggest.enabled` is one of the
+  four `adr_config.MACHINE_OVERRIDABLE` switches: a boolean in the gitignored
+  `docs/adr/.adr-kit.local.json` (written by `adr-settings --set suggest.enabled=false
+  --local`, the answer `/adr-kit:init` and `/adr-kit:upgrade` record per LLM layer) wins
+  over the team's `.adr-kit.json` on this machine only, applied through
+  `apply_machine_overrides` (`bin/adr-suggest:682-684`). See the governing-ADR note on
+  ADR-035 above.
 - **Cheap pre-filters before any model call.** `SKIP_GLOBS` drops diffs touching only
   docs, Markdown and lockfiles — those cannot carry a decision — so no LLM round-trip
   happens at all.
@@ -305,9 +323,11 @@ file has no ADR narrowing context for itself.
 - **Model selection goes through a shared registry, not a local constant.**
   `bin/adr-suggest` resolves its backend from the same registry `bin/adr-judge` uses
   (`bin/adr_llm.py`), with precedence `--llm-cmd` > `ADR_KIT_LLM_CMD` env >
-  `judge.backend`. The registry holds one backend, `host`: the agent CLI the installer
-  recorded as `judge.host_client` (`claude -p`, `codex exec`, `copilot -p`), with no
-  model flag (ADR-036). There is deliberately no `suggest.backend`: which model the
+  `judge.backend`. The registry holds one backend, `host`: the agent CLI recorded as
+  `judge.host_client` (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`;
+  `HOST_COMMANDS`, `bin/adr_llm.py:66-71`), with no model flag (ADR-036). The installer
+  records it, and since ADR-049 so does the first session's hook through
+  `adr_llm.record_host_client_if_absent` when nothing is recorded yet. There is deliberately no `suggest.backend`: which model the
   project talks to is a `judge`-level property. Repo-tracked `suggest.llm_cmd` /
   `judge.llm_cmd` / `*.llm_model` are refused by name at config validation — honouring
   them would let committed repo content choose which binary this script executes. The
@@ -374,7 +394,7 @@ score, signals, matches, source, engine, schema_version, redirected_from
 ```
 
 **Reachability caveat**: the CLI that actually runs is the terse `_index_first_cli`
-parser at `bin/adr-context:72` (moved from `:39` as the file grew to 584 lines).
+parser at `bin/adr-context:73` (moved from `:39` as the file grew to 585 lines).
 Re-verified 2026-10-06 by running `python bin/adr-context --help`.
 
 ### 2. `adr-related` — relationship-graph CLI
@@ -458,7 +478,7 @@ interface — every downstream reader consumes a file, not a function call.
 
 | Artefact | Contract | Readers |
 |---|---|---|
-| [`docs/adr/ADR-INDEX.json`](../docs/adr/ADR-INDEX.json) | `{$schema, schema_version: 2, adrs[], relationships[]}`, formally specified by [`schemas/adr-index.schema.json`](../schemas/adr-index.schema.json). Node keys include `id/title/path/format/status/date/decision_summary/topics/aliases/components/symbols/context_scope/decision_contract/scope/metadata`; edge keys `source/target/type/resolved` with `type` ∈ {related, supersedes, superseded-by, amended-by}. **Freshness is part of the contract**: a graph older than any `ADR-*.md` is rejected by the strict reader. Validated with `ajv` in `validate.yml:49`, mechanically pinned by ADR-007's two `require_pattern` rules, and size-bounded by `tests/test_adr_index.py:581-582`. | `adr_query.load_index_graph` (strict), `hooks/adr_hook_core.py:220-222` (lenient), `bin/adr-grill-signal:107-109` (lenient), `bin/adr-guardian:476` via `adr_index_core` (freshness only) |
+| [`docs/adr/ADR-INDEX.json`](../docs/adr/ADR-INDEX.json) | `{$schema, schema_version: 2, adrs[], relationships[]}`, formally specified by [`schemas/adr-index.schema.json`](../schemas/adr-index.schema.json). Node keys include `id/title/path/format/status/date/decision_summary/topics/aliases/components/symbols/context_scope/decision_contract/scope/metadata`; edge keys `source/target/type/resolved` with `type` ∈ {related, supersedes, superseded-by, amended-by}. **Freshness is part of the contract**: a graph older than any `ADR-*.md` is rejected by the strict reader. Validated with `ajv` in `validate.yml:49`, mechanically pinned by ADR-007's two `require_pattern` rules, and size-bounded by `tests/test_adr_index.py:581-582`. | `adr_query.load_index_graph` (strict), `hooks/adr_hook_core.py:244-246` (lenient), `bin/adr-grill-signal:107-109` (lenient), `bin/adr-guardian:478` via `adr_index_core` (freshness only) |
 | [`docs/adr/ADR-INDEX.md`](../docs/adr/ADR-INDEX.md) | Compact one-row-per-ADR table (ADR, Status, Scope, Decision) behind a generated-file banner. `@`-imported from `CLAUDE.md`, so it is in every session's context. | The agent's session context; humans |
 | [`docs/adr/README.md`](../docs/adr/README.md) | Status-count summary plus per-decision table with supersession notes, confined between `<!-- adr-kit-index:begin -->` / `<!-- adr-kit-index:end -->`. | Humans; `instructions/adr.review.md` points reviewers here |
 | `docs/adr/.adr-kit-state.json` (`watch` / `inject` keys) | Gitignored, per-machine cooldown ledger keyed `ADR-NNN\|<relpath>`. Written through `adr_state`'s locked atomic transaction. | `adr-watch` only |
@@ -471,12 +491,12 @@ Named concretely, because "uses" is not an interface description:
 |---|---|
 | [`bin/adr-mcp`](../bin/adr-mcp) | **Subprocess** via `sys.executable` (the generic `run_cli` wrapper, `cmd = [sys.executable, str(BIN_DIR / script)] + args` at `bin/adr-mcp:400`) to `adr-context --format json --adr-dir …` (args built in `tool_adr_context` at `bin/adr-mcp:490`) and to `adr-related --format json --adr-dir … <id>` (`tool_adr_related`, `:752-763`), re-exposed as two of the server's seven MCP tools, `adr_context` and `adr_related`, over newline-delimited JSON-RPC 2.0 on stdio. It validates `min_score` ∈ [0,1] before passing it through. `adr-suggest` is **deliberately not exposed** (`bin/adr-mcp:47-49`) — the MCP surface is key-free by construction. |
 | [`bin/adr`](../bin/adr) | **Subprocess** to `adr-index` inside its snapshot/rollback lifecycle transaction. `_commit_lifecycle_changes` (`bin/adr:489-518`) snapshots first (`:494`), runs `adr-index` via `run_index`'s own `subprocess.run` (`:478-485`), and restores the snapshot on any exception (`:507`). The snapshot covers `ADR-INDEX.md`, `ADR-INDEX.json` and `README.md`, so a failed index regeneration rolls the whole transition back. |
-| [`templates/githooks/pre-commit`](../templates/githooks/pre-commit) | **Pipes `git diff --cached` on stdin** into `adr-suggest --diff - --llm-timeout <bound>` (`:343`), swallowing the status (`\|\| true`) so the advisory can never block a commit, and skipping the call when `ADR_KIT_SUGGEST_DISABLE=1` (`:337`). |
+| [`templates/githooks/pre-commit`](../templates/githooks/pre-commit) | **Pipes `git diff --cached` on stdin** into `adr-suggest --diff - --llm-timeout <bound>` (`:371`), swallowing the status (`\|\| true`) so the advisory can never block a commit, and skipping the call when `ADR_KIT_SUGGEST_DISABLE=1` (`:365`). |
 | [`hooks/adr_pr_guard.py`](../hooks/adr_pr_guard.py) | **Subprocess** to `adr-suggest --diff - --adr-dir … --llm-timeout <remaining>` with the diff on stdin (`hooks/adr_pr_guard.py:208-220`, ADR-024) — the `pr-create` guard's advisory nudge, bounded by what is left of the event's deadline. |
 | [`hooks/adr_hook_core.py`](../hooks/adr_hook_core.py) | **Reads `docs/adr/ADR-INDEX.json` as a file** for the edit tier, at *looser* strictness than `adr_query.load_index_graph`: no schema-version check, no staleness check, a 2 MiB cap, `[]` on any problem. **Imports `adr_index_core`** for the ADR-021 refresh (see Purpose). Its task-tier `_query` goes through `adr_query`'s strict reader. |
-| [`bin/adr-guardian`](../bin/adr-guardian) | **Python import** of `adr_index_core` via `_load_sibling` (`:476`) for an mtime freshness check; reads only. |
+| [`bin/adr-guardian`](../bin/adr-guardian) | **Python import** of `adr_index_core` via `_load_sibling` (`:478`) for an mtime freshness check; reads only. |
 | GitHub Actions | **Subprocess** `python bin/adr-index --check docs/adr` as a freshness gate (`adr-index-check.yml:24`, `release-candidate.yml:50`, `release-publish.yml:140`, `validate.yml:155`, `publish-opencode-npm.yml:118`). |
-| `skills/{adr,context,guardian,init,install-hooks,judge,related,review,supersede}`, `agents/adr-generator.md`, `clients/workflows.json:159` (`adr-related` invocation inside the `"related"` workflow block) | **Documented subprocess invocation by path** in agent-facing prose. |
+| `skills/{adr,context,guardian,init,install-hooks,judge,related,review,supersede}`, `agents/adr-generator.md`, `clients/workflows.json:160` (`adr-related` invocation inside the `"related"` workflow block) | **Documented subprocess invocation by path** in agent-facing prose. |
 
 ## Dependencies
 
@@ -489,11 +509,11 @@ owning component documents are listed in [`c4-component.md`](./c4-component.md).
 | Dependency | Document | Mechanism and what is used |
 |---|---|---|
 | **Semantic core layer** (`decision-engine`) | `c4-code-bin-lib-semantic-core.md` | **Python import** via `_load_sibling`'s cached `SourceFileLoader` (no `sys.path` mutation — see Code Elements). `adr_query` → `query_adr_context`, `score_record`, `IndexQueryError`, `SUPPORTED_STATUSES`, `SUPPORTED_AUTHORITIES` (used by `adr-context`). `adr_catalog` → `load_adr_record(s)`, `discover_adr_files`, `enforcement_globs`, `adr_status`, `adr_id_from_filename`, `build_graph_document` (used by all five). `adr_format` → `section_text` for format-aware Decision extraction across MADR/Nygard/canonical (`adr-watch`, `adr-suggest`). `adr_index_core` is a member of this component, not of the semantic core (see Code Elements); it loads `adr_format`, `adr_schema` and `adr_catalog` the same way. |
-| **Runtime safety layer** (`enforcement-engine`) | `c4-code-bin-lib-runtime.md` | **Python import**. `adr_config.load_json_config` (fail-open, `adr-watch`) and `adr_config.load_validated_config` + `ConfigValidationError` (fail-closed, `adr-suggest` — the only member that schema-validates `.adr-kit.json`). `adr_state.find_project_adr_dir`, `load_state`, `update_state` for `adr-watch`'s locked atomic cooldown transactions. |
-| **Readiness / grilling layer** (`health-and-lifecycle`) | `c4-code-bin-lib-readiness-grill.md` | **Python import.** `adr_retrieval_health` is loaded at module scope by `_load_sibling` (`bin/adr-context:61`, since TASK-62); `run_retrieval_health` and `render_retrieval_health` are bound function-locally (`:139`, `:520`) and used only by `adr-context --check-probes`. That module in turn reads the same `ADR-INDEX.json` this component writes. |
+| **Runtime safety layer** (`enforcement-engine`) | `c4-code-bin-lib-runtime.md` | **Python import**. `adr_config.load_json_config` (fail-open, `adr-watch`) and `adr_config.load_validated_config` + `ConfigValidationError` (fail-closed, `adr-suggest` — the only member that schema-validates `.adr-kit.json`), plus `adr_config.apply_machine_overrides` (`adr-suggest`, since TASK-233) to lay this machine's `suggest.enabled` from `.adr-kit.local.json` over the team config. `adr_state.find_project_adr_dir`, `load_state`, `update_state` for `adr-watch`'s locked atomic cooldown transactions. |
+| **Readiness / grilling layer** (`health-and-lifecycle`) | `c4-code-bin-lib-readiness-grill.md` | **Python import.** `adr_retrieval_health` is loaded at module scope by `_load_sibling` (`bin/adr-context:62`, since TASK-62); `run_retrieval_health` and `render_retrieval_health` are bound function-locally (`:140`, `:521`) and used only by `adr-context --check-probes`. That module in turn reads the same `ADR-INDEX.json` this component writes. |
 | **Hook Integration Layer** (`agent-integration`) | `c4-code-hooks.md` | **JSON file on disk for querying; a Python call for regenerating, since ADR-021.** The hook runtime reads `ADR-INDEX.json` directly (unchanged). It is no longer purely one-way: `hooks/adr_hook_core.py::refresh_index` calls `index_probably_fresh`, `projected_render_ms` and `regenerate_index` from `bin/adr_index_core.py` — the engine `bin/adr-index` (this component) wraps — to self-heal a stale index in-process at `session-start`/`user-prompt-submit`. This is also where the *installed* edit tier lives, duplicating `adr-watch`'s matcher, and where `hooks/adr_pr_guard.py` calls `adr-suggest` as a subprocess at `pr-create` (ADR-024). |
 | **MCP server** (`agent-integration`) | `c4-code-bin-cli-mcp.md` | **Subprocess, inbound.** `bin/adr-mcp` has zero import-level coupling to any `adr_*.py` module; it shells out with `sys.executable` and re-exposes `adr-context` and `adr-related` as the MCP tools `adr_context` and `adr_related` (two of seven). |
-| **Lifecycle CLIs** (`health-and-lifecycle`) | `c4-code-bin-cli-lifecycle.md` | **Subprocess and import, inbound.** `bin/adr` invokes `adr-index` inside every lifecycle transaction; `bin/adr-guardian:476` imports `adr_index_core` for a read-only freshness check; `bin/adr-status` and `bin/adr-guardian` consume retrieval health. |
+| **Lifecycle CLIs** (`health-and-lifecycle`) | `c4-code-bin-cli-lifecycle.md` | **Subprocess and import, inbound.** `bin/adr` invokes `adr-index` inside every lifecycle transaction; `bin/adr-guardian:478` imports `adr_index_core` for a read-only freshness check; `bin/adr-status` and `bin/adr-guardian` consume retrieval health. |
 | **Enforcement floor** (`enforcement-engine`) | `c4-code-bin-cli-enforcement.md` | **Mostly no code edge, plus one shared import since ADR-017.** `bin/adr-judge` is the one fail-closed mechanism (ADR-004 item 2); everything in this component fails open. `adr-suggest` still keeps its own copies of `glob_to_regex`, `parse_diff` and `_fence`, "kept self-contained on purpose" (`bin/adr-suggest:151-158`) — three small pure diff/glob-parsing functions the script deliberately does not import rather than adding an import for. `_split_cmd` is gone from `adr-suggest`; it existed to parse a local `llm_cmd` string, which stopped being this script's job. What **is** a real import edge: `adr-suggest` resolves its LLM backend through `bin/adr_llm.py`, the same host-only registry `adr-judge` uses (ADR-017/TASK-72, reduced to `host` by ADR-036) — the one piece the two scripts used to keep in sync by copying, and stopped, because "drift in that particular code is a security property going quiet" (`bin/adr-suggest:157-158`). |
 | **Agent-facing surface** (`agent-integration`) | `c4-code-agent-surface.md` | **Documented invocation by path** in skill and prompt prose. `skills/{adr,context,guardian,init,install-hooks,judge,related,review,supersede}` and `agents/adr-generator.md` all name these CLIs. |
 | **Schemas and templates** (`contracts-and-distribution`) | `c4-code-schemas-templates.md` | **JSON Schema documents on disk.** `schemas/adr-index.schema.json` (pins `schema_version` const 2), `schemas/adr-context-probes.schema.json`, `schemas/adr-kit-config.schema.json`. Note that `ADR-INDEX.json` self-declares `"$schema": "../../schemas/adr-index.schema.json"`, so the schema directory must ship alongside the ADR directory. |
@@ -507,8 +527,9 @@ owning component documents are listed in [`c4-component.md`](./c4-component.md).
   (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows) plus atomic `os.replace` through
   `adr_state`.
 - **The host agent CLI, `adr-suggest` only, resolved through `bin/adr_llm.py`** — the
-  CLI the installer recorded as `judge.host_client` (`claude -p`, `codex exec`,
-  `copilot -p`), run as a subprocess with the prompt on stdin and no model flag, unless an
+  CLI recorded as `judge.host_client` by the installer or, since ADR-049, the first
+  session (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`), run as a
+  subprocess with the prompt on stdin and no model flag, unless an
   operator overrides it with `--llm-cmd` or `ADR_KIT_LLM_CMD`. With no recorded client and
   no override there is no backend, and the pass is skipped with exit 0. Timeout
   precedence: `--llm-timeout` > `suggest.llm_timeout_seconds` >
@@ -529,7 +550,7 @@ owning component documents are listed in [`c4-component.md`](./c4-component.md).
   of `ADR-INDEX.json` against its schema.
 - **Environment variables read**: `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, `COPILOT_CLI`
   (`adr-watch`); `ADR_KIT_LLM_CMD`, `ADR_KIT_SUGGEST`, `ADR_KIT_SUGGEST_DISABLE`
-  (`adr-suggest`, `:699-700`; the pre-commit wrapper also checks the disable variable
+  (`adr-suggest`, `:704-705`; the pre-commit wrapper also checks the disable variable
   before calling it).
 - **No network.** No file in this component opens a socket or imports an HTTP client.
   `adr-suggest`'s model call is a subprocess to the host agent CLI, which does its own
@@ -540,7 +561,7 @@ owning component documents are listed in [`c4-component.md`](./c4-component.md).
 ```mermaid
 flowchart TB
     subgraph ext["External systems"]
-        hostcli["Host agent CLI<br/>claude -p / codex exec / copilot -p<br/>adr-suggest only, via adr_llm.py"]
+        hostcli["Host agent CLI<br/>claude -p / codex exec / copilot -p /<br/>opencode run --pure<br/>adr-suggest only, via adr_llm.py"]
         hosts["Agent hosts<br/>Claude Code / Codex / Copilot / OpenCode"]
         gha["GitHub Actions<br/>adr-index --check + ajv"]
         fs[("Filesystem<br/>docs/adr/")]
@@ -653,7 +674,7 @@ Four structural points the diagram encodes:
    freshness.
 3. **The dashed edge from `hooks/adr_hook_core.py` to `adr-watch` is a documented
    relationship with no code path behind it.** Verified: nothing in `hooks/` invokes
-   `adr-watch`; its one mention is a docstring (`hooks/adr_hook_core.py:413`).
+   `adr-watch`; its one mention is a docstring (`hooks/adr_hook_core.py:437`).
 4. **The dashed edge from `bin/adr-judge` is deliberately empty too.** There is no call
    in either direction. ADR-004 item 2 puts the only blocking mechanism outside this
    component; every path inside it exits 0.
@@ -664,26 +685,28 @@ These are carried from the Code phase because they change how a maintainer shoul
 this component. None is sanitized.
 
 1. **`bin/adr-context` ships a dead documented CLI.** The first
-   `if __name__ == "__main__":` at `bin/adr-context:199` (was `:166`; the file has grown
-   from 551 to 584 lines) raises `SystemExit`, so everything after it never executes as a
-   script. `main()` at `:470` (was `:437`) — the one with full `argparse` help text — is
+   `if __name__ == "__main__":` at `bin/adr-context:200` (was `:166`; the file has grown
+   from 551 to 585 lines) raises `SystemExit`, so everything after it never executes as a
+   script. `main()` at `:471` (was `:437`) — the one with full `argparse` help text — is
    unreachable from the command line. Re-verified 2026-10-06 by running `python
    bin/adr-context --help`, which still prints the terse `_index_first_cli` parser (now
-   at `bin/adr-context:72`, was `:39`). The pattern is **deliberate** (comment preserved
+   at `bin/adr-context:73`, was `:39`). The pattern is **deliberate** (comment preserved
    near the top of the import-only half): it keeps regex compilation and the
    `adr_catalog` import off the CLI hot path while leaving the compatibility surface
    available to in-process importers like `tests/test_adr_context.py`. Do not "tidy" it —
    the second half of the file is live API for tests and would change the cold-start cost
    if promoted.
-2. **Stale scoring documentation in two places, one of them unfixable.** The
-   `adr-context` docstring still claims "heuristic scoring with 5 weighted signals"
-   (`bin/adr-context:4`, unchanged), and ADR-004's References line points at "five
-   weighted signals, weights at `bin/adr-context:249`" (`ADR-004:212`, re-anchored from a
-   stale `:191`). Neither holds:
-   `score_adr` (now at `:376`, was `:343-350`) states that status, age, domain and
-   relationship count no longer contribute, and scoring is `adr_query.score_record`
-   field-weighted positive evidence over eight fields (ADR-014). ADR-004 is Accepted and
-   therefore immutable by policy, so only the docstring can be corrected.
+2. **Stale scoring documentation remains only where it cannot be fixed.** The
+   `adr-context` docstring has been corrected (TASK-221): `bin/adr-context:4` now reads
+   "Scores the generated index's weighted metadata fields (adr_query.FIELD_WEIGHTS)."
+   ADR-004's References line still says "five-signal ranking, weights at
+   `bin/adr-context:249`" (`ADR-004:230`), and its Context section still lists five
+   weighted signals (`ADR-004:94-95`). Neither holds: `score_adr` (now at `:377`, was
+   `:343-350`) states that status, age, domain and relationship count no longer
+   contribute, and scoring is `adr_query.score_record` field-weighted positive evidence
+   over eight fields (ADR-014). ADR-004 is Accepted and therefore immutable by policy. A
+   faint residue sits in the unreachable `main()`'s argparse description, "using weighted
+   signals" (`bin/adr-context:473`).
 3. **`adr-index -o` reports success when the write fails.** `_run_context_mode`
    (`bin/adr-index:110-115`) catches `OSError` around `Path(args.output).write_text(...)`,
    prints to stderr, and `return 0`. This logic stayed in `bin/adr-index` itself through
@@ -700,7 +723,7 @@ this component. None is sanitized.
    and exits 0 — `--check` is ignored, so a freshness gate written that way always
    passes. Repository CI is unaffected because it uses the positional form.
 5. **The edit tier exists in two implementations, one installed.** See *Purpose* above.
-   `bin/adr-watch` (specified by ADR-004, not wired) and `hooks/adr_hook_core.py:653`
+   `bin/adr-watch` (specified by ADR-004, not wired) and `hooks/adr_hook_core.py:703`
    (wired). Both are Python; there is no parity test between them, because only one runs.
 6. **`adr-watch`'s docstring target and the hook budgets measure different things, and
    both numbers changed.** The docstring still targets "<100ms for 50 ADRs"
@@ -726,17 +749,17 @@ this component. None is sanitized.
    for `run_watch` over 50 ADRs — a real gap from the docstring's <100ms, just not the
    20× figure this document previously stated, which compared the matcher's target to a
    budget measuring something else entirely.
-7. **ADR-015's latency fixture now covers this component — and mis-describes one
-   member.** ADR-015's Must reads "Every deterministic user-facing CLI or hook path keeps
-   a p50/p95/hard-budget entry in a committed latency fixture with measured evidence".
-   `tests/fixtures/cli/latency-corpus.json` now budgets `adr-context`, `adr-index`,
-   `adr-related` and `adr-suggest` (measured 2026-08-05), and
+7. **ADR-015's latency fixture now covers all five CLIs of this component.** ADR-015's
+   Must reads "Every deterministic user-facing CLI or hook path keeps a p50/p95/hard-budget
+   entry in a committed latency fixture with measured evidence".
+   `tests/fixtures/cli/latency-corpus.json` budgets `adr-context`, `adr-index`,
+   `adr-related`, `adr-suggest` and `adr-watch` (the last a `startup` budget, p50/p95
+   300 ms, hard 2000 ms, `latency-corpus.json:153-158`), and
    `tests/test_cli_corpus_coverage.py` (TASK-126) fails on any `bin/` entrypoint that is
-   neither budgeted nor excluded by name. `adr-watch` is excluded, with the reason
-   "long-running file watcher; it has no terminating invocation to budget" — which does
-   not match the code: every `adr-watch` mode reads its input and exits 0. Its hook modes
-   are not installed (finding 5), so the gap costs nothing at runtime. Note that the
-   coverage test checks presence, not numbers: `tests/test_cli_performance.py:39` still
+   neither budgeted nor excluded by name. The earlier exclusion of `adr-watch` as a
+   "long-running file watcher", which did not match the code, is gone (TASK-221); the
+   `excluded` map now holds only `adr-mcp`, `bump-version` and `adr-judge-precommit`.
+   Note that the coverage test checks presence, not numbers: `tests/test_cli_performance.py:39` still
    asserts budgets only for `adr-lint` and `adr-retire`.
 8. **The code-duplication finding this document previously raised has been partly acted
    on — the security-sensitive half, specifically.** `bin/adr-suggest:151-158` now reads:
@@ -755,7 +778,7 @@ this component. None is sanitized.
    used".
 10. **Three readers of `ADR-INDEX.json` at three strictness levels.**
     `adr_query.load_index_graph` validates schema version, staleness, node structure and
-    duplicate ids and raises `IndexQueryError`; `hooks/adr_hook_core.py:222` caps at 2 MiB
+    duplicate ids and raises `IndexQueryError`; `hooks/adr_hook_core.py:246` caps at 2 MiB
     and returns `[]` on any problem with **no version and no staleness check**
     (staleness is handled separately by the ADR-021 refresh); `bin/adr-grill-signal:107-109`
     applies the same 2 MiB cap and a bare `json.loads`. The fail-open hook posture is what

@@ -70,6 +70,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- `adr-readiness` no longer suggests `/adr-kit:grill --revalidate` for an
+  ADR that is consistently superseded, so finished records stop reading as
+  open work. The `supersession-required` label stays (ADR-011 fixes the
+  classes); the command is now suggested only where status and successor
+  disagree (TASK-234).
 - On Windows, a host CLI installed through npm (Codex, Copilot CLI, OpenCode)
   is a `.cmd` shim that the LLM pass could not start (`FileNotFoundError`), so
   the pass degraded silently. The command is now resolved the way a shell

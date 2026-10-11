@@ -40,7 +40,7 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-032 | Accepted | - | Chosen option: declare a generated tree a first-class doctor context, because a user who installed the Codex payload... |
 | ADR-033 | Accepted | - | Chosen option: name the class, extending to the CLI the distinction ADR-031 made for hooks. |
 | ADR-034 | Accepted | - | Chosen option: declare the property per event, because the difference between the two events that can reach out and t... |
-| ADR-035 | Proposed | - | Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied... |
+| ADR-035 | Accepted | - | Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied... |
 | ADR-036 | Accepted | - | Chosen option: retire definitively; host model plus operator escape hatch. |
 | ADR-037 | Accepted | - | Chosen option: Option A, because every property the acceptance criteria ask for is a property of state granularity, n... |
 | ADR-038 | Accepted | - | Chosen option: keep every established verdict and mark the pass degraded, because it preserves evidence without ever... |
@@ -54,4 +54,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-046 | Accepted | - | Chosen option: the judge's dialect everywhere, through one shared module, because the judge is the authority whose ve... |
 | ADR-047 | Accepted | - | Chosen option: record the cap the engine has, as an amendment of ADR-036, because that behaviour is what the 2026-07-... |
 | ADR-048 | Accepted | - | Chosen option: certify each client on every platform it runs on, from a real run on that platform, because a claim ca... |
-| ADR-049 | Proposed | `hooks/adr_hook_core.py`, `opencode/plugin.ts` | Chosen option: record the host client at the first session, confirm through the session model, and keep every answer... |
+| ADR-049 | Accepted | `hooks/adr_hook_core.py`, `opencode/plugin.ts` | Chosen option: record the host client at the first session, confirm through the session model, and keep every answer... |

@@ -1,8 +1,8 @@
 ---
 id: "ADR-049"
 title: "Record the judge host client at the first session and ask per LLM layer at upgrade"
-status: "Proposed"
-date: "2026-10-06"
+status: "Accepted"
+date: "2026-10-11"
 binding: true
 gate: "adr-llm-default-on-v1"
 documents_shipped: false
@@ -38,7 +38,7 @@ format: "madr"
 
 ## Status
 
-Proposed, 2026-10-06.
+Accepted, 2026-10-11.
 
 ## Status History
 
@@ -63,6 +63,11 @@ status_history:
     status: Proposed
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-036
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Accepted after grilling on 2026-10-11
     changed_via: adr-kit lifecycle
 ```
 
@@ -195,7 +200,8 @@ holds every reader to the machine-local override. Live: `adr-judge --llm-cmd
 ### Positive
 
 * A plugin install, a multi-client install and an upgrade all end with the LLM
-  layers running on the user's own assistant, after the user said so.
+  layers running on the user's own assistant. They run from the first
+  session on; the user's answer keeps them on or turns them off.
 * OpenCode users get their own model as the judge, not `claude -p`.
 * npm-installed CLIs on Windows work as hosts instead of degrading silently.
 * A teammate's "off" stays on that teammate's machine.
@@ -236,7 +242,10 @@ holds every reader to the machine-local override. Live: `adr-judge --llm-cmd
 
 ## Open Questions
 
-None.
+- [x] Do the LLM layers run between the first session, which records the
+  host client, and the user's answer to the question, or do they wait for
+  `llm.confirmed`?
+  — **Answered 2026-10-11 by User: Robert van den Breemen:** They run from the first session on. The host is the client the user already works in, so no new party sees the diff, and gating on llm.confirmed would bring back the silently-off install this record removes for anyone who ignores the question. llm.confirmed ends the question; it does not gate the layers.
 
 ## Related Decisions
 

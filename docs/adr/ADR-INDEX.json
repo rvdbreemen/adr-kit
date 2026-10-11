@@ -1832,8 +1832,8 @@
       "title": "Run the Suggestion Pass by Default on the Same Terms as the Judge",
       "path": "ADR-035-run-the-suggestion-pass-by-default-on-the-same-terms-as-the-judge.md",
       "format": "madr",
-      "status": "Proposed",
-      "date": "2026-08-06",
+      "status": "Accepted",
+      "date": "2026-10-11",
       "decision_summary": "Chosen option: default the suggestion pass on, on the same terms as the judge, because the reasoning ADR-017 applied...",
       "topics": [
         "cost control",
@@ -2696,7 +2696,7 @@
       "title": "Record the judge host client at the first session and ask per LLM layer at upgrade",
       "path": "ADR-049-record-the-judge-host-client-at-the-first-session-and-ask-per-llm-layer-at-upgrade.md",
       "format": "madr",
-      "status": "Proposed",
+      "status": "Accepted",
       "date": "2026-10-11",
       "decision_summary": "Chosen option: record the host client at the first session, confirm through the session model, and keep every answer...",
       "topics": [

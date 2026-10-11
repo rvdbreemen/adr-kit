@@ -3,9 +3,10 @@ id: TASK-233
 title: >-
   Default install enables the LLM passes: record the host client at the first
   session
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-11 19:42'
+updated_date: '2026-10-11 22:47'
 labels:
   - feature
   - llm
@@ -26,3 +27,9 @@ Maintainer requirement (2026-10-06): a default install must enable all LLM featu
 <!-- SECTION:PLAN:BEGIN -->
 Goal: on a clean install and on an upgrade the LLM layers are ON by default, run on the coding assistant the plugin is installed in, and the user confirms interactively (keep on, the default, or turn off). Guardian LLM tier stays ask-first (llm_autorun false, ADR-001).
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+LLM layers on by default with per-machine confirmation; ADR-049 accepted 2026-10-11 after grilling. Full suite 2087 passed.
+<!-- SECTION:FINAL_SUMMARY:END -->

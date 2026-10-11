@@ -253,6 +253,14 @@ def _mechanical_findings(record: Dict) -> List[Dict[str, str]]:
     return sorted(findings, key=lambda item: item["code"])
 
 
+def _supersession_inconsistent(record: Dict, mechanical: Sequence[Dict[str, str]]) -> bool:
+    """True when a record's supersession state still needs a person to settle it."""
+    if any(item.get("code") == "SUPERSESSION_STATE_INCONSISTENT" for item in mechanical):
+        return True
+    status = str(record.get("status", "")).casefold()
+    return status == "superseded" and not record.get("superseded_by")
+
+
 def _record_path(record: Dict, adr_dir: Optional[Path] = None) -> Optional[Path]:
     """Resolve a record's bare filename against the ADR directory, or None.
 
@@ -400,6 +408,14 @@ def readiness_for_record(
         "ready-for-confirmation": f"/adr-kit:grill {record['adr_id']}",
         "supersession-required": f"/adr-kit:grill --revalidate {record['adr_id']}",
     }
+    next_command = next_commands.get(classification)
+    # ADR-011 fixes the seven classes, so a finished supersession keeps its
+    # label; it just has nothing left to do. Revalidation is suggested only
+    # where status and successor disagree (TASK-234).
+    if classification == "supersession-required" and not _supersession_inconsistent(
+        record, mechanical
+    ):
+        next_command = None
     return {
         "adr_id": record["adr_id"],
         "title": record["title"],
@@ -430,7 +446,7 @@ def readiness_for_record(
         ),
         "implementation_link": link,
         "related_adrs": related,
-        "next_command": next_commands.get(classification),
+        "next_command": next_command,
     }
 
 
