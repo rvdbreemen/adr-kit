@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +31,44 @@ def _command(values: list[str], *, cwd: Path, timeout: float) -> subprocess.Comp
     )
 
 
+# Codex runs a plugin's hooks only after the user reviews them with /hooks, and
+# records each hook it trusts as a table in config.toml (observed with 0.162.1):
+#   [hooks.state."adr-kit@<marketplace>:hooks/hooks.json:<event>:<group>:<handler>"]
+#   trusted_hash = "sha256:..."
+# Before that review there is no such table. Read with patterns rather than
+# tomllib, which is 3.11+ against a floor of 3.10.
+_TOML_TABLE = re.compile(r"^[ \t]*\[([^\[\]\n]+)\][ \t]*$", re.MULTILINE)
+_CODEX_ADR_KIT_HOOK = re.compile(
+    r'hooks\.state\."adr-kit@[^":]+:hooks/hooks\.json:([a-z_]+):\d+:\d+"'
+)
+_TRUSTED_HASH = re.compile(
+    r'^[ \t]*trusted_hash[ \t]*=[ \t]*"sha256:[0-9a-f]+"', re.MULTILINE
+)
+
+
+def _codex_trusted_hooks() -> list[str]:
+    """The ADR Kit hook events this user's Codex has trusted, sorted.
+
+    The file says whether a review happened, not whether the hooks still match
+    it: a hook an update changed needs a new review, and only the app-server's
+    experimental hooks/list can tell that apart.
+    """
+    home = os.environ.get("CODEX_HOME")
+    config = (Path(home) if home else Path.home() / ".codex") / "config.toml"
+    try:
+        text = config.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return []
+    tables = list(_TOML_TABLE.finditer(text))
+    events = set()
+    for index, table in enumerate(tables):
+        hook = _CODEX_ADR_KIT_HOOK.fullmatch(table.group(1).strip())
+        end = tables[index + 1].start() if index + 1 < len(tables) else len(text)
+        if hook and _TRUSTED_HASH.search(text, table.end(), end):
+            events.add(hook.group(1))
+    return sorted(events)
+
+
 def _native_deep(root: Path, name: str, executable: str) -> dict:
     command = (
         [executable, "plugin", "list", "--json"]
@@ -42,21 +82,35 @@ def _native_deep(root: Path, name: str, executable: str) -> dict:
             "native-registration", client=name, status="failed",
             summary=f"native list probe failed: {exc}",
         )
+    # No client prints its trust state in this listing. Looking for the words
+    # "trust" or "review" in it found Codex's untrusted hooks never, and found
+    # any plugin whose id or path carries one, such as code-review.
     output = (result.stdout + result.stderr).lower()
-    if "trust" in output or "review" in output:
-        status = "trust-pending"
-    elif result.returncode:
+    if result.returncode:
         status = "failed"
     elif "adr-kit" not in output:
         status = "stale"
     else:
         status = "healthy"
+    evidence = {"command": command, "returncode": result.returncode}
+    actions = (
+        [{"detail": f"Review or reinstall ADR Kit in {name}."}]
+        if status != "healthy" else []
+    )
+    summary = f"bounded native plugin-list probe returned {status}"
+    if name == "codex" and status == "healthy":
+        evidence["trusted_hooks"] = _codex_trusted_hooks()
+        if not evidence["trusted_hooks"]:
+            status = "trust-pending"
+            summary = "Codex has not trusted ADR Kit's hooks, so none of them runs"
+            actions = [{"detail": (
+                "Open Codex and review ADR Kit's hooks with /hooks. Codex runs "
+                "a plugin's hooks only after that review, and asks again when "
+                "an update changes them."
+            )}]
     return check(
         "native-registration", client=name, status=status,
-        summary=f"bounded native plugin-list probe returned {status}",
-        evidence=[{"command": command, "returncode": result.returncode}],
-        actions=[{"detail": f"Review or reinstall ADR Kit in {name}."}]
-        if status != "healthy" else [],
+        summary=summary, evidence=[evidence], actions=actions,
     )
 
 
