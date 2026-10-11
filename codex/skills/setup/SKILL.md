@@ -8,11 +8,13 @@ license: MIT
 # Set up an ADR Kit project (register, adopt, hooks, upgrade)
 
 Invoke explicitly with `$adr-kit:setup` when needed.
-Resolve `<plugin-root>` from this installed skill. Use only bundled,
-local ADR Kit tools and follow this canonical workflow:
+Resolve `<plugin-root>` from this installed skill, and `<python>` to the
+first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10
+or newer. Use only bundled, local ADR Kit tools and follow this canonical
+workflow:
 
 1. Setup is one entry point with four modes (spec R19): no argument runs register (this procedure); 'adopt' routes to the init workflow, 'hooks' to install-hooks, 'upgrade' to upgrade. Reject any other mode argument.
-2. Run `python <plugin-root>/scripts/setup-project.py --client <client-id> --project-root <workspace>`, where `<client-id>` is this client's id and `<workspace>` is the project root.
+2. Run `<python> <plugin-root>/scripts/setup-project.py --client <client-id> --project-root <workspace>`, where `<client-id>` is this client's id and `<workspace>` is the project root.
 3. Preserve all user content outside managed markers and `.adr-kit/ADR-guide.local.md`; rerunning unchanged input must be a no-op.
 
 Do not contact another model or mutate user-owned instructions.

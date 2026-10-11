@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -73,10 +74,10 @@ Use the governed source path for all edits.
 """
 
 
-def _project(tmp_path: Path) -> Path:
+def _project(tmp_path: Path, adr: str = ADR) -> Path:
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
-    (adr_dir / "ADR-001-governed-source-path.md").write_text(ADR, encoding="utf-8")
+    (adr_dir / "ADR-001-governed-source-path.md").write_text(adr, encoding="utf-8")
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "thing.py").write_text("# governed\n", encoding="utf-8")
     result = subprocess.run(
@@ -236,3 +237,147 @@ def test_native_plugin_translates_automatic_grill_to_its_command_surface(tmp_pat
     assert "AUTO_GRILL_PENDING" in system
     assert "/adr-kit-grill ADR-001" in system
     assert "/adr-kit:grill ADR-001" not in system
+
+
+# ADR's frontmatter lists are flow style, which the index drops (adr-lint
+# rejects them), and its Enforcement block scopes nothing. An edit alone
+# retrieves nothing from it: the smoke above sees ADR-001 after its edit only
+# because the prompt put it there. This ADR is scoped to src/**, so only the
+# edit can bring it in.
+SCOPED_ADR = ADR.replace(
+    '"forbid_pattern": []',
+    '"forbid_pattern": [{"pattern": "UNGOVERNED", "path_glob": "src/**", '
+    '"message": "Keep src governed (ADR-001)."}]',
+)
+PATCH = "\n".join(
+    ["*** Begin Patch", "*** Update File: src/thing.py", "@@",
+     "-# governed", "+# still governed", "*** End Patch"]
+)
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("edit", {"filePath": "src/thing.py"}),
+        # OpenCode 1.19.0 edits through apply_patch, with the patch in
+        # args.patchText and no file path, whenever its write tool is off (DEF-38).
+        ("apply_patch", {"patchText": PATCH}),
+    ],
+)
+def test_native_plugin_brings_in_the_decisions_for_the_file_an_edit_touches(
+    tmp_path, tool, args
+):
+    project = _project(tmp_path / "project", SCOPED_ADR)
+    plugin_url = (ROOT / "opencode" / "plugin.ts").as_uri()
+    script = f"""
+const mod = await import({json.dumps(plugin_url)});
+const hooks = await mod.default(
+  {{ directory: {json.dumps(str(project))}, worktree: {json.dumps(str(project))} }},
+  {{ root: {json.dumps(str(ROOT))}, python: {json.dumps(sys.executable)} }}
+);
+const args = {json.dumps(args)};
+await hooks["tool.execute.before"]({{ tool: {json.dumps(tool)}, sessionID: "before" }}, {{ args }});
+await hooks["tool.execute.after"]({{ tool: {json.dumps(tool)}, sessionID: "after", args }});
+const before = {{ system: [] }};
+await hooks["experimental.chat.system.transform"]({{ sessionID: "before" }}, before);
+const after = {{ system: [] }};
+await hooks["experimental.chat.system.transform"]({{ sessionID: "after" }}, after);
+console.log(JSON.stringify({{ before, after }}));
+"""
+    harness = tmp_path / "opencode-plugin-edit.mjs"
+    harness.write_text(script, encoding="utf-8")
+    result = subprocess.run(
+        [BUN, "run", str(harness)],
+        cwd=project,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    for session in ("before", "after"):
+        system = "\n".join(payload[session]["system"])
+        assert "<adr-kit-context>" in system and "ADR-001" in system, session
+
+
+def _run_plugin(project: Path, tmp_path: Path, options: dict, env: dict) -> dict:
+    """Load the plugin, register its config, and make one edit."""
+    plugin_url = (ROOT / "opencode" / "plugin.ts").as_uri()
+    script = f"""
+const mod = await import({json.dumps(plugin_url)});
+const hooks = await mod.default(
+  {{ directory: {json.dumps(str(project))}, worktree: {json.dumps(str(project))} }},
+  {json.dumps({"root": str(ROOT), **options})}
+);
+const config = {{}};
+await hooks.config(config);
+await hooks["tool.execute.before"](
+  {{ tool: "edit", sessionID: "interpreter" }}, {{ args: {{ filePath: "src/thing.py" }} }}
+);
+const system = {{ system: [] }};
+await hooks["experimental.chat.system.transform"]({{ sessionID: "interpreter" }}, system);
+console.log(JSON.stringify({{ command: config.mcp["adr-kit"].command, system, lint: config.command["adr-kit-lint"].template }}));
+"""
+    harness = tmp_path / "opencode-plugin-interpreter.mjs"
+    harness.write_text(script, encoding="utf-8")
+    result = subprocess.run(
+        [BUN, "run", str(harness)],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout)
+
+
+# macOS and most Linux distributions ship python3 and no python, and the python3
+# of macOS's Command Line Tools is 3.9 (DEF-35). The stand-in for a too-old
+# interpreter fails the version probe the way 3.9 would.
+@pytest.mark.skipif(os.name == "nt", reason="builds a POSIX PATH from symlinks")
+@pytest.mark.parametrize(
+    ("present", "expected"),
+    [
+        ({"python3": "current"}, "python3"),
+        ({"python": "current"}, "python"),
+        ({"python3": "too-old", "python": "current"}, "python"),
+    ],
+    ids=["python3-only", "python-only", "python3-too-old"],
+)
+def test_native_plugin_finds_an_interpreter_that_runs_the_kit(tmp_path, present, expected):
+    project = _project(tmp_path / "project", SCOPED_ADR)
+    path = tmp_path / "path"
+    path.mkdir()
+    for name, kind in present.items():
+        if kind == "current":
+            (path / name).symlink_to(sys.executable)
+        else:
+            (path / name).write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            (path / name).chmod(0o755)
+    env = {key: value for key, value in os.environ.items() if key != "ADR_KIT_PYTHON"}
+    env["PATH"] = str(path)
+
+    payload = _run_plugin(project, tmp_path, {}, env)
+
+    assert Path(payload["command"][0]).name == expected
+    assert "ADR-001" in "\n".join(payload["system"]["system"]), "the edit hook did not run"
+    # The command templates run what the plugin resolved, not the procedure's
+    # placeholder or a bare python (DEF-34).
+    assert f"{payload['command'][0]} {ROOT}" in payload["lint"]
+    assert "<python>" not in payload["lint"]
+
+
+def test_native_plugin_takes_adr_kit_python_before_its_python_option(tmp_path):
+    project = _project(tmp_path / "project", SCOPED_ADR)
+    env = {**os.environ, "ADR_KIT_PYTHON": sys.executable}
+
+    payload = _run_plugin(project, tmp_path, {"python": str(tmp_path / "missing")}, env)
+
+    assert payload["command"][0] == sys.executable

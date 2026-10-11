@@ -11,6 +11,7 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-042"
+  - "ADR-048"
 topics:
   - "OpenCode"
   - "native plugin"
@@ -59,6 +60,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-042
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-048
     changed_via: adr-kit lifecycle
 ```
 

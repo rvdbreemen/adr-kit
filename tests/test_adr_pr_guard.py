@@ -319,6 +319,43 @@ def test_an_unchecked_branch_says_so_instead_of_looking_clean():
     )
 
 
+def test_a_pr_opened_right_after_another_shell_command_is_still_judged(tmp_path):
+    """Bash has a PreToolUse hook and no PostToolUse hook.
+
+    The hook drops an event whose signature matches the session's previous
+    one, and that signature named no command: `gh pr create` straight after
+    `git push` was dropped as a duplicate before the guard ran. The test above
+    sends no session id, which skips the dedupe; real clients always send one.
+    """
+    import subprocess
+    import uuid
+
+    root = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(root)], capture_output=True, check=True)
+    (root / "docs" / "adr").mkdir(parents=True)
+    session = f"pr-after-push-{uuid.uuid4()}"
+
+    def hook(command):
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "session_id": session,
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "cwd": str(root),
+        }
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "hooks" / "adr-hook.py"),
+             "--client", "claude-code-cli", "--event", "pre-tool-use"],
+            input=json.dumps(payload).encode("utf-8"), capture_output=True,
+        )
+
+    hook("git push -u origin feature")
+    result = hook("gh pr create -t x -b y")
+
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    assert b"ADR check skipped" in result.stdout, "the guard never ran"
+
+
 def test_the_fallback_matches_what_the_generator_writes():
     """Two readers of one absent key must not give two answers.
 

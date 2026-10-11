@@ -53,3 +53,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-045 | Accepted | - | Chosen option: the judge owns one canonical diff invocation, and every diff shape gets an explicit verdict, because a... |
 | ADR-046 | Accepted | - | Chosen option: the judge's dialect everywhere, through one shared module, because the judge is the authority whose ve... |
 | ADR-047 | Accepted | - | Chosen option: record the cap the engine has, as an amendment of ADR-036, because that behaviour is what the 2026-07-... |
+| ADR-048 | Accepted | - | Chosen option: certify each client on every platform it runs on, from a real run on that platform, because a claim ca... |

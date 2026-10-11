@@ -80,6 +80,10 @@ RUNTIME_SUPPORT_FILES = (
     "hooks/hook_benchmark.py",
     "scripts/adr_settings.py",
     "scripts/project_setup.py",
+    # The setup workflow runs <plugin-root>/scripts/setup-project.py, and an
+    # installed skill's <plugin-root> is its own tree. It imports only the two
+    # modules above and reads instructions/ and templates/, both mirrored.
+    "scripts/setup-project.py",
 )
 SOURCE_FILES = (
     "clients/capabilities.json",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -79,6 +80,83 @@ def test_deep_native_probe_closes_stdin(tmp_path, monkeypatch):
     assert recorded["capture_output"] is True
     assert recorded["timeout"] == 10
     assert result["status"] == "healthy"
+
+
+# Codex 0.162.1 runs a plugin's hooks only after the user reviews them with
+# /hooks, and records each trusted one in config.toml. Before that review the
+# file has no hooks.state table at all. These are the shapes Codex wrote.
+CODEX_INSTALLED = """[marketplaces.rvdbreemen-adr-kit-codex]
+source_type = "local"
+source = "/home/u/.local/share/adr-kit/marketplaces/0.59.1"
+
+[plugins."adr-kit@rvdbreemen-adr-kit-codex"]
+enabled = true
+"""
+CODEX_REVIEWED = CODEX_INSTALLED + """
+[hooks.state]
+
+[hooks.state."adr-kit@rvdbreemen-adr-kit-codex:hooks/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:17f314c903e4054164303473b46e2a3d89f5319bda329e518490561c2443ccf5"
+
+[hooks.state."adr-kit@rvdbreemen-adr-kit-codex:hooks/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:54925a488845875c7dcd7bbc2957c1ac3c1f18805086e526f8a546b1e7eb1c74"
+"""
+
+
+def _codex_probe(tmp_path, monkeypatch, config):
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    if config is not None:
+        (home / "config.toml").write_text(config, encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setattr(
+        adr_doctor_probes,
+        "run_bounded",
+        lambda values, **kwargs: subprocess.CompletedProcess(
+            values, 0, '[{"id": "adr-kit@rvdbreemen-adr-kit-codex"}]', ""
+        ),
+    )
+    return _native_deep(tmp_path, "codex", "codex")
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        CODEX_INSTALLED,
+        None,
+        CODEX_INSTALLED
+        + CODEX_REVIEWED[len(CODEX_INSTALLED):].replace("adr-kit@", "other@"),
+        CODEX_REVIEWED.replace("trusted_hash", "enabled"),
+    ],
+    ids=["never-reviewed", "no-config", "another-plugin", "no-trusted-hash"],
+)
+def test_codex_hooks_nobody_reviewed_are_reported(tmp_path, monkeypatch, config):
+    result = _codex_probe(tmp_path, monkeypatch, config)
+
+    assert result["status"] == "trust-pending"
+    assert "/hooks" in result["actions"][0]["detail"]
+
+
+def test_codex_hooks_the_user_trusted_are_healthy(tmp_path, monkeypatch):
+    result = _codex_probe(tmp_path, monkeypatch, CODEX_REVIEWED)
+
+    assert result["status"] == "healthy"
+    assert result["evidence"][0]["trusted_hooks"] == ["pre_tool_use", "session_start"]
+
+
+@pytest.mark.parametrize("client", ["claude", "copilot"])
+def test_a_plugin_named_for_review_is_not_a_trust_problem(tmp_path, monkeypatch, client):
+    listing = json.dumps([
+        {"id": "code-review@claude-plugins-official", "installPath": "/home/trusty/p"},
+        {"id": "adr-kit@rvdbreemen-adr-kit", "installPath": "/home/trusty/a"},
+    ])
+    monkeypatch.setattr(
+        adr_doctor_probes,
+        "run_bounded",
+        lambda values, **kwargs: subprocess.CompletedProcess(values, 0, listing, ""),
+    )
+
+    assert _native_deep(tmp_path, client, client)["status"] == "healthy"
 
 
 def test_removed_cache_launcher_is_stale_and_reports_exact_owned_path(tmp_path):
@@ -171,7 +249,7 @@ def test_deep_extension_contract_is_versioned_and_unpopulated_safely():
 
 
 def test_deep_mcp_probe_accepts_complete_seven_tool_contract():
-    result = _mcp_deep(ROOT, ROOT)
+    result = _mcp_deep(ROOT, [sys.executable, str(ROOT / "bin" / "adr-mcp")], client="claude")
 
     assert result["status"] == "healthy"
     assert result["evidence"][0]["call_ok"]
@@ -184,3 +262,44 @@ def test_deep_mcp_probe_accepts_complete_seven_tool_contract():
         "adr_related",
         "adr_status",
     ]
+
+
+def _live_checks(monkeypatch, path: str | None = None) -> dict[str, dict]:
+    """The deep probe's mcp-live checks, keyed by client, for this checkout."""
+    if path is not None:
+        monkeypatch.setenv("PATH", path)
+    monkeypatch.setattr(adr_doctor_probes, "detect_clients", lambda: {})
+
+    def no_benchmark(*args, **kwargs):
+        raise OSError("not measured in this test")
+
+    monkeypatch.setattr(adr_doctor_probes, "measure_hooks", no_benchmark)
+    checks = [check_mcp_launcher(ROOT, "claude", required=True)]
+    extensions = adr_doctor_probes.run_deep_extensions(
+        ROOT, ROOT, checks=checks, global_settings=None, check_only=True,
+    )
+    return {item["client"]: item for item in extensions if item["id"] == "mcp-live"}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="builds a POSIX PATH from a symlink")
+def test_the_live_check_fails_when_the_registered_command_cannot_start(tmp_path, monkeypatch):
+    """The repository's .mcp.json registers a bare python (DEF-25).
+
+    On a PATH with only python3 the client cannot start it. The live check used
+    to start the server with the doctor's own interpreter and report healthy,
+    beside a launcher check that said stale (DEF-33).
+    """
+    (tmp_path / "python3").symlink_to(sys.executable)
+
+    live = _live_checks(monkeypatch, str(tmp_path))
+
+    assert live["claude"]["status"] == "failed"
+    assert "python" in live["claude"]["summary"]
+
+
+@pytest.mark.skipif(shutil.which("python") is None, reason="needs a python on PATH")
+def test_the_live_check_starts_what_the_client_registered(monkeypatch):
+    live = _live_checks(monkeypatch)
+
+    assert live["claude"]["status"] == "healthy"
+    assert live["claude"]["evidence"][0]["argv"][0] == shutil.which("python")

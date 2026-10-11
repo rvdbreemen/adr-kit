@@ -244,8 +244,19 @@ def render_skill(workflow: dict, client_id: str) -> bytes:
         f"# {workflow['title']}",
         "",
         invocation,
-        "Resolve `<plugin-root>` from this installed skill. Use only bundled,",
-        "local ADR Kit tools and follow this canonical workflow:",
+        *(
+            [
+                "Resolve `<plugin-root>` from this installed skill, and `<python>` to the",
+                "first of `python3`, `python` or, on Windows, `py -3` that runs Python 3.10",
+                "or newer. Use only bundled, local ADR Kit tools and follow this canonical",
+                "workflow:",
+            ]
+            if any("<python>" in step for step in workflow["procedure"])
+            else [
+                "Resolve `<plugin-root>` from this installed skill. Use only bundled,",
+                "local ADR Kit tools and follow this canonical workflow:",
+            ]
+        ),
         "",
     ]
     lines.extend(f"{index}. {step}" for index, step in enumerate(workflow["procedure"], 1))

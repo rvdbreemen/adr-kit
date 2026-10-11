@@ -107,6 +107,31 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
+// ADR-044's order: ADR_KIT_PYTHON, then the interpreter this plugin was
+// configured with (an installer's pin), then the first of python3, python and,
+// on Windows, py -3 that runs Python 3.10 or newer. A bare python is missing on
+// macOS and most Linux distributions, and macOS's own python3 is 3.9.
+function resolvePython(options: PluginOptions): string[] {
+  const pinned = process.env.ADR_KIT_PYTHON || options.python
+  if (pinned) return [pinned]
+  const candidates = [["python3"], ["python"]]
+  if (process.platform === "win32") candidates.push(["py", "-3"])
+  for (const [name, ...args] of candidates) {
+    const executable = Bun.which(name)
+    if (!executable) continue
+    try {
+      const probe = Bun.spawnSync(
+        [executable, ...args, "-c", "import sys; sys.exit(sys.version_info < (3, 10))"],
+        { stdout: "ignore", stderr: "ignore", timeout: 5000 },
+      )
+      if (probe.exitCode === 0) return [executable, ...args]
+    } catch {
+      // Not runnable here; try the next candidate.
+    }
+  }
+  return [candidates[0][0]]
+}
+
 function bounded(value: unknown, limit: number): string {
   return typeof value === "string" ? value.slice(0, limit) : ""
 }
@@ -179,7 +204,7 @@ function normalizeAutoGrillCommand(context: string): string {
 
 async function runHook(
   runtimeRoot: string | undefined,
-  python: string,
+  python: string[],
   cwd: string,
   event: string,
   sessionID: string | undefined,
@@ -193,7 +218,7 @@ async function runHook(
   let child: ReturnType<typeof Bun.spawn>
   try {
     child = Bun.spawn(
-      [python, hook, "--client", "claude-code-cli", "--event", event],
+      [...python, hook, "--client", "claude-code-cli", "--event", event],
       { cwd, stdin: "pipe", stdout: "pipe", stderr: "ignore" },
     )
     child.stdin.write(JSON.stringify({
@@ -244,6 +269,12 @@ function toolPath(args: AnyRecord): string {
   return ""
 }
 
+// apply_patch names no file path: its files are in the patch's header lines,
+// which the hook core reads from patchText.
+function editsFiles(args: AnyRecord): boolean {
+  return Boolean(toolPath(args)) || typeof args.patchText === "string"
+}
+
 function hookTimeout(options: PluginOptions, fallback: number): number {
   const configured = options.hookTimeoutMs
   if (!Number.isInteger(configured)) return fallback
@@ -257,9 +288,12 @@ function addContext(sessions: Map<string, SessionState>, sessionID: string | und
   state.contextKind = kind
 }
 
-function commandTemplate(root: string, workflow: AnyRecord): string {
+function commandTemplate(root: string, python: string[], workflow: AnyRecord): string {
+  const interpreter = python.map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(" ")
   const procedure = Array.isArray(workflow.procedure)
-    ? workflow.procedure.map((item) => `- ${String(item).replaceAll("<plugin-root>", root)}`).join("\n")
+    ? workflow.procedure
+      .map((item) => `- ${String(item).replaceAll("<plugin-root>", root).replaceAll("<python>", interpreter)}`)
+      .join("\n")
     : "- Follow the ADR Kit documentation and use the adr-kit MCP tools."
   return [
     `Run the ADR Kit '${workflow.id}' workflow in OpenCode.`,
@@ -280,7 +314,7 @@ export default async function AdrKitOpenCodePlugin(
 ) {
   const options = rawOptions as PluginOptions
   const runtimeRoot = findRuntimeRoot(options.root, input.directory, input.worktree)
-  const python = options.python || process.env.ADR_KIT_PYTHON || "python"
+  const python = resolvePython(options)
   const sessions = new Map<string, SessionState>()
 
   return {
@@ -316,7 +350,7 @@ export default async function AdrKitOpenCodePlugin(
         if (!config.mcp["adr-kit"]) {
           config.mcp["adr-kit"] = {
             type: "local",
-            command: [python, join(runtimeRoot, "bin", "adr-mcp"), "--root", input.directory],
+            command: [...python, join(runtimeRoot, "bin", "adr-mcp"), "--root", input.directory],
             cwd: input.directory,
             enabled: true,
             timeout: 60000,
@@ -335,7 +369,7 @@ export default async function AdrKitOpenCodePlugin(
             if (config.command[name]) continue
             config.command[name] = {
               description: `ADR Kit: ${workflow.description || workflow.title || workflow.id}`,
-              template: commandTemplate(runtimeRoot, workflow),
+              template: commandTemplate(runtimeRoot, python, workflow),
             }
           }
         }
@@ -417,7 +451,7 @@ export default async function AdrKitOpenCodePlugin(
         if (result.denied) throw new Error(result.reason || "ADR Kit blocked this pull-request command.")
         return
       }
-      if (!WRITE_TOOLS.has(normalized) || !toolPath(args)) return
+      if (!WRITE_TOOLS.has(normalized) || !editsFiles(args)) return
       const result = await runHook(
         runtimeRoot,
         python,
@@ -435,7 +469,7 @@ export default async function AdrKitOpenCodePlugin(
     ) => {
       if (options.hooks === false) return
       const normalized = toolName(hookInput.tool)
-      if (!WRITE_TOOLS.has(normalized) || !toolPath(hookInput.args || {})) return
+      if (!WRITE_TOOLS.has(normalized) || !editsFiles(hookInput.args || {})) return
       const result = await runHook(
         runtimeRoot,
         python,

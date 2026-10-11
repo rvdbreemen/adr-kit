@@ -15,6 +15,7 @@ not a thing anyone should have to find by grepping. See `refresh_index`.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -51,6 +52,14 @@ WRITE_TOOLS = {
     "notebookedit",
 }
 PLAN_EXIT_TOOLS = {"exitplanmode", "exitplan", "planexit"}
+# The header lines of an apply_patch patch, one per file it touches.
+PATCH_HEADER = re.compile(
+    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$", re.MULTILINE
+)
+# query_adr_context takes at most 32 path filters of at most 240 characters,
+# and raises on more, which would leave the whole edit without context.
+MAX_EDIT_PATHS = 32
+MAX_EDIT_PATH_CHARS = 240
 
 # Events this hook accepts and deliberately answers with nothing. Silence here
 # is a decision, not an oversight, so each entry carries its reason: a future
@@ -176,17 +185,31 @@ def parse_payload(raw: bytes, client: str, event: str | None = None) -> Envelope
 
 
 def duplicate_event(envelope: Envelope) -> bool:
-    """Best-effort cross-process dedupe in OS temp; failures stay fail-open."""
+    """Best-effort cross-process dedupe in OS temp; failures stay fail-open.
+
+    Only the same event delivered twice is a duplicate, so the signature names
+    the whole tool input and the workspace. It used to name only a file path:
+    Bash has no PostToolUse hook, so `gh pr create` straight after `git push`
+    matched the push and was dropped before the PR guard ran, and so was every
+    apply_patch edit after another one, since a patch carries no file path.
+    """
     if not envelope.session_id:
         return False
-    path_value = _first(
-        envelope.tool_input, "file_path", "filePath", "path", "notebook_path"
-    )
+    tool_input = hashlib.sha256(
+        json.dumps(
+            envelope.tool_input,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
     signature = json.dumps(
         [
+            str(envelope.workspace),
             envelope.event,
             envelope.tool_name,
-            path_value,
+            tool_input,
             envelope.prompt,
             envelope.agent_id,
         ],
@@ -602,7 +625,7 @@ def _query(
     workspace: Path,
     query: str,
     *,
-    path: str | None = None,
+    paths: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     """Rank the ADRs for this query, lexically over the generated index.
 
@@ -622,7 +645,9 @@ def _query(
             strict_index=True,
             include_history=False,
             statuses=("Accepted", "Proposed"),
-            paths=(path,) if path else (),
+            paths=tuple(
+                path for path in paths if len(path) <= MAX_EDIT_PATH_CHARS
+            )[:MAX_EDIT_PATHS],
         )
     except (IndexQueryError, OSError, UnicodeError, ValueError):
         return []
@@ -633,11 +658,8 @@ def _query(
     ][:limit]
 
 
-def _safe_edit_path(envelope: Envelope) -> Path | None:
-    value = _first(
-        envelope.tool_input, "file_path", "filePath", "path", "notebook_path"
-    )
-    if not isinstance(value, str) or len(value) > 4096:
+def _safe_path(envelope: Envelope, value: object) -> Path | None:
+    if not isinstance(value, str) or not value or len(value) > 4096:
         return None
     candidate = Path(value).expanduser()
     if not candidate.is_absolute():
@@ -648,6 +670,33 @@ def _safe_edit_path(envelope: Envelope) -> Path | None:
     except ValueError:
         return None
     return resolved
+
+
+def _safe_edit_paths(envelope: Envelope) -> list[Path]:
+    """The in-workspace files an edit touches, at most MAX_EDIT_PATHS.
+
+    Most edit tools name one file. An apply_patch edit names none: Codex sends
+    the patch as `command` and OpenCode as `patchText`, and each header line
+    names a file it adds, updates, deletes or moves to. Hunk lines start with
+    `+`, `-`, a space or `@@`, so their text can never pass for a header.
+    """
+    value = _first(
+        envelope.tool_input, "file_path", "filePath", "path", "notebook_path"
+    )
+    if value is not None:
+        path = _safe_path(envelope, value)
+        return [path] if path else []
+    patch = _first(envelope.tool_input, "command", "patchText")
+    if not isinstance(patch, str):
+        return []
+    paths: list[Path] = []
+    for match in PATCH_HEADER.finditer(patch):
+        path = _safe_path(envelope, match.group(1))
+        if path and path not in paths:
+            paths.append(path)
+            if len(paths) == MAX_EDIT_PATHS:
+                break
+    return paths
 
 
 def _matching_path_records(
@@ -695,7 +744,7 @@ def _safe_source_argument(path: str) -> str | None:
 
 def _proposed_advisory(
     proposed: list[dict[str, Any]],
-    relative: str,
+    relatives: list[str],
     client: str,
 ) -> str:
     linked = []
@@ -707,6 +756,7 @@ def _proposed_advisory(
         if any(
             fnmatch.fnmatchcase(relative.casefold(), str(value).casefold())
             or relative.casefold() == str(value).replace("\\", "/").casefold()
+            for relative in relatives
             for value in list(verified) + list(globs)
         ):
             linked.append(record)
@@ -718,15 +768,21 @@ def _proposed_advisory(
                 f"Proposed ADR implementation link: {adr_id} -> "
                 f"{_client_grill(client, adr_id)}"
             )
-    if not lines and re.search(
-        r"(^|/)(?:architecture|infra(?:structure)?|migrations?|schemas?|"
-        r"api|contracts?|config|deploy|security)(?:/|[-_.])|"
-        r"(^|/)(?:dockerfile|compose\.ya?ml|pyproject\.toml|package\.json|"
-        r"Cargo\.toml|go\.mod)$",
-        relative,
-        re.IGNORECASE,
-    ):
-        quoted = _safe_source_argument(relative)
+    # At most one suggestion: the first file that looks architectural.
+    architectural = (
+        relative
+        for relative in relatives
+        if re.search(
+            r"(^|/)(?:architecture|infra(?:structure)?|migrations?|schemas?|"
+            r"api|contracts?|config|deploy|security)(?:/|[-_.])|"
+            r"(^|/)(?:dockerfile|compose\.ya?ml|pyproject\.toml|package\.json|"
+            r"Cargo\.toml|go\.mod)$",
+            relative,
+            re.IGNORECASE,
+        )
+    )
+    if not lines:
+        quoted = _safe_source_argument(next(architectural, ""))
         if quoted:
             lines.append(
                 "Possible durable architecture decision -> "
@@ -934,11 +990,16 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
             "inject" if envelope.event == "PreToolUse" else "watch",
         ):
             return "", "noop"
-        path = _safe_edit_path(envelope)
-        if path is None:
+        paths = _safe_edit_paths(envelope)
+        if not paths:
             return "", "noop"
-        relative = path.relative_to(envelope.workspace).as_posix()
-        selected = _query(envelope.workspace, relative, path=relative)
+        relatives = [path.relative_to(envelope.workspace).as_posix() for path in paths]
+        # One query ranks the decisions for all the files a patch touches. The
+        # hook shows the same few either way, and one index load per file costs
+        # about ten times as much.
+        selected = _query(
+            envelope.workspace, " ".join(relatives), paths=tuple(relatives)
+        )
         governing = [item for item in selected if item.get("status") == "Accepted"]
         advisory = [item for item in selected if item.get("status") == "Proposed"]
         heading = (
@@ -952,7 +1013,7 @@ def _evaluate_context(envelope: Envelope) -> tuple[str, str]:
                 _render(governing, heading),
                 _render(advisory, "Advisory Proposed ADRs for this edit:"),
                 _proposed_advisory(
-                    proposed, relative, envelope.client
+                    proposed, relatives, envelope.client
                 ),
             )
             if part

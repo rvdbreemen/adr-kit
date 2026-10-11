@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from adapters import ADAPTERS
 from adr_hook_core import (
     MAX_CONTEXT_CHARS,
     MAX_INPUT_BYTES,
+    duplicate_event,
     evaluate,
     parse_payload,
 )
@@ -174,6 +176,147 @@ def test_pre_edit_filters_write_aliases_and_resolves_safe_paths(tmp_path, tool):
         "claude-code-cli",
     )
     assert hostile and evaluate(hostile) == ("", "noop")
+
+
+# Codex and OpenCode never send a file path for an apply_patch edit: the paths
+# are in the patch's header lines (DEF-31, DEF-38). Codex 0.162.1 puts the patch
+# in tool_input.command; OpenCode 1.19.0 puts it in args.patchText, and its
+# plugin forwards those args under an Edit tool name with Claude's adapter.
+def _patch(*lines: str) -> str:
+    return "\n".join(("*** Begin Patch", *lines, "*** End Patch"))
+
+
+def _edit(project, tool_input, *, tool="apply_patch", client="codex-cli", event="PreToolUse"):
+    envelope = parse_payload(
+        json.dumps(
+            {
+                "cwd": str(project),
+                "hook_event_name": event,
+                "tool_name": tool,
+                "tool_input": tool_input,
+            }
+        ).encode(),
+        client,
+    )
+    assert envelope
+    return evaluate(envelope)
+
+
+@pytest.mark.parametrize(
+    ("event", "kind"), [("PreToolUse", "pre-edit"), ("PostToolUse", "post-edit")]
+)
+def test_a_codex_patch_gets_the_decisions_for_the_file_it_updates(tmp_path, event, kind):
+    project = _project(tmp_path)
+    patch = _patch("*** Update File: src/hooks/runtime.py", "@@", "-a", "+b")
+
+    context, actual = _edit(project, {"command": patch}, event=event)
+
+    assert actual == kind
+    assert "ADR-001" in context and "ADR-002" not in context
+
+
+def test_an_opencode_patch_text_gets_the_decisions_too(tmp_path):
+    project = _project(tmp_path)
+    patch = _patch("*** Update File: src/hooks/runtime.py", "@@", "-a", "+b")
+
+    context, kind = _edit(
+        project, {"patchText": patch}, tool="Edit", client="claude-code-cli",
+    )
+
+    assert kind == "pre-edit" and "ADR-001" in context
+
+
+def test_every_file_a_patch_adds_updates_deletes_or_moves_to_counts(tmp_path):
+    project = _project(tmp_path)
+    patch = _patch(
+        "*** Add File: src/store/schema.sql",
+        "+create table t (id int);",
+        "*** Delete File: notes/old.txt",
+        "*** Update File: notes/draft.py",
+        "*** Move to: src/hooks/runtime.py",
+        "@@",
+        "-a",
+        "+b",
+    )
+
+    context, _ = _edit(project, {"command": patch})
+
+    assert "ADR-001" in context and "ADR-002" in context
+
+
+def test_lines_inside_a_hunk_that_look_like_headers_are_not_paths(tmp_path):
+    project = _project(tmp_path)
+    patch = _patch(
+        "*** Add File: notes/readme.md",
+        "+*** Update File: src/store/db.py",
+        "*** Update File: src/hooks/runtime.py",
+        "@@",
+        " *** Delete File: src/store/other.py",
+        "-a",
+        "+b",
+    )
+
+    context, _ = _edit(project, {"command": patch})
+
+    assert "ADR-001" in context and "ADR-002" not in context
+
+
+def test_patch_paths_outside_the_workspace_are_dropped(tmp_path):
+    project = _project(tmp_path)
+    outside = _patch("*** Update File: ../outside.py", "@@", "-a", "+b")
+    assert _edit(project, {"command": outside}) == ("", "noop")
+
+    mixed = _patch("*** Delete File: /etc/hosts", "*** Delete File: src/hooks/runtime.py")
+    context, _ = _edit(project, {"command": mixed})
+    assert "ADR-001" in context
+
+
+def test_a_patch_touching_more_files_than_the_query_takes_still_gets_context(tmp_path):
+    # query_adr_context refuses more than 32 path filters; passing them all
+    # would raise, and the edit would get no context at all.
+    project = _project(tmp_path)
+    headers = ["*** Update File: src/hooks/runtime.py", "@@", "-a", "+b"]
+    for number in range(40):
+        headers += [f"*** Add File: notes/n{number}.txt", "+x"]
+
+    context, _ = _edit(project, {"command": _patch(*headers)})
+
+    assert "ADR-001" in context
+
+
+def test_only_a_repeated_event_is_a_duplicate(tmp_path):
+    # The dedupe keeps the session's previous event in the OS temp directory,
+    # keyed by session id alone; it named neither the input nor the workspace.
+    project = _project(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    session = f"dedupe-{uuid.uuid4()}"
+
+    def event(target, cwd=project):
+        return parse_payload(
+            json.dumps(
+                {
+                    "cwd": str(cwd),
+                    "hook_event_name": "PreToolUse",
+                    "session_id": session,
+                    "tool_name": "apply_patch",
+                    "tool_input": {
+                        "command": _patch(f"*** Update File: {target}", "@@", "-a", "+b")
+                    },
+                }
+            ).encode(),
+            "codex-cli",
+        )
+
+    try:
+        assert not duplicate_event(event("src/hooks/runtime.py"))
+        assert duplicate_event(event("src/hooks/runtime.py"))
+        assert not duplicate_event(event("src/store/db.py"))
+        assert not duplicate_event(event("src/store/db.py", cwd=other))
+    finally:
+        (Path(tempfile.gettempdir()) / f"adr-kit-hook-{session}.seen").unlink(
+            missing_ok=True
+        )
 
 
 def test_copilot_uses_post_edit_backstop_not_false_pre_context(tmp_path):
