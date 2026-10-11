@@ -6,7 +6,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 from adr_doctor_models import benchmark_extension, check
@@ -114,7 +113,13 @@ def _native_deep(root: Path, name: str, executable: str) -> dict:
     )
 
 
-def _mcp_deep(root: Path, plugin_root: Path) -> dict:
+def _mcp_deep(root: Path, argv: list[str], *, client: str, required: bool = True) -> dict:
+    """Initialize, list and call the server the way the client starts it.
+
+    `argv` is the client's registered command as the launcher check resolved
+    it. This probe used to start bin/adr-mcp with the doctor's own interpreter,
+    so it said healthy for a server the client could not start (DEF-33).
+    """
     messages = [
         {
             "jsonrpc": "2.0",
@@ -140,7 +145,7 @@ def _mcp_deep(root: Path, plugin_root: Path) -> dict:
     ]
     try:
         result = subprocess.run(
-            [sys.executable, str(plugin_root / "bin" / "adr-mcp")],
+            argv,
             input="\n".join(json.dumps(item) for item in messages) + "\n",
             cwd=str(root),
             capture_output=True,
@@ -177,22 +182,50 @@ def _mcp_deep(root: Path, plugin_root: Path) -> dict:
         TypeError,
     ) as exc:
         return check(
-            "mcp-live", status="failed",
+            "mcp-live", client=client, status="failed", required=required,
             summary=f"MCP initialize/list/call probe failed: {exc}",
+            evidence=[{"argv": argv}],
             actions=[{"detail": "Run adr-doctor --deep after reinstalling ADR Kit."}],
         )
     return check(
-        "mcp-live", status="healthy" if healthy else "failed",
+        "mcp-live", client=client, status="healthy" if healthy else "failed",
+        required=required,
         summary=(
             "MCP initialize, tools/list, and adr_status call passed"
             if healthy else "MCP handshake returned an incomplete result"
         ),
         evidence=[{
+            "argv": argv,
             "returncode": result.returncode,
             "tools": sorted(tools),
             "call_ok": called,
         }],
     )
+
+
+def _registered_mcp_live(root: Path, checks: list[dict]) -> list[dict]:
+    """One live check per client whose MCP launcher the doctor examined."""
+    live = []
+    for item in checks:
+        if item.get("id") != "mcp-launcher" or item.get("status") == "unsupported":
+            continue
+        client, required = item["client"], item["required"]
+        evidence = (item.get("evidence") or [{}])[0]
+        argv = evidence.get("argv") if item.get("status") == "healthy" else None
+        if argv:
+            live.append(_mcp_deep(root, argv, client=client, required=required))
+            continue
+        command = evidence.get("command", "the registered command")
+        live.append(check(
+            "mcp-live", client=client, status="failed", required=required,
+            summary=(
+                f"{client} cannot start the MCP server: {command} does not "
+                "resolve, or the payload it runs is missing"
+            ),
+            evidence=[{"command": command}],
+            actions=item.get("actions") or [],
+        ))
+    return live
 
 
 def run_deep_extensions(
@@ -207,7 +240,7 @@ def run_deep_extensions(
         _native_deep(root, name, client.executable)
         for name, client in detect_clients().items()
     ]
-    extensions.append(_mcp_deep(root, plugin_root))
+    extensions.extend(_registered_mcp_live(root, checks))
     # The harness reads plugin_root/tests/fixtures/hooks/reference-corpus.json,
     # and `tests` is a forbidden segment in the public payload -- so the fixture
     # is absent from EVERY installed payload, not only from a generated client

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -248,7 +249,7 @@ def test_deep_extension_contract_is_versioned_and_unpopulated_safely():
 
 
 def test_deep_mcp_probe_accepts_complete_seven_tool_contract():
-    result = _mcp_deep(ROOT, ROOT)
+    result = _mcp_deep(ROOT, [sys.executable, str(ROOT / "bin" / "adr-mcp")], client="claude")
 
     assert result["status"] == "healthy"
     assert result["evidence"][0]["call_ok"]
@@ -261,3 +262,44 @@ def test_deep_mcp_probe_accepts_complete_seven_tool_contract():
         "adr_related",
         "adr_status",
     ]
+
+
+def _live_checks(monkeypatch, path: str | None = None) -> dict[str, dict]:
+    """The deep probe's mcp-live checks, keyed by client, for this checkout."""
+    if path is not None:
+        monkeypatch.setenv("PATH", path)
+    monkeypatch.setattr(adr_doctor_probes, "detect_clients", lambda: {})
+
+    def no_benchmark(*args, **kwargs):
+        raise OSError("not measured in this test")
+
+    monkeypatch.setattr(adr_doctor_probes, "measure_hooks", no_benchmark)
+    checks = [check_mcp_launcher(ROOT, "claude", required=True)]
+    extensions = adr_doctor_probes.run_deep_extensions(
+        ROOT, ROOT, checks=checks, global_settings=None, check_only=True,
+    )
+    return {item["client"]: item for item in extensions if item["id"] == "mcp-live"}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="builds a POSIX PATH from a symlink")
+def test_the_live_check_fails_when_the_registered_command_cannot_start(tmp_path, monkeypatch):
+    """The repository's .mcp.json registers a bare python (DEF-25).
+
+    On a PATH with only python3 the client cannot start it. The live check used
+    to start the server with the doctor's own interpreter and report healthy,
+    beside a launcher check that said stale (DEF-33).
+    """
+    (tmp_path / "python3").symlink_to(sys.executable)
+
+    live = _live_checks(monkeypatch, str(tmp_path))
+
+    assert live["claude"]["status"] == "failed"
+    assert "python" in live["claude"]["summary"]
+
+
+@pytest.mark.skipif(shutil.which("python") is None, reason="needs a python on PATH")
+def test_the_live_check_starts_what_the_client_registered(monkeypatch):
+    live = _live_checks(monkeypatch)
+
+    assert live["claude"]["status"] == "healthy"
+    assert live["claude"]["evidence"][0]["argv"][0] == shutil.which("python")

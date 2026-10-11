@@ -50,7 +50,8 @@ HOOK_EVENTS = {
 
 def resolve_launcher_target(
     plugin_root: Path, command: str, args: list[str]
-) -> tuple[str | None, list[str]]:
+) -> tuple[str | None, list[str], list[str]]:
+    """The resolved command, the payload files it runs, and the whole argv."""
     expanded = [
         value.replace("${PLUGIN_ROOT}", str(plugin_root))
         .replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
@@ -63,6 +64,7 @@ def resolve_launcher_target(
         else shutil.which(command)
     )
     targets = []
+    argv = [resolved_command or command]
     for value in expanded:
         candidate = Path(value)
         if not candidate.is_absolute() and value.startswith("."):
@@ -71,7 +73,10 @@ def resolve_launcher_target(
             "/" in value or "\\" in value
         ):
             targets.append(str(candidate.resolve()))
-    return resolved_command, targets
+            argv.append(targets[-1])
+        else:
+            argv.append(value)
+    return resolved_command, targets, argv
 
 
 def check_mcp_launcher(
@@ -103,7 +108,7 @@ def check_mcp_launcher(
             summary=f"invalid owned MCP manifest {config_path}: {exc}",
             actions=[{"detail": f"Reinstall ADR Kit for {client}."}],
         )
-    resolved, targets = resolve_launcher_target(root, command, args)
+    resolved, targets, argv = resolve_launcher_target(root, command, args)
     missing = [target for target in targets if not Path(target).is_file()]
     if resolved is None or missing:
         return check(
@@ -134,6 +139,7 @@ def check_mcp_launcher(
                 "path": str(config_path),
                 "resolved_command": resolved,
                 "targets": targets,
+                "argv": argv,
             }
         ],
     )
