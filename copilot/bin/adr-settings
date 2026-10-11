@@ -44,6 +44,13 @@ LOCAL_CONFIG_NAME = ".adr-kit.local.json"
 # Settings that are personal or machine-specific. Everything else in the schema
 # is a team decision and belongs in the tracked file.
 LOCAL_KEYS: Dict[str, Dict[str, Any]] = {
+    "llm.confirmed": {
+        "type": "string",
+        "description": (
+            "The date this machine's user answered whether to keep the LLM layers "
+            "on (ADR-049). Until it is set, the session asks once a day."
+        ),
+    },
     "lifecycle.signer": {
         "type": "string",
         "description": (
@@ -53,7 +60,7 @@ LOCAL_KEYS: Dict[str, Dict[str, Any]] = {
     },
     "judge.host_client": {
         "type": "string",
-        "enum": ["claude-code-cli", "codex-cli", "github-copilot-cli"],
+        "enum": ["claude-code-cli", "codex-cli", "github-copilot-cli", "opencode-cli"],
         "description": (
             "Which coding-client CLI answers the LLM pass. Machine-specific, and "
             "deliberately not probed from PATH: on a machine with all three "
@@ -80,6 +87,9 @@ SECRET_KEYS = {}
 # user actually turns.
 FEATURED = [
     "judge.llm_enabled",
+    "suggest.enabled",
+    "guardian.llm_enabled",
+    "guardian.llm_autorun",
     "judge.backend",
     "judge.max_diff_bytes",
     "judge.advisory_only",
@@ -314,7 +324,42 @@ def render_text(rows: List[Dict], adr_dir: Path) -> List[str]:
     return lines
 
 
-def apply_set(adr_dir: Path, schema: Dict, key: str, raw: str) -> List[str]:
+def _load_sibling(name: str):
+    """Import bin/<name>.py by explicit path, without touching sys.path (TASK-62)."""
+    import importlib.machinery
+    import importlib.util
+
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    loader = importlib.machinery.SourceFileLoader(
+        name, str(Path(__file__).resolve().parent / f"{name}.py")
+    )
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+def _machine_overridable(key: str) -> bool:
+    """The LLM switches one machine may set apart from the team (TASK-233)."""
+    return tuple(key.split(".", 1)) in _load_sibling("adr_config").MACHINE_OVERRIDABLE
+
+
+def _target_name(key: str, local: bool) -> str:
+    if local and not is_local(key):
+        if not _machine_overridable(key):
+            raise SettingsError(
+                f"{key} is a team setting; --local accepts only the LLM switches "
+                "judge.llm_enabled, suggest.enabled, guardian.llm_enabled and "
+                "guardian.llm_autorun"
+            )
+        return LOCAL_CONFIG_NAME
+    return LOCAL_CONFIG_NAME if is_local(key) else PROJECT_CONFIG_NAME
+
+
+def apply_set(adr_dir: Path, schema: Dict, key: str, raw: str, local: bool = False) -> List[str]:
     node = LOCAL_KEYS.get(key) or schema_node(schema, key)
     if node is None:
         raise SettingsError(
@@ -322,20 +367,20 @@ def apply_set(adr_dir: Path, schema: Dict, key: str, raw: str) -> List[str]:
         )
     value = coerce(raw, node)
     validate(key, value, node)
-    target_name = LOCAL_CONFIG_NAME if is_local(key) else PROJECT_CONFIG_NAME
+    target_name = _target_name(key, local)
     path = adr_dir / target_name
     data = _read_json(path)
     _plant(data, key, value)
     _atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-    scope = "machine-local, gitignored" if is_local(key) else "project, committed"
+    scope = "machine-local, gitignored" if target_name == LOCAL_CONFIG_NAME else "project, committed"
     return [f"{key} = {json.dumps(value)}", f"written to {path} ({scope})"]
 
 
-def apply_unset(adr_dir: Path, schema: Dict, key: str) -> List[str]:
+def apply_unset(adr_dir: Path, schema: Dict, key: str, local: bool = False) -> List[str]:
     node = LOCAL_KEYS.get(key) or schema_node(schema, key)
     if node is None:
         raise SettingsError(f"unknown setting {key!r}")
-    path = adr_dir / (LOCAL_CONFIG_NAME if is_local(key) else PROJECT_CONFIG_NAME)
+    path = adr_dir / _target_name(key, local)
     data = _read_json(path)
     if not _uproot(data, key):
         return [f"{key} was not set in {path}; nothing to do"]
@@ -354,6 +399,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--list", action="store_true", help="list every settable key and exit")
     parser.add_argument("--set", default=None, metavar="KEY=VALUE")
     parser.add_argument("--unset", default=None, metavar="KEY")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="with --set/--unset: write an LLM switch for this machine only, in the "
+        "gitignored .adr-kit.local.json, instead of for the whole team",
+    )
     args = parser.parse_args(argv)
 
     adr_dir = Path(args.adr_dir)
@@ -368,9 +419,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             if "=" not in args.set:
                 raise SettingsError("--set expects KEY=VALUE")
             key, raw = args.set.split("=", 1)
-            lines = apply_set(adr_dir, schema, key.strip(), raw)
+            lines = apply_set(adr_dir, schema, key.strip(), raw, local=args.local)
         elif args.unset:
-            lines = apply_unset(adr_dir, schema, args.unset.strip())
+            lines = apply_unset(adr_dir, schema, args.unset.strip(), local=args.local)
         else:
             keys = known_keys(schema) if args.all else FEATURED
             rows = describe(adr_dir, schema, keys, dict(os.environ))

@@ -20,6 +20,7 @@ related:
   - "ADR-043"
   - "ADR-046"
   - "ADR-047"
+  - "ADR-049"
 topics:
   - "simplification"
   - "llm judging"
@@ -107,6 +108,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-046
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-11
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-049
     changed_via: adr-kit lifecycle
 ```
 

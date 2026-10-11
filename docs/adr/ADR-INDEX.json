@@ -2200,7 +2200,7 @@
       "path": "ADR-041-automatically-hand-off-unfinished-proposed-adrs-to-interactive-grilling.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-08-20",
+      "date": "2026-10-06",
       "decision_summary": "Chosen option: automatic interactive handoff at the next user-visible prompt, because it closes the completion gap wi...",
       "topics": [
         "auto grilling",
@@ -2685,6 +2685,71 @@
       "metadata": {
         "binding": false,
         "gate": null,
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-049",
+      "title": "Record the judge host client at the first session and ask per LLM layer at upgrade",
+      "path": "ADR-049-record-the-judge-host-client-at-the-first-session-and-ask-per-llm-layer-at-upgrade.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-10-11",
+      "decision_summary": "Chosen option: record the host client at the first session, confirm through the session model, and keep every answer...",
+      "topics": [
+        "default install",
+        "host client",
+        "llm layers",
+        "onboarding"
+      ],
+      "aliases": [
+        "ADR_KIT_HOST_CLIENT",
+        "llm.confirmed",
+        "machine-local override"
+      ],
+      "components": [
+        "bin/adr_llm.py",
+        "hooks/adr_hook_core.py"
+      ],
+      "symbols": [
+        "apply_machine_overrides",
+        "llm_onboarding",
+        "record_host_client_if_absent"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Record the host client only when none is recorded and the effective judge.llmenabled is not false.",
+          "Ask the user before treating the default as settled, and record the answer in llm.confirmed.",
+          "Write an \"off\" answer to .adr-kit.local.json, never to .adr-kit.json.",
+          "Name the host a client actually runs on, through ADRKITHOSTCLIENT where a client borrows another client's hook shape."
+        ],
+        "must_not": [
+          "Replace a recorded host client, or a value the user did not answer.",
+          "Pass a model flag or record a credential (ADR-036, ADR-043).",
+          "Write from an edit-tier hook (PreToolUse, PostToolUse)."
+        ],
+        "exceptions": [
+          "None."
+        ],
+        "verification": [
+          "tests/testllmonboardinghook.py (gate adr-llm-default-on-v1).",
+          "tests/testmachinellmoverrides.py and tests/testadrllmbounded.py.",
+          "The two requirepattern rules below."
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "hooks/adr_hook_core.py",
+          "opencode/plugin.ts"
+        ]
+      },
+      "metadata": {
+        "binding": true,
+        "gate": "adr-llm-default-on-v1",
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -3660,6 +3725,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-036",
+      "target": "ADR-049",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-037",
       "target": "ADR-011",
       "type": "related",
@@ -3800,6 +3871,12 @@
     {
       "source": "ADR-041",
       "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-041",
+      "target": "ADR-049",
       "type": "related",
       "resolved": true
     },
@@ -3974,6 +4051,42 @@
     {
       "source": "ADR-048",
       "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-021",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-025",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-036",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-041",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-043",
       "type": "related",
       "resolved": true
     }

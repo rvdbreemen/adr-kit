@@ -11,6 +11,7 @@ supersedes: []
 superseded_by: null
 related:
   - "ADR-011"
+  - "ADR-049"
 topics:
   - "auto grilling"
   - "readiness"
@@ -99,6 +100,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Accepted decision after all four verification gates passed
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-06
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-049
     changed_via: adr-kit lifecycle
 ```
 

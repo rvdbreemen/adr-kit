@@ -122,6 +122,21 @@ This installs the ADR Kit-owned pre-commit gate without replacing user-owned
 guidance or unrelated hooks. Do not use a plugin hook as a substitute for the
 commit floor.
 
+
+## LLM layers
+
+The per-commit judge pass, the `adr-suggest` nudge and the guardian's LLM
+tier are on by default and run on OpenCode's own model through
+`opencode run --pure`: no API key and no pinned model (ADR-036, ADR-043). The plugin renders hook output in Claude Code's shape, so it names
+its own host through `ADR_KIT_HOST_CLIENT=opencode-cli`; `--pure` keeps
+ADR Kit's own OpenCode plugin from firing inside a judging call.
+The first chat message in a project records `opencode-cli` as the judge's host when
+none is recorded; a recorded choice is never replaced. The next prompt then
+asks once whether to keep each layer on or turn it off for this machine,
+and `/adr-kit:init` and `/adr-kit:upgrade` ask the same per layer. An "off"
+goes to the gitignored `.adr-kit.local.json`, so teammates keep the layers
+on (ADR-049). `ADR_KIT_NO_LLM=1` switches every layer off for a run.
+
 ## CI
 
 CI is client-independent. Copy the workflows appropriate for the project from

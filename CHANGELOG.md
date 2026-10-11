@@ -6,6 +6,24 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Added
 
+- The LLM layers are on by default on every install route, on the coding
+  assistant the plugin runs in, and the user confirms them (ADR-049). The
+  layers - the per-commit judge pass, the `adr-suggest` nudge and the
+  guardian's LLM tier - only run where a judge host client is recorded, and
+  the common install route (`/plugin install`) never recorded one, so they
+  did nothing. The first session in a project now records the client it runs
+  in (never replacing a recorded choice), and the next prompt asks once whether
+  to keep each layer on or turn it off for this machine, until the answer is
+  recorded in `llm.confirmed`. `/adr-kit:init` and `/adr-kit:upgrade` ask the
+  same, one question per layer, on every run.
+- OpenCode runs the LLM layers on its own model (`opencode run --pure`). Its
+  plugin borrowed Claude Code's hook shape and would have recorded `claude -p`
+  as an OpenCode user's judge; it now names its own host.
+- `guardian.llm_enabled` (default `true`) switches the guardian's LLM tier off;
+  `adr-substance` then calls no model and the tier is never due.
+- `adr-settings --set <switch>=<value> --local` writes one of the four LLM
+  switches for this machine only.
+
 - ADR-043 restores the two rules that guarded the host-model-only judge: no
   entry point may pin a vendor model, and none may carry its own default
   command vector. ADR-017 enforced them until ADR-036 superseded it without an
@@ -33,6 +51,11 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Changed
 
+- An LLM switch in the gitignored `.adr-kit.local.json` now wins over
+  `.adr-kit.json` for `judge.llm_enabled`, `suggest.enabled`,
+  `guardian.llm_enabled` and `guardian.llm_autorun`, so one developer's "off"
+  no longer has to switch a layer off for the whole team. Only these four
+  booleans cross over.
 - `ADR_KIT_NO_LLM=1` now stops every model call, not only the judge's. The
   suggestion pass (`adr-suggest`, on by default) and the substance check
   (`adr-substance`) resolved their backend without looking at it, so a user who
@@ -47,6 +70,12 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- On Windows, a host CLI installed through npm (Codex, Copilot CLI, OpenCode)
+  is a `.cmd` shim that the LLM pass could not start (`FileNotFoundError`), so
+  the pass degraded silently. The command is now resolved the way a shell
+  would.
+- The guardian skill no longer says its LLM tier runs a pinned
+  `claude-sonnet-4-6`; it runs on the recorded host's own model.
 - `build-client-adapters.py` and `sync-agent-plugins.py` no longer fail with
   `ModuleNotFoundError` in an installed plugin. `client_certification.py`
   imports `client_support_matrix.py`, which the release allowlist did not ship;

@@ -32,6 +32,12 @@ def _project(tmp_path: Path) -> Path:
     project = tmp_path / "Project with spaces \u2603"
     adr = project / "docs" / "adr"
     adr.mkdir(parents=True)
+    # These tests measure retrieval and the hook protocol. The one-time LLM
+    # onboarding question (ADR-049) is covered in test_llm_onboarding_hook.py,
+    # so this machine has already answered it here.
+    (adr / ".adr-kit.local.json").write_text(
+        json.dumps({"llm": {"confirmed": "2026-10-06"}}), encoding="utf-8"
+    )
     (adr / "ADR-INDEX.json").write_text(
         json.dumps(
             {

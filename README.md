@@ -632,10 +632,10 @@ All configuration lives in one optional file: `docs/adr/.adr-kit.json` (annotate
 ```
 
 - The pre-commit hook's declarative pass is always on and free.
-- The LLM judge pass is **on by default** (`judge.llm_enabled: true`), but it only runs where a host client is recorded. The installer records one when it installs exactly one client (Claude Code, Codex or Copilot CLI); with several it records none and prints the command to choose. The pass then runs through that client's own CLI (`claude -p`, `codex exec` or `copilot -p`, ADR-036), on your existing subscription: no API key, no adr-kit service. Your staged diff and the governing ADRs go to that client's model, one isolated call per ADR whose `llm_judge: true` scope the diff touches, so a commit can take a minute or more. Each call is capped by `judge.llm_timeout_seconds` and the whole pass by `judge.llm_pass_timeout_seconds`. A clear `VIOLATION` verdict blocks the commit like a declarative one (set `judge.advisory_only: true` to report instead); an answer the judge cannot parse degrades to the declarative result instead of blocking.
-- Turn it off for one commit with `ADR_KIT_NO_LLM=1`, or for the project with `judge.llm_enabled: false`. A flock guard serializes LLM passes across parallel commits.
+- The LLM judge pass is **on by default** (`judge.llm_enabled: true`), and runs on the coding assistant the plugin is installed in. The first session in a project records that client as the judge's host (Claude Code, Codex, Copilot CLI or OpenCode; a recorded choice is never replaced), and the next prompt asks you once whether to keep each LLM layer on or turn it off for your machine (ADR-049); `/adr-kit:init` and `/adr-kit:upgrade` ask the same per layer. The pass runs through that client's own CLI (`claude -p`, `codex exec`, `copilot -p` or `opencode run`, ADR-036), on your existing subscription: no API key, no adr-kit service. Your staged diff and the governing ADRs go to that client's model, one isolated call per ADR whose `llm_judge: true` scope the diff touches, so a commit can take a minute or more. Each call is capped by `judge.llm_timeout_seconds` and the whole pass by `judge.llm_pass_timeout_seconds`. A clear `VIOLATION` verdict blocks the commit like a declarative one (set `judge.advisory_only: true` to report instead); an answer the judge cannot parse degrades to the declarative result instead of blocking.
+- Turn it off for one commit with `ADR_KIT_NO_LLM=1`, for your machine with `adr-settings --set judge.llm_enabled=false --local` (the gitignored `.adr-kit.local.json`; your teammates keep it on), or for the whole project with `judge.llm_enabled: false` in `.adr-kit.json`. A flock guard serializes LLM passes across parallel commits.
 - `suggest.enabled` defaults to `true` (ADR-035): the advisory missing-decision nudge runs on the same terms as the judge, resolving through the shared backend registry with no pinned model. It never blocks and silently skips on any failure. Set `suggest.enabled: false` to switch it off per project, or export `ADR_KIT_SUGGEST_DISABLE=1` for a single run; `ADR_KIT_SUGGEST=1` still re-enables it per commit for a project that has set it false.
-- The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo).
+- The guardian's cheap tier is free and daily; the LLM tier is bi-weekly and always asks first unless you set `llm_autorun: true` (not recommended; see ADR-001 in this repo). `guardian.llm_enabled: false` switches the LLM tier off entirely.
 - `watch` tunes the in-flight nudges; `cooldown_hours: 0` disables the cooldown, `enabled: false` silences the watcher.
 
 #### Working locally (opt-in)
@@ -644,8 +644,9 @@ You can keep every diff on your own machine. There are two ways to do that.
 
 **No model at all.** Export `ADR_KIT_NO_LLM=1`: it stops every pass that
 calls a model (the judge, `adr-suggest` and `adr-substance`). For a whole
-project, set both `judge.llm_enabled: false` and `suggest.enabled: false` in
-`.adr-kit.json`. Enforcement is then fully deterministic and runs offline: the
+project, set `judge.llm_enabled`, `suggest.enabled` and `guardian.llm_enabled`
+to `false` in `.adr-kit.json`; for your machine only, set them with
+`adr-settings --set <switch>=false --local`. Enforcement is then fully deterministic and runs offline: the
 declarative rules, `adr-lint`, readiness and the MCP tools never call a model.
 
 **A local model.** Point the LLM passes at any command that reads the prompt

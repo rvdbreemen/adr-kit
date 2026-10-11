@@ -33,3 +33,15 @@ disable/re-enable when no native toggle is available. Rollback restores the
 previous healthy cache. Removal never edits unrelated Codex config. Windows
 native certification uses Codex CLI 0.144.6; macOS/Linux are best-effort and
 were not run in this Windows pass.
+
+## LLM layers
+
+The per-commit judge pass, the `adr-suggest` nudge and the guardian's LLM
+tier are on by default and run on Codex's own model through
+`codex exec`: no API key and no pinned model (ADR-036, ADR-043).
+SessionStart in a project records `codex-cli` as the judge's host when
+none is recorded; a recorded choice is never replaced. The next prompt then
+asks once whether to keep each layer on or turn it off for this machine,
+and `/adr-kit:init` and `/adr-kit:upgrade` ask the same per layer. An "off"
+goes to the gitignored `.adr-kit.local.json`, so teammates keep the layers
+on (ADR-049). `ADR_KIT_NO_LLM=1` switches every layer off for a run.

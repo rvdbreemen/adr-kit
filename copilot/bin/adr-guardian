@@ -101,6 +101,7 @@ _load_sibling("adr_state")
 _load_sibling("adr_guardian_queue")
 
 from adr_config import load_json_config as _load_config
+from adr_config import apply_machine_overrides as _apply_machine_overrides
 from adr_state import find_project_adr_dir as _find_adr_dir
 from adr_state import load_state, update_state
 from adr_guardian_queue import (
@@ -188,6 +189,7 @@ def _guardian_config(cfg: Dict) -> Dict:
         "llm_stale_days": 14,
         "nudge_cooldown_hours": 24,
         "llm_autorun": False,
+        "llm_enabled": True,
     }
     guardian = cfg.get("guardian") or {}
     merged = {**defaults, **guardian}
@@ -520,6 +522,10 @@ def _compute_due_tiers(
 
     cheap_due = cheap_days is None or cheap_days >= drift_stale_days
     llm_due = llm_days is None or llm_days >= llm_stale_days
+    if gcfg.get("llm_enabled") is False:
+        # Switched off for the project or this machine (TASK-233): the LLM tier
+        # is never due, so the nudge never asks for it.
+        return cheap_due, False
 
     # ADR-037: a recorded per-ADR violation keeps the llm tier due regardless
     # of how fresh the tier timestamp is. The tier goes quiet only when a
@@ -769,7 +775,10 @@ def cmd_check(args: argparse.Namespace) -> int:
     state_path = adr_dir / ".adr-kit-state.json"
     config_path = adr_dir / ".adr-kit.json"
 
-    cfg = _load_config(config_path)
+    # This machine's LLM switches win over the team's (TASK-233).
+    cfg = _apply_machine_overrides(
+        _load_config(config_path), _load_config(adr_dir / ".adr-kit.local.json")
+    )
     gcfg = _guardian_config(cfg)
 
     # Respect guardian.enabled (default True).

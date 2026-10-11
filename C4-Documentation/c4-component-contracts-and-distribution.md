@@ -405,7 +405,7 @@ evidence bundle.
   fallbacks that degrade cleanly. `templates/cc-settings/guardian-hook-entry.json` additionally
   picks the newest cached plugin with GNU `ls … | sort -V | tail -1`, which BSD/macOS `sort` lacks;
   the pre-commit template dropped that dependency in 0.59.1, this entry has not (TASK-220, open).
-- **Host agent CLIs** (`claude -p`, `codex exec`, `copilot -p`) — reached only transitively through
+- **Host agent CLIs** (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`) — reached only transitively through
   `bin/adr-judge --llm`, `bin/adr-suggest` and `probe-client-events.py`. **No workflow in this
   component invokes a model.**
 

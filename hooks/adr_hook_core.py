@@ -22,6 +22,7 @@ import re
 import tempfile
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -866,12 +867,98 @@ def evaluate(envelope: Envelope) -> tuple[str, str]:
     except Exception:  # noqa: BLE001 -- fail-open is this file's contract
         notice = STALE_INDEX_MESSAGE
 
+    try:
+        onboarding = llm_onboarding(envelope)
+    except Exception:  # noqa: BLE001 -- fail-open is this file's contract
+        onboarding = ""
+
     context, kind = _evaluate_context(envelope)
+    if onboarding:
+        context = "\n\n".join(part for part in (context, onboarding) if part)
+        kind = kind if kind != "noop" else "llm-onboarding"
     if not notice:
-        return context, kind
+        return context[:MAX_CONTEXT_CHARS], kind
     if not context:
         return notice, "stale-index"
     return "\n\n".join((notice, context))[:MAX_CONTEXT_CHARS], kind
+
+
+ONBOARDING_EVENTS = {"SessionStart", "UserPromptSubmit"}
+ONBOARDING_COOLDOWN_HOURS = 24
+
+
+def llm_onboarding(envelope: Envelope) -> str:
+    """Turn the LLM layers on for a default install, and ask once (ADR-049).
+
+    Records the client this session runs in as the judge's host when nothing
+    is recorded yet, on the session-scoped events only (ADR-021 is the
+    precedent for a session hook that writes; the edit-tier hooks stay
+    read-only). On a real prompt it then asks the user, through the session
+    model, whether to keep the layers on, until a confirmation is recorded,
+    at most once per ONBOARDING_COOLDOWN_HOURS.
+    """
+    if envelope.event not in ONBOARDING_EVENTS:
+        return ""
+    adr_dir = envelope.workspace / "docs" / "adr"
+    if not adr_dir.is_dir():
+        return ""
+    import adr_llm
+
+    # A client whose hook output borrows another client's shape (OpenCode
+    # renders as claude-code-cli) names its own host through this variable.
+    host_client = os.environ.get("ADR_KIT_HOST_CLIENT") or envelope.client
+    adr_llm.record_host_client_if_absent(adr_dir, host_client)
+    if envelope.event != "UserPromptSubmit" or not (envelope.prompt or "").strip():
+        return ""
+    if os.environ.get("ADR_KIT_NO_LLM") == "1":
+        return ""
+    local_path = adr_dir / adr_llm.LOCAL_CONFIG_NAME
+    try:
+        local = json.loads(local_path.read_text(encoding="utf-8")) if local_path.exists() else {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return ""
+    llm_block = local.get("llm") if isinstance(local, dict) and isinstance(local.get("llm"), dict) else {}
+    if llm_block.get("confirmed"):
+        return ""
+    now = datetime.now(timezone.utc)
+    asked = _parse_utc(llm_block.get("asked_at"))
+    if asked is not None and now - asked < timedelta(hours=ONBOARDING_COOLDOWN_HOURS):
+        return ""
+    adr_llm.write_local_value(adr_dir, "llm", "asked_at", now.isoformat())
+    host = ((local.get("judge") or {}) if isinstance(local.get("judge"), dict) else {}).get("host_client")
+    return _onboarding_question(host or host_client)
+
+
+def _parse_utc(value: object):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _onboarding_question(host: str) -> str:
+    # The interpreter running this hook exists by construction; a bare `python`
+    # does not on macOS and most Linux distributions (DEF-34).
+    settings = (
+        f'"{Path(sys.executable).as_posix()}" '
+        f'"{(_BIN_DIR / "adr-settings").as_posix()}" --adr-dir docs/adr'
+    )
+    return (
+        "[adr-kit] The LLM layers are on by default and run on this coding "
+        f"assistant's own model ({host}); no API key is involved:\n"
+        "- the per-commit judge pass (judge.llm_enabled), which can block a commit;\n"
+        "- the missing-decision nudge, adr-suggest (suggest.enabled), which never blocks;\n"
+        "- the guardian's LLM tier (guardian.llm_enabled), which asks before each run.\n"
+        "Before continuing with the user's request, ask the user once whether to "
+        "keep them on (recommended) or turn any of them off for this machine. "
+        "Apply only what the user answers: for each layer to turn off run "
+        f"`{settings} --set <switch>=false --local`. Then record the answer, also "
+        f"when everything stays on, with `{settings} --set llm.confirmed=<today, "
+        "YYYY-MM-DD> --local`. Until that is recorded this question returns once a day."
+    )
 
 
 def _evaluate_context(envelope: Envelope) -> tuple[str, str]:

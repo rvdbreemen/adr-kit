@@ -250,6 +250,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         return 0
 
+    # The guardian's LLM tier can be switched off for the project or, from an
+    # init or upgrade answer, for this machine only (TASK-233).
+    cfg = _adr_config.apply_machine_overrides(cfg, local)
+    if (cfg.get("guardian") or {}).get("llm_enabled") is False:
+        message = "guardian.llm_enabled is false; no model is called"
+        if args.json:
+            json.dump(
+                {"checked": [], "findings": [], "unanswered": [p[0] for p in plan], "degraded": message},
+                sys.stdout, indent=2, ensure_ascii=False,
+            )
+            sys.stdout.write("\n")
+        else:
+            print(f"[adr-substance] skipped: {message}")
+        return 0
+
     judge_cfg = cfg.get("judge") or {}
     backend, warnings = _adr_llm.resolve_llm_backend(
         judge_cfg, local, args.llm_cmd, dict(os.environ)

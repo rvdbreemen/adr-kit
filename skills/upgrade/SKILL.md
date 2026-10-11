@@ -203,7 +203,7 @@ python3 "$ADR_KIT/bin/adr-judge" --show-config
 ```
 
 - Retired keys present (`judge.llm_cmd`, `judge.llm_model`, `judge.openrouter_model`, `judge.ollama_model`, `judge.openai_model`) → config validation refuses each by name and says what replaced it (ADR-036). Have the user delete the keys from `.adr-kit.json`; no command edits a file that carries them.
-- No recorded client → record it now rather than leaving it to the first degraded commit:
+- No recorded client → record it now rather than leaving it to the first degraded commit. Pass the id of the client you are running in: `claude-code-cli` in Claude Code, `opencode-cli` in OpenCode (ADR-049):
 
 ```bash
 python3 "$ADR_KIT/bin/adr-judge" --set-backend host --host-client claude-code-cli
@@ -217,6 +217,23 @@ The host model is the only backend (ADR-036); operators can override one run wit
 - `unbounded_after` is large: per-commit judging is not viable, and no faster model fixes a per-ADR multiplier. Offer `judge.llm_enabled: false` (the declarative pass keeps blocking, at milliseconds) with the **guardian llm tier** as the semantic cadence — `guardian.llm_stale_days` in `docs/adr/.adr-kit.json` (default 14; 7 for a weekly pass) makes the SessionStart nudge raise it when due, cost-gated by `guardian.llm_autorun: false`.
 
 Record the choice in the wrap-up so the next reader of `.adr-kit.json` sees a decision, not an accident.
+
+**3. Ask per LLM layer (required on every upgrade).** The layers are on by default (ADR-049), and an upgrade is the moment to confirm that with the user. Show the current values with `python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr`, then ask one question per layer, "keep on (recommended) or turn off for this machine?":
+
+| Layer | Switch | What it costs |
+|---|---|---|
+| Per-commit judge pass | `judge.llm_enabled` | one model call per in-scope `llm_judge: true` ADR; a `VIOLATION` blocks the commit |
+| Missing-decision nudge (`adr-suggest`) | `suggest.enabled` | one bounded call per commit with code; never blocks |
+| Guardian LLM tier (`adr-substance` + audit) | `guardian.llm_enabled` | runs about every 14 days and asks before each run |
+
+Recommend "on"; never change a value the user did not answer, and never flip an explicit `false` back without an explicit "on". Apply each answer for this machine only, so one developer's upgrade does not switch the layers off for the team:
+
+```bash
+python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set judge.llm_enabled=false --local
+python3 "$ADR_KIT/bin/adr-settings" --adr-dir docs/adr --set llm.confirmed=$(date +%F) --local
+```
+
+Record `llm.confirmed` also when everything stays on; until it is set, the session asks once a day. All three layers run on this client's own model; `ADR_KIT_LLM_CMD` points them at a local model instead (README, "Working locally").
 
 ## Step 4c — The signer: propose, never assume
 

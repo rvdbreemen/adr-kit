@@ -278,3 +278,36 @@ def load_json_config(path: Path) -> Dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+# The LLM switches a machine may override (TASK-233, ADR-049). An "off" answer
+# at init or upgrade is one person's choice, so it lives in the gitignored
+# .adr-kit.local.json and must not switch the layers off for the whole team
+# (ADR-025). Only these booleans cross over: a machine file cannot retune
+# budgets, scopes or anything else the team decided.
+MACHINE_OVERRIDABLE = (
+    ("judge", "llm_enabled"),
+    ("suggest", "enabled"),
+    ("guardian", "llm_enabled"),
+    ("guardian", "llm_autorun"),
+)
+
+
+def apply_machine_overrides(cfg: Dict[str, Any], local: Dict[str, Any]) -> Dict[str, Any]:
+    """A copy of the project config with this machine's LLM switches applied."""
+    merged = {key: (dict(value) if isinstance(value, dict) else value) for key, value in (cfg or {}).items()}
+    for block, key in MACHINE_OVERRIDABLE:
+        local_block = (local or {}).get(block)
+        if not isinstance(local_block, dict) or not isinstance(local_block.get(key), bool):
+            continue
+        target = merged.get(block)
+        target = dict(target) if isinstance(target, dict) else {}
+        target[key] = local_block[key]
+        merged[block] = target
+    return merged
+
+
+def machine_override_source(local: Dict[str, Any], block: str, key: str) -> bool:
+    """True when this machine's file sets one of the overridable switches."""
+    local_block = (local or {}).get(block)
+    return isinstance(local_block, dict) and isinstance(local_block.get(key), bool) and (block, key) in MACHINE_OVERRIDABLE

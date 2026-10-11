@@ -20,12 +20,25 @@ Side-effecting or deliberately timed workflows use
 [ADR Grilling user guide](../adr-grilling.md) documents the complete
 Proposed-to-Accepted flow.
 
+## LLM layers
+
+The per-commit judge pass, the `adr-suggest` nudge and the guardian's LLM
+tier are on by default and run on Claude Code's own model through
+`claude -p`: no API key and no pinned model (ADR-036, ADR-043).
+SessionStart in a project records `claude-code-cli` as the judge's host when
+none is recorded; a recorded choice is never replaced. The next prompt then
+asks once whether to keep each layer on or turn it off for this machine,
+and `/adr-kit:init` and `/adr-kit:upgrade` ask the same per layer. An "off"
+goes to the gitignored `.adr-kit.local.json`, so teammates keep the layers
+on (ADR-049). `ADR_KIT_NO_LLM=1` switches every layer off for a run.
+
 ## Hooks and MCP
 
 The plugin registers SessionStart, UserPromptSubmit, PreToolUse, PostToolUse,
-SubagentStart, and PreCompact. All are bounded, deterministic, read-only, and
-fail open. `hooks/run-hook.cmd` runs `hooks/adr-hook.py` on the prepared
-Python runtime, falling back to `python3`, `python` or `py -3`; Python is the
+SubagentStart, and PreCompact. All are bounded, deterministic and fail open.
+The edit-tier hooks are read-only; the session-scoped ones may write the
+gitignored `docs/adr/.adr-kit.local.json` (see LLM layers above).
+`hooks/run-hook.cmd` runs `hooks/adr-hook.py` on the prepared Python runtime, falling back to `python3`, `python` or `py -3`; Python is the
 only hook host since the native binary was retired in 0.55.1 (ADR-029).
 Stop-like and unsupported events are successful no-ops.
 
