@@ -49,6 +49,14 @@ the `python` option when `python` is not the correct executable.
 Restart OpenCode after changing plugin or config files. Configuration is loaded
 at startup, not hot-reloaded.
 
+A global npm entry and a project entry that points at a checkout both load,
+because OpenCode dedupes plugins by npm package name only. Since the release
+after 0.60.0, only the last-loaded copy is active for a project; project
+config loads after global config, so the project's copy wins and the other
+does nothing. Both
+copies must carry this guard: 0.60.0 and older still register their own
+skills path, guide and hooks next to the active copy.
+
 ## Native Surface
 
 At config time the plugin adds only missing entries:
