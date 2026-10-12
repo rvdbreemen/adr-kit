@@ -4,6 +4,15 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode: a global npm entry plus a project entry for a checkout loaded two
+  plugin copies, since OpenCode dedupes by npm package name only. Each spawned
+  its own hook per event, the skills path and guide were listed twice, and the
+  global copy owned the MCP server and `/adr-kit-*` commands, so the checkout
+  was not the code that ran. Now one copy per project is active, the
+  last-loaded, which is the project's (TASK-235).
+
 
 ## [0.60.0] - 2026-10-12
 
