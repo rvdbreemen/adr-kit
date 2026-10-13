@@ -8,6 +8,8 @@ allowed-tools: [Read, Bash]
 
 # adr-kit retire
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as the ADR directory; default to `docs/adr/` when it is empty.
 
 You are running `/adr-kit:retire`. This is a read-only audit of Accepted ADRs

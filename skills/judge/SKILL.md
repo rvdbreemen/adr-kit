@@ -7,6 +7,8 @@ allowed-tools: [Read, Bash, Edit, Write, Task]
 
 # adr-kit judge
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as an optional focus for the staged review. Empty means judge
 the complete staged diff.
 

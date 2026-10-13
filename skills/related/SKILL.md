@@ -8,6 +8,8 @@ allowed-tools: [Read, Bash]
 
 # adr-kit related
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as the required ADR id. Ask for the id when it is empty.
 
 You are running `/adr-kit:related`. Purpose: show who an ADR points at and who

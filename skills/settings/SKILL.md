@@ -8,6 +8,8 @@ allowed-tools: [Read, Bash]
 
 # adr-kit settings
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 `$ARGUMENTS` may name a key to show, or a `key=value` to set. Empty shows
 everything with its provenance.
 

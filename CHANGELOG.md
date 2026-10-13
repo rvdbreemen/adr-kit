@@ -4,6 +4,14 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Skills and the ADR generator agent now reply in the language the user writes
+  in, defaulting to English. Command output, identifiers, paths and ADR file
+  content stay as they are: an ADR keeps the project's documentation language.
+  A language set in the host client (for example Claude Code's `language`
+  setting) still takes precedence (TASK-238).
+
 ### Fixed
 
 - OpenCode: a global npm entry plus a project entry for a checkout loaded two

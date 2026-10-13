@@ -8,6 +8,8 @@ allowed-tools: [Read, Write, Edit, Bash, Glob, Grep, Task]
 
 # adr-kit init
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 This is the **adopt** mode of `/adr-kit:setup` (spec R19: one entry point,
 four modes). Invoked directly or via `/adr-kit:setup adopt`, the procedure
 is identical -- this file owns it.

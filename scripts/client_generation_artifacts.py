@@ -11,6 +11,7 @@ from client_generation_model import (
     COPY_ROOTS,
     HOOK_RUNTIME_FILES,
     PROVENANCE,
+    REPLY_RULE,
     RUNTIME_SUPPORT_FILES,
     WORKFLOW_IDS,
     GenerationError,
@@ -242,6 +243,8 @@ def render_skill(workflow: dict, client_id: str) -> bytes:
         "",
         f"<!-- {PROVENANCE}; schema v1; client {client_id}. -->",
         f"# {workflow['title']}",
+        "",
+        REPLY_RULE,
         "",
         invocation,
         *(

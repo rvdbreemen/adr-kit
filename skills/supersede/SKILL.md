@@ -9,6 +9,8 @@ allowed-tools: [Read, Bash, Edit, Write, Task]
 
 # adr-kit supersede
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as the required ADR id. Ask for the id when it is empty and
 never infer a destructive target.
 
