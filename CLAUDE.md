@@ -16,15 +16,15 @@ This repository uses Backlog.md (`backlog/`) as the source of truth for work.
 - Keep tasks small enough to complete in one focused pass.
 - Do not edit files in `backlog/tasks/` directly.
 
-## Werken in deze repo
+## Working in this repo
 
-- Reproduceer de oorzaak die een backlog-taak noemt voordat je een fix ontwerpt; corrigeer daarna het record. In twee sweeps klopte respectievelijk 3 van 4 en 4 van 12. Toets ook de ernstinschatting en de volledigheid van een opsomming, niet alleen de genoemde oorzaak.
-- `python -m pytest -q` duurt ~11 minuten en is verplicht voor een merge of release. Gerichte runs missen guards in bestanden die je wijziging niet aanraakt: een modulesplitsing brak een check in `tests/test_setup_project_command.py`.
-- Wissel nooit van branch tijdens een testrun. Een run die op branch A start en op B eindigt rapporteert failures die artefacten van de checkout zijn.
-- Maak eerst alle wijzigingen in canonieke bestanden, regenereer daarna één keer met `python scripts/build-client-adapters.py`, en bevestig met `--check` (verwacht `changed=0`). Bewerk `codex/` en `copilot/` nooit met de hand.
-- `python bin/adr relate ADR-A --to ADR-B` schrijft beide kanten; ADR-028's gate laat een eenzijdige link niet door de lint. `python bin/adr accept ADR-N` weigert zonder `--confirm`: acceptatie zet een naam in een onveranderlijke historie en moet expliciet gevraagd worden.
-- ADR-010 begrenst regels per bestand, afgedwongen in `tests/test_release_allowlist.py`: entrypoints in `scripts/` maximaal 300 regels, support-modules 400. Splits langs de naad die de docstring al beschrijft en voeg de nieuwe module toe aan die lijst.
-- `main` en `dev` zijn beschermd met `enforce_admins: true`, dus `gh pr merge --admin` omzeilt de verplichte `validate`-check niet. Gebruik `--auto`: dat verzwakt niets en mergt zodra de checks slagen. Mergen naar `main` is de actie van de maintainer.
+- Reproduce the cause a backlog task names before you design a fix; correct the record afterwards. In two sweeps the recorded cause held for 3 of 4 and 4 of 12 tasks respectively. Also check the severity estimate and the completeness of any enumeration, not only the stated cause.
+- `python -m pytest -q` takes ~11 minutes and is mandatory before a merge or release. Targeted runs miss guards in files your change does not touch: a module split broke a check in `tests/test_setup_project_command.py`.
+- Never switch branches during a test run. A run that starts on branch A and ends on B reports failures that are artifacts of the checkout.
+- Make all changes in canonical files first, then regenerate once with `python scripts/build-client-adapters.py`, and confirm with `--check` (expect `changed=0`). Never edit `codex/` or `copilot/` by hand.
+- `python bin/adr relate ADR-A --to ADR-B` writes both sides; ADR-028's gate does not let a one-sided link pass lint. `python bin/adr accept ADR-N` refuses without `--confirm`: acceptance puts a name into an immutable history and must be explicitly requested.
+- ADR-010 caps lines per file, enforced in `tests/test_release_allowlist.py`: entrypoints in `scripts/` at most 300 lines, support modules 400. Split along the seam the docstring already describes and add the new module to that list.
+- `main` and `dev` are protected with `enforce_admins: true`, so `gh pr merge --admin` does not bypass the required `validate` check. Use `--auto`: it weakens nothing and merges once the checks pass. Merging to `main` is the maintainer's action.
 
 ## graphify
 
