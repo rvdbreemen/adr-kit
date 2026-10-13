@@ -8,6 +8,8 @@ allowed-tools: [Read, Write, Edit, Bash]
 
 # adr-kit setup
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Setting up ADR Kit is one deterministic act (spec R19) with four modes. An
 empty `$ARGUMENTS` runs the default **register** mode below. A mode name
 routes to the procedure that owns it -- follow that skill file and nothing

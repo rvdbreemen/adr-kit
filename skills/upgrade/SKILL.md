@@ -8,6 +8,8 @@ allowed-tools: [Read, Write, Edit, Bash, Task]
 
 # adr-kit upgrade
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 This is the **upgrade** mode of `/adr-kit:setup` (spec R19: one entry point,
 four modes). Invoked directly or via `/adr-kit:setup upgrade`, the procedure
 is identical -- this file owns it.

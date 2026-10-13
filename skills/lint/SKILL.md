@@ -8,6 +8,8 @@ allowed-tools: [Read, Bash, Glob, Grep]
 
 # adr-kit lint
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as the ADR file or directory; default to `docs/adr/` when it
 is empty.
 

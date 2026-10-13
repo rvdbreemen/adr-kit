@@ -7,6 +7,8 @@ allowed-tools: [Read, Bash, Glob, Grep]
 
 # ADR Audit
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` to pick the scope. Empty means the whole codebase, because
 that is the question people mean when they ask whether the project is still on
 course. Read-only: this skill reports, it never edits an ADR or a source file.
