@@ -6,10 +6,13 @@ long-form reference for manual client commands, portability notes, updates,
 and removal.
 
 ADR Kit has separate native distributions for Claude Code, OpenAI Codex, and
-the standalone GitHub Copilot CLI, plus a native OpenCode plugin package. They
-share deterministic Python engines, but they do not share manifests, cache
-paths, or client-specific instructions. OpenCode is tested separately and does
-not expand the three-client certification gate.
+the standalone GitHub Copilot CLI (the three certified clients), plus native
+packages for OpenCode and OMP (oh-my-pi). They share deterministic Python
+engines, but they do not share manifests, cache paths, or client-specific
+instructions. OpenCode is tested separately and does not expand the
+certification gate (ADR-039). OMP is accepted as the fourth certified client
+(ADR-050); its registry entry and native evidence land in v0.62.0. See
+[Supported clients](README.md#supported-clients).
 After installation, follow the
 [ADR Grilling user guide](docs/adr-grilling.md) to create, reconstruct, resume,
 and explicitly finish a decision.
@@ -27,6 +30,8 @@ and explicitly finish a decision.
 - OpenCode 1.18 or newer when using the native OpenCode plugin. OpenCode loads
   the plugin with Bun; no Node or npm dependency is required at runtime by the
   plugin itself.
+- OMP 18.12 or newer when using the native OMP extension. OMP runs the
+  extension with its own Bun runtime.
 
 No API key is required for installation or the default deterministic tools.
 
@@ -355,6 +360,27 @@ python /absolute/path/to/adr-kit/scripts/setup-project.py \
 
 Copy the required `templates/github-workflows/` files into the project's
 `.github/workflows/`. The OpenCode plugin does not replace those gates.
+
+## OMP (oh-my-pi)
+
+OMP installs ADR Kit from the same marketplace as Claude Code, then loads the
+native extension `omp/extension.ts` that the root `package.json` declares
+under `omp.extensions`. The automatic installer does not handle OMP:
+
+```bash
+omp plugin marketplace add rvdbreemen/adr-kit
+omp plugin install --scope user adr-kit@rvdbreemen-adr-kit
+```
+
+Start a new session afterwards, then run `/skill:init` once per project. The
+MCP server, the 17 skills (invoked as `/skill:<name>`) and the
+`adr-generator` agent come from the plugin. The extension maps OMP's session,
+prompt, edit, shell, subagent and compaction events onto
+`hooks/adr-hook.py`, sets `ADR_KIT_ROOT` for the skills, and records
+`omp-cli` as the judge host. It is fail-open except for the pull-request
+guard's explicit deny; the pre-commit gate and CI workflows remain the
+enforcement floor. See [OMP support](docs/clients/omp.md) for the event
+mapping, update and removal.
 
 ## Portable fallback
 

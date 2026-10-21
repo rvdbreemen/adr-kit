@@ -5,6 +5,61 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 ## [Unreleased]
 
 
+## [0.61.0] - 2026-10-21
+
+A minor release that brings ADR Kit natively to OMP (oh-my-pi), makes skills
+answer in the user's language, and fixes a doubled OpenCode plugin. The
+headline: an `omp plugin install` of ADR Kit now gets the same lifecycle
+context, pull-request guard and judge host as the other clients, with no
+manual configuration. ADR-050 accepts OMP as the fourth certified client; the
+certification itself (registry entry, installer, doctor and native evidence)
+follows in v0.62.0, and until then OMP is documented as native with
+certification in progress.
+
+**Upgrading.** Claude Code, Codex, Copilot CLI and OpenCode users need no
+action. OMP users: `omp plugin marketplace update rvdbreemen-adr-kit`, then
+`omp plugin upgrade adr-kit@rvdbreemen-adr-kit`, and start a new session so OMP
+loads the extension. A hand-set `ADR_KIT_ROOT` is no longer needed and is
+respected if kept.
+
+### Added
+
+- Native OMP (oh-my-pi) support (ADR-050, TASK-239). OMP installs the plugin
+  from the existing marketplace (`omp plugin install
+  adr-kit@rvdbreemen-adr-kit`) and loads `omp/extension.ts`, declared in
+  `package.json` under `omp.extensions`. The extension maps OMP's session,
+  prompt, edit, shell, subagent and compaction events onto
+  `hooks/adr-hook.py`, blocks a shell call only on the pull-request guard's
+  explicit deny, and sets `ADR_KIT_ROOT` so the skills find the engine, which
+  OMP's missing `${CLAUDE_PLUGIN_ROOT}` previously broke. `omp-cli`
+  (`omp -p --no-extensions --no-session --no-tools`) joins the judge host
+  clients, and an OMP session records it as the host. ADR-050 (Accepted)
+  makes OMP the fourth certified client, amending ADR-010's client list; its
+  registry entry, installer and doctor support and native evidence follow in
+  v0.62.0, and until then OMP is documented as native with certification in
+  progress (`docs/clients/omp.md`).
+- README: a Supported clients table separates the certified clients, the
+  native OpenCode package, OMP's in-progress certification, and the portable
+  MCP/Agent Skills fallback.
+
+### Changed
+
+- Skills and the ADR generator agent now reply in the language the user writes
+  in, defaulting to English. Command output, identifiers, paths and ADR file
+  content stay as they are: an ADR keeps the project's documentation language.
+  A language set in the host client (for example Claude Code's `language`
+  setting) still takes precedence (TASK-238).
+
+### Fixed
+
+- OpenCode: a global npm entry plus a project entry for a checkout loaded two
+  plugin copies, since OpenCode dedupes by npm package name only. Each spawned
+  its own hook per event, the skills path and guide were listed twice, and the
+  global copy owned the MCP server and `/adr-kit-*` commands, so the checkout
+  was not the code that ran. Now one copy per project is active, the
+  last-loaded, which is the project's (TASK-235).
+
+
 ## [0.60.0] - 2026-10-12
 
 A minor release with two behaviour changes and the fixes of the 2026-10-11
@@ -3433,7 +3488,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.60.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.61.0...HEAD
+[0.61.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...v0.59.0

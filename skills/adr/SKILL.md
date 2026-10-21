@@ -7,6 +7,8 @@ license: MIT
 
 # ADR Skill: Architecture Decision Record Management
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as the decision title or review target. If it is empty, infer
 the target only from the user's current request; otherwise ask one short question.
 

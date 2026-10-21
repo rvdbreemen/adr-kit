@@ -8,6 +8,8 @@ allowed-tools: [Read, Edit, Glob, Grep]
 
 # adr-kit migrate
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as the file or directory; default to `docs/adr/`. Always
 preview before applying a migration.
 

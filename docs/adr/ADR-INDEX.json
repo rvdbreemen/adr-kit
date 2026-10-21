@@ -408,7 +408,7 @@
       "path": "ADR-010-certify-three-native-cli-clients-through-one-outcome-contract.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-10-11",
+      "date": "2026-10-21",
       "decision_summary": "Chosen option: define one outcome contract and capability registry for the three native CLI clients, because it conce...",
       "topics": [
         "client parity",
@@ -2072,7 +2072,7 @@
       "path": "ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-10-11",
+      "date": "2026-10-21",
       "decision_summary": "Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi...",
       "topics": [
         "client compatibility",
@@ -2633,7 +2633,7 @@
       "path": "ADR-048-certify-each-native-client-on-every-platform-it-runs-on.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-10-11",
+      "date": "2026-10-21",
       "decision_summary": "Chosen option: certify each client on every platform it runs on, from a real run on that platform, because a claim ca...",
       "topics": [
         "client versions",
@@ -2697,7 +2697,7 @@
       "path": "ADR-049-record-the-judge-host-client-at-the-first-session-and-ask-per-llm-layer-at-upgrade.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-10-11",
+      "date": "2026-10-21",
       "decision_summary": "Chosen option: record the host client at the first session, confirm through the session model, and keep every answer...",
       "topics": [
         "default install",
@@ -2752,6 +2752,83 @@
         "gate": "adr-llm-default-on-v1",
         "documents_shipped": false,
         "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-050",
+      "title": "Certify OMP as a Fourth Native Client Through a Thin Extension",
+      "path": "ADR-050-certify-omp-as-a-fourth-native-client-through-a-thin-extension.md",
+      "format": "madr",
+      "status": "Accepted",
+      "date": "2026-10-21",
+      "decision_summary": "Chosen option: certify OMP as a fourth native client, carried by a thin extension, because the maintainer wants OMP t...",
+      "topics": [
+        "client certification",
+        "lifecycle hooks",
+        "native extension",
+        "oh-my-pi",
+        "OMP"
+      ],
+      "aliases": [
+        "fourth certified client",
+        "oh-my-pi extension",
+        "OMP adapter",
+        "OMP extension"
+      ],
+      "components": [
+        "client capability registry",
+        "omp extension"
+      ],
+      "symbols": [
+        "clients/capabilities.json",
+        "HOST_COMMANDS",
+        "omp/extension.ts"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Keep omp/ separate from the generated codex/ and copilot/ trees and from opencode/.",
+          "Delegate every ADR operation to hooks/adr-hook.py, bin/adr-mcp and the other Python engines.",
+          "Catch every fault and bound every hook's input, output and runtime, so a handler never blocks a tool call except on the guard's explicit deny.",
+          "Name the host as omp-cli in every hook subprocess, and keep the omp-cli host command free of a model flag (ADR-043).",
+          "Leave a user-set ADRKITROOT in place.",
+          "Meet ADR-010's outcome contract for omp-cli: register it in clients/capabilities.json, the installer, adr-doctor, the support matrix and the release gate.",
+          "Declare late pre-edit context as an edit-governance degradation with its reason, user effect and backstop, and map plan exit as no native event.",
+          "Claim OMP certification only per platform where a passing native record exists (ADR-048)."
+        ],
+        "must_not": [
+          "Implement ADR retrieval, judging or MCP in TypeScript.",
+          "Forward a whole tool input, such as a written file's content, to the hook; only the paths an edit touches are sent.",
+          "Block an edit to deliver pre-edit context earlier.",
+          "Claim OMP is certified before its native record passes."
+        ],
+        "exceptions": [
+          "The extension reuses the Claude-shaped hook envelope internally, as the OpenCode plugin does (ADR-039), and names its own host through ADRKITHOSTCLIENT.",
+          "The pull-request guard may block an OMP shell call on an explicit permissionDecision: deny.",
+          "Until v0.62.0 lands the registry work, OMP ships as a native but not yet certified client."
+        ],
+        "verification": [
+          "tests/testompextension.py",
+          "tests/testadrjudgellm.py",
+          "tests/certification/omp/windows-native.json (from v0.62.0)",
+          "python scripts/build-client-adapters.py --check",
+          "python -m pytest -q"
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "omp/extension.ts"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
+        "documents_shipped": false,
+        "verified_in": [
+          "tests/test_omp_extension.py"
+        ],
         "supersedes": [],
         "superseded_by": null
       }
@@ -3013,6 +3090,12 @@
     {
       "source": "ADR-010",
       "target": "ADR-048",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-010",
+      "target": "ADR-050",
       "type": "related",
       "resolved": true
     },
@@ -3821,6 +3904,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-039",
+      "target": "ADR-050",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-040",
       "target": "ADR-011",
       "type": "related",
@@ -4055,6 +4144,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-048",
+      "target": "ADR-050",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-049",
       "target": "ADR-021",
       "type": "related",
@@ -4087,6 +4182,60 @@
     {
       "source": "ADR-049",
       "target": "ADR-043",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-050",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-043",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-048",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-049",
       "type": "related",
       "resolved": true
     }

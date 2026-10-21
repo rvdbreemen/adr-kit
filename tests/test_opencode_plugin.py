@@ -208,6 +208,60 @@ console.log(JSON.stringify({{ config, hookNames: Object.keys(hooks) }}));
     assert "experimental.chat.system.transform" in payload["hookNames"]
 
 
+def test_native_plugin_keeps_one_active_instance_per_project(tmp_path):
+    # A global npm entry and a project's path entry load two copies (TASK-235).
+    project = _project(tmp_path / "project")
+    other = _project(tmp_path / "other")
+    plugin_url = (ROOT / "opencode" / "plugin.ts").as_uri()
+    script = f"""
+const load = async (copy, directory) => (await import({json.dumps(plugin_url)} + "?copy=" + copy)).default(
+  {{ directory, worktree: directory }},
+  {{ root: {json.dumps(str(ROOT))}, python: {json.dumps(sys.executable)} }}
+);
+const configOf = async (hooks) => {{ const config = {{}}; await hooks.config(config); return config; }};
+const systemOf = async (hooks, sessionID) => {{
+  await hooks["chat.message"]({{ sessionID }}, {{ parts: [{{ type: "text", text: "Update the governed source path" }}] }});
+  const output = {{ system: [] }};
+  await hooks["experimental.chat.system.transform"]({{ sessionID }}, output);
+  return output.system;
+}};
+const first = await load("global", {json.dumps(str(project))});
+const last = await load("project", {json.dumps(str(project))});
+const elsewhere = await load("elsewhere", {json.dumps(str(other))});
+const result = {{
+  firstConfig: await configOf(first),
+  lastConfig: await configOf(last),
+  elsewhereConfig: await configOf(elsewhere),
+  firstSystem: await systemOf(first, "one"),
+  lastSystem: await systemOf(last, "two"),
+}};
+await last.dispose();
+result.handedOver = await configOf(first);
+console.log(JSON.stringify(result));
+"""
+    harness = tmp_path / "opencode-plugin-twice.mjs"
+    harness.write_text(script, encoding="utf-8")
+    result = subprocess.run(
+        [BUN, "run", str(harness)],
+        cwd=project,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["firstConfig"] == {}
+    assert payload["firstSystem"] == []
+    assert "adr-kit" in payload["lastConfig"]["mcp"]
+    assert "ADR-001" in "\n".join(payload["lastSystem"])
+    assert "adr-kit" in payload["elsewhereConfig"]["mcp"]
+    assert "adr-kit" in payload["handedOver"]["mcp"]
+
+
 def test_native_plugin_translates_automatic_grill_to_its_command_surface(tmp_path):
     project = _project(tmp_path / "project")
     now = datetime.now(timezone.utc)

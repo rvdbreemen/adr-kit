@@ -80,6 +80,11 @@ installer. If `opencode` is present, configure the native plugin separately as
 described in [docs/clients/opencode.md](docs/clients/opencode.md); do not add it
 to the installer client list.
 
+The installer does not detect OMP (oh-my-pi) either. If `omp` is present and
+the user wants ADR Kit there, install it through OMP's marketplace as described
+in [docs/clients/omp.md](docs/clients/omp.md); do not add it to the installer
+client list.
+
 ## 2. Preview the install
 
 ```bash
@@ -130,6 +135,14 @@ OpenCode uses the repository-root `opencode.json` and `package.json` plugin
 entrypoint, or an explicit package entry in the target project's `opencode.json`.
 It is a separate native package and is not part of the three-client installer
 or certification registry.
+
+OMP (oh-my-pi) installs the same plugin through its own marketplace
+(`omp plugin marketplace add rvdbreemen/adr-kit`, then
+`omp plugin install --scope user adr-kit@rvdbreemen-adr-kit`) and loads the
+native extension `omp/extension.ts` declared in `package.json`. ADR-050 makes
+OMP the fourth certified client, but until its registry entry lands in v0.62.0
+it is not yet part of the installer or the certification registry; follow
+[docs/clients/omp.md](docs/clients/omp.md).
 
 Do not point Codex or Copilot at the Claude plugin cache.
 
@@ -198,6 +211,7 @@ codex mcp list
 copilot plugin list
 copilot mcp list
 copilot skill list
+omp plugin list
 ```
 
 Then run one real `adr_context` call against the active project. Registration
@@ -218,6 +232,7 @@ Run the native `init` workflow once in the project:
 - GitHub Copilot CLI: invoke the installed ADR Kit `init` skill
 - OpenCode: invoke `/adr-kit-init` or the `init` skill exposed by the native
   plugin
+- OMP: `/skill:init` in a new session after the install
 
 Initialization adds managed project guidance, audits existing architectural
 decisions, proposes initial ADRs for review, and installs the deterministic

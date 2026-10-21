@@ -25,8 +25,8 @@ while the agent works, the governing decision is delivered *before* a file is
 edited, every commit is checked against declarative rules with `file:line`
 citations, and a guardian watches for decisions that have drifted out of date.
 One toolkit covers the whole lifecycle (capture, enforce, maintain, retire)
-across Claude Code, OpenAI Codex, the standalone GitHub Copilot CLI, and
-OpenCode.
+across Claude Code, OpenAI Codex, the standalone GitHub Copilot CLI, OpenCode,
+and OMP (oh-my-pi); see [Supported clients](#supported-clients).
 
 **For the agent, it removes the guessing.** Instead of reading every ADR, or
 none, it queries a generated index and gets a ranked, explained shortlist for
@@ -102,6 +102,7 @@ patch releases, is in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | What landed | Why it matters |
 | --- | --- | --- |
+| **0.61.0** | Native [OMP](docs/clients/omp.md) (oh-my-pi) support: `omp/extension.ts` maps OMP's session, prompt, edit, shell, subagent and compaction events onto the shared hook and records `omp-cli` as the judge host ([ADR-050](docs/adr/ADR-050-certify-omp-as-a-fourth-native-client-through-a-thin-extension.md), which accepts OMP as the fourth certified client; certification follows in 0.62.0). Skills and the ADR generator reply in the user's language. | OMP previously ran none of ADR Kit's hooks and broke ten skills on a missing plugin root; a plain `omp plugin install` now gets the full lifecycle. A [Supported clients](#supported-clients) table now says which clients are certified and which are not. |
 | **0.58.0** | `adr-substance` asks the host model, in the guardian's LLM tier, whether each written section of a Proposed ADR actually says something. `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR whose `path_glob` matches no tracked file, and the judge's LLM pass gets a ceiling it keeps (`judge.llm_pass_timeout_seconds`, default 600). | The deterministic gates stop at markers: "TBD" or three vacuous sentences read as written to them. A rule whose scope matches nothing guards nothing, and a commit no longer waits without end on a slow host CLI. |
 | **0.57.0** | One command drives a release: `python scripts/release.py X.Y.Z` runs every step of [docs/RELEASING.md](docs/RELEASING.md), and `release-publish.yml` creates the tag from the merged `main` commit ([ADR-042](docs/adr/ADR-042-drive-the-release-from-the-maintainer-s-machine-and-create-the-tag-from-the-merge.md)). | A hand-typed tag on the wrong commit destroyed `v0.55.0`; the tag is now derived from the merge, the driver is safe to re-run, and only the npm approval is left to a person. |
 | **0.55.1** | [ADR-029](docs/adr/ADR-029-retire-the-native-hook-binary-rather-than-maintain-a-second-retrieval-engine.md) is carried out: the committed `adr-hook.exe`, its Rust sources, the dispatcher branch that preferred it and the `ADR_KIT_NATIVE_HOOK` opt-in are gone from all three client trees, so Python is the only hook host on every platform. `adr-mcp` now rejects malformed JSON-RPC frames instead of answering them. | The binary was measurably wrong, not merely untested: against the Python oracle it returned one of four governing ADRs on an edit event, and the parity test that should have caught it read a constant out of the Rust source instead of running the build. One retrieval engine means the hook answers what the CLI answers. On the MCP side, a server that answers a malformed frame hides a client defect the client cannot see in its own logs. |
@@ -137,18 +138,32 @@ ADRs are the established answer: short markdown files in your repo that record t
 
 And because decisions age, a periodic guardian flags drift between code and decisions, retirement candidates, and decisions that were made but never recorded.
 
-### One engine, three certified CLIs plus OpenCode
+### Supported clients
 
-ADR Kit ships separate integration payloads for Claude Code CLI, OpenAI Codex
-CLI, and the standalone GitHub Copilot CLI. All three carry the same 17
-workflows, the same deterministic engines, the same key-free seven-tool MCP
-server, and English skill metadata; only the native event surface differs. A
-separate native OpenCode plugin uses the same engines and adds OpenCode-native
-config, skills, commands, hooks, compaction context, and MCP registration. The
-generated [client support matrix](docs/client-support.md) remains the
-three-client certification view; OpenCode evidence and boundaries live in
-[docs/clients/opencode.md](docs/clients/opencode.md). Per-client detail lives
-in [docs/clients/](docs/clients/).
+All clients run the same deterministic Python engines, the same 17 workflows
+and the same key-free seven-tool MCP server. They differ in how ADR Kit is
+delivered and how much of it is certified:
+
+| Client | Support level | Install | Lifecycle hooks | Details |
+|---|---|---|---|---|
+| Claude Code CLI | Certified | `install-agent-envs.py` or `/plugin install` | Session, prompt, edit, plan exit, shell, subagent, compaction | [docs/clients/claude.md](docs/clients/claude.md) |
+| OpenAI Codex CLI | Certified | `install-agent-envs.py` or `codex plugin add` | Session, prompt, edit, shell, subagent, compaction | [docs/clients/codex.md](docs/clients/codex.md) |
+| GitHub Copilot CLI (standalone) | Certified | `install-agent-envs.py` or `copilot plugin install` | Session, prompt, post-edit | [docs/clients/copilot.md](docs/clients/copilot.md) |
+| OpenCode | Native package, not certified | `opencode.json` plugin entry | Prompt, edit, shell, compaction | [docs/clients/opencode.md](docs/clients/opencode.md) |
+| OMP (oh-my-pi) | Native extension; certification in progress (v0.62.0) | `omp plugin install` from this marketplace | Session, prompt, edit, shell, subagent, compaction | [docs/clients/omp.md](docs/clients/omp.md) |
+| Any other MCP or Agent Skills client | Portable fallback | Manual: MCP server, skills, project guidance | None | [INSTALL.md](INSTALL.md#portable-fallback) |
+
+**Certified** means the client is in `clients/capabilities.json`, the
+automatic installer and `adr-doctor` manage it, and the release gate checks it
+against recorded native evidence; the generated
+[client support matrix](docs/client-support.md) is that view (ADR-010,
+ADR-048). **Native, not certified** means a thin adapter for the client's own
+plugin API is shipped and tested with its own focused tests, but the client
+is not in the installer, the doctor or the certification gate (ADR-039). OMP
+is accepted as the fourth certified client (ADR-050) and ships natively now;
+it is claimed as certified once its registry entry and native evidence land.
+Every client, and a commit with no agent at all, gets the same pre-commit and
+CI floor.
 
 Lifecycle behavior is quiet-by-default: routine successful hooks print
 nothing, relevant ADR context still reaches the agent, and actionable warnings
@@ -296,7 +311,7 @@ project. Start a new Copilot session or run `/mcp reload` in the current one.
 Agents should use these native update commands instead of editing the installed
 `.mcp.json` or replacing `${PLUGIN_ROOT}` with a machine-specific path.
 
-### OpenCode
+### OpenCode (native, not certified)
 
 OpenCode is supported through a separate native plugin package. It uses the
 same deterministic Python engines and seven-tool MCP server as the certified
@@ -318,7 +333,7 @@ For another project, use the published package:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.60.0"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.61.0"]
 }
 ```
 
@@ -349,6 +364,25 @@ OpenCode is intentionally outside `clients/capabilities.json`, the generated
 three-client support matrix, and the three-client native certification gate.
 See [OpenCode support](docs/clients/opencode.md) for options, manual MCP
 registration, and the tested support boundary.
+
+### OMP (native; certification in progress)
+
+OMP installs ADR Kit from the same marketplace as Claude Code:
+
+```bash
+omp plugin marketplace add rvdbreemen/adr-kit
+omp plugin install adr-kit@rvdbreemen-adr-kit
+```
+
+Start a new session, then run `/skill:init` once per project. OMP reads the
+skills, the `adr-generator` agent and the MCP server from the plugin, and loads
+a thin extension (`omp/extension.ts`) that maps OMP's session, prompt, tool,
+subagent and compaction events onto `hooks/adr-hook.py`, exports
+`ADR_KIT_ROOT` for the skills, and records `omp-cli` as the judge host.
+Workflows are skills, invoked as `/skill:<name>`. ADR-050 makes OMP the fourth
+certified client; until its registry entry and native evidence land in
+v0.62.0, the installer and `adr-doctor` do not manage it yet. See
+[OMP support](docs/clients/omp.md).
 
 ### Portable Agent Skills and MCP clients
 
@@ -687,7 +721,7 @@ directly after a full-history checkout:
 - uses: actions/checkout@v4
   with:
     fetch-depth: 0
-- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.60.0
+- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.61.0
   with:
     adr-dir: docs/adr
 ```
@@ -715,7 +749,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.60.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.61.0
         with:
           adr-dir: docs/adr/
 ```
@@ -729,7 +763,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.60.0
+    rev: v0.61.0
     hooks:
       - id: adr-judge
 ```

@@ -8,6 +8,8 @@ allowed-tools: [Read, Write, Edit, Bash, Task]
 
 # adr-kit upgrade
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 This is the **upgrade** mode of `/adr-kit:setup` (spec R19: one entry point,
 four modes). Invoked directly or via `/adr-kit:setup upgrade`, the procedure
 is identical -- this file owns it.
@@ -203,7 +205,7 @@ python3 "$ADR_KIT/bin/adr-judge" --show-config
 ```
 
 - Retired keys present (`judge.llm_cmd`, `judge.llm_model`, `judge.openrouter_model`, `judge.ollama_model`, `judge.openai_model`) → config validation refuses each by name and says what replaced it (ADR-036). Have the user delete the keys from `.adr-kit.json`; no command edits a file that carries them.
-- No recorded client → record it now rather than leaving it to the first degraded commit. Pass the id of the client you are running in: `claude-code-cli` in Claude Code, `opencode-cli` in OpenCode (ADR-049):
+- No recorded client → record it now rather than leaving it to the first degraded commit. Pass the id of the client you are running in: `claude-code-cli` in Claude Code, `opencode-cli` in OpenCode, `omp-cli` in OMP (ADR-049, ADR-050):
 
 ```bash
 python3 "$ADR_KIT/bin/adr-judge" --set-backend host --host-client claude-code-cli

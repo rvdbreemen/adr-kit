@@ -4,12 +4,14 @@
 
 This document sits above [c4-container.md](./c4-container.md), which already
 establishes that adr-kit is not a deployed service: it ships as a plugin,
-resolved by three certified coding-agent command-line interfaces (CLIs) and a
-separate native OpenCode package. The certified CLIs resolve directly from the
-public `rvdbreemen/adr-kit` repository; OpenCode loads the repository
-package or a separately published npm package. Everything runs on the machine
-that installed it as short-lived subprocesses, one long-lived stdio process, or
-a host-loaded native plugin.
+resolved by three certified coding-agent command-line interfaces (CLIs) and
+two separate native packages, for OpenCode and OMP (oh-my-pi). The certified
+CLIs resolve directly from the public `rvdbreemen/adr-kit` repository;
+OpenCode loads the repository package or a separately published npm package,
+and OMP installs the Claude Code marketplace entry and loads the extension
+declared in `package.json`. Everything runs on the machine that installed it
+as short-lived subprocesses, one long-lived stdio process, or a host-loaded
+native plugin.
 
 This document does not restate that internal container structure; it asks
 the question one level up — who or what uses adr-kit, for what outcome, and
@@ -62,7 +64,7 @@ the maintainer's.
 | Persona | Type | Primary features used |
 | --- | --- | --- |
 | Maintainer / human decision-maker | Human | Guided authoring & grilling, lifecycle acceptance, guardian, release driver |
-| Coding agent (Claude Code / Codex / Copilot CLI / OpenCode) | Programmatic — interactive, four host surfaces; three certified instances plus one separate native package | Context retrieval & injection, MCP tools, subject to the enforcement floor |
+| Coding agent (Claude Code / Codex / Copilot CLI / OpenCode / OMP) | Programmatic — interactive, five host surfaces; three certified instances plus two separate native packages | Context retrieval & injection, MCP tools, subject to the enforcement floor |
 | Committing engineer | Human | Pre-commit gate, pull-request guard, override escape hatch |
 | CI / the automated gate | Programmatic — unattended | Readiness action, judge action, lint gate, scheduled guardian/retire sweeps, release-publish gate |
 
@@ -101,7 +103,7 @@ otherwise bypass branch protection."
   `python scripts/release.py X.Y.Z` (ADR-042), which implements
   `docs/RELEASING.md`.
 
-### 2.2 Coding agent (Claude Code, Codex, GitHub Copilot CLI, OpenCode)
+### 2.2 Coding agent (Claude Code, Codex, GitHub Copilot CLI, OpenCode, OMP)
 
 The most interesting persona because it sits on both sides of the system: it
 is fed context it did not ask for, and it is the actor the enforcement floor
@@ -113,8 +115,11 @@ second fail-closed tier at the pull-request moment per ADR-023, see
 — `claude-code-cli`, `codex-cli`, `github-copilot-cli` — through one outcome
 contract rather than one event-name contract, because "equal outcomes are
 required; identical event names are not" (ADR-010, Decision Outcome).
-OpenCode is a separate native package governed by ADR-039 and is intentionally
-not added to `clients/capabilities.json`. That registry records where a
+OpenCode is a separate native package governed by ADR-039 and is
+intentionally not added to `clients/capabilities.json`; OMP is accepted as the
+fourth certified client by ADR-050, which amends ADR-010's client list, and
+enters the registry once its native evidence lands. That registry records
+where a
 certified client's native events fall short and what backstops the shortfall
 (see §5 and §4.1). The README's
 "Agent contract" section states the three rules that govern this persona
@@ -439,10 +444,10 @@ notes, approving the merge, and npm's 2FA.
 | System | Type | Description | Integration mechanism | Why adr-kit depends on it |
 | --- | --- | --- | --- | --- |
 | **git** | External CLI | Version control for the repository adr-kit governs and for adr-kit's own source. | Subprocess — diffs, staged content, refs (c4-container.md, CLI Toolkit dependencies); also the identity source `git config user.name` reads for signer derivation (ADR-027). | Every enforcement and lifecycle path needs the staged/committed diff and, for acceptance, a trustworthy human identity that already exists on the machine rather than one adr-kit would have to invent. |
-| **Host CLI (Claude Code / Codex / GitHub Copilot CLI / OpenCode)** | External application (the agent's runtime) | The process that resolves adr-kit as a plugin, dispatches native lifecycle events, and launches the MCP server. | Certified clients use native plugin managers and stdio MCP manifests; OpenCode loads `opencode/plugin.ts` through `opencode.json` / `package.json` and the OpenCode plugin API. | This is the delivery mechanism for the Coding Agent persona (§2.2) — without a host runtime, no lifecycle hook or plugin callback fires and no MCP tool is reachable. |
+| **Host CLI (Claude Code / Codex / GitHub Copilot CLI / OpenCode / OMP)** | External application (the agent's runtime) | The process that resolves adr-kit as a plugin, dispatches native lifecycle events, and launches the MCP server. | Certified clients use native plugin managers and stdio MCP manifests; OpenCode loads `opencode/plugin.ts` through `opencode.json` / `package.json` and the OpenCode plugin API; OMP installs the Claude Code marketplace entry and loads `omp/extension.ts` from `package.json` `omp.extensions` through its extension API. | This is the delivery mechanism for the Coding Agent persona (§2.2) — without a host runtime, no lifecycle hook or plugin callback fires and no MCP tool is reachable. |
 | **GitHub repository `rvdbreemen/adr-kit`** | External system (source-controlled marketplace/package source) | The public repository every certified client resolves its plugin marketplace from directly and where the native OpenCode package source lives (`docs/RELEASING.md`). | Certified clients read `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.github/plugin/marketplace.json`; OpenCode reads `opencode.json` and `package.json` from a checkout or a separately published npm package. | It is the publication surface for the repository release (ADR-012); `release-publish.yml` also stages the npm package, with final publication still requiring maintainer 2FA. |
 | **GitHub Actions** | External CI runner | Executes adr-kit's own composite Actions and scheduled workflows. | Subprocess/CI job — `.github/workflows/release-publish.yml` (triggered by the release merge into `main`, where it creates the tag per ADR-042; a tag push or dispatch re-publishes), `publish-opencode-npm.yml`, `.github/actions/adr-judge`, `.github/actions/adr-readiness`, `adr-guardian-audit.yml`, `adr-retire-audit.yml`, `install-smoke.yml`, `release-candidate.yml` (ADR-010's optional native certification). | This is the concrete machinery behind the CI persona (§2.4) — every unattended gate described in §4.4 and the release gate in §4.6 runs here. |
-| **Host model CLI (`claude -p`, `codex exec`, `copilot -p`, or `opencode run --pure`)** | External application, used only where a host client is recorded or `ADR_KIT_LLM_CMD`/`--llm-cmd` is set | Reviews an ADR's more nuanced Enforcement rules when regex cannot express them (the judge's LLM pass); also powers `bin/adr-suggest` (the missing-decision nudge) and `bin/adr-substance` in the guardian's LLM tier. | Subprocess only, selected by `judge.host_client` or an operator's `ADR_KIT_LLM_CMD` / `--llm-cmd` (`bin/adr_llm.py`, `BACKENDS`); ADR-036 retired every HTTP backend (OpenRouter, Ollama, openai-compatible). `judge.llm_enabled` (default on, ADR-017) turns the pass on, `ADR_KIT_NO_LLM=1` forces it off, and the pre-commit hook's `ADR_KIT_LLM=1` only forces `--llm`; `guardian.llm_enabled` (default on) gates the guardian's LLM tier; never on the hot path. OpenCode is a host here, not a certified client (ADR-039). | Some Enforcement rules are genuinely too nuanced for a regex (README); the model pass exists for exactly that case, and only that case, by design. |
+| **Host model CLI (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`, or `omp -p --no-extensions`)** | External application, used only where a host client is recorded or `ADR_KIT_LLM_CMD`/`--llm-cmd` is set | Reviews an ADR's more nuanced Enforcement rules when regex cannot express them (the judge's LLM pass); also powers `bin/adr-suggest` (the missing-decision nudge) and `bin/adr-substance` in the guardian's LLM tier. | Subprocess only, selected by `judge.host_client` or an operator's `ADR_KIT_LLM_CMD` / `--llm-cmd` (`bin/adr_llm.py`, `BACKENDS`); ADR-036 retired every HTTP backend (OpenRouter, Ollama, openai-compatible). `judge.llm_enabled` (default on, ADR-017) turns the pass on, `ADR_KIT_NO_LLM=1` forces it off, and the pre-commit hook's `ADR_KIT_LLM=1` only forces `--llm`; `guardian.llm_enabled` (default on) gates the guardian's LLM tier; never on the hot path. OpenCode is a host here, not a certified client (ADR-039); OMP is a host and the accepted fourth certified client (ADR-050). | Some Enforcement rules are genuinely too nuanced for a regex (README); the model pass exists for exactly that case, and only that case, by design. |
 | **pre-commit.com framework** | External tool, optional | An alternative to adr-kit's own git-hook wrapper for installing the commit-time judge. | The `adr-judge` hook id, installed via a `repos:` entry pointing at a pinned adr-kit tag (README, "`pre-commit` framework"). | Gives teams that already standardize on the pre-commit framework the same deterministic gate without adr-kit's own installer. |
 
 ## 6. System Context Diagram
@@ -454,18 +459,18 @@ C4Context
   Person(maintainer, "Maintainer / Human Decision-Maker", "Authors, grills, and accepts ADRs; the only named signer; cuts releases")
   Person(engineer, "Committing Engineer", "Commits code in a governed repo; may never open docs/adr/")
 
-  System(agent, "Coding Agent", "Claude Code / Codex / GitHub Copilot CLI / OpenCode session — programmatic, interactive")
+  System(agent, "Coding Agent", "Claude Code / Codex / GitHub Copilot CLI / OpenCode / OMP session — programmatic, interactive")
   System(ciGate, "CI / Automated Gate", "GitHub Actions jobs; runs unattended, no secret or model required")
 
   System_Boundary(boundary, "adr-kit") {
-    System(core, "adr-kit governance toolkit", "CLI Toolkit, MCP Server, Hook Runtime, Native OpenCode Plugin, Pre-commit Gate, Instruction & Skill Corpus, Client Generation & Release Toolchain, Generated Client Mirrors — see c4-container.md")
+    System(core, "adr-kit governance toolkit", "CLI Toolkit, MCP Server, Hook Runtime, Native OpenCode Plugin, Native OMP Extension, Pre-commit Gate, Instruction & Skill Corpus, Client Generation & Release Toolchain, Generated Client Mirrors — see c4-container.md")
   }
 
   System_Ext(git, "git", "Version control CLI")
-  System_Ext(hostcli, "Host CLI runtimes", "Claude Code / Codex / Copilot / OpenCode processes that dispatch native plugin events")
-  System_Ext(repo, "GitHub repository\nrvdbreemen/adr-kit", "Public marketplace source for three certified clients and native OpenCode package source")
+  System_Ext(hostcli, "Host CLI runtimes", "Claude Code / Codex / Copilot / OpenCode / OMP processes that dispatch native plugin events")
+  System_Ext(repo, "GitHub repository\nrvdbreemen/adr-kit", "Public marketplace source for three certified clients and OMP, and native OpenCode package source")
   System_Ext(gha, "GitHub Actions", "Executes release, judge, readiness, install-smoke and guardian workflows; creates the release tag")
-  System_Ext(llm, "Host model CLI", "claude -p / codex exec / copilot -p / opencode run subprocess — LLM judge, adr-suggest and adr-substance passes")
+  System_Ext(llm, "Host model CLI", "claude -p / codex exec / copilot -p / opencode run / omp -p subprocess — LLM judge, adr-suggest and adr-substance passes")
   System_Ext(precommit, "pre-commit.com framework", "Optional alternate install path for the commit-time judge")
 
   Rel(maintainer, core, "Authors, grills, accepts, supersedes, retires ADRs; runs the release driver and approves the release merge")
@@ -496,3 +501,5 @@ C4Context
   contracts-and-distribution, quality-assurance).
 - [docs/clients/opencode.md](../docs/clients/opencode.md) — the separate native
   OpenCode package, installation path, tested hooks, and support boundary.
+- [docs/clients/omp.md](../docs/clients/omp.md) — the separate native OMP
+  extension, installation path, event mapping, and support boundary.

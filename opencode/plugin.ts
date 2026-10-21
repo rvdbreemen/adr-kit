@@ -107,6 +107,35 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
+// OpenCode dedupes plugins by npm package name only, so a global npm entry and
+// a project's file:// or path entry both load (TASK-235). Each copy would add
+// its own skills path and guide, spawn its own hook per event, and the first
+// one would own the MCP server and commands. One registry per process, shared
+// across module copies through Symbol.for, keeps one instance per project
+// active: the last loaded, as OpenCode's own dedupe lets project config beat
+// global config. The others no-op until the active one is disposed.
+const INSTANCES_KEY = Symbol.for("adr-kit.opencode.instances")
+
+function instanceRegistry(): Map<string, object[]> {
+  const scope = globalThis as unknown as Record<symbol, Map<string, object[]> | undefined>
+  return (scope[INSTANCES_KEY] ||= new Map())
+}
+
+function registerInstance(directory: string): { active(): boolean; release(): void } {
+  const key = resolve(directory)
+  const token = {}
+  const registry = instanceRegistry()
+  registry.set(key, [...(registry.get(key) || []), token])
+  return {
+    active: () => registry.get(key)?.at(-1) === token,
+    release: () => {
+      const remaining = (registry.get(key) || []).filter((entry) => entry !== token)
+      if (remaining.length) registry.set(key, remaining)
+      else registry.delete(key)
+    },
+  }
+}
+
 // ADR-044's order: ADR_KIT_PYTHON, then the interpreter this plugin was
 // configured with (an installer's pin), then the first of python3, python and,
 // on Windows, py -3 that runs Python 3.10 or newer. A bare python is missing on
@@ -324,8 +353,9 @@ export default async function AdrKitOpenCodePlugin(
   const runtimeRoot = findRuntimeRoot(options.root, input.directory, input.worktree)
   const python = resolvePython(options)
   const sessions = new Map<string, SessionState>()
+  const instance = registerInstance(input.directory)
 
-  return {
+  const hooks: Record<string, (...args: any[]) => Promise<void>> = {
     config: async (rawConfig: AnyRecord) => {
       if (!runtimeRoot) return
       const config = rawConfig as AnyRecord
@@ -497,8 +527,17 @@ export default async function AdrKitOpenCodePlugin(
       if (event.type === "session.deleted" && typeof id === "string") sessions.delete(id)
     },
 
-    dispose: async () => {
-      sessions.clear()
-    },
   }
+
+  const guarded: Record<string, (...args: any[]) => Promise<void>> = {}
+  for (const [name, hook] of Object.entries(hooks)) {
+    guarded[name] = async (...args: any[]) => {
+      if (instance.active()) await hook(...args)
+    }
+  }
+  guarded.dispose = async () => {
+    instance.release()
+    sessions.clear()
+  }
+  return guarded
 }

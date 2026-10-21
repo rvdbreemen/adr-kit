@@ -7,6 +7,8 @@ allowed-tools: [Read, Bash, Edit, Write, Task, Glob, Grep]
 
 # adr-kit guardian
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as `cheap`, `llm`, or `all`; default to the due tier when it
 is empty. Never start paid or cloud judgment without explicit permission.
 

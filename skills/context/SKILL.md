@@ -8,6 +8,8 @@ allowed-tools: [Read, Bash]
 
 # adr-kit context
 
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
 Use `$ARGUMENTS` as the task topic. If empty, use the current user request or
 ask for one short topic when the request does not identify one.
 
