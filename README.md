@@ -102,6 +102,7 @@ patch releases, is in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | What landed | Why it matters |
 | --- | --- | --- |
+| **0.61.0** | Native [OMP](docs/clients/omp.md) (oh-my-pi) support: `omp/extension.ts` maps OMP's session, prompt, edit, shell, subagent and compaction events onto the shared hook and records `omp-cli` as the judge host ([ADR-050](docs/adr/ADR-050-certify-omp-as-a-fourth-native-client-through-a-thin-extension.md), which accepts OMP as the fourth certified client; certification follows in 0.62.0). Skills and the ADR generator reply in the user's language. | OMP previously ran none of ADR Kit's hooks and broke ten skills on a missing plugin root; a plain `omp plugin install` now gets the full lifecycle. A [Supported clients](#supported-clients) table now says which clients are certified and which are not. |
 | **0.58.0** | `adr-substance` asks the host model, in the guardian's LLM tier, whether each written section of a Proposed ADR actually says something. `adr-judge --check-scope` names every Enforcement rule of an Accepted ADR whose `path_glob` matches no tracked file, and the judge's LLM pass gets a ceiling it keeps (`judge.llm_pass_timeout_seconds`, default 600). | The deterministic gates stop at markers: "TBD" or three vacuous sentences read as written to them. A rule whose scope matches nothing guards nothing, and a commit no longer waits without end on a slow host CLI. |
 | **0.57.0** | One command drives a release: `python scripts/release.py X.Y.Z` runs every step of [docs/RELEASING.md](docs/RELEASING.md), and `release-publish.yml` creates the tag from the merged `main` commit ([ADR-042](docs/adr/ADR-042-drive-the-release-from-the-maintainer-s-machine-and-create-the-tag-from-the-merge.md)). | A hand-typed tag on the wrong commit destroyed `v0.55.0`; the tag is now derived from the merge, the driver is safe to re-run, and only the npm approval is left to a person. |
 | **0.55.1** | [ADR-029](docs/adr/ADR-029-retire-the-native-hook-binary-rather-than-maintain-a-second-retrieval-engine.md) is carried out: the committed `adr-hook.exe`, its Rust sources, the dispatcher branch that preferred it and the `ADR_KIT_NATIVE_HOOK` opt-in are gone from all three client trees, so Python is the only hook host on every platform. `adr-mcp` now rejects malformed JSON-RPC frames instead of answering them. | The binary was measurably wrong, not merely untested: against the Python oracle it returned one of four governing ADRs on an edit event, and the parity test that should have caught it read a constant out of the Rust source instead of running the build. One retrieval engine means the hook answers what the CLI answers. On the MCP side, a server that answers a malformed frame hides a client defect the client cannot see in its own logs. |
@@ -332,7 +333,7 @@ For another project, use the published package:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@rvdbreemen/adr-kit-opencode@0.60.0"]
+  "plugin": ["@rvdbreemen/adr-kit-opencode@0.61.0"]
 }
 ```
 
@@ -720,7 +721,7 @@ directly after a full-history checkout:
 - uses: actions/checkout@v4
   with:
     fetch-depth: 0
-- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.60.0
+- uses: rvdbreemen/adr-kit/.github/actions/adr-readiness@v0.61.0
   with:
     adr-dir: docs/adr
 ```
@@ -748,7 +749,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # both sides of the diff must be available
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.60.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-judge@v0.61.0
         with:
           adr-dir: docs/adr/
 ```
@@ -762,7 +763,7 @@ The action also takes `max-diff-bytes` (default 32 MiB, available from the relea
 ```yaml
 repos:
   - repo: https://github.com/rvdbreemen/adr-kit
-    rev: v0.60.0
+    rev: v0.61.0
     hooks:
       - id: adr-judge
 ```

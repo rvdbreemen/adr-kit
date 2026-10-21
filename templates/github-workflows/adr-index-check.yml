@@ -25,6 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rvdbreemen/adr-kit/.github/actions/adr-index-check@v0.60.0
+      - uses: rvdbreemen/adr-kit/.github/actions/adr-index-check@v0.61.0
         with:
           adr-dir: docs/adr
