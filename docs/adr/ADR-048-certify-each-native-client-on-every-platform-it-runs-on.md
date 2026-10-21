@@ -13,6 +13,7 @@ related:
   - "ADR-010"
   - "ADR-039"
   - "ADR-044"
+  - "ADR-050"
 topics:
   - "native certification"
   - "release evidence"
@@ -73,6 +74,11 @@ status_history:
     status: Accepted
     changed_by: "User: Robert van den Breemen"
     reason: Related to ADR-044
+    changed_via: adr-kit lifecycle
+  - date: 2026-10-21
+    status: Accepted
+    changed_by: "User: Robert van den Breemen"
+    reason: Related to ADR-050
     changed_via: adr-kit lifecycle
 ```
 

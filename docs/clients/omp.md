@@ -2,11 +2,12 @@
 
 ADR Kit supports [OMP](https://github.com/can1357/oh-my-pi) through a native
 extension that ships in the same plugin as the Claude Code distribution. The
-extension is a thin adapter over the shared Python engines (ADR-050). OMP is
-not a certified client: it is absent from `clients/capabilities.json`, the
-automatic installer, `adr-doctor` and the generated
-[client support matrix](../client-support.md), and the three-client release
-gate (ADR-010) does not cover it.
+extension is a thin adapter over the shared Python engines. ADR-050 accepts OMP
+as the fourth certified client, amending ADR-010's client list. Certification
+is in progress: OMP is not yet in `clients/capabilities.json`, the automatic
+installer, `adr-doctor` or the generated
+[client support matrix](../client-support.md), and no native OMP record exists
+yet, so OMP is not claimed as certified (ADR-048). That work ships in v0.62.0.
 
 Verified on OMP 18.12.5, Windows.
 
@@ -134,10 +135,12 @@ Bun harness against a fixture project.
 
 ## Support boundary
 
-OMP has a native extension for this package, but it is not included in
-`clients/capabilities.json` or the generated three-client support matrix. The
-installer, native doctor, evidence bundle and release certification gate
-remain unchanged, and OMP does not claim those clients' update, rollback,
-doctor or certification guarantees. Report OMP API or runtime issues with the
+Until v0.62.0, OMP has a native extension but no entry in
+`clients/capabilities.json`, the installer, the native doctor, the evidence
+bundle or the release gate, and it does not yet claim those clients' update,
+rollback, doctor or certification guarantees. ADR-050 fixes what certification
+adds: the registry entry with an `edit-governance` degradation for late
+pre-edit context, plan exit mapped as no native event, installer and doctor
+support, and a native Windows record. Report OMP API or runtime issues with the
 OMP version, platform, ADR Kit version and the result of
 `python -m pytest -q tests/test_omp_extension.py`.

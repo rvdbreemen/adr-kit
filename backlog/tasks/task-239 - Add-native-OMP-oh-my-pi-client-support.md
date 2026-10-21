@@ -4,7 +4,7 @@ title: Add native OMP (oh-my-pi) client support
 status: Done
 assignee: []
 created_date: '2026-10-21T18:48:00Z'
-updated_date: '2026-10-21T19:25:00Z'
+updated_date: '2026-10-21T20:05:00Z'
 labels:
   - omp
   - client
@@ -22,7 +22,7 @@ modified_files:
   - tests/test_omp_extension.py
   - docs/clients/omp.md
   - >-
-    docs/adr/ADR-050-add-a-native-omp-extension-without-expanding-the-certified-cli-gate.md
+    docs/adr/ADR-050-certify-omp-as-a-fourth-native-client-through-a-thin-extension.md
   - README.md
 priority: high
 ordinal: 81000
@@ -50,6 +50,8 @@ OMP installs the Claude Code plugin through its Claude-compatible marketplace (d
 
 <!-- SECTION:NOTES:BEGIN -->
 Reproduced both gaps on OMP 18.12.5 before the change: an OMP session in a docs/adr project never wrote .adr-kit.local.json (SessionStart did not fire; running the hook by hand did), and ${CLAUDE_PLUGIN_ROOT} and ADR_KIT_ROOT were both empty in OMP's shell. OMP loads package.json omp.extensions for marketplace installs (pi-coding-agent plugins/installer.ts: manifest = pkg.omp). omp -p reads the prompt on stdin with clean stdout; --no-extensions verifiably keeps the extension out of a judging call (without it the call wrote .adr-kit.local.json). OMP delivers tool_call additionalContext after the tool batch, so pre-edit context arrives after the edit (recorded in ADR-050). The hook drops input over 64 KiB, so the extension forwards only edit paths, never file content.
+
+2026-10-21: ADR-050 grilled with the maintainer and Accepted as full certification (amends ADR-010's client list); certification work split into TASK-240 for v0.62.0.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

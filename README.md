@@ -149,7 +149,7 @@ delivered and how much of it is certified:
 | OpenAI Codex CLI | Certified | `install-agent-envs.py` or `codex plugin add` | Session, prompt, edit, shell, subagent, compaction | [docs/clients/codex.md](docs/clients/codex.md) |
 | GitHub Copilot CLI (standalone) | Certified | `install-agent-envs.py` or `copilot plugin install` | Session, prompt, post-edit | [docs/clients/copilot.md](docs/clients/copilot.md) |
 | OpenCode | Native package, not certified | `opencode.json` plugin entry | Prompt, edit, shell, compaction | [docs/clients/opencode.md](docs/clients/opencode.md) |
-| OMP (oh-my-pi) | Native extension, not certified | `omp plugin install` from this marketplace | Session, prompt, edit, shell, subagent, compaction | [docs/clients/omp.md](docs/clients/omp.md) |
+| OMP (oh-my-pi) | Native extension; certification in progress (v0.62.0) | `omp plugin install` from this marketplace | Session, prompt, edit, shell, subagent, compaction | [docs/clients/omp.md](docs/clients/omp.md) |
 | Any other MCP or Agent Skills client | Portable fallback | Manual: MCP server, skills, project guidance | None | [INSTALL.md](INSTALL.md#portable-fallback) |
 
 **Certified** means the client is in `clients/capabilities.json`, the
@@ -158,9 +158,11 @@ against recorded native evidence; the generated
 [client support matrix](docs/client-support.md) is that view (ADR-010,
 ADR-048). **Native, not certified** means a thin adapter for the client's own
 plugin API is shipped and tested with its own focused tests, but the client
-is not in the installer, the doctor or the certification gate (ADR-039,
-ADR-050). Every client, and a commit with no agent at all, gets the same
-pre-commit and CI floor.
+is not in the installer, the doctor or the certification gate (ADR-039). OMP
+is accepted as the fourth certified client (ADR-050) and ships natively now;
+it is claimed as certified once its registry entry and native evidence land.
+Every client, and a commit with no agent at all, gets the same pre-commit and
+CI floor.
 
 Lifecycle behavior is quiet-by-default: routine successful hooks print
 nothing, relevant ADR context still reaches the agent, and actionable warnings
@@ -362,7 +364,7 @@ three-client support matrix, and the three-client native certification gate.
 See [OpenCode support](docs/clients/opencode.md) for options, manual MCP
 registration, and the tested support boundary.
 
-### OMP (native, not certified)
+### OMP (native; certification in progress)
 
 OMP installs ADR Kit from the same marketplace as Claude Code:
 
@@ -376,8 +378,9 @@ skills, the `adr-generator` agent and the MCP server from the plugin, and loads
 a thin extension (`omp/extension.ts`) that maps OMP's session, prompt, tool,
 subagent and compaction events onto `hooks/adr-hook.py`, exports
 `ADR_KIT_ROOT` for the skills, and records `omp-cli` as the judge host.
-Workflows are skills, invoked as `/skill:<name>`. Like OpenCode, OMP stays
-outside the certified registry and gets the same pre-commit and CI floor. See
+Workflows are skills, invoked as `/skill:<name>`. ADR-050 makes OMP the fourth
+certified client; until its registry entry and native evidence land in
+v0.62.0, the installer and `adr-doctor` do not manage it yet. See
 [OMP support](docs/clients/omp.md).
 
 ### Portable Agent Skills and MCP clients
