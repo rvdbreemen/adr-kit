@@ -4,6 +4,24 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+
+## [0.61.0] - 2026-10-21
+
+A minor release that brings ADR Kit natively to OMP (oh-my-pi), makes skills
+answer in the user's language, and fixes a doubled OpenCode plugin. The
+headline: an `omp plugin install` of ADR Kit now gets the same lifecycle
+context, pull-request guard and judge host as the other clients, with no
+manual configuration. ADR-050 accepts OMP as the fourth certified client; the
+certification itself (registry entry, installer, doctor and native evidence)
+follows in v0.62.0, and until then OMP is documented as native with
+certification in progress.
+
+**Upgrading.** Claude Code, Codex, Copilot CLI and OpenCode users need no
+action. OMP users: `omp plugin marketplace update rvdbreemen-adr-kit`, then
+`omp plugin upgrade adr-kit@rvdbreemen-adr-kit`, and start a new session so OMP
+loads the extension. A hand-set `ADR_KIT_ROOT` is no longer needed and is
+respected if kept.
+
 ### Added
 
 - Native OMP (oh-my-pi) support (ADR-050, TASK-239). OMP installs the plugin
@@ -3470,7 +3488,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.60.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.61.0...HEAD
+[0.61.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.58.0...v0.59.0
