@@ -15,12 +15,14 @@ All notable changes to `adr-kit` are documented in this file. The format follows
   explicit deny, and sets `ADR_KIT_ROOT` so the skills find the engine, which
   OMP's missing `${CLAUDE_PLUGIN_ROOT}` previously broke. `omp-cli`
   (`omp -p --no-extensions --no-session --no-tools`) joins the judge host
-  clients, and an OMP session records it as the host. OMP is a native surface
-  outside the certified three-client gate, like OpenCode
-  (`docs/clients/omp.md`).
-- README: a Supported clients table separates the three certified clients,
-  the native OpenCode and OMP packages, and the portable MCP/Agent Skills
-  fallback.
+  clients, and an OMP session records it as the host. ADR-050 (Accepted)
+  makes OMP the fourth certified client, amending ADR-010's client list; its
+  registry entry, installer and doctor support and native evidence follow in
+  v0.62.0, and until then OMP is documented as native with certification in
+  progress (`docs/clients/omp.md`).
+- README: a Supported clients table separates the certified clients, the
+  native OpenCode package, OMP's in-progress certification, and the portable
+  MCP/Agent Skills fallback.
 
 ### Changed
 

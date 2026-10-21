@@ -139,9 +139,10 @@ or certification registry.
 OMP (oh-my-pi) installs the same plugin through its own marketplace
 (`omp plugin marketplace add rvdbreemen/adr-kit`, then
 `omp plugin install --scope user adr-kit@rvdbreemen-adr-kit`) and loads the
-native extension `omp/extension.ts` declared in `package.json`. It is a
-separate native surface and is not part of the three-client installer or
-certification registry; follow [docs/clients/omp.md](docs/clients/omp.md).
+native extension `omp/extension.ts` declared in `package.json`. ADR-050 makes
+OMP the fourth certified client, but until its registry entry lands in v0.62.0
+it is not yet part of the installer or the certification registry; follow
+[docs/clients/omp.md](docs/clients/omp.md).
 
 Do not point Codex or Copilot at the Claude plugin cache.
 

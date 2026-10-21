@@ -56,10 +56,11 @@ Three invariants hold across all of them:
   [clients/copilot.md](clients/copilot.md): the certified clients' package
   layout, setup, and recovery steps.
 - [clients/opencode.md](clients/opencode.md), [clients/omp.md](clients/omp.md):
-  the native OpenCode plugin and OMP extension, which ship outside the
-  certification gate, with their install, event mapping, and support boundary.
-  The README's [Supported clients](../README.md#supported-clients) table
-  compares all of them.
+  the native OpenCode plugin, which ships outside the certification gate, and
+  the OMP extension, accepted as the fourth certified client with its
+  certification in progress. Each covers install, event mapping, and support
+  boundary. The README's [Supported clients](../README.md#supported-clients)
+  table compares all of them.
 
 ### Decisions and direction
 

@@ -9,8 +9,9 @@ ADR Kit has separate native distributions for Claude Code, OpenAI Codex, and
 the standalone GitHub Copilot CLI (the three certified clients), plus native
 packages for OpenCode and OMP (oh-my-pi). They share deterministic Python
 engines, but they do not share manifests, cache paths, or client-specific
-instructions. OpenCode and OMP are tested separately and do not expand the
-three-client certification gate; see
+instructions. OpenCode is tested separately and does not expand the
+certification gate (ADR-039). OMP is accepted as the fourth certified client
+(ADR-050); its registry entry and native evidence land in v0.62.0. See
 [Supported clients](README.md#supported-clients).
 After installation, follow the
 [ADR Grilling user guide](docs/adr-grilling.md) to create, reconstruct, resume,

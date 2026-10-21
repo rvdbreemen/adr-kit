@@ -68,7 +68,8 @@ DEFAULT_BACKEND = BACKEND_HOST
 # and writes only the answer to stdout. `--no-extensions` keeps adr-kit's own
 # OMP extension from firing inside a judging call, `--no-session` keeps the
 # call out of the user's session list, and `--no-tools` keeps the judge a pure
-# text answer. A host, not a certified client (ADR-050).
+# text answer. ADR-050 makes OMP a certified client; certification lands in
+# v0.62.0.
 HOST_COMMANDS = {
     "claude-code-cli": ["claude", "-p"],
     "codex-cli": ["codex", "exec"],
