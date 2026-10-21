@@ -55,3 +55,4 @@ One row per Architecture Decision Record. Scope is the Enforcement `path_glob` s
 | ADR-047 | Accepted | - | Chosen option: record the cap the engine has, as an amendment of ADR-036, because that behaviour is what the 2026-07-... |
 | ADR-048 | Accepted | - | Chosen option: certify each client on every platform it runs on, from a real run on that platform, because a claim ca... |
 | ADR-049 | Accepted | `hooks/adr_hook_core.py`, `opencode/plugin.ts` | Chosen option: record the host client at the first session, confirm through the session model, and keep every answer... |
+| ADR-050 | Proposed | `omp/extension.ts` | Chosen option: a thin native OMP extension, because it closes both gaps through OMP's documented extension API with o... |

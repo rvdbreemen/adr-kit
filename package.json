@@ -17,8 +17,14 @@
   "engines": {
     "opencode": ">=1.18.0"
   },
+  "omp": {
+    "extensions": [
+      "./omp/extension.ts"
+    ]
+  },
   "files": [
     "opencode/plugin.ts",
+    "omp/extension.ts",
     "bin/adr",
     "bin/adr-*",
     "bin/*.py",

@@ -311,15 +311,40 @@ enforcement floor. Focused evidence lives in
 `tests/test_opencode_package.py` and `tests/test_opencode_plugin.py` and does
 not enter the three-client certification bundle.
 
+### 5. Native OMP extension contract — `omp/extension.ts`
+
+**Protocol**: OMP's TypeScript/Bun extension API (ADR-050). OMP installs the
+Claude Code marketplace entry, reads its skills, agent and `.mcp.json`
+through its Claude-compatible provider, and loads this module because the root
+`package.json` declares it under `omp.extensions`. The module never becomes a
+second ADR engine.
+
+| Event | Contract |
+| --- | --- |
+| factory load | Sets `ADR_KIT_ROOT` to the installed plugin when it is unset, so the skills' `${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}` resolves under OMP (ADR-044). |
+| `session_start` | Runs SessionStart through `hooks/adr-hook.py` and holds the context for the first prompt. |
+| `before_agent_start` | Main session: runs UserPromptSubmit and returns the session and prompt context as a hidden custom message, plus static ADR Kit instructions appended to the system prompt. Subagent session: runs SubagentStart once with the main session's latest context. |
+| `tool_call` | `edit`, `write`, `ast_edit`: PreToolUse with only the touched paths, returned as passive context. `bash`: PreToolUse for the pull-request guard; only an explicit deny becomes `{ block: true }`. |
+| `tool_result` | PostToolUse backstop for a successful edit, as passive context. |
+| `session.compacting` | PreCompact with the main session's latest context, returned as compaction context. |
+
+Every handler catches its own faults and bounds its subprocess at 2 s (5 s for
+the pull-request guard), because OMP treats a failing `tool_call` handler as a
+block. Hooks run with `ADR_KIT_HOST_CLIENT=omp-cli`, and the judge's host
+command `omp -p --no-extensions --no-session --no-tools` keeps the extension
+out of judging calls (ADR-049). Focused evidence lives in
+`tests/test_omp_extension.py` and does not enter the three-client
+certification bundle.
+
 ## Dependencies
 
 | Container | Depends on | Mechanism |
 | --- | --- | --- |
 | CLI Toolkit | ADR Markdown files (`docs/adr/*.md`), `ADR-INDEX.json`, `.adr-kit.json`/`.adr-kit-state.json` | File system read/write |
 | CLI Toolkit | `git` CLI | Subprocess (diffs, staged content, refs) |
-| CLI Toolkit | Host model CLI (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`, chosen by `judge.host_client`, or an operator's `ADR_KIT_LLM_CMD`) | Subprocess only — LLM judge, suggest, substance and guardian passes, never on the hot path; ADR-036 retired the HTTP backends and `bin/adr_llm.py` cannot open a socket |
+| CLI Toolkit | Host model CLI (`claude -p`, `codex exec`, `copilot -p`, `opencode run --pure`, `omp -p --no-extensions --no-session --no-tools`, chosen by `judge.host_client`, or an operator's `ADR_KIT_LLM_CMD`) | Subprocess only — LLM judge, suggest, substance and guardian passes, never on the hot path; ADR-036 retired the HTTP backends and `bin/adr_llm.py` cannot open a socket |
 | MCP Server | CLI Toolkit (`adr-context`, `adr-judge`, `adr-status`, `adr-quality`, `adr-readiness`, `adr-lint`, `adr-related`) | Subprocess, one call per tool invocation, `PYTHONIOENCODING=utf-8` forced on the child |
-| MCP Server | Agent host (Claude Code, Codex, Copilot, OpenCode) | Long-lived stdio JSON-RPC — certified hosts launch the process via `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json`; OpenCode synthesizes the local entry through `opencode/plugin.ts` |
+| MCP Server | Agent host (Claude Code, Codex, Copilot, OpenCode, OMP) | Long-lived stdio JSON-RPC — certified hosts and OMP launch the process via `.mcp.json` / `codex/.mcp.json` / `copilot/.mcp.json`; OpenCode synthesizes the local entry through `opencode/plugin.ts` |
 | Hook Runtime | CLI Toolkit (`adr-context`, `adr-judge`, retrieval helpers) | Subprocess (the `pr-create` guard) and, for `hooks/adr_hook_core.py`, direct Python imports: `query_adr_context`, `bin/adr_index_core.py` for the index refresh (ADR-021), and `bin/adr_llm.py` to record the host client and `llm.asked_at` in `docs/adr/.adr-kit.local.json` (ADR-049, Accepted 2026-10-11) |
 | Hook Runtime | Agent host | Native lifecycle event dispatch (host calls the hook command synchronously and reads stdout/exit code) |
 | Native OpenCode Plugin | OpenCode host runtime, Bun, Hook Runtime, MCP Server | Host plugin callbacks plus bounded child subprocesses; no independent ADR semantics |

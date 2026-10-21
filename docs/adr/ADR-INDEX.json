@@ -2072,7 +2072,7 @@
       "path": "ADR-039-add-a-native-opencode-plugin-without-expanding-the-certified-cli-gate.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-10-11",
+      "date": "2026-10-21",
       "decision_summary": "Chosen option: a separate native OpenCode package, because it gives OpenCode its documented native surface without wi...",
       "topics": [
         "client compatibility",
@@ -2697,7 +2697,7 @@
       "path": "ADR-049-record-the-judge-host-client-at-the-first-session-and-ask-per-llm-layer-at-upgrade.md",
       "format": "madr",
       "status": "Accepted",
-      "date": "2026-10-11",
+      "date": "2026-10-21",
       "decision_summary": "Chosen option: record the host client at the first session, confirm through the session model, and keep every answer...",
       "topics": [
         "default install",
@@ -2750,6 +2750,73 @@
       "metadata": {
         "binding": true,
         "gate": "adr-llm-default-on-v1",
+        "documents_shipped": false,
+        "verified_in": [],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    {
+      "id": "ADR-050",
+      "title": "Add a Native OMP Extension Without Expanding the Certified CLI Gate",
+      "path": "ADR-050-add-a-native-omp-extension-without-expanding-the-certified-cli-gate.md",
+      "format": "madr",
+      "status": "Proposed",
+      "date": "2026-10-21",
+      "decision_summary": "Chosen option: a thin native OMP extension, because it closes both gaps through OMP's documented extension API with o...",
+      "topics": [
+        "client compatibility",
+        "lifecycle hooks",
+        "native extension",
+        "oh-my-pi",
+        "OMP"
+      ],
+      "aliases": [
+        "oh-my-pi extension",
+        "OMP adapter",
+        "OMP extension"
+      ],
+      "components": [
+        "omp extension"
+      ],
+      "symbols": [
+        "HOST_COMMANDS",
+        "omp/extension.ts"
+      ],
+      "context_scope": "selective",
+      "decision_contract": {
+        "must": [
+          "Keep omp/ separate from the generated three-client trees and from opencode/.",
+          "Delegate every ADR operation to hooks/adr-hook.py, bin/adr-mcp and the other Python engines.",
+          "Catch every fault and bound every hook's input, output and runtime, so a handler never blocks a tool call except on the guard's explicit deny.",
+          "Name the host as omp-cli in every hook subprocess, and keep the omp-cli host command free of a model flag (ADR-043).",
+          "Leave a user-set ADRKITROOT in place.",
+          "Document OMP support and its unsupported moments separately from the three-client certification matrix."
+        ],
+        "must_not": [
+          "Add omp to clients/capabilities.json, clients/workflows.json, the three-client installer, or the certification gate.",
+          "Implement ADR retrieval, judging or MCP in TypeScript.",
+          "Forward a whole tool input, such as a written file's content, to the hook; only the paths an edit touches are sent."
+        ],
+        "exceptions": [
+          "The extension reuses the Claude-shaped hook envelope internally, as the OpenCode plugin does (ADR-039), and names its own host through ADRKITHOSTCLIENT.",
+          "The pull-request guard may block an OMP shell call on an explicit permissionDecision: deny."
+        ],
+        "verification": [
+          "tests/testompextension.py",
+          "tests/testadrjudgellm.py",
+          "python scripts/build-client-adapters.py --check",
+          "python -m pytest -q"
+        ]
+      },
+      "scope": {
+        "path_globs": [
+          "omp/extension.ts"
+        ]
+      },
+      "metadata": {
+        "binding": false,
+        "gate": null,
         "documents_shipped": false,
         "verified_in": [],
         "supersedes": [],
@@ -3821,6 +3888,12 @@
       "resolved": true
     },
     {
+      "source": "ADR-039",
+      "target": "ADR-050",
+      "type": "related",
+      "resolved": true
+    },
+    {
       "source": "ADR-040",
       "target": "ADR-011",
       "type": "related",
@@ -4087,6 +4160,54 @@
     {
       "source": "ADR-049",
       "target": "ADR-043",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-049",
+      "target": "ADR-050",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-004",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-010",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-029",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-039",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-043",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-044",
+      "type": "related",
+      "resolved": true
+    },
+    {
+      "source": "ADR-050",
+      "target": "ADR-049",
       "type": "related",
       "resolved": true
     }

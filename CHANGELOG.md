@@ -4,6 +4,24 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Native OMP (oh-my-pi) support (ADR-050, TASK-239). OMP installs the plugin
+  from the existing marketplace (`omp plugin install
+  adr-kit@rvdbreemen-adr-kit`) and loads `omp/extension.ts`, declared in
+  `package.json` under `omp.extensions`. The extension maps OMP's session,
+  prompt, edit, shell, subagent and compaction events onto
+  `hooks/adr-hook.py`, blocks a shell call only on the pull-request guard's
+  explicit deny, and sets `ADR_KIT_ROOT` so the skills find the engine, which
+  OMP's missing `${CLAUDE_PLUGIN_ROOT}` previously broke. `omp-cli`
+  (`omp -p --no-extensions --no-session --no-tools`) joins the judge host
+  clients, and an OMP session records it as the host. OMP is a native surface
+  outside the certified three-client gate, like OpenCode
+  (`docs/clients/omp.md`).
+- README: a Supported clients table separates the three certified clients,
+  the native OpenCode and OMP packages, and the portable MCP/Agent Skills
+  fallback.
+
 ### Changed
 
 - Skills and the ADR generator agent now reply in the language the user writes

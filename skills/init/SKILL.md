@@ -385,7 +385,7 @@ ADR_KIT="${ADR_KIT_ROOT:-${CLAUDE_PLUGIN_ROOT}}"
 [ -n "$ADR_KIT" ] || { echo "adr-kit: plugin root not found; set ADR_KIT_ROOT, or update or reinstall the plugin" >&2; exit 1; }
 ```
 
-**1. Record the host client.** You know which client you are running in. Pass its id: `claude-code-cli` in Claude Code, `opencode-cli` in OpenCode (Codex and Copilot CLI have their own copy of this workflow). The judge cannot work this out at commit time, because a `git commit` happens whether or not an agent is running, so it is recorded now into the gitignored `docs/adr/.adr-kit.local.json`:
+**1. Record the host client.** You know which client you are running in. Pass its id: `claude-code-cli` in Claude Code, `opencode-cli` in OpenCode, `omp-cli` in OMP (Codex and Copilot CLI have their own copy of this workflow). The judge cannot work this out at commit time, because a `git commit` happens whether or not an agent is running, so it is recorded now into the gitignored `docs/adr/.adr-kit.local.json`:
 
 ```bash
 "$ADR_KIT/bin/adr-judge" --adr-dir docs/adr --set-backend host --host-client claude-code-cli

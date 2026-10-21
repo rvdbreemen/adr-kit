@@ -49,11 +49,17 @@ Three invariants hold across all of them:
 - [format-migration.md](format-migration.md): detecting existing ADR formats
   and converting between MADR, Nygard, and canonical without losing metadata.
 - [client-support.md](client-support.md): *generated* per-client, per-OS
-  support matrix. It separates native certification from simulated contract
-  coverage, and states which lifecycle events each client actually supports.
+  support matrix for the three certified clients (Claude Code, Codex, Copilot
+  CLI). It separates native certification from simulated contract coverage,
+  and states which lifecycle events each client actually supports.
 - [clients/claude.md](clients/claude.md), [clients/codex.md](clients/codex.md),
-  [clients/copilot.md](clients/copilot.md), [clients/opencode.md](clients/opencode.md):
-  per-client package layout, setup, and recovery steps.
+  [clients/copilot.md](clients/copilot.md): the certified clients' package
+  layout, setup, and recovery steps.
+- [clients/opencode.md](clients/opencode.md), [clients/omp.md](clients/omp.md):
+  the native OpenCode plugin and OMP extension, which ship outside the
+  certification gate, with their install, event mapping, and support boundary.
+  The README's [Supported clients](../README.md#supported-clients) table
+  compares all of them.
 
 ### Decisions and direction
 

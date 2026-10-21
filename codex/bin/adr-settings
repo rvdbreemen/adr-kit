@@ -60,7 +60,7 @@ LOCAL_KEYS: Dict[str, Dict[str, Any]] = {
     },
     "judge.host_client": {
         "type": "string",
-        "enum": ["claude-code-cli", "codex-cli", "github-copilot-cli", "opencode-cli"],
+        "enum": ["claude-code-cli", "codex-cli", "github-copilot-cli", "opencode-cli", "omp-cli"],
         "description": (
             "Which coding-client CLI answers the LLM pass. Machine-specific, and "
             "deliberately not probed from PATH: on a machine with all three "
