@@ -63,11 +63,18 @@ DEFAULT_BACKEND = BACKEND_HOST
 # the answer to stdout. `--pure` skips external plugins: run inside a project
 # with adr-kit's own OpenCode plugin, a judging call would otherwise trigger
 # that plugin's hooks. It is a host here, not a certified client (ADR-039).
+#
+# OMP (18.12.5, verified 2026-10-21) reads the prompt on stdin in print mode
+# and writes only the answer to stdout. `--no-extensions` keeps adr-kit's own
+# OMP extension from firing inside a judging call, `--no-session` keeps the
+# call out of the user's session list, and `--no-tools` keeps the judge a pure
+# text answer. A host, not a certified client (ADR-050).
 HOST_COMMANDS = {
     "claude-code-cli": ["claude", "-p"],
     "codex-cli": ["codex", "exec"],
     "github-copilot-cli": ["copilot", "-p"],
     "opencode-cli": ["opencode", "run", "--pure"],
+    "omp-cli": ["omp", "-p", "--no-extensions", "--no-session", "--no-tools"],
 }
 
 # Machine-local, gitignored sibling of .adr-kit.json. Neither entry point can
