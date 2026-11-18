@@ -6,6 +6,13 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- Hooks detect a missing JSON index and provide a runnable command when an index
+  needs regeneration. The command uses the bundled indexer and the project's
+  ADR directory, including projects without a local
+  `bin/adr-index`. `adr-lint` reports invalid strictness boundaries as
+  configuration errors, and `adr-doctor` flags project-local linter copies
+  that differ from the bundled linter (TASK-242).
+
 - `bin/adr relate` changed the body of both ADRs although a cross-reference is
   frontmatter bookkeeping. It appended a "Related to ADR-NNN" status_history
   entry signed with the machine signer, so the history claimed that person made

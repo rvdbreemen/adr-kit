@@ -152,6 +152,13 @@ def test_strict_from_override_via_cli():
     assert code == 1
 
 
+def test_invalid_strict_from_is_reported_without_traceback():
+    code, out = run_lint("--strict-from", "broken", str(FIXTURES / "with-policy"))
+    assert code == 2
+    assert "--strict-from must be an ADR id" in out["_stderr"]
+    assert "Traceback" not in out["_stderr"]
+
+
 def test_gates_filter():
     """--gates limits which checks run."""
     code, out = run_lint(

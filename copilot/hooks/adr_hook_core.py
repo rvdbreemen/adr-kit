@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import tempfile
 import sys
 from dataclasses import dataclass
@@ -230,12 +231,13 @@ def duplicate_event(envelope: Envelope) -> bool:
     return False
 
 
+def _adr_dirs(workspace: Path) -> tuple[Path, Path]:
+    return workspace / "docs" / "adr", workspace / "adr"
+
+
 def _index_path(workspace: Path) -> Path | None:
-    candidates = (
-        workspace / "docs" / "adr" / "ADR-INDEX.json",
-        workspace / "adr" / "ADR-INDEX.json",
-    )
-    for path in candidates:
+    for adr_dir in _adr_dirs(workspace):
+        path = adr_dir / "ADR-INDEX.json"
         if path.is_file():
             return path
     return None
@@ -515,11 +517,21 @@ REFRESHING_EVENTS = {"SessionStart", "UserPromptSubmit"}
 
 STALE_INDEX_MESSAGE = (
     "The generated ADR index is stale, so ADR context is unavailable for this "
-    "step. Run `bin/adr-index docs/adr` to regenerate it."
+    "step."
 )
 
 
-def index_is_stale(workspace: Path) -> bool:
+def stale_index_message(adr_dir: Path) -> str:
+    args = (Path(sys.executable), _BIN_DIR / "adr-index", adr_dir)
+    if os.name == "nt":
+        quoted = ("'" + path.as_posix().replace("'", "''") + "'" for path in args)
+        command = "& " + " ".join(quoted)
+        return f"{STALE_INDEX_MESSAGE} Run in PowerShell to regenerate it: `{command}`."
+    command = shlex.join(str(path) for path in args)
+    return f"{STALE_INDEX_MESSAGE} Run to regenerate it: `{command}`."
+
+
+def _stale_index_dir(workspace: Path) -> Path | None:
     """Cheap precondition, ~2.8 ms measured, not a certification.
 
     `index_probably_fresh` is an mtime comparison and says so in its own
@@ -527,15 +539,14 @@ def index_is_stale(workspace: Path) -> bool:
     treats a false negative as "read what is there", which is what it would have
     done anyway.
     """
-    index = _index_path(workspace)
-    if index is None:
-        return False
     try:
         from adr_index_core import index_probably_fresh
 
-        return not index_probably_fresh(index.parent)
+        index = _index_path(workspace)
+        candidates = (index.parent,) if index is not None else _adr_dirs(workspace)
+        return next((path for path in candidates if not index_probably_fresh(path)), None)
     except (ImportError, OSError, ValueError):
-        return False
+        return None
 
 
 def refresh_index(workspace: Path, event: str) -> str:
@@ -550,22 +561,19 @@ def refresh_index(workspace: Path, event: str) -> str:
     inside a fail-open hook, and a governance tool that breaks a session is
     worse than one that asks for a command to be run.
     """
-    if not index_is_stale(workspace):
+    adr_dir = _stale_index_dir(workspace)
+    if adr_dir is None:
         return ""
+    notice = stale_index_message(adr_dir)
     if event not in REFRESHING_EVENTS:
         # The edit tier reads only. Rendering there would put a write on the
         # path taken before every single edit.
-        return STALE_INDEX_MESSAGE
-
-    index = _index_path(workspace)
-    if index is None:
-        return STALE_INDEX_MESSAGE
-    adr_dir = index.parent
+        return notice
 
     try:
         from adr_index_core import projected_render_ms, regenerate_index
     except ImportError:
-        return STALE_INDEX_MESSAGE
+        return notice
 
     budget_ms = _event_budget_ms(event)
     projected = projected_render_ms(adr_dir)
@@ -573,7 +581,7 @@ def refresh_index(workspace: Path, event: str) -> str:
         # A large ADR set degrades to a nudge rather than to a timeout. The
         # client kills the hook at its own bound, and a process killed mid-write
         # is worse than one that never started.
-        return STALE_INDEX_MESSAGE
+        return notice
 
     lock = adr_dir / ".adr-index.lock"
     try:
@@ -583,16 +591,16 @@ def refresh_index(workspace: Path, event: str) -> str:
         # Another session is rendering. Read what is there and continue -- ADR-021
         # forbids waiting, because the loser would spend a budget it cannot
         # recover on work someone else is already doing.
-        return STALE_INDEX_MESSAGE
+        return notice
     except OSError:
-        return STALE_INDEX_MESSAGE
+        return notice
 
     try:
         os.close(handle)
         regenerate_index(adr_dir)
         return ""
     except (OSError, ValueError, KeyError, TypeError):
-        return STALE_INDEX_MESSAGE
+        return notice
     finally:
         try:
             lock.unlink()

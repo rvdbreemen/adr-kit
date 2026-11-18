@@ -3,9 +3,10 @@ id: TASK-242
 title: >-
   Stale-index hook points at a script the project does not have, and vendored
   adr-lint --strict crashes
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-24T17:06:00Z'
+updated_date: '2026-11-18T23:21:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -23,7 +24,13 @@ Repro: OTGW-firmware dev @057535397, 199 ADRs.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The stale-index message names a command that exists in a project set up by adr-kit (test with a project without bin/adr-index)
-- [ ] #2 severity_of handles a missing match without crashing (unit test with the failing input)
-- [ ] #3 A vendored script older than the plugin is reported (version stamp or --check)
+- [x] #1 The stale-index message names a command that exists in a project set up by adr-kit (test with a project without bin/adr-index)
+- [x] #2 severity_of handles a missing match without crashing (unit test with the failing input)
+- [x] #3 A vendored script older than the plugin is reported (version stamp or --check)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Hooks now detect missing JSON indexes and give an executable recovery command that uses the bundled indexer and detected ADR directory. Edit hooks remain read-only; eligible session hooks repair under the existing lock and budget. The bundled linter rejects invalid strictness boundaries with exit 2, and doctor reports project-local lint drift as an advisory without rewriting project copies. Verified 125 focused tests, actual Windows Codex hook command and PowerShell recovery in a workspace without bin/adr-index, strict lint of all 50 project ADRs, and doctor drift reporting against the OTGW-firmware checkout.
+<!-- SECTION:FINAL_SUMMARY:END -->
