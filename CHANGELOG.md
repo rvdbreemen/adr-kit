@@ -4,6 +4,17 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `bin/adr relate` changed the body of both ADRs although a cross-reference is
+  frontmatter bookkeeping. It appended a "Related to ADR-NNN" status_history
+  entry signed with the machine signer, so the history claimed that person made
+  an edit they did not make, and on a record without a Status History it first
+  created one with a "Recovered from the record" entry that never existed.
+  Now `relate` and `relate --remove` change only the `related` field; both
+  bodies stay byte-identical and no signer is needed. `--changed-by`,
+  `--reason` and `--date` are still accepted and ignored for this command
+  (TASK-243).
 
 ## [0.61.0] - 2026-10-21
 
