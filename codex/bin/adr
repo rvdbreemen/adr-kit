@@ -1110,24 +1110,16 @@ def command_relate(args) -> List[str]:
         verb = "not related" if args.remove else "already related"
         return [f"{left_id} and {right_id} are {verb}; nothing to do"]
 
-    # The signer is resolved once, before any write, so a machine with no
-    # configured signer refuses the whole operation instead of half of it.
-    changed_by = resolve_signer(adr_dir, args.changed_by)
-    action = "Unrelated" if args.remove else "Related"
+    # Only the frontmatter changes. A cross-reference is not a status transition,
+    # so nothing goes into status_history: an entry here was signed with the
+    # machine signer for an edit that person did not make, and on a record with no
+    # Status History it first invented one, with a "recovered" entry (TASK-243).
+    # With no history entry there is no actor to sign, so no signer is resolved.
     changes: List[Tuple[Path, str]] = []
-    for path, data, body, other_id in (
-        (left_path, left_data, left_body, right_id),
-        (right_path, right_data, right_body, left_id),
+    for path, data, body in (
+        (left_path, left_data, left_body),
+        (right_path, right_data, right_body),
     ):
-        body = ensure_status_history(path, data, body, (str(data.get("status")), args.date))
-        body = append_status_history(
-            body,
-            str(data.get("status")),
-            changed_by,
-            args.reason or f"{action} to {other_id}",
-            "adr-kit lifecycle",
-            args.date,
-        )
         changes.append((path, render_frontmatter(data) + body))
     _commit_lifecycle_changes(adr_dir, changes)
     joiner = "no longer related to" if args.remove else "related to"
@@ -1603,7 +1595,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     relate = sub.add_parser(
         "relate",
-        help="record a cross-reference between two ADRs on both sides at once",
+        help=(
+            "record a cross-reference between two ADRs on both sides at once; it "
+            "changes only the related frontmatter, so --changed-by, --reason and "
+            "--date are accepted and ignored"
+        ),
     )
     relate.add_argument("adr")
     relate.add_argument("--to", required=True, help="the other ADR id")
