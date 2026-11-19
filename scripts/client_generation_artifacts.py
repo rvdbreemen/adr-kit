@@ -149,10 +149,14 @@ def _codex_windows_command(event: dict) -> str:
     wrapper = f"(Join-Path ({root}) 'hooks/run-hook.cmd')"
     # Keep control operators inside the quoted -Command argument. Avoid dollar
     # variables so an outer PowerShell passes the command through unchanged.
+    # Read and forward the JSON line explicitly: native children do not always
+    # inherit redirected stdin on Windows.
     return (
         'powershell.exe -NoProfile -NonInteractive -Command "'
         f"if (({root}) -and (Test-Path -LiteralPath {wrapper} -PathType Leaf)) "
-        f'{{ & {wrapper} {event["command"]} codex-cli }}; exit 0"'
+        "{ [Console]::InputEncoding = [Text.UTF8Encoding]::new(); "
+        "Set-Variable -Name OutputEncoding -Value ([Text.UTF8Encoding]::new()); "
+        f'[Console]::In.ReadLine() | & {wrapper} {event["command"]} codex-cli }}; exit 0"'
     )
 
 
