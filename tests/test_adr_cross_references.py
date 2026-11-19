@@ -165,6 +165,67 @@ def test_relate_is_idempotent_and_reversible(tmp_path):
         assert "related:" not in text
 
 
+# TASK-243: a cross-reference is frontmatter bookkeeping (c2e55f2, ADR-028). The
+# command must not touch either body: no Status History is created for a record
+# that never had one, and no history entry is signed in someone's name for an edit
+# they did not make.
+
+def _body(path: Path) -> str:
+    return path.read_text(encoding="utf-8").split("---\n", 2)[2]
+
+
+_HISTORY = textwrap.dedent("""\
+    ## Status History
+
+    ```yaml
+    status_history:
+      - date: 2026-05-01
+        status: Accepted
+        changed_by: "User: Original Author"
+        reason: Accepted after review
+        changed_via: adr-kit
+    ```
+
+    """)
+
+
+def test_relate_leaves_a_body_without_status_history_untouched(tmp_path):
+    adr_dir = _adr_dir(tmp_path)
+    one, two = _seed(adr_dir, 1), _seed(adr_dir, 2)
+    before = {one: _body(one), two: _body(two)}
+
+    result = run_relate(adr_dir, "ADR-001", "--to", "ADR-002")
+
+    assert result.returncode == 0, result.stderr
+    for path, body in before.items():
+        text = path.read_text(encoding="utf-8")
+        assert "## Status History" not in text, "relate invented a Status History"
+        assert "Recovered from the record" not in text
+        assert _body(path) == body
+
+
+def test_relate_signs_no_history_entry(tmp_path):
+    adr_dir = _adr_dir(tmp_path)
+    paths = []
+    for num in (1, 2):
+        path = _seed(adr_dir, num)
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text.replace("## Context", _HISTORY + "## Context", 1), encoding="utf-8")
+        paths.append(path)
+    before = {path: _body(path) for path in paths}
+
+    added = run_relate(adr_dir, "ADR-001", "--to", "ADR-002")
+    removed = run_relate(adr_dir, "ADR-001", "--to", "ADR-002", "--remove")
+
+    assert added.returncode == 0, added.stderr
+    assert removed.returncode == 0, removed.stderr
+    for path, body in before.items():
+        text = path.read_text(encoding="utf-8")
+        # The configured signer of _adr_dir() made no decision on either record.
+        assert "Test Runner" not in text, "relate signed a history entry for the machine signer"
+        assert _body(path) == body
+
+
 def test_relate_refuses_a_pair_that_is_already_a_supersession(tmp_path):
     """The stronger edge is already recorded on both sides; two would mislead."""
     adr_dir = _adr_dir(tmp_path)

@@ -317,6 +317,26 @@ def _guidance_check(root: Path) -> dict:
     )
 
 
+def _vendored_lint_check(root: Path, plugin_root: Path) -> dict[str, Any] | None:
+    local = root / "bin" / "adr-lint"
+    bundled = plugin_root / "bin" / "adr-lint"
+    if not local.is_file() or not bundled.is_file() or local == bundled:
+        return None
+    try:
+        local_source = local.read_bytes().replace(b"\r\n", b"\n")
+        bundled_source = bundled.read_bytes().replace(b"\r\n", b"\n")
+    except OSError:
+        return None
+    if local_source == bundled_source:
+        return None
+    return check(
+        "vendored-adr-lint", status="degraded", required=False,
+        summary="project bin/adr-lint differs from the bundled ADR Kit copy",
+        evidence=[{"project": str(local), "bundled": str(bundled)}],
+        actions=[{"detail": f"Use the bundled linter at {bundled} or review and update the project copy."}],
+    )
+
+
 def run_client_checks(
     root: Path,
     plugin_root: Path,
@@ -329,6 +349,9 @@ def run_client_checks(
     generated, generated_repairs = _generated_check(plugin_root, check_only)
     checks.append(generated)
     repairs.extend(generated_repairs)
+    vendored_lint = _vendored_lint_check(root, plugin_root)
+    if vendored_lint:
+        checks.append(vendored_lint)
     try:
         settings = resolve_settings(root, global_path=global_settings)["values"]
         checks.append(check(

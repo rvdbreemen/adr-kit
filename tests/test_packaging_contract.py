@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -123,6 +125,56 @@ def test_manual_checkout_hook_wrapper_is_quiet_on_windows():
     assert result.returncode == 0
     assert result.stderr == ""
     if result.stdout.strip():
-        import json
-
         json.loads(result.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Codex Windows command contract")
+@pytest.mark.parametrize("shell", ["cmd.exe", "powershell.exe"])
+@pytest.mark.parametrize("plugin_state", ["installed", "missing-wrapper", "missing-root"])
+def test_codex_windows_hook_command_runs_with_piped_input(tmp_path, shell, plugin_state):
+    plugin = tmp_path / "ADR Kit & test"
+    if plugin_state == "installed":
+        hook = plugin / "hooks" / "run-hook.cmd"
+        hook.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / "codex/hooks/run-hook.cmd", hook)
+        hook.with_name("adr-hook.py").write_text(
+            "import json, sys\n"
+            'payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))\n'
+            "print(json.dumps([sys.argv[1:], payload], separators=(',', ':')))\n",
+            encoding="utf-8",
+        )
+    elif plugin_state == "missing-wrapper":
+        plugin.mkdir()
+    env = dict(os.environ, ADR_KIT_PYTHON=sys.executable)
+    env.pop("PLUGIN_ROOT", None)
+    if plugin_state != "missing-root":
+        env["PLUGIN_ROOT"] = str(plugin)
+
+    manifest = json.loads((ROOT / "codex/hooks/hooks.json").read_text(encoding="utf-8"))
+    command = manifest["hooks"]["PreToolUse"][0]["hooks"][0]["commandWindows"]
+    if shell == "cmd.exe":
+        invocation = f'cmd.exe /d /c "{command}"'
+    else:
+        script = (
+            "$global:LASTEXITCODE = 0\n"
+            f"[Console]::In.ReadLine() | {command}\n"
+            "if ($?) { exit 0 }\n"
+            "if ($LASTEXITCODE) { exit $LASTEXITCODE }\n"
+            "exit 1"
+        )
+        invocation = [shell, "-NoProfile", "-NonInteractive", "-Command", script]
+
+    payload = '{"event":"PreToolUse"}'
+    result = subprocess.run(
+        invocation, cwd=tmp_path, env=env, input=payload + "\n",
+        capture_output=True, text=True, encoding="utf-8", timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    if plugin_state == "installed":
+        assert json.loads(result.stdout) == [
+            ["--client", "codex-cli", "--event", "pre-tool-use"],
+            json.loads(payload),
+        ]
+    else:
+        assert not result.stdout.strip()
