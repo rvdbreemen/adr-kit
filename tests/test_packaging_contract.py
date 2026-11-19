@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -135,12 +136,16 @@ def test_codex_windows_hook_command_runs_with_piped_input(tmp_path, shell, plugi
     if plugin_state == "installed":
         hook = plugin / "hooks" / "run-hook.cmd"
         hook.parent.mkdir(parents=True)
-        hook.write_bytes(
-            b'@echo off\r\nset /p INPUT=\r\necho %~1 %~2 %INPUT%\r\nexit /b 0\r\n'
+        shutil.copyfile(ROOT / "codex/hooks/run-hook.cmd", hook)
+        hook.with_name("adr-hook.py").write_text(
+            "import json, sys\n"
+            'payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))\n'
+            "print(json.dumps([sys.argv[1:], payload], separators=(',', ':')))\n",
+            encoding="utf-8",
         )
     elif plugin_state == "missing-wrapper":
         plugin.mkdir()
-    env = dict(os.environ)
+    env = dict(os.environ, ADR_KIT_PYTHON=sys.executable)
     env.pop("PLUGIN_ROOT", None)
     if plugin_state != "missing-root":
         env["PLUGIN_ROOT"] = str(plugin)
@@ -166,5 +171,10 @@ def test_codex_windows_hook_command_runs_with_piped_input(tmp_path, shell, plugi
     )
     assert result.returncode == 0, result.stderr
     assert not result.stderr
-    expected = f"pre-tool-use codex-cli {payload}" if plugin_state == "installed" else ""
-    assert result.stdout.strip() == expected
+    if plugin_state == "installed":
+        assert json.loads(result.stdout) == [
+            ["--client", "codex-cli", "--event", "pre-tool-use"],
+            json.loads(payload),
+        ]
+    else:
+        assert not result.stdout.strip()
