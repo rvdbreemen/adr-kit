@@ -6,6 +6,9 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ### Fixed
 
+- Codex lifecycle hooks on Windows now launch correctly through PowerShell,
+  including when the plugin path contains spaces (TASK-244).
+
 - Hooks detect a missing JSON index and provide a runnable command when an index
   needs regeneration. The command uses the bundled indexer and the project's
   ADR directory, including projects without a local

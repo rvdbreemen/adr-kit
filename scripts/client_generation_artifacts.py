@@ -144,12 +144,15 @@ def _runner_timeout(event: dict) -> int:
 
 
 def _codex_windows_command(event: dict) -> str:
-    """Run Codex hooks fail-open when its plugin-root env is unavailable."""
+    """Launch through either Codex's PowerShell pipeline or its cmd fallback."""
+    root = "[Environment]::GetEnvironmentVariable('PLUGIN_ROOT')"
+    wrapper = f"(Join-Path ({root}) 'hooks/run-hook.cmd')"
+    # Keep control operators inside the quoted -Command argument. Avoid dollar
+    # variables so an outer PowerShell passes the command through unchanged.
     return (
-        "cmd.exe /d /c if defined PLUGIN_ROOT if exist "
-        '"%PLUGIN_ROOT%\\hooks\\run-hook.cmd" '
-        'call "%PLUGIN_ROOT%\\hooks\\run-hook.cmd" '
-        f'{event["command"]} codex-cli & exit /b 0'
+        'powershell.exe -NoProfile -NonInteractive -Command "'
+        f"if (({root}) -and (Test-Path -LiteralPath {wrapper} -PathType Leaf)) "
+        f'{{ & {wrapper} {event["command"]} codex-cli }}; exit 0"'
     )
 
 
