@@ -4,10 +4,22 @@ All notable changes to `adr-kit` are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [0.61.1] - 2026-11-19
+
+This patch restores Codex lifecycle hooks on Windows and fixes ADR index
+recovery, lint diagnostics, and cross-reference bookkeeping.
+
+**Upgrading.** Start a new Codex session after updating the plugin and review
+the changed ADR Kit hooks with `/hooks`. Installations that use a versioned
+local marketplace need to rerun `python scripts/install-agent-envs.py --clients codex`
+from the new release.
+
 ### Fixed
 
 - Codex lifecycle hooks on Windows now launch correctly through PowerShell,
-  including when the plugin path contains spaces (TASK-244).
+  including when the plugin path contains spaces. The launcher forwards the
+  JSON input and removes an optional UTF-8 byte order mark before invoking
+  the hook (TASK-244).
 
 - Hooks detect a missing JSON index and provide a runnable command when an index
   needs regeneration. The command uses the bundled indexer and the project's
@@ -3509,7 +3521,8 @@ The kit now operates in three coordinated modes that match how an AI coding agen
 
 The anti-rationalization guards pattern is adapted from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills). The verification gates pattern is adapted from [trailofbits/skills](https://github.com/trailofbits/skills). Both patterns were first combined into a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` builds on that combination.
 
-[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.61.0...HEAD
+[Unreleased]: https://github.com/rvdbreemen/adr-kit/compare/v0.61.1...HEAD
+[0.61.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.61.0...v0.61.1
 [0.61.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/rvdbreemen/adr-kit/compare/v0.59.0...v0.59.1
