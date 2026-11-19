@@ -305,7 +305,7 @@ def load_config(path: Optional[Path]) -> Dict:
                 )
 
     sf = cfg.get("strict_from")
-    if sf is not None and not re.match(r"^ADR-\d{3}$", sf):
+    if sf is not None and (not isinstance(sf, str) or not re.fullmatch(r"ADR-\d{3}", sf)):
         raise PolicyError(
             f"{path}: strict_from={sf!r} does not match pattern ADR-NNN"
         )
@@ -370,9 +370,10 @@ def severity_of(
 ) -> str:
     """Return 'FAIL' or 'ADVISORY' for a gate failure, given the policy."""
     sf_id = strict_from_override or cfg.get("strict_from")
-    sf_num = (
-        int(re.match(r"ADR-(\d+)", sf_id).group(1)) if sf_id else None
-    )
+    match = re.fullmatch(r"ADR-(\d+)", sf_id) if isinstance(sf_id, str) else None
+    if sf_id is not None and match is None:
+        raise PolicyError(f"strict_from={sf_id!r} does not match pattern ADR-NNN")
+    sf_num = int(match.group(1)) if match else None
     sev = cfg.get("severity", {})
     default = "advisory_before_strict_from" if sf_id and gate != "consistency" else "always_strict"
     s = sev.get(gate, default)
@@ -2083,6 +2084,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--version", action="version", version="adr-lint 0.15.0",
     )
     args = parser.parse_args(argv)
+    if args.strict_from is not None and not re.fullmatch(r"ADR-\d+", args.strict_from):
+        parser.error("--strict-from must be an ADR id (for example, ADR-100)")
 
     target = Path(args.path)
     if not target.exists():

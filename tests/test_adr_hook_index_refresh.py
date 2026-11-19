@@ -167,6 +167,28 @@ def test_the_edit_tier_reads_only_and_says_the_index_is_stale(tmp_path):
     assert index.read_text(encoding="utf-8") == before, "the edit tier wrote"
 
 
+@pytest.mark.parametrize("legacy_layout", [False, True])
+def test_recovery_command_uses_the_bundled_indexer(tmp_path, legacy_layout):
+    workspace = _workspace(tmp_path / "Robert's project")
+    _make_stale(workspace)
+    adr_dir = workspace / "docs" / "adr"
+    if legacy_layout:
+        adr_dir = adr_dir.rename(workspace / "adr")
+    assert not (workspace / "bin" / "adr-index").exists()
+
+    notice = CORE.refresh_index(workspace, "PreToolUse")
+    command = notice.split("`")[1]
+    shell = (
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"]
+        if os.name == "nt" else ["/bin/sh", "-c"]
+    )
+    result = subprocess.run(
+        [*shell, command], cwd=tmp_path, capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ADR-002" in (adr_dir / "ADR-INDEX.json").read_text(encoding="utf-8")
+
+
 def test_a_fresh_index_produces_no_notice_and_no_write(tmp_path):
     workspace = _workspace(tmp_path)
     index = workspace / "docs" / "adr" / "ADR-INDEX.json"
@@ -174,6 +196,24 @@ def test_a_fresh_index_produces_no_notice_and_no_write(tmp_path):
 
     assert CORE.refresh_index(workspace, "SessionStart") == ""
     assert index.stat().st_mtime_ns == before
+
+
+def test_a_missing_json_index_is_reported_and_regenerated(tmp_path):
+    workspace = _workspace(tmp_path)
+    index = workspace / "docs" / "adr" / "ADR-INDEX.json"
+    index.unlink()
+
+    assert "bin/adr-index" in CORE.refresh_index(workspace, "PreToolUse")
+    assert not index.exists()
+    assert CORE.refresh_index(workspace, "UserPromptSubmit") == ""
+    assert "ADR-001" in index.read_text(encoding="utf-8")
+
+
+def test_an_empty_adr_directory_does_not_trigger_index_recovery(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    assert CORE.refresh_index(tmp_path, "UserPromptSubmit") == ""
+    assert not any(adr_dir.iterdir())
 
 
 def test_a_contended_lock_reads_rather_than_waits(tmp_path):

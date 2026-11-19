@@ -151,6 +151,26 @@ def test_doctor_detects_stale_index_and_fix_index_cleans_it(tmp_path):
     assert fixed["summary"]["index_ok"] is True
 
 
+def test_doctor_reports_vendored_lint_drift_without_rewriting(tmp_path):
+    adr_dir = _repo(tmp_path)
+    _write_adr(adr_dir)
+    local = tmp_path / "bin" / "adr-lint"
+    local.parent.mkdir()
+    old_source = b"old project copy\n"
+    local.write_bytes(old_source)
+
+    code, report = _run_doctor(adr_dir, tmp_path)
+    assert code == 0
+    drift = next(check for check in report["checks"] if check["id"] == "vendored-adr-lint")
+    assert drift["status"] == "degraded"
+    assert local.read_bytes() == old_source
+
+    bundled_source = (REPO_ROOT / "bin" / "adr-lint").read_bytes().replace(b"\r\n", b"\n")
+    local.write_bytes(bundled_source.replace(b"\n", b"\r\n"))
+    _, report = _run_doctor(adr_dir, tmp_path, "--check")
+    assert all(check["id"] != "vendored-adr-lint" for check in report["checks"])
+
+
 def test_doctor_reports_shipped_but_proposed(tmp_path):
     adr_dir = _repo(tmp_path)
     _write_adr(adr_dir, verified_in=["src/app.py:shipped_symbol"])
